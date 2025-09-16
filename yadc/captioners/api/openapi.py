@@ -76,6 +76,8 @@ class OpenAIEndpointCaptioner(Captioner):
             assert koboldcpp_sofware_name.lower() == 'koboldcpp'
 
             return CaptionerAPITypes.KOBOLDCPP
+        except requests.exceptions.ConnectionError:
+            raise
         except Exception as e:
             pass
 
@@ -88,18 +90,21 @@ class OpenAIEndpointCaptioner(Captioner):
 
         self._session = requests.Session()
 
-        self._api_type = self._infer_api_type()
-        print(f'API set to {self._api_type}.')
+        try:
+            self._api_type = self._infer_api_type()
+            print(f'API set to {self._api_type}.')
 
-        match self._api_type:
-            case CaptionerAPITypes.OPENAI:
-                self._load_model_openai(model_repo)
+            match self._api_type:
+                case CaptionerAPITypes.OPENAI:
+                    self._load_model_openai(model_repo)
 
-            case CaptionerAPITypes.KOBOLDCPP:
-                self._load_model_koboldcpp(model_repo)
+                case CaptionerAPITypes.KOBOLDCPP:
+                    self._load_model_koboldcpp(model_repo)
 
-            case _:
-                raise ValueError(f'unknown api type: {self._api_type}')
+                case _:
+                    raise ValueError(f'unknown api type: {self._api_type}')
+        except requests.exceptions.ConnectionError:
+            raise ValueError(f'api unavailable: {self._api_url}')
         
         print(f'Model set to {self._current_model}.')
 
