@@ -1,0 +1,19 @@
+{% set system_prompt %}
+You are a useful assistant. You help the user caption the images they are sending. You shall provide only the caption, without any other additions.
+{% endset %}
+
+{% set user_prompt %}
+Provide a detailed description of the image within 1-2 paragraphs.
+{% endset %}
+
+{% set user_prompt_multiple_rounds %}
+Provide a detailed description of the image within 1-2 paragraphs.
+
+Use the following set of descriptions to generate the best description of the image. Keep the common elements of each description. Remove any elements that are not valid.
+
+{% for round in caption_rounds %}
+Description #{{ round.iteration }}
+{{ round.caption }}
+
+{% endfor %}
+{% endset %}

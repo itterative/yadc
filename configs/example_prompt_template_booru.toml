@@ -1,0 +1,54 @@
+# This is an example of how you can use prompt template to caption anime images while giving some context, using either booru tags or a description.
+
+[api]
+url = "http://localhost:5001"
+token = ""
+
+[settings]
+prompt_template = """
+{% set user_prompt %}
+Provide a long detailed description for this image. Don't mention something if it is not present in the image or doesn't exists in the image. You should keep the description within a paragraph, without losing important details.
+
+{% if characters %}
+Address the characters by their name. Always mention the name of the characters.
+Characters: {{ characters }}
+{% endif %}
+
+{% if artist %}
+The artist name should be mentioned in the first sentence. The artist should be mentioned using phrases such as "art by ARTIST", "digital illustration by ARTIST", or a similar.
+Artist name: {{ artist }}.
+{% endif %}
+
+{% if tags %}
+These are the common tags for features of the characters in the image in random order. Use them for guidance but they might not be accurate or might not be for the same outfit as the one in the image:
+{{ tags }}
+{% endif %}
+
+{% if context %}
+The following is an accurate description of the image. It might miss details about the image, however you should always consider it as correct. Use the following for guidance when creating your description:
+{{ context }}
+{% endif %}
+{% endset %}
+"""
+
+[dataset]
+paths = []
+
+[[dataset.image]]
+path = "image_hoshimi_miyabi"
+characters = "Hoshimi Miyabi and some unknown man"
+tags = "1boy, 1girl, :p, animal ear fluff, animal ears, aqua jacket, black hair, blush, bread, food, fox ears, id card, idiot sandwich (meme), jacket, meme, necktie, red eyes, shirt, signature, simple background, single ear down, solo focus, tongue, tongue out, white background, white shirt"
+content = "Miyabi's head is caught between two slices of bread."
+
+[[dataset.image]]
+path = "image_raiden_shogun"
+artist = "natsukko"
+characters = "Raiden Shogun"
+tags = "1girl, alternate costume, belt, blush, braid, breasts, buckle, cake, cake slice, closed mouth, earrings, eating, flower, food, food in mouth, fork, hair flower, hair ornament, holding, holding fork, holding plate, jewelry, large breasts, long hair, long sleeves, looking at viewer, low-tied long hair, mole, mole under eye, nail polish, plate, purple eyes, purple hair, purple nails, purple shirt, ribbed shirt, shirt, shirt tucked in, sidelocks, simple background, single braid, skirt, solo, sparkle background, sparkling eyes, swept bangs, taut clothes, taut shirt, tented shirt, turtleneck, upper body, watch, white background, wide-eyed, wristwatch"
+
+[[dataset.image]]
+path = "image_jane_doe"
+characters = "Jane Doe"
+
+[[dataset.image]]
+path = "no_context"

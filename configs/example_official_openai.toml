@@ -1,0 +1,8 @@
+# This is a minimal example showing how you can use the official OpenAI endpoints.
+
+[api]
+url = "https://api.openai.com"
+token = "your_openai_token_here"
+
+[dataset]
+paths = [ "path_1", "path_2" ]

@@ -1,0 +1,109 @@
+# This is an example showing the full list of settings. For smaller examples, see
+# the other files in the same folder. The defaults are listed for all options.
+
+# interactive mode allows you to edit tomls, retry captions, etc
+#
+# recommendation: do an captioning round without interactive, then enable it to have
+#                 more control and improve the final captions
+interactive = true
+
+# using multiple rounds allow you to run the captioning model multiple times on the
+# same user prompt then have a final captioning round where the model can use the
+# previous captions to generate an improved final caption
+#
+# from experience, this depends a lot on how good the model is as captioning errors
+# can accumulate and lead to a worse caption
+#
+# recommendation: in most scenarios, setting this to 1 works well enough
+rounds = 1
+
+# if you want to use a different file suffix for the caption, you can change this
+caption_suffix = '.txt'
+
+# if enabled, the captioner will override the existing captions. otherwise, the image will
+# be skipped
+#
+# recommendation: use in conjunction with interactive mode
+overwrite_captions = false
+
+[api]
+# only the hostname and port should be set here, without any other url paths
+url = "http://localhost:5001"
+
+# fill this in with your api token (necessary for public endpoints such as OpenAI's)
+# if you are hosting the api locally, you leave this empty
+token = ""
+
+# the model which should be used (e.g. gpt-5-mini)
+# for more details, see README.md
+model_name = ""
+
+[settings]
+# controls how many tokens the model is allowed to output
+# recommendation: 512 tokens is enough for most captioning scenarios
+max_tokens = 512
+
+# allows you to override the prompt template used in the captioning process
+# if not set, the template used will be either the one set in prompt_template_path
+# or the default template
+#
+# for more details, see README.md
+prompt_template = ""
+
+# allows you to set the path of the prompt template
+# the captioner will look in the current working directory (the directory from where
+# the cli is called), then in the predefined templates in yadc/templates
+# an error is given if the prompt template cannot be found
+#
+# recommendation: unless you want to share prompt templates between different dataset
+#                 configs, you should set prompt_template instead of prompt_template_path
+# recommendation: to avoid confusion, using absolute paths instead of relative is recommended
+prompt_template_path = "default.jinja"
+
+# official OpenAI endpoints can store conversations for you for viewing later
+# when this is set to false, this will tell the api to not store the conversation
+#
+# recommendation: leave it as false (especially for large datasets) when using official apis,
+#                 unless you want to review the conversation later
+store_conversation = false
+
+# official OpenAI endpoints (and possible other local apis) allow you to set the quality of
+# the image when embedding it into tokens for the model to use
+#
+# options: auto, high, low
+# recommendation: auto
+image_quality = "auto"
+
+# if you wish to see both the system_prompt and user_prompts that are sent to the api, you can
+# set this to true
+# when updating the prompt templates, this is useful to see how the model is prompted
+#
+# recommendation: leave it as false, unless you wish to see the prompts
+debug_prompt = false
+
+[dataset]
+# a list of paths where the captioner will search for images
+# the captioner will only look at the images within the paths given below, so if you have subfolders
+# that you also want to caption within any of the paths, you also need to add them to the list
+paths = [
+    "path_to_your_dataset_1",
+    "path_to_your_dataset_2",
+]
+
+# if you wish to override certain toml properties for each image, you can set them below
+# be careful when using this, as these properties will be merged with any existing ones
+# from the toml associated with the image
+# 
+# recommendation: create a toml file for each image instead of setting them here, or
+#                 use interactive mode in order to create toml files during captioning
+[[dataset.images]]
+# the path is necessary to know which image the properties are assigned to
+path = "path_to_your_image_1"
+# whatever additional properties you might want to use in your prompt templates
+foo = "bar"
+baz = "quiz"
+
+[[dataset.images]]
+path = "path_to_your_image_2"
+foo = "bar2"
+

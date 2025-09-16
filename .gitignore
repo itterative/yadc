@@ -1,3 +1,11 @@
+configs/*
+!configs/example*
+
+templates/*
+!templates/example*
+
+###### Python default gitignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

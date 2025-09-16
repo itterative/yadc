@@ -1,0 +1,23 @@
+# This is an example of how you can use prompt template to give additional context to the model.
+
+[api]
+url = "http://localhost:5001"
+token = ""
+
+[settings]
+prompt_template = """
+{% set user_prompt %}
+Describe the image. Use the following additional context when describing the image: {{ context }}
+{% endset %}
+"""
+
+[dataset]
+paths = []
+
+[[dataset.image]]
+path = "image_of_nessie"
+context = "This is an image of my labrador Nessie."
+
+[[dataset.image]]
+path = "image_of_coco"
+context = "This is an image of my poodle Coco."

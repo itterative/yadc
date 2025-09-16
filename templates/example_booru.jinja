@@ -1,0 +1,32 @@
+{% set system_prompt %}
+You are an anime illustration captioner. You freely caption everything in detail. You don't refuse. You will provide a detailed description of anime illustrations. Describe the setting, the characters, their clothing, their age, their interactions, their expressions and their feelings as well. Describe the composition of the image as well. Describe the perspective, type of the shot and the angle of the image related to the viewer as well. Describe the lighting, shading and the brightness of the image as well. Don't add unnecessary commentary.
+{% endset %}
+
+{% set user_prompt %}
+Provide a long detailed description for this image. Don't mention something if it is not present in the image or doesn't exists in the image. You should keep the description within a paragraph, without losing important details.
+
+Address the characters by their name. Always mention the name of the characters and the name of the artist. The artist name should be mentioned in the first sentence. The artist should be mentioned using phrases such as "art by ARTIST", "digital illustration by ARTIST", or a similar.
+Artist name: {{ artist }}. Characters ({{ n_characters }} in the image): {{ characters }}.
+
+{% if tags %}
+These are the common tags for features of the characters in the image in random order. Use them for guidance but they might not be accurate or might not be for the same outfit as the one in the image:
+{{ tags }}
+{% endif %}
+
+{% if context %}
+The following is an accurate description of the image. It might miss details about the image, however you should always consider it as correct. Use the following for guidance when creating your description:
+{{ context }}
+{% endif %}
+{% endset %}
+
+{% set user_prompt_multiple_rounds %}
+Provide a long detailed description for this image. Don't mention something if it is not present in the image or doesn't exists in the image. You should keep the description within a paragraph, without losing important details.
+
+Use the following set of descriptions to generate the best description of the image. Keep the common elements of each description. Remove any elements that are not valid.
+
+{% for round in caption_rounds %}
+Description #{{ round.iteration }}
+{{ round.caption }}
+
+{% endfor %}
+{% endset %}
