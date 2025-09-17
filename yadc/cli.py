@@ -15,107 +15,12 @@ from yadc.core.user_config import UserConfig, UserConfigApi
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
 
-APP_NAME = 'yadc-27sn9s'
-
-# flag for enabling user config
-FLAG_USER_CONFIG = False # disabled, needs further testing
-
-def _load_config():
-    if not FLAG_USER_CONFIG:
-        return UserConfig(api=UserConfigApi())
-
-    import keyring
-    import keyring.errors
-
-    try:
-        return UserConfig(
-            api=UserConfigApi(
-                url=keyring.get_password(APP_NAME, 'api_url') or '',
-                token=keyring.get_password(APP_NAME, 'api_token') or '',
-                model_name=keyring.get_password(APP_NAME, 'api_model_name') or '',
-            )
-        )
-    except keyring.errors.NoKeyringError:
-        print('Warning: user config could not be read: no keyring available')
-    except pydantic.ValidationError:
-        print('Warning: user config could not be read: config is invalid')
-    except Exception as e:
-        print(f'Warning: user config could not be read: {e}')
-
-    return UserConfig(api=UserConfigApi())
-
-def config_get(key: str):
-    import keyring
-    import keyring.errors
-
-    try:
-        print(keyring.get_password(APP_NAME, key))
-    except keyring.errors.NoKeyringError:
-        print('Error: user config could not be read: no keyring available')
-        return 1
-
-    return 0
-
-def config_set(key: str, value: str):
-    import keyring
-    import keyring.errors
-
-    try:
-        keyring.set_password(APP_NAME, key, value)
-        print(f'User config {key} has been updated.')
-    except keyring.errors.NoKeyringError:
-        print('Error: user config could not be read: no keyring available')
-        return 1
-    except keyring.errors.PasswordSetError:
-        pass
-
-    return 0
-
-def config_delete(key: str):
-    import keyring
-    import keyring.errors
-
-    try:
-        if keyring.get_password(APP_NAME, key):
-            keyring.delete_password(APP_NAME, key)
-            print(f'User config {key} has been deleted.')
-        else:
-            print(f'User config {key} not set.')
-    except keyring.errors.NoKeyringError:
-        print('Error: user config could not be read: no keyring available')
-        return 1
-
-    return 0
-
-def config_list():
-    import keyring
-    import keyring.errors
-
-    found_keys = False
-    keys = ['api_url', 'api_token', 'api_model_name']
-
-    try:
-        for key in keys:
-            value = keyring.get_password(APP_NAME, key)
-
-            if not value:
-                continue
-
-            found_keys = True
-            print(f'{key} = {value}')
-
-        if not found_keys:
-            print('No user config values found.')
-    except keyring.errors.NoKeyringError:
-        print('Error: user config could not be read: no keyring available')
-        return 1
-    
-    return 0
+from yadc.cli_config import load_config
 
 def caption(dataset_path: str):
     print(f'Using python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.')
 
-    user_config = _load_config()
+    user_config = load_config()
 
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
