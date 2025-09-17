@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-yadc = "yadc.cli:main"
+yadc = "yadc.__main__:main"
 
 [tool.setuptools.package-data]
 "yadc.templates" = ["*"]
