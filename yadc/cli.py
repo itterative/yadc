@@ -1,41 +1,141 @@
 import os
 import sys
-import tomllib
+import toml
 import pathlib
 import tempfile
 import subprocess
-import argparse
+import pydantic
 
 from time import time
 
 import readline # enables better input on unix
 
 from yadc.core.config import Config
+from yadc.core.user_config import UserConfig, UserConfigApi
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
 
-def parse_args():
-    parser = argparse.ArgumentParser()
+APP_NAME = 'yadc-27sn9s'
 
-    parser.add_argument('dataset_toml', type=str)
+# flag for enabling user config
+FLAG_USER_CONFIG = False # disabled, needs further testing
 
-    return parser.parse_args()
+def _load_config():
+    if not FLAG_USER_CONFIG:
+        return UserConfig(api=UserConfigApi())
 
-def main():
-    args = parse_args()
+    import keyring
+    import keyring.errors
 
+    try:
+        return UserConfig(
+            api=UserConfigApi(
+                url=keyring.get_password(APP_NAME, 'api_url') or '',
+                token=keyring.get_password(APP_NAME, 'api_token') or '',
+                model_name=keyring.get_password(APP_NAME, 'api_model_name') or '',
+            )
+        )
+    except keyring.errors.NoKeyringError:
+        print('Warning: user config could not be read: no keyring available')
+    except pydantic.ValidationError:
+        print('Warning: user config could not be read: config is invalid')
+    except Exception as e:
+        print(f'Warning: user config could not be read: {e}')
+
+    return UserConfig(api=UserConfigApi())
+
+def config_get(key: str):
+    import keyring
+    import keyring.errors
+
+    try:
+        print(keyring.get_password(APP_NAME, key))
+    except keyring.errors.NoKeyringError:
+        print('Error: user config could not be read: no keyring available')
+        return 1
+
+    return 0
+
+def config_set(key: str, value: str):
+    import keyring
+    import keyring.errors
+
+    try:
+        keyring.set_password(APP_NAME, key, value)
+        print(f'User config {key} has been updated.')
+    except keyring.errors.NoKeyringError:
+        print('Error: user config could not be read: no keyring available')
+        return 1
+    except keyring.errors.PasswordSetError:
+        pass
+
+    return 0
+
+def config_delete(key: str):
+    import keyring
+    import keyring.errors
+
+    try:
+        if keyring.get_password(APP_NAME, key):
+            keyring.delete_password(APP_NAME, key)
+            print(f'User config {key} has been deleted.')
+        else:
+            print(f'User config {key} not set.')
+    except keyring.errors.NoKeyringError:
+        print('Error: user config could not be read: no keyring available')
+        return 1
+
+    return 0
+
+def config_list():
+    import keyring
+    import keyring.errors
+
+    found_keys = False
+    keys = ['api_url', 'api_token', 'api_model_name']
+
+    try:
+        for key in keys:
+            value = keyring.get_password(APP_NAME, key)
+
+            if not value:
+                continue
+
+            found_keys = True
+            print(f'{key} = {value}')
+
+        if not found_keys:
+            print('No user config values found.')
+    except keyring.errors.NoKeyringError:
+        print('Error: user config could not be read: no keyring available')
+        return 1
+    
+    return 0
+
+def caption(dataset_path: str):
     print(f'Using python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.')
 
-    dataset_toml: str = args.dataset_toml
+    user_config = _load_config()
 
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
 
     try:
-        with open(dataset_toml, 'rb') as f:
-            toml = Config(**tomllib.load(f))
+        with open(dataset_path, 'r') as f:
+            dataset_toml_raw = toml.load(f)
 
-        for index, path in enumerate(toml.dataset.paths):
+            # merge with use config
+            dataset_toml_raw.setdefault('api', {})
+            dataset_toml_raw_api = dataset_toml_raw['api']
+
+            assert isinstance(dataset_toml_raw_api, dict)
+            dataset_toml_raw_api.setdefault('url', user_config.api.url)
+            dataset_toml_raw_api.setdefault('token', user_config.api.token)
+            dataset_toml_raw_api.setdefault('model_name', user_config.api.model_name)
+
+            dataset_toml = Config(**dataset_toml_raw)
+
+        for index, path in enumerate(dataset_toml.dataset.paths):
             assert isinstance(path, str), f'path at index {index} is not a string'
 
             path = pathlib.Path(path)
@@ -56,14 +156,14 @@ def main():
                     dataset_image_toml = {}
                 else:
                     try:
-                        with open(dataset_image.toml_path, 'rb') as f:
-                            dataset_image_toml = tomllib.load(f)
+                        with open(dataset_image.toml_path, 'r') as f:
+                            dataset_image_toml = toml.load(f)
                     except:
                         print(f'Warning: path {file_path} contains an invalid toml')
                         continue
 
                 dataset_image_toml['path'] = str(dataset_image.absolute_path)
-                dataset_image_toml['caption_suffix'] = toml.caption_suffix
+                dataset_image_toml['caption_suffix'] = dataset_toml.caption_suffix
 
                 dataset_image = DatasetImage(**dataset_image_toml)
                 dataset_image.caption = dataset_image.read_caption()
@@ -72,7 +172,7 @@ def main():
                 i_dataset[dataset_image.absolute_path] = dataset_image
 
 
-        for index, dataset_image in enumerate(toml.dataset.images):
+        for index, dataset_image in enumerate(dataset_toml.dataset.images):
             existing_dataset_image = i_dataset.get(dataset_image.absolute_path, None)
             
             if existing_dataset_image is None:
@@ -93,18 +193,21 @@ def main():
 
             existing_dataset_image.caption = dataset_image.caption or existing_dataset_image.caption
 
+    except FileNotFoundError:
+        print(f'Error loading {dataset_path}: file not found')
+        return 1
     except ValueError as e:
-        print(f'Error loading {sys.argv[1]}: {e}')
+        print(f'Error loading {dataset_path}: {e}')
         return 1
 
-    if toml.settings.hf_token:
-        os.environ['HF_TOKEN'] = toml.settings.hf_token
+    if dataset_toml.settings.hf_token:
+        os.environ['HF_TOKEN'] = dataset_toml.settings.hf_token
 
     skipped_from_dataset = 0
     dataset_to_do: list[DatasetImage] = []
 
     for dataset_image in dataset:
-        should_skip = not toml.overwrite_captions and dataset_image.caption_path.exists()
+        should_skip = not dataset_toml.overwrite_captions and dataset_image.caption_path.exists()
 
         if should_skip:
             skipped_from_dataset += 1
@@ -126,16 +229,16 @@ def main():
     from yadc.captioners.api import OpenAIEndpointCaptioner
 
     model = OpenAIEndpointCaptioner(
-        api_url=toml.api.url,
-        api_token=toml.api.url,
-        prompt_template=toml.settings.prompt_template,
-        prompt_template_name=toml.settings.prompt_template_path,
-        store_conversation=toml.settings.store_conversation,
-        image_quality=toml.settings.image_quality,
+        api_url=dataset_toml.api.url,
+        api_token=dataset_toml.api.url,
+        prompt_template=dataset_toml.settings.prompt_template,
+        prompt_template_name=dataset_toml.settings.prompt_template_path,
+        store_conversation=dataset_toml.settings.store_conversation,
+        image_quality=dataset_toml.settings.image_quality,
     )
 
     try:
-        model.load_model(toml.api.model_name)
+        model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
         print(f'Error: bad model configuration: {e}')
         return 1
@@ -144,7 +247,7 @@ def main():
     print('Captioning...')
 
     def prompt_for_yes(prompt: str, default: bool = False) -> bool:
-        if not toml.interactive:
+        if not dataset_toml.interactive:
             return default
 
         if default:
@@ -160,7 +263,7 @@ def main():
             return response.lower()[:1] == 'y'
         
     def prompt_for_override(value: str, default: str) -> str:
-        if not toml.interactive:
+        if not dataset_toml.interactive:
             return default
 
         prompt = f'Override {value}? ({default}) ' if default else f'Override {value}? '
@@ -175,7 +278,7 @@ def main():
     def prompt_for_action(prompt: str, actions: dict[str, str], default_action: str):
         assert default_action in actions
 
-        if not toml.interactive:
+        if not dataset_toml.interactive:
             return actions[default_action]
 
         prompt = f'{prompt} ({" ".join(map(lambda kv: kv[0] + "=" + kv[1], actions.items()))}) [{actions[default_action]}] '
@@ -275,9 +378,9 @@ def main():
                                     if prompt_for_yes('Abort?', default=False):
                                         break
 
-                            with open(tmp_file, 'rb') as f:
+                            with open(tmp_file, 'r') as f:
                                 try:
-                                    dataset_image_toml = tomllib.load(f)
+                                    dataset_image_toml = toml.load(f)
                                 except:
                                     print('Warning: toml is not valid')
 
@@ -318,11 +421,11 @@ def main():
             if not do_prompt and caption:
                 break
 
-            if toml.rounds <= 1:
+            if dataset_toml.rounds <= 1:
                 caption = []
                 print('')
                 start_t = time()
-                for token in model.predict_stream(dataset_image_tmp, max_new_tokens=toml.settings.max_tokens, debug_prompt=toml.settings.debug_prompt):
+                for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
                     caption.append(token)
                     print(token, end='', flush=True)
                 end_t = time()
@@ -336,11 +439,11 @@ def main():
                 j = 0
 
                 if caption_rounds:
-                    j = toml.rounds
+                    j = dataset_toml.rounds
                 else:
-                    print(f'Doing {toml.rounds} rounds...')
+                    print(f'Doing {dataset_toml.rounds} rounds...')
 
-                while j < toml.rounds:
+                while j < dataset_toml.rounds:
                     j +=1
 
                     new_caption = ''
@@ -348,12 +451,12 @@ def main():
 
                     if not new_caption:
                         start_t = time()
-                        new_caption = model.predict(dataset_image_tmp, max_new_tokens=toml.settings.max_tokens, use_cache=True, debug_prompt=toml.settings.debug_prompt and caption_rounds_debug).strip()
+                        new_caption = model.predict(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, use_cache=True, debug_prompt=dataset_toml.settings.debug_prompt and caption_rounds_debug).strip()
                         end_t = time()
 
                         caption_rounds_debug = False
 
-                        if toml.interactive:
+                        if dataset_toml.interactive:
                             print(new_caption)
 
                         print(f'Round #{j} done. ({(end_t-start_t):.3f}s)')
@@ -369,7 +472,7 @@ def main():
 
                 print('')
                 start_t = time()
-                for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=toml.settings.max_tokens, debug_prompt=toml.settings.debug_prompt):
+                for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
                     caption.append(token)
                     print(token, end='', flush=True)
                 end_t = time()

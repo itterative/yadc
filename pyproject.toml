@@ -14,6 +14,13 @@ dependencies = [
     "pydantic==2.11.7",
     "toml>=0.10.2",
     "jinja2>=3.1.6",
+    "keyring>=25.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "secretstorage>=3.4.0",
+    "keyring-pass>=0.9.3",
 ]
 
 [project.scripts]
