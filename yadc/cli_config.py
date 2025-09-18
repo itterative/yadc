@@ -47,7 +47,14 @@ def load_config():
 
     try:
         config_toml = _load_config_toml()
-        return UserConfig(**config_toml)
+
+        return UserConfig(
+            api=UserConfigApi(
+                url=config_toml.get('api_url', ''),
+                token=config_toml.get('api_token', ''),
+                model_name=config_toml.get('api_model_name', ''),
+            ),
+        )
     except pydantic.ValidationError|ValueError:
         print('Warning: user config is invalid')
     except PermissionError:
