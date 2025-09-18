@@ -1,25 +1,29 @@
-import requests
 import time
+import json
+import requests
+
+import io
+import base64
 
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 from yadc.core import Captioner, DatasetImage
 
+from .session import Session
 from .types import OpenAIModelsResponse, KoboldAdminSettingsReponse, KoboldAdminReloadModelReponse, KoboldAdminCurrentModelResponse
 
-class CaptionerAPITypes(str, Enum):
+class APITypes(str, Enum):
     OPENAI = 'openai'
     KOBOLDCPP = 'koboldcpp'
 
     def __str__(self) -> str:
         return self.value
 
-class OpenAIEndpointCaptioner(Captioner):
-    _pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')
-    _api_type: CaptionerAPITypes|None = None
+class OpenAICaptioner(Captioner):
+    _api_type: APITypes|None = None
     _current_model: str|None = None
-    _session: requests.Session|None = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -29,76 +33,66 @@ class OpenAIEndpointCaptioner(Captioner):
         self._store_conversation: bool = kwargs.pop('store_conversation', False)
         self._image_quality: str = kwargs.pop('image_quality', 'auto')
 
+        if not self._api_url:
+            raise ValueError("no api_url")
+
         try:
-            assert self._api_url, "no api_url"
-        except AssertionError as e:
-            raise ValueError(e)
+            url = urlparse(self._api_url)
+            self._api_url = f'{url.scheme}://{url.netloc}'
+        except:
+            pass
 
-        self._api_url = self._api_url.rstrip('/')
-
-        if not self._api_token:
-            print(f'Warning: no api_token is set, requests will fail if api uses authentication')
-
-    def _request(self, method: str, path: str, **kwargs):
-        assert self._session
-
-        headers = kwargs.pop('headers', {})
-        assert isinstance(headers, dict)
+        session_headers = {}
 
         if self._api_token:
-            headers['Authorization'] = f'Bearer {self._api_token}'
+            session_headers['Authorization'] = f'Bearer {self._api_token}'
+        else:
+            print(f'Warning: no api_token is set, requests will fail if api uses authentication')
 
-        stream = kwargs.pop('stream', False)
-
-        request = requests.Request(method, url=self._api_url + path, headers=headers, **kwargs)
-        session = self._session
-
-        t = self._pool.submit(lambda: session.send(session.prepare_request(request,), stream=stream))
-        return t.result()
+        self._session = Session(self._api_url, headers=session_headers)
 
     def _infer_api_type(self):
-        assert self._session
+        # early exit
+        if self._api_url.startswith('https://api.openai.com'):
+            return APITypes.OPENAI
 
         try:
-            koboldcpp_resp = self._request('GET', '/.well-known/serviceinfo')
-            assert koboldcpp_resp.ok
-        
-            koboldcpp_json = koboldcpp_resp.json()
-            assert isinstance(koboldcpp_json, dict)
-            assert 'software' in koboldcpp_json
+            with self._session.get('/.well-known/serviceinfo') as koboldcpp_resp:
+                assert koboldcpp_resp.ok
+            
+                koboldcpp_json = koboldcpp_resp.json()
+                assert isinstance(koboldcpp_json, dict)
+                assert 'software' in koboldcpp_json
 
-            koboldcpp_sofware = koboldcpp_json['software']
-            assert isinstance(koboldcpp_sofware, dict)
-            assert 'name' in koboldcpp_sofware
+                koboldcpp_sofware = koboldcpp_json['software']
+                assert isinstance(koboldcpp_sofware, dict)
+                assert 'name' in koboldcpp_sofware
 
-            koboldcpp_sofware_name = koboldcpp_sofware['name']
-            assert isinstance(koboldcpp_sofware_name, str)
-            assert koboldcpp_sofware_name.lower() == 'koboldcpp'
+                koboldcpp_sofware_name = koboldcpp_sofware['name']
+                assert isinstance(koboldcpp_sofware_name, str)
+                assert koboldcpp_sofware_name.lower() == 'koboldcpp'
 
-            return CaptionerAPITypes.KOBOLDCPP
+                return APITypes.KOBOLDCPP
         except requests.exceptions.ConnectionError:
+            raise
+        except AssertionError:
             raise
         except Exception as e:
             pass
 
-        return CaptionerAPITypes.OPENAI
+        return APITypes.OPENAI
 
 
     def load_model(self, model_repo: str, **kwargs) -> None:
-        if self._session is not None:
-            self._session.close()
-
-        self._session = requests.Session()
-
         try:
             self._api_type = self._infer_api_type()
             print(f'API set to {self._api_type}.')
 
             match self._api_type:
-                case CaptionerAPITypes.OPENAI:
+                case APITypes.OPENAI:
                     self._load_model_openai(model_repo)
 
-                case CaptionerAPITypes.KOBOLDCPP:
+                case APITypes.KOBOLDCPP:
                     self._load_model_koboldcpp(model_repo)
 
                 case _:
@@ -112,9 +106,7 @@ class OpenAIEndpointCaptioner(Captioner):
         if self._current_model == model_repo:
             return
 
-        model_resp = self._request('GET', '/v1/models')
-
-        with model_resp:
+        with self._session.get('/v1/models') as model_resp:
             assert model_resp.ok
 
             model_resp_json = model_resp.json()
@@ -159,7 +151,7 @@ class OpenAIEndpointCaptioner(Captioner):
         model_kcpss = model_repo + '.kcpps'
 
         # early exit if already loaded
-        with self._request('GET', '/api/v1/model') as model_current_resp:
+        with self._session.get('/api/v1/model') as model_current_resp:
             assert model_current_resp.ok
 
             model_current_resp_json = model_current_resp.json()
@@ -171,7 +163,7 @@ class OpenAIEndpointCaptioner(Captioner):
                 self._current_model = model_current.result
                 return
 
-        with self._request('GET', '/api/admin/list_options') as model_options_resp:
+        with self._session.get('/api/admin/list_options') as model_options_resp:
             assert model_options_resp.ok
 
             model_options_resp_json = model_options_resp.json()
@@ -195,7 +187,7 @@ class OpenAIEndpointCaptioner(Captioner):
 
                 raise ValueError(f'model not found: {model_repo}; no models available')
 
-        with self._request('POST', '/api/admin/reload_config', json={"filename": self._current_model}) as model_reload_resp:
+        with self._session.post('/api/admin/reload_config', json={"filename": self._current_model}) as model_reload_resp:
             assert model_reload_resp.ok
 
             model_reload_resp_json = model_reload_resp.json()
@@ -211,7 +203,7 @@ class OpenAIEndpointCaptioner(Captioner):
 
         while time.time() < end_t:
             try:
-                with self._request('GET', '/api/v1/model') as model_current_resp:
+                with self._session.get('/api/v1/model') as model_current_resp:
                     assert model_current_resp.ok
 
                     model_current_resp_json = model_current_resp.json()
@@ -234,12 +226,12 @@ class OpenAIEndpointCaptioner(Captioner):
 
     def unload_model(self):
         match self._api_type:
-            case CaptionerAPITypes.OPENAI:
+            case APITypes.OPENAI:
                 pass
 
-            case CaptionerAPITypes.KOBOLDCPP:
-                unload_model_resp = self._request('POST', '/api/admin/reload_config', json={"filename": "unload_model"})
-                assert unload_model_resp.ok
+            case APITypes.KOBOLDCPP:
+                with self._session.post('/api/admin/reload_config', json={"filename": "unload_model"}) as unload_model_resp:
+                    assert unload_model_resp.ok
 
             case _:
                 raise ValueError(f'unknown api type: {self._api_type}')
@@ -250,17 +242,14 @@ class OpenAIEndpointCaptioner(Captioner):
     def conversation(self, image: DatasetImage, **kwargs):
         system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
 
-        import base64
-        from io import BytesIO
-
-        buffer = BytesIO()
+        buffer = io.BytesIO()
         image.read_image().save(buffer, format="PNG")
 
         match self._api_type:
-            case CaptionerAPITypes.KOBOLDCPP:
+            case APITypes.KOBOLDCPP:
                 pass
 
-            case CaptionerAPITypes.OPENAI:
+            case APITypes.OPENAI:
                 pass
 
             case _:
@@ -297,8 +286,6 @@ class OpenAIEndpointCaptioner(Captioner):
     def _generate_prediction(self, image: DatasetImage, **kwargs):
         assert self._current_model, "model not loaded"
 
-        import json
-
         temperature = kwargs.pop('temperature', 0.8)
         top_p = kwargs.pop('top_p', 0.9)
         top_k = kwargs.pop('top_k', 64)
@@ -317,10 +304,10 @@ class OpenAIEndpointCaptioner(Captioner):
         )
 
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
-        if self._api_type == CaptionerAPITypes.KOBOLDCPP:
+        if self._api_type == APITypes.KOBOLDCPP:
             conversation['stop'] = ['<|im_end|>']
 
-        with self._request('POST', '/v1/chat/completions', stream=True, json=conversation) as converation_resp:
+        with self._session.post('/v1/chat/completions', stream=True, json=conversation) as converation_resp:
             converation_resp.raise_for_status()
 
             converation_stopped = False

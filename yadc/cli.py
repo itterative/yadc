@@ -131,9 +131,9 @@ def caption(dataset_path: str):
 
     print('Loading model...')
 
-    from yadc.captioners.api import OpenAIEndpointCaptioner
+    from yadc.captioners.api import OpenAICaptioner
 
-    model = OpenAIEndpointCaptioner(
+    model = OpenAICaptioner(
         api_url=dataset_toml.api.url,
         api_token=dataset_toml.api.url,
         prompt_template=dataset_toml.settings.prompt_template,
@@ -145,7 +145,7 @@ def caption(dataset_path: str):
     try:
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
-        print(f'Error: bad model configuration: {e}')
+        print(f'Error: failed to load model: {e}')
         return 1
 
     print('')

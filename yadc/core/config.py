@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pydantic
 
 from .dataset import DatasetImage

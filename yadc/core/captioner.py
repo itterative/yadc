@@ -1,9 +1,11 @@
+import abc
+from typing import Generator
+
 import jinja2
 import pathlib
 import pydantic
-from importlib import resources
 
-from typing import Generator
+from importlib import resources
 
 from yadc.core.dataset import DatasetImage
 import yadc.templates
@@ -12,7 +14,7 @@ class CaptionerRound(pydantic.BaseModel):
     iteration: int
     caption: str
 
-class Captioner:
+class Captioner(abc.ABC):
     def __init__(self, **kwargs):
         self._prompt_template_name: str = kwargs.pop('prompt_template_name', 'default.jinja')
         self._prompt_template: str = kwargs.pop('prompt_template', '').strip()
@@ -109,17 +111,22 @@ class Captioner:
 
         return system_prompt, user_prompt
 
+    @abc.abstractmethod
     def load_model(self, model_repo: str, **kwargs) -> None:
         raise NotImplemented
-    
+
+    @abc.abstractmethod
     def unload_model(self) -> None:
         raise NotImplemented
 
+    @abc.abstractmethod
     def offload_model(self) -> None:
         raise NotImplemented
 
+    @abc.abstractmethod
     def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str]':
         raise NotImplemented
 
+    @abc.abstractmethod
     def predict(self, image: DatasetImage, **kwargs) -> str:
         raise NotImplemented
