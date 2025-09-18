@@ -1,4 +1,8 @@
 # Release History
+## 0.2.1 (pre-release)
+
+- Gemini thinking config fix
+
 ## 0.2.0 (pre-release)
 
 - Gemini API support
