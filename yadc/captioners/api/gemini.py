@@ -189,7 +189,7 @@ class GeminiCaptioner(Captioner):
         }
 
         if self._is_thinking_model:
-            conversation['thinkingConfig'] = {
+            conversation['generationConfig']['thinkingConfig'] = {
                 'includeThoughts': False,
                 'thinkingBudget': 0,
             }
