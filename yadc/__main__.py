@@ -2,10 +2,13 @@ import argparse
 import functools
 
 def main():
+    from yadc.core import logging
     from yadc import cli, cli_config
 
     parser = argparse.ArgumentParser(prog='yadc', description='Yet Another Dataset Captioner')
     parser.set_defaults(_action='help', _subaction='default')
+
+    parser.add_argument('--log-level', help='Set the logging level', type=str, default='info', choices=['info', 'warning', 'error', 'debug'])
 
     subparser = parser.add_subparsers(dest='command')
 
@@ -44,6 +47,8 @@ def main():
         args = parser.parse_args()
     except argparse.ArgumentError:
         return 2
+
+    logging.set_level(args.log_level)
 
     if not hasattr(args, '_action') or not hasattr(args, '_subaction'):
         parser.print_help()

@@ -9,10 +9,13 @@ from enum import Enum
 from urllib.parse import urlparse
 from PIL import Image
 
+from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
 from .types import OpenAIModelsResponse, KoboldAdminSettingsReponse, KoboldAdminReloadModelReponse, KoboldAdminCurrentModelResponse
+
+_logger = logging.get_logger(__name__)
 
 class APITypes(str, Enum):
     OPENAI = 'openai'
@@ -61,12 +64,12 @@ class OpenAICaptioner(Captioner):
         if self._api_token:
             session_headers['Authorization'] = f'Bearer {self._api_token}'
         else:
-            print(f'Warning: no api_token is set, requests will fail if api uses authentication')
+            _logger.warning('Warning: no api_token is set, requests will fail if api uses authentication')
 
         self._session = Session(self._api_url, headers=session_headers)
 
         self._api_type = self._infer_api_type()
-        print(f'API set to {self._api_type}.')
+        _logger.info('API set to %s.', self._api_type)
 
     def _infer_api_type(self):
         # early exit
@@ -114,7 +117,7 @@ class OpenAICaptioner(Captioner):
         except requests.exceptions.ConnectionError:
             raise ValueError(f'api unavailable: {self._api_url}')
         
-        print(f'Model set to {self._current_model}.')
+        _logger.info('Model set to %s.', self._current_model)
 
     def _load_model_openai(self, model_repo: str):
         if self._current_model == model_repo:
@@ -382,7 +385,7 @@ class OpenAICaptioner(Captioner):
 
                     line_json = json.loads(line)
                 except json.JSONDecodeError as e:
-                    print(f'Warning: failed to decode line: {line}')
+                    _logger.warning('Warning: failed to decode line: %s', line)
                     continue
 
                 try:
@@ -403,7 +406,7 @@ class OpenAICaptioner(Captioner):
                             assert isinstance(content, str), "bad content"
                             yield content
                 except AssertionError as e:
-                    print(f'Error: failed to process line: {e}: {line}')
+                    _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
 
 

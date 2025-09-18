@@ -7,8 +7,11 @@ import pydantic
 
 from importlib import resources
 
+from yadc.core import logging
 from yadc.core.dataset import DatasetImage
 import yadc.templates
+
+_logger = logging.get_logger(__name__)
 
 class CaptionerRound(pydantic.BaseModel):
     iteration: int
@@ -101,13 +104,13 @@ class Captioner(abc.ABC):
         user_prompt = user_prompt.strip()
 
         if kwargs.get('debug_prompt', False):
-            print('')
-            print('SYSTEM PROMPT ---------')
-            print(system_prompt)
-            print('USER PROMPT -----------')
-            print(user_prompt)
-            print('------------------------')
-            print('')
+            _logger.debug('')
+            _logger.debug('SYSTEM PROMPT ---------')
+            _logger.debug(system_prompt)
+            _logger.debug('USER PROMPT -----------')
+            _logger.debug(user_prompt)
+            _logger.debug('------------------------')
+            _logger.debug('')
 
         return system_prompt, user_prompt
 

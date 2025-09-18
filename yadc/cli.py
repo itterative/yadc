@@ -10,15 +10,17 @@ from time import time
 
 import readline # enables better input on unix
 
+from yadc.core import logging
 from yadc.core.config import Config
-from yadc.core.user_config import UserConfig, UserConfigApi
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
 
 from yadc.cli_config import load_config
 
+_logger = logging.get_logger(__name__)
+
 def caption(dataset_path: str):
-    print(f'Using python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.')
+    _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     user_config = load_config()
 
@@ -46,7 +48,7 @@ def caption(dataset_path: str):
             path = pathlib.Path(path)
 
             if not path.is_dir():
-                print(f'Warning: path {path} is not a directory')
+                _logger.warning('Warning: path %s is not a directory', path)
                 continue
 
             for file_path in path.iterdir():
@@ -57,14 +59,14 @@ def caption(dataset_path: str):
                     continue
 
                 if not dataset_image.toml_path.exists():
-                    print(f'Warning: path {file_path} has no toml')
+                    _logger.warning('Warning: path %s has no toml', file_path)
                     dataset_image_toml = {}
                 else:
                     try:
                         with open(dataset_image.toml_path, 'r') as f:
                             dataset_image_toml = toml.load(f)
                     except:
-                        print(f'Warning: path {file_path} contains an invalid toml')
+                        _logger.warning('Warning: path %s contains an invalid toml', file_path)
                         continue
 
                 dataset_image_toml['path'] = str(dataset_image.absolute_path)
@@ -99,10 +101,10 @@ def caption(dataset_path: str):
             existing_dataset_image.caption = dataset_image.caption or existing_dataset_image.caption
 
     except FileNotFoundError:
-        print(f'Error loading {dataset_path}: file not found')
+        _logger.error('Error loading %s: file not found', dataset_path)
         return 1
     except ValueError as e:
-        print(f'Error loading {dataset_path}: {e}')
+        _logger.error('Error loading %s: %s', dataset_path, e)
         return 1
 
     if dataset_toml.settings.hf_token:
@@ -120,16 +122,16 @@ def caption(dataset_path: str):
 
         dataset_to_do.append(dataset_image)
 
-    print(f'Found {len(dataset)} images.')
+    _logger.info('Found %d images.', len(dataset))
 
     if skipped_from_dataset:
-        print(f'Skipped {skipped_from_dataset} images.')
+        _logger.info('Skipped %d images.', skipped_from_dataset)
 
     if len(dataset_to_do) == 0:
-        print('Nothing to do.')
+        _logger.info('Nothing to do.')
         sys.exit(0)
 
-    print('Loading model...')
+    _logger.info('Loading model...')
 
     from yadc.captioners.api import APICaptioner
 
@@ -145,11 +147,11 @@ def caption(dataset_path: str):
     try:
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
-        print(f'Error: failed to load model: {e}')
+        _logger.error('Error: failed to load model: %s', e)
         return 1
 
-    print('')
-    print('Captioning...')
+    _logger.info('')
+    _logger.info('Captioning...')
 
     def prompt_for_yes(prompt: str, default: bool = False) -> bool:
         if not dataset_toml.interactive:
@@ -201,20 +203,22 @@ def caption(dataset_path: str):
         print('Path:', dataset_image.path)
 
         for key, value in (dataset_image.__pydantic_extra__ or {}).items():
-            print(f'{key.capitalize()}:', value)
+            _logger.info('%s: %s', key.capitalize(), value)
 
         if caption := dataset_image.read_caption():
-            print('Caption:')
-            print(caption)
+            _logger.info('Caption:')
+            _logger.info(caption)
+            _logger.info('------------')
+            _logger.info('')
 
     for i_dataset_image, dataset_image in enumerate(dataset_to_do):
         if do_quit:
             break
 
         if do_print_separator:
-            print('')
-            print('------------')
-            print('')
+            _logger.info('')
+            _logger.info('------------')
+            _logger.info('')
         else:
             do_print_separator = True
 
@@ -264,7 +268,7 @@ def caption(dataset_path: str):
                             f.write(dataset_image_tmp.dump_toml())
 
                         if 'EDITOR' not in os.environ:
-                            print(f'Warning: no EDITOR environment variable is set. Edit the file {f.name} before proceeding.')
+                            _logger.warning('Warning: no EDITOR environment variable is set. Edit the file %s before proceeding.', f.name)
 
                         do_edit = True
                         while do_edit:
@@ -278,7 +282,7 @@ def caption(dataset_path: str):
                                 write_status = subprocess.call(f'{editor} {tmp_file}', shell=True)
 
                                 if write_status != 0:
-                                    print('Warning: editor exitted with non-zero status.')
+                                    _logger.warning('Warning: editor exitted with non-zero status.')
 
                                     if prompt_for_yes('Abort?', default=False):
                                         break
@@ -287,7 +291,7 @@ def caption(dataset_path: str):
                                 try:
                                     dataset_image_toml = toml.load(f)
                                 except:
-                                    print('Warning: toml is not valid')
+                                    _logger.warning('Warning: toml is not valid')
 
                                     if not prompt_for_yes('Retry?', default=True):
                                         break
@@ -300,7 +304,7 @@ def caption(dataset_path: str):
 
                                     dataset_image_tmp = DatasetImage(**dataset_image_toml)
                                 except Exception as e:
-                                    print('Warning: toml is not valid:', e)
+                                    _logger.warning('Warning: toml is not valid:', e)
 
                                     if not prompt_for_yes('Retry?', default=True):
                                         break
@@ -313,7 +317,7 @@ def caption(dataset_path: str):
                             break
 
                     caption_rounds = []
-                    print('Dataset image toml was updated.')
+                    _logger.info('Dataset image toml was updated.')
                     continue
 
                 case 'print':
@@ -328,16 +332,16 @@ def caption(dataset_path: str):
 
             if dataset_toml.rounds <= 1:
                 caption = []
-                print('')
+                _logger.info('')
                 start_t = time()
                 for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
                     caption.append(token)
                     print(token, end='', flush=True)
                 end_t = time()
+                print('')
 
-                print('')
-                print(f'Captioning done ({(end_t-start_t):.3f} sec)')
-                print('')
+                _logger.info('Captioning done (%.3f sec)', end_t - start_t)
+                _logger.info('')
 
                 caption = ''.join(caption).strip()
             else:
@@ -346,7 +350,7 @@ def caption(dataset_path: str):
                 if caption_rounds:
                     j = dataset_toml.rounds
                 else:
-                    print(f'Doing {dataset_toml.rounds} rounds...')
+                    _logger.info('Doing %d rounds...', dataset_toml.rounds)
 
                 while j < dataset_toml.rounds:
                     j +=1
@@ -362,9 +366,9 @@ def caption(dataset_path: str):
                         caption_rounds_debug = False
 
                         if dataset_toml.interactive:
-                            print(new_caption)
+                            _logger.info(new_caption)
 
-                        print(f'Round #{j} done. ({(end_t-start_t):.3f}s)')
+                        _logger.info('Round #%d done. (%.3f ssec)', j, end_t - start_t)
 
                         if not prompt_for_yes('Accept caption?', default=True):
                             j -= 1
@@ -375,16 +379,16 @@ def caption(dataset_path: str):
 
                 caption = []
 
-                print('')
+                _logger.info('')
                 start_t = time()
                 for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
                     caption.append(token)
                     print(token, end='', flush=True)
                 end_t = time()
+                print('')
 
-                print('')
-                print(f'End round done. ({(end_t-start_t):.3f} sec)')
-                print('')
+                _logger.info('End round done. (%.3f sec)', end_t - start_t)
+                _logger.info('')
 
                 caption = ''.join(caption).strip()
 
@@ -400,8 +404,8 @@ def caption(dataset_path: str):
 
         caption = ''
 
-        print('')
+        _logger.info('')
 
-    print('Done.')
+    _logger.info('Done.')
 
     return 0

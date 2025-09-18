@@ -8,10 +8,13 @@ import requests
 from enum import Enum
 from PIL import Image
 
+from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
 from .types import GeminiModelsResponse, GeminiModel
+
+_logger = logging.get_logger(__name__)
 
 class APITypes(str, Enum):
     BASE = 'base'
@@ -60,7 +63,7 @@ class GeminiCaptioner(Captioner):
                 
                 self._is_thinking_model = model.thinking
                 self._current_model = model.name.removeprefix('models/')
-                print(f'Model set to {self._current_model}.')
+                _logger.info('Model set to %s.', self._current_model)
 
                 return
 
@@ -104,7 +107,7 @@ class GeminiCaptioner(Captioner):
 
             raise ValueError(f'model not found: {model_repo}; no models available')
         
-        print(f'Model set to {self._current_model}.')
+        _logger.info('Model set to %s.', self._current_model)
 
     def unload_model(self) -> None:
         pass
@@ -206,7 +209,7 @@ class GeminiCaptioner(Captioner):
             try:
                 conversation_resp.raise_for_status()
             except requests.exceptions.HTTPError as e:
-                print('body:', e.response.text)
+                _logger.debug('HTTP request failed. Body: %s', e.response.text)
                 raise
 
             conversation_stopped = False
@@ -226,7 +229,7 @@ class GeminiCaptioner(Captioner):
 
                     line_json = json.loads(line.lstrip())
                 except json.JSONDecodeError as e:
-                    print(f'Warning: failed to decode line: {line}')
+                    _logger.warning('Warning: failed to decode line: %s', line)
                     continue
 
                 try:
@@ -257,7 +260,7 @@ class GeminiCaptioner(Captioner):
 
                             yield part_text
                 except AssertionError as e:
-                    print(f'Error: failed to process line: {e}: {line}')
+                    _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
 
     def predict(self, image: DatasetImage, **kwargs):
