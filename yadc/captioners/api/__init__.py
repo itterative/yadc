@@ -1,1 +1,1 @@
-from .openapi import OpenAICaptioner
+from .openai import OpenAICaptioner
