@@ -206,7 +206,7 @@ class GeminiCaptioner(Captioner):
         return conversation
    
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "no model loaded"
 
         conversation = self.conversation(image, **kwargs)
@@ -274,19 +274,51 @@ class GeminiCaptioner(Captioner):
                 conversation_error += '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
                 conversation_error = conversation_error.strip()
 
-                try:
-                    conversation_error_json = json.loads(conversation_error)
-                    assert isinstance(conversation_error_json, dict)
+                # override the response
+                raise ValueError(-1, conversation_error)
 
-                except json.JSONDecodeError|AssertionError as e:
-                    raise ValueError(f'failed to process response: api not working as intended: {conversation_error}')
+    def _generate_prediction(self, image: DatasetImage, **kwargs):
+        try:
+            yield from self._generate_prediction_inner(image, **kwargs)
+            return
+        except ValueError as e:
+            # TODO: better exception here
+            error_code = f'sse {e.args[0]}'
+            response_text = e.args[1]
+        except requests.HTTPError as e:
+            error_code = f'http {e.response.status_code}'
+            response_text = e.response.text
 
-                try:
-                    error = GeminiErrorResponse(**conversation_error_json).error
+        error_status = ''
+        error_message = 'unknown error'
 
-                    raise ValueError(f'api returned an error ({error.code} {error.status}): {error.message}')
-                except pydantic.ValidationError:
-                    raise ValueError(f'failed to process response: api not working as intended: {conversation_error}')
+        try:
+            conversation_error_json = json.loads(response_text)
+            assert isinstance(conversation_error_json, dict)
+
+            error_response = GeminiErrorResponse(**conversation_error_json).error
+
+            error_code = str(error_response.code)
+            error_status = error_response.status
+            error_message = error_response.message
+        except:
+            _logger.warning('Warning: failed to process http error: %s', response_text)
+
+        # some defaults if response cannot be processed
+        if not error_message:
+            match error_code:
+                case 400: error_message = 'request could not be completed'
+                case 401: error_message = 'authentication failure'
+                case 402: error_message = 'not enough api credits; payment needed'
+                case 429: error_message = 'overloaded'
+                case 502: error_message = 'unavailable'
+                case 503: error_message = 'unavailable'
+                case _: error_message = 'unknown error'
+
+        if not error_status:
+            raise ValueError(f'api returned an error ({error_code}): {error_message}')
+
+        raise ValueError(f'api returned an error ({error_status} {error_code}): {error_message}')
 
 
     def predict(self, image: DatasetImage, **kwargs):

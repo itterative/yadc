@@ -26,6 +26,13 @@ class _OpenAIStreamingChoice(pydantic.BaseModel):
 class _OpenAIStreamingChoiceDelta(pydantic.BaseModel):
     content: str = ''
 
+class OpenAIErrorResponse(pydantic.BaseModel):
+    error: '_OpenAIError'
+
+class _OpenAIError(pydantic.BaseModel):
+    code: int
+    message: str
+
 class GeminiModelsResponse(pydantic.BaseModel):
     models: list['GeminiModel']
     nextPageToken: Optional[str] = None

@@ -18,6 +18,7 @@ from .session import Session
 from .types import (
     OpenAIModelsResponse,
     OpenAIStreamingResponse,
+    OpenAIErrorResponse,
     KoboldAdminSettingsReponse,
     KoboldAdminReloadModelReponse,
     KoboldAdminCurrentModelResponse,
@@ -340,7 +341,7 @@ class OpenAICaptioner(Captioner):
             },
         ]
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "model not loaded"
 
         temperature = kwargs.pop('temperature', 0.8)
@@ -408,6 +409,40 @@ class OpenAICaptioner(Captioner):
                 except AssertionError as e:
                     _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
+
+    def _generate_prediction(self, image: DatasetImage, **kwargs):
+        try:
+            yield from self._generate_prediction_inner(image, **kwargs)
+            return
+        except requests.HTTPError as e:
+            error_code = f'http {e.response.status_code}'
+            error_message = ''
+
+            try:
+                response_json = e.response.json()
+                assert isinstance(response_json, dict)
+
+                error_response = OpenAIErrorResponse(**response_json).error
+
+                error_code = f'api {error_response.code}'
+                error_message = error_response.message
+            except:
+                _logger.warning('Warning: failed to process http error: %s', e.response.text)
+
+        # some defaults if response cannot be processed
+        if not error_message:
+            match error_code:
+                case 400: error_message = 'request could not be completed'
+                case 401: error_message = 'authentication failure'
+                case 402: error_message = 'not enough api credits; payment needed'
+                case 429: error_message = 'overloaded'
+                case 502: error_message = 'unavailable'
+                case 503: error_message = 'unavailable'
+                case _: error_message = 'unknown error'
+
+            raise ValueError(f'api returned an error ({error_code}): {error_message}')
+
+        raise ValueError(f'api returned an error ({error_code}): {error_message}')
 
 
     def predict(self, image: DatasetImage, **kwargs):
