@@ -58,7 +58,7 @@ class Session:
             yield response
 
     def get(self, path: str, **kwargs):
-        return self.request(path, **kwargs)
-    
+        return self.request('GET', path, **kwargs)
+
     def post(self, path: str, **kwargs):
-        return self.request(path, **kwargs)
+        return self.request('POST', path, **kwargs)
