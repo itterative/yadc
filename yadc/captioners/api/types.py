@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import pydantic
 
@@ -11,6 +11,16 @@ class OpenAIModel(pydantic.BaseModel):
     object: Literal['model']
     owned_by: str = ''
 
+class GeminiModelsResponse(pydantic.BaseModel):
+    models: list['GeminiModel']
+    nextPageToken: Optional[str] = None
+
+class GeminiModel(pydantic.BaseModel):
+    name: str
+    version: str
+    displayName: str
+    supportedGenerationMethods: list[str]
+    thinking: bool = False
 
 class KoboldAdminCurrentModelResponse(pydantic.BaseModel):
     result: str

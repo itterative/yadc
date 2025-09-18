@@ -131,9 +131,9 @@ def caption(dataset_path: str):
 
     print('Loading model...')
 
-    from yadc.captioners.api import OpenAICaptioner
+    from yadc.captioners.api import APICaptioner
 
-    model = OpenAICaptioner(
+    model = APICaptioner(
         api_url=dataset_toml.api.url,
         api_token=dataset_toml.api.token,
         prompt_template=dataset_toml.settings.prompt_template,
