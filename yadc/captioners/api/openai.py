@@ -29,27 +29,29 @@ _logger = logging.get_logger(__name__)
 
 class APITypes(str, Enum):
     OPENAI = 'openai'
+    OPENROUTER = 'openrouter'
     KOBOLDCPP = 'koboldcpp'
+    VLLM = 'vllm'
+    OLLAMA = 'ollama'
 
     def __str__(self) -> str:
         return self.value
     
     @property
     def max_image_size(self):
-        if self == APITypes.OPENAI:
-            return (1024, 1024)
-        else:
-            return (1536, 1536) # slightly increased for local backends
+        match self:
+            case APITypes.OPENAI: return (1024, 1024)
+            case APITypes.OPENROUTER: return (1024, 1024)
+            case _: return (1536, 1536) # slightly increased for local backends
     
     @property
     def max_image_encoded_size(self):
-        if self == APITypes.OPENAI:
-            return 10 * 1024 * 1024
-        else:
-            return 100 * 1024 * 1024 # increased size for local backends
+        match self:
+            case APITypes.OPENAI: return 10 * 1024 * 1024
+            case APITypes.OPENROUTER: return 10 * 1024 * 1024
+            case _: return 25 * 1024 * 1024 # slightly increased for local backends
 
 class OpenAICaptioner(Captioner):
-    _api_type: APITypes|None = None
     _current_model: str|None = None
 
     def __init__(self, **kwargs):
@@ -83,13 +85,28 @@ class OpenAICaptioner(Captioner):
 
     def _infer_api_type(self):
         # early exit
+
         if self._api_url.startswith('https://api.openai.com'):
             return APITypes.OPENAI
+        
+        if self._api_url.startswith('https://openrouter.ai'):
+            return APITypes.OPENROUTER
+
+        # NOTE: might be worth to infer based on the model list
+        # 
+        # kobold: models are prefixed with 'koboldcpp/'
+        #         and owned_by set to 'koboldcpp'
+        # vllm: owned_by set to 'vllm'
+        # ollama: owned_by set to ollama user or 'library'
 
         try:
+            # koboldcpp has well defined endpoint
+            #
+            # reference: https://lite.koboldai.net/koboldcpp_api#/serviceinfo/get__well_known_serviceinfo
+
             with self._session.get('/.well-known/serviceinfo') as koboldcpp_resp:
                 assert koboldcpp_resp.ok
-            
+
                 koboldcpp_json = koboldcpp_resp.json()
                 assert isinstance(koboldcpp_json, dict)
 
@@ -98,9 +115,50 @@ class OpenAICaptioner(Captioner):
                 assert koboldcpp_service_info.software.name.lower() == 'koboldcpp'
 
                 return APITypes.KOBOLDCPP
-        except requests.exceptions.ConnectionError:
-            raise
-        except AssertionError|pydantic.ValidationError:
+        except AssertionError|pydantic.ValidationError|requests.exceptions.JSONDecodeError:
+            pass
+
+        # the following aren't very good checks (might not work in the future)
+
+        try:
+            # vllm doesn't list their apis clearly
+            # so, check for some found in their code
+            #
+            # /ping: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L365
+            # /version: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L465
+
+            with self._session.get('/ping') as vllm_resp:
+                assert vllm_resp.ok
+
+            with self._session.post('/ping') as vllm_resp:
+                assert vllm_resp.ok
+
+            with self._session.get('/version') as vllm_resp:
+                assert vllm_resp.ok
+
+                vllm_json = vllm_resp.json()
+                assert isinstance(vllm_json, dict)
+                assert 'version' in vllm_json
+
+            return APITypes.VLLM
+        except AssertionError|requests.JSONDecodeError:
+            pass
+
+        try:
+            # ollama doesn't have a well defined endpoint
+            # so just use one that their docs
+            #
+            # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
+
+            with self._session.get('/api/version') as ollama_resp:
+                assert ollama_resp.ok
+
+                ollama_json = ollama_resp.json()
+                assert isinstance(ollama_json, dict)
+                assert 'version' in ollama_json
+
+            return APITypes.OLLAMA
+        except AssertionError|requests.JSONDecodeError:
             pass
 
         return APITypes.OPENAI
@@ -108,15 +166,10 @@ class OpenAICaptioner(Captioner):
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         try:
-            match self._api_type:
-                case APITypes.OPENAI:
-                    self._load_model_openai(model_repo)
-
-                case APITypes.KOBOLDCPP:
-                    self._load_model_koboldcpp(model_repo)
-
-                case _:
-                    raise ValueError(f'unknown api type: {self._api_type}')
+            if self._api_type == APITypes.KOBOLDCPP:
+                self._load_model_koboldcpp(model_repo)
+            else:
+                self._load_model_openai(model_repo)
         except requests.exceptions.ConnectionError:
             raise ValueError(f'api unavailable: {self._api_url}')
         
@@ -245,16 +298,12 @@ class OpenAICaptioner(Captioner):
 
 
     def unload_model(self):
-        match self._api_type:
-            case APITypes.OPENAI:
-                pass
-
-            case APITypes.KOBOLDCPP:
+        try:
+            if self._api_type == APITypes.KOBOLDCPP:
                 with self._session.post('/api/admin/reload_config', json={"filename": "unload_model"}) as unload_model_resp:
                     assert unload_model_resp.ok
-
-            case _:
-                raise ValueError(f'unknown api type: {self._api_type}')
+        except AssertionError as e:
+            raise ValueError("failed to unload model") from e
 
     def offload_model(self):
         pass
@@ -301,69 +350,61 @@ class OpenAICaptioner(Captioner):
     def conversation(self, image: DatasetImage, **kwargs):
         system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
 
-        match self._api_type:
-            case APITypes.KOBOLDCPP:
-                pass
-
-            case APITypes.OPENAI:
-                pass
-
-            case _:
-                raise ValueError(f'unknown api type: {self._api_type}')
-            
         mime_type, encoded_image = self.encode_image(image, **kwargs)
-
-        return [
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": system_prompt,
-                    },
-                ]
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{encoded_image}",
-                        },
-                        "detail": self._image_quality,
-                    },
-                    {
-                        "type": "text",
-                        "text": user_prompt,
-                    },
-                ],
-            },
-        ]
-
-    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
-        assert self._current_model, "model not loaded"
 
         temperature = kwargs.pop('temperature', 0.8)
         top_p = kwargs.pop('top_p', 0.9)
         top_k = kwargs.pop('top_k', 64)
         max_tokens = kwargs.pop('max_new_tokens', 512)
 
-        conversation: dict = dict(
-            model=self._current_model,
-            metadata={ 'topic': 'yadt:caption' },
-            messages=self.conversation(image, **kwargs),
-            temperature=temperature,
-            stream=True,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            top_k=top_k,
-            store=self._store_conversation,
-        )
+        conversation = {
+            'model': self._current_model,
+            'metadata': { 'topic': 'yadt:caption' },
+            'temperature': temperature,
+            'stream': True,
+            'max_tokens': max_tokens,
+            'top_p': top_p,
+            'top_k': top_k,
+            'store': self._store_conversation,
+            'messages': [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": system_prompt,
+                        },
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{encoded_image}",
+                            },
+                            "detail": self._image_quality,
+                        },
+                        {
+                            "type": "text",
+                            "text": user_prompt,
+                        },
+                    ],
+                },
+            ],
+        }
 
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
         if self._api_type == APITypes.KOBOLDCPP:
             conversation['stop'] = ['<|im_end|>']
+
+        return conversation
+
+    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
+        assert self._current_model, "model not loaded"
+
+        conversation = self.conversation(image, **kwargs)
 
         with self._session.post('/v1/chat/completions', stream=True, json=conversation) as converation_resp:
             converation_resp.raise_for_status()
