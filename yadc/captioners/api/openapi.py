@@ -6,8 +6,8 @@ import io
 import base64
 
 from enum import Enum
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
+from PIL import Image
 
 from yadc.core import Captioner, DatasetImage
 
@@ -20,6 +20,20 @@ class APITypes(str, Enum):
 
     def __str__(self) -> str:
         return self.value
+    
+    @property
+    def max_image_size(self):
+        if self == APITypes.OPENAI:
+            return (1024, 1024)
+        else:
+            return (1536, 1536) # slightly increased for local backends
+    
+    @property
+    def max_image_encoded_size(self):
+        if self == APITypes.OPENAI:
+            return 10 * 1024 * 1024
+        else:
+            return 100 * 1024 * 1024 # increased size for local backends
 
 class OpenAICaptioner(Captioner):
     _api_type: APITypes|None = None
@@ -50,6 +64,9 @@ class OpenAICaptioner(Captioner):
             print(f'Warning: no api_token is set, requests will fail if api uses authentication')
 
         self._session = Session(self._api_url, headers=session_headers)
+
+        self._api_type = self._infer_api_type()
+        print(f'API set to {self._api_type}.')
 
     def _infer_api_type(self):
         # early exit
@@ -85,9 +102,6 @@ class OpenAICaptioner(Captioner):
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         try:
-            self._api_type = self._infer_api_type()
-            print(f'API set to {self._api_type}.')
-
             match self._api_type:
                 case APITypes.OPENAI:
                     self._load_model_openai(model_repo)
@@ -239,11 +253,47 @@ class OpenAICaptioner(Captioner):
     def offload_model(self):
         pass
 
-    def conversation(self, image: DatasetImage, **kwargs):
-        system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
+    def encode_image(self, image: DatasetImage, **kwargs):
+        assert self._api_type, f"encode_image called without a known api_type"
+
+        call_depth = kwargs.pop('call_depth', 0)
+        assert isinstance(call_depth, int), f"encode_image called with bad call_depth type: {type(call_depth)}"
+        assert call_depth < 5, f"encode_image reached maximum call depth"
+
+        image_format = kwargs.pop('image_format', 'PNG')
+        assert isinstance(image_format, str), f"encode_image called with bad image_format type: {type(image_format)}"
+
+        image_format = image_format.upper()
+        assert image_format in ('JPEG', 'PNG'), f"encode_image called with bad image_format: only JPEG or PNG is allowed"
+
+        image_quality = kwargs.pop('image_quality', None)
+        assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
+        assert image_quality > 10 and image_quality <= 100, f"encode_image called with bad image_quality: {image_quality}"
 
         buffer = io.BytesIO()
-        image.read_image().save(buffer, format="PNG")
+        image_obj = image.read_image()
+
+        # resize image if too large
+        image_obj.thumbnail(self._api_type.max_image_size, Image.Resampling.LANCZOS)
+
+        if image_format == 'JPEG' and image_obj.mode in ('RGBA', 'LA'):
+            image_composite = Image.new('RGB', image_obj.size, (255, 255, 255))
+            image_composite.paste(image_obj, mask=image_obj.split()[-1])
+            image_obj = image_composite
+
+        image_obj.save(buffer, format=image_format)
+        encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        if len(encoded_image) > self._api_type.max_image_encoded_size:
+            # start at lossless, then degrade with each iteration
+            image_quality = 100 if image_quality is None else image_quality - 10
+
+            return self.encode_image(image, image_format='JPEG', call_depth=call_depth+1, image_quality=image_quality, **kwargs)
+
+        return f'image/{image_format.lower()}', base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+    def conversation(self, image: DatasetImage, **kwargs):
+        system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
 
         match self._api_type:
             case APITypes.KOBOLDCPP:
@@ -254,6 +304,8 @@ class OpenAICaptioner(Captioner):
 
             case _:
                 raise ValueError(f'unknown api type: {self._api_type}')
+            
+        mime_type, encoded_image = self.encode_image(image, **kwargs)
 
         return [
             {
@@ -271,7 +323,7 @@ class OpenAICaptioner(Captioner):
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}",
+                            "url": f"data:{mime_type};base64,{encoded_image}",
                         },
                         "detail": self._image_quality,
                     },
