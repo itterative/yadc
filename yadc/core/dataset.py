@@ -67,9 +67,15 @@ class DatasetImage(BaseModel):
         self.caption = caption
 
     def _serialize_toml_history(self):
-        buffer = self.dump_toml().strip()
+        buffer = self.dump_toml(with_caption=True).strip()
         buffer += '\n----------\n'
         return buffer
 
-    def dump_toml(self):
-        return toml.dumps(self.__pydantic_extra__ or {})
+    def dump_toml(self, with_caption: bool = False):
+        toml_dict = self.__pydantic_extra__ or {}
+
+        if with_caption:
+            toml_dict['caption'] = self.caption
+        
+        return toml.dumps(toml_dict)
+
