@@ -15,7 +15,7 @@ ALL_KEYS = [
 ]
 
 # flag for enabling user config
-FLAG_USER_CONFIG = True # disabled, needs further testing
+FLAG_USER_CONFIG = False # disabled, needs further testing
 
 def _load_config_toml() -> dict:
     config_path = platformdirs.user_config_path(APP_NAME) / CONFIG_NAME
