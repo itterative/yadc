@@ -1,4 +1,10 @@
 # Release History
+## 0.2.2 (pre-release)
+
+- Types for streamed responses
+- Improve error handling in streamed responsed
+- Improved logging
+
 ## 0.2.1 (pre-release)
 
 - Gemini thinking config fix
