@@ -135,7 +135,7 @@ def caption(dataset_path: str):
 
     model = OpenAICaptioner(
         api_url=dataset_toml.api.url,
-        api_token=dataset_toml.api.url,
+        api_token=dataset_toml.api.token,
         prompt_template=dataset_toml.settings.prompt_template,
         prompt_template_name=dataset_toml.settings.prompt_template_path,
         store_conversation=dataset_toml.settings.store_conversation,
