@@ -395,6 +395,9 @@ class OpenAICaptioner(Captioner):
                     assert isinstance(line_json, dict), "not a dict"
                     line_response = OpenAIStreamingResponse(**line_json)
 
+                    if error := line_response.error:
+                        raise ValueError(f'api returned an error ({error.code}): {error.message}')
+
                     for choice in line_response.choices:
                         if content := choice.delta.content:
                             yield content

@@ -12,10 +12,16 @@ class OpenAIModel(pydantic.BaseModel):
     owned_by: str = ''
 
 class OpenAIStreamingResponse(pydantic.BaseModel):
+    error: Optional['_OpenAIStreamingError'] = None
     choices: list['_OpenAIStreamingChoice'] = []
+
+class _OpenAIStreamingError(pydantic.BaseModel):
+    code: str
+    message: str
 
 class _OpenAIStreamingChoice(pydantic.BaseModel):
     delta: '_OpenAIStreamingChoiceDelta'
+    finish_reason: Optional[str] = None
 
 class _OpenAIStreamingChoiceDelta(pydantic.BaseModel):
     content: str = ''
