@@ -16,7 +16,7 @@ If you want to use it as an executable, you can also install it directly using y
 
 ### Requirements
 * Python 3.11 (or later)
-* OpenAI compatible API (e.g. koboldcpp)
+* OpenAI compatible API (e.g. koboldcpp) or Gemini API
 
 ## Config
 
