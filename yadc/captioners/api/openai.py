@@ -268,7 +268,7 @@ class OpenAICaptioner(Captioner):
 
         image_quality = kwargs.pop('image_quality', None)
         assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
-        assert image_quality > 10 and image_quality <= 100, f"encode_image called with bad image_quality: {image_quality}"
+        assert image_quality is None or (image_quality > 10 and image_quality <= 100), f"encode_image called with bad image_quality: {image_quality}"
 
         buffer = io.BytesIO()
         image_obj = image.read_image()
