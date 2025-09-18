@@ -3,6 +3,7 @@
 [api]
 url = "https://api.openai.com"
 token = "your_openai_token_here"
+model = "gpt-5-mini"
 
 [dataset]
 paths = [ "path_1", "path_2" ]
