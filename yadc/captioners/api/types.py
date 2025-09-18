@@ -31,6 +31,14 @@ class GeminiModel(pydantic.BaseModel):
     supportedGenerationMethods: list[str]
     thinking: bool = False
 
+class GeminiErrorResponse(pydantic.BaseModel):
+    error: '_GeminiError'
+
+class _GeminiError(pydantic.BaseModel):
+    code: int
+    message: str
+    status: str
+
 class GeminiStreamingResponse(pydantic.BaseModel):
     candidates: list['_GeminiStreamingCandidate']
 

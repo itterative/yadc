@@ -16,6 +16,7 @@ from .session import Session
 from .types import (
     GeminiModelsResponse,
     GeminiModel,
+    GeminiErrorResponse,
     GeminiStreamingResponse,
 )
 
@@ -217,6 +218,7 @@ class GeminiCaptioner(Captioner):
                 _logger.debug('HTTP request failed. Body: %s', e.response.text)
                 raise
 
+            conversation_error = ''
             conversation_stopped = False
 
             for line in conversation_resp.iter_lines(decode_unicode=True):
@@ -234,6 +236,11 @@ class GeminiCaptioner(Captioner):
 
                     line_json = json.loads(line)
                 except json.JSONDecodeError as e:
+                    if line.startswith('{'):
+                        # likely json, try parsing outside
+                        conversation_error = line + '\n'
+                        break
+
                     _logger.warning('Warning: failed to decode line: %s', line)
                     continue
 
@@ -258,6 +265,24 @@ class GeminiCaptioner(Captioner):
                 except AssertionError as e:
                     _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
+
+            if conversation_error:
+                conversation_error += '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
+
+                try:
+                    conversation_error_json = json.loads(conversation_error)
+                    assert isinstance(conversation_error_json, dict)
+
+                except json.JSONDecodeError|AssertionError as e:
+                    raise ValueError(f'failed to process response: api not working as intended: {conversation_error}')
+
+                try:
+                    error = GeminiErrorResponse(**conversation_error_json).error
+
+                    raise ValueError(f'api returned an error ({error.code} {error.status}): {error.message}')
+                except pydantic.ValidationError:
+                    raise ValueError(f'failed to process response: api not working as intended: {conversation_error}')
+
 
     def predict(self, image: DatasetImage, **kwargs):
         return ''.join(list(self._generate_prediction(image, **kwargs)))
