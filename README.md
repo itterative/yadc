@@ -8,11 +8,11 @@ The easiest way to get started is using either [uv](https://github.com/astral-sh
 * clone the repo: `git clone --branch 0.1.0 https://github.com/itterative/yadc`
 * install venv: `uv venv` or `python3 -m venv .venv && . .venv/bin/activate`
 * install requirements: `uv sync` or `pip install -r requirements.txt`
-* run the captioner: `uv run --module yadc DATASET_TOML` or `python3 -m yadc DATASET_TOML`
+* run the captioner: `uv run --module yadc caption DATASET_TOML` or `python3 -m yadc caption DATASET_TOML`
 
 If you want to use it as an executable, you can also install it directly using you preferred method. Some examples:
-* with pipx, `pipx install git+https://github.com/itterative/yadc@0.2.1` then `yadc DATASET_TOML`
-* with uvx, `uv tool install git+https://github.com/itterative/yadc@0.2.1` then `yadc DATASET_TOML`
+* with pipx, `pipx install git+https://github.com/itterative/yadc@0.2.1` then `yadc caption DATASET_TOML`
+* with uvx, `uv tool install git+https://github.com/itterative/yadc@0.2.1` then `yadc caption DATASET_TOML`
 
 ### Requirements
 * Python 3.11 (or later)
