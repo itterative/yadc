@@ -376,6 +376,10 @@ class OpenAICaptioner(Captioner):
                     continue
 
                 try:
+                    # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
+                    if line.startswith(':'):
+                        continue
+
                     line = line.removeprefix('data:').strip()
 
                     if line == '[DONE]':
