@@ -8,14 +8,14 @@ from urllib.parse import urlparse, ParseResult
 
 
 class Session:
-    _pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')
-    _session: requests.Session|None = None
-
     def __init__(self, base_url: str, headers: dict[str, str]|None = None):
         self.base_url = urlparse(base_url)
         self.headers = headers or {}
 
         self.headers['User-Agent'] = self._user_agent
+
+        self._session = requests.Session()
+        self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')
 
     @property
     def _user_agent(self):
