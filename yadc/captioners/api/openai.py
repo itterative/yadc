@@ -1,6 +1,7 @@
 import time
 import json
 import requests
+import pydantic
 
 import io
 import base64
@@ -13,7 +14,15 @@ from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
-from .types import OpenAIModelsResponse, KoboldAdminSettingsReponse, KoboldAdminReloadModelReponse, KoboldAdminCurrentModelResponse
+
+from .types import (
+    OpenAIModelsResponse,
+    OpenAIStreamingResponse,
+    KoboldAdminSettingsReponse,
+    KoboldAdminReloadModelReponse,
+    KoboldAdminCurrentModelResponse,
+    KoboldServiceInfoResponse,
+)
 
 _logger = logging.get_logger(__name__)
 
@@ -82,22 +91,15 @@ class OpenAICaptioner(Captioner):
             
                 koboldcpp_json = koboldcpp_resp.json()
                 assert isinstance(koboldcpp_json, dict)
-                assert 'software' in koboldcpp_json
 
-                koboldcpp_sofware = koboldcpp_json['software']
-                assert isinstance(koboldcpp_sofware, dict)
-                assert 'name' in koboldcpp_sofware
+                koboldcpp_service_info = KoboldServiceInfoResponse(**koboldcpp_json)
 
-                koboldcpp_sofware_name = koboldcpp_sofware['name']
-                assert isinstance(koboldcpp_sofware_name, str)
-                assert koboldcpp_sofware_name.lower() == 'koboldcpp'
+                assert koboldcpp_service_info.software.name.lower() == 'koboldcpp'
 
                 return APITypes.KOBOLDCPP
         except requests.exceptions.ConnectionError:
             raise
-        except AssertionError:
-            raise
-        except Exception as e:
+        except AssertionError|pydantic.ValidationError:
             pass
 
         return APITypes.OPENAI
@@ -367,17 +369,14 @@ class OpenAICaptioner(Captioner):
 
             converation_stopped = False
 
-            for line in converation_resp.iter_lines():
-                assert isinstance(line, bytes)
+            for line in converation_resp.iter_lines(decode_unicode=True):
+                assert isinstance(line, str)
 
                 if not line or converation_stopped:
                     continue
 
                 try:
-                    line = line.decode('utf-8')
-
-                    if line.startswith('data:'):
-                        line = line[len('data:'):].lstrip()
+                    line = line.removeprefix('data:').strip()
 
                     if line == '[DONE]':
                         converation_stopped = True
@@ -390,21 +389,15 @@ class OpenAICaptioner(Captioner):
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    assert 'choices' in line_json, "no choices"
+                    line_response = OpenAIStreamingResponse(**line_json)
 
-                    line_json_choices = line_json['choices']
-                    assert isinstance(line_json_choices, list), "bad choices"
-
-                    for choice in line_json_choices:
-                        assert isinstance(choice, dict), "bad choice"
-                        assert 'delta' in choice, "no delta"
-
-                        choice_delta = choice['delta']
-                        assert isinstance(choice_delta, dict), "bad choice delta"
-
-                        if content := choice_delta.get('content', ''):
-                            assert isinstance(content, str), "bad content"
+                    for choice in line_response.choices:
+                        if content := choice.delta.content:
                             yield content
+                            break # only retrieve first choice
+                except pydantic.ValidationError:
+                    _logger.error('Error: failed to process line: not a stream response: %s', line)
+                    break
                 except AssertionError as e:
                     _logger.error('Error: failed to process line: %s: %s', e, line)
                     break

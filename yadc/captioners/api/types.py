@@ -11,6 +11,15 @@ class OpenAIModel(pydantic.BaseModel):
     object: Literal['model']
     owned_by: str = ''
 
+class OpenAIStreamingResponse(pydantic.BaseModel):
+    choices: list['_OpenAIStreamingChoice'] = []
+
+class _OpenAIStreamingChoice(pydantic.BaseModel):
+    delta: '_OpenAIStreamingChoiceDelta'
+
+class _OpenAIStreamingChoiceDelta(pydantic.BaseModel):
+    content: str = ''
+
 class GeminiModelsResponse(pydantic.BaseModel):
     models: list['GeminiModel']
     nextPageToken: Optional[str] = None
@@ -21,6 +30,24 @@ class GeminiModel(pydantic.BaseModel):
     displayName: str
     supportedGenerationMethods: list[str]
     thinking: bool = False
+
+class GeminiStreamingResponse(pydantic.BaseModel):
+    candidates: list['_GeminiStreamingCandidate']
+
+class _GeminiStreamingCandidate(pydantic.BaseModel):
+    content: '_GeminiStreamingCandidateContent'
+
+class _GeminiStreamingCandidateContent(pydantic.BaseModel):
+    parts: list['_GeminiStreamingCandidatePart']
+
+class _GeminiStreamingCandidatePart(pydantic.BaseModel):
+    text: str = ''
+
+class KoboldServiceInfoResponse(pydantic.BaseModel):
+    software: '_KoboldServiceInfoSoftware'
+
+class _KoboldServiceInfoSoftware(pydantic.BaseModel):
+    name: str
 
 class KoboldAdminCurrentModelResponse(pydantic.BaseModel):
     result: str

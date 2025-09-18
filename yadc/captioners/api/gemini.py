@@ -1,9 +1,9 @@
-from typing import Generator
+import json
+import requests
+import pydantic
 
 import io
-import json
 import base64
-import requests
 
 from enum import Enum
 from PIL import Image
@@ -12,7 +12,12 @@ from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
-from .types import GeminiModelsResponse, GeminiModel
+
+from .types import (
+    GeminiModelsResponse,
+    GeminiModel,
+    GeminiStreamingResponse,
+)
 
 _logger = logging.get_logger(__name__)
 
@@ -221,44 +226,35 @@ class GeminiCaptioner(Captioner):
                     continue
 
                 try:
-                    line = line.removeprefix('data:')
+                    line = line.removeprefix('data:').strip()
 
                     if line == '[DONE]':
                         conversation_stopped = True
                         continue
 
-                    line_json = json.loads(line.lstrip())
+                    line_json = json.loads(line)
                 except json.JSONDecodeError as e:
                     _logger.warning('Warning: failed to decode line: %s', line)
                     continue
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    assert 'candidates' in line_json, "no candidates"
+                    line_response = GeminiStreamingResponse(**line_json)
 
-                    line_json_candidates = line_json['candidates']
-                    assert isinstance(line_json_candidates, list), "bad candidates"
+                    found_candidate = False
+                    for candidate in line_response.candidates:
+                        if found_candidate:
+                            break
 
-                    for candidate in line_json_candidates:
-                        assert isinstance(candidate, dict), "bad candidate"
+                        for part in candidate.content.parts:
+                            if text := part.text:
+                                yield text
 
-                        condidate_content = candidate.get('content', None)
-                        if not isinstance(condidate_content, dict):
-                            continue
-
-                        condidate_content_parts = condidate_content.get('parts', None)
-                        if not isinstance(condidate_content_parts, list):
-                            continue
-
-                        for part in condidate_content_parts:
-                            if not isinstance(part, dict):
-                                pass
-
-                            part_text = part.get('text')
-                            if not isinstance(part_text, str):
-                                continue
-
-                            yield part_text
+                                found_candidate = True
+                                break
+                except pydantic.ValidationError:
+                    _logger.error('Error: failed to process line: not a stream response: %s', line)
+                    break
                 except AssertionError as e:
                     _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
