@@ -5,19 +5,20 @@ def main():
     from yadc.core import logging
     from yadc import cli, cli_config
 
+    common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument('--log-level', help='Set the logging level', type=str, default='info', choices=['info', 'warning', 'error', 'debug'])
+
     parser = argparse.ArgumentParser(prog='yadc', description='Yet Another Dataset Captioner')
     parser.set_defaults(_action='help', _subaction='default')
 
-    parser.add_argument('--log-level', help='Set the logging level', type=str, default='info', choices=['info', 'warning', 'error', 'debug'])
-
     subparser = parser.add_subparsers(dest='command')
 
-    caption_parser = subparser.add_parser('caption', help='Caption a dataset', description='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc')
+    caption_parser = subparser.add_parser('caption', help='Caption a dataset', description='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc', parents=[common_parser])
     caption_parser.add_argument('dataset_toml', type=str)
     caption_parser.set_defaults(_action='caption', _subaction='default')
 
     if cli_config.FLAG_USER_CONFIG:
-        config_parser = subparser.add_parser('config', help='Manage the user config', description='Manage the user config. The user config is stored as plain-text currently, so any tokens are visible to programs running under your user.')
+        config_parser = subparser.add_parser('config', help='Manage the user config', description='Manage the user config. The user config is stored as plain-text currently, so any tokens are visible to programs running under your user.', parents=[common_parser])
         config_parser.set_defaults(_action='config')
 
         config_subparser = config_parser.add_subparsers(dest='subcommand', description='subcommands to run')
