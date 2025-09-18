@@ -11,8 +11,8 @@ The easiest way to get started is using either [uv](https://github.com/astral-sh
 * run the captioner: `uv run --module yadc DATASET_TOML` or `python3 -m yadc DATASET_TOML`
 
 If you want to use it as an executable, you can also install it directly using you preferred method. Some examples:
-* with pipx, `pipx install git+https://github.com/itterative/yadc@0.1.0` then `yadc DATASET_TOML`
-* with uvx, `uv tool install git+https://github.com/itterative/yadc@0.1.0` then `yadc DATASET_TOML`
+* with pipx, `pipx install git+https://github.com/itterative/yadc@0.2.0` then `yadc DATASET_TOML`
+* with uvx, `uv tool install git+https://github.com/itterative/yadc@0.2.0` then `yadc DATASET_TOML`
 
 ### Requirements
 * Python 3.11 (or later)
