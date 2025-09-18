@@ -268,6 +268,7 @@ class GeminiCaptioner(Captioner):
 
             if conversation_error:
                 conversation_error += '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
+                conversation_error = conversation_error.strip()
 
                 try:
                     conversation_error_json = json.loads(conversation_error)
