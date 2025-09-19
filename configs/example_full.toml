@@ -38,6 +38,27 @@ token = ""
 # for more details, see README.md
 model_name = ""
 
+[reasoning]
+# enables chain-of-though / extra reasoning behaviour for models that support it
+# using this option should produce better outputs, at the cost of inference cost and/or time
+#
+# recommendation: set to false unless the captioning is not good enough
+enable = false
+
+# the amount of thinking a model should do
+# some model providers/apis offer more control over how much thinking budget the model has
+# for simplification, this is kept as just 3 options and each captioner can decide what
+# the budget will actually be
+#
+# options: low, medium, high
+# recommendation: start with low, then go higher if needed
+thinking_effort = "low"
+
+# excludes the thought/reasoning section of the output
+#
+# recommendation: set as true and disable it if you want to see more details about what the model is thinking
+exclude_from_response = true
+
 [settings]
 # controls how many tokens the model is allowed to output
 # recommendation: 512 tokens is enough for most captioning scenarios

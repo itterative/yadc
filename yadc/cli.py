@@ -142,6 +142,9 @@ def caption(dataset_path: str):
         prompt_template_name=dataset_toml.settings.prompt_template_path,
         store_conversation=dataset_toml.settings.store_conversation,
         image_quality=dataset_toml.settings.image_quality,
+        reasoning=dataset_toml.reasoning.enable,
+        reasoning_effort=dataset_toml.reasoning.thinking_effort,
+        reasoning_exclude_output=dataset_toml.reasoning.exclude_from_response,
     )
 
     try:

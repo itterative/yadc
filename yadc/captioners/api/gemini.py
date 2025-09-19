@@ -35,6 +35,15 @@ class APITypes(str, Enum):
     @property
     def max_image_encoded_size(self):
         return 5 * 1024 * 1024
+    
+    def get_thinking_budget(self, effort: str):
+        match effort:
+            case 'low': return 512
+            case 'medium': return 1024
+            case 'high': return 2048
+
+            # shouldn't happen, but we should have a default
+            case _: return 512
 
 class GeminiCaptioner(Captioner):
     """
@@ -69,6 +78,9 @@ class GeminiCaptioner(Captioner):
                 - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
                 - `prompt_template` (str): Direct template string to override file-based templates.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
+                - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
+                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
+                - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
 
         Raises:
             ValueError: If `api_url` or `api_token` is not provided.
@@ -79,6 +91,10 @@ class GeminiCaptioner(Captioner):
         self._api_url: str = kwargs.pop('api_url', '')
         self._api_token: str = kwargs.pop('api_token', '')
         self._image_quality: str = kwargs.pop('image_quality', 'auto')
+
+        self._reasoning: bool = kwargs.pop('reasoning', False)
+        self._reasoning_effort: str = kwargs.pop('reasoning_effort', 'low')
+        self._reasoning_exclude_output: bool = kwargs.pop('reasoning_exclude_output', 'low')
 
         if not self._api_url:
             raise ValueError("no api_url")
@@ -145,8 +161,11 @@ class GeminiCaptioner(Captioner):
                 raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models)}')
 
             raise ValueError(f'model not found: {model_repo}; no models available')
-        
+
         _logger.info('Model set to %s.', self._current_model)
+
+        if self._is_thinking_model and self._reasoning:
+            _logger.warning('Warning: selected a model without reasoning capabilities, but reasoning is enabled.')
 
     def unload_model(self) -> None:
         pass
@@ -198,10 +217,10 @@ class GeminiCaptioner(Captioner):
             'generationConfig': generation_config,
         }
 
-        if self._is_thinking_model:
+        if self._is_thinking_model and self._reasoning:
             conversation['generationConfig']['thinkingConfig'] = {
-                'includeThoughts': False,
-                'thinkingBudget': 1024,
+                'includeThoughts': not self._reasoning_exclude_output,
+                'thinkingBudget': APITypes.BASE.get_thinking_budget(self._reasoning_effort),
             }
 
         return conversation

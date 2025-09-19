@@ -19,6 +19,7 @@ class Config(pydantic.BaseModel):
 
     api: 'ConfigApi' = pydantic.Field(default_factory=lambda: ConfigApi())
     settings: 'ConfigSettings' = pydantic.Field(default_factory=lambda: ConfigSettings())
+    reasoning: 'ConfigReasoning' = pydantic.Field(default_factory=lambda: ConfigReasoning())
     dataset: 'ConfigDataset' = pydantic.Field(default_factory=lambda: ConfigDataset())
 
     interactive: bool = False
@@ -71,6 +72,20 @@ class ConfigSettings(pydantic.BaseModel):
             assert self.prompt_template or self.prompt_template_path, 'either prompt_template or prompt_template_name must be provided in the config'
 
             assert self.image_quality in ('auto', 'high', 'low'), 'config image_quality must be one of: auto, high, low'
+        except AssertionError as e:
+            raise ValueError(e)
+
+        return self
+
+class ConfigReasoning(pydantic.BaseModel):
+    enable: bool = False
+    thinking_effort: str = 'low'
+    exclude_from_response: bool = True
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        try:
+            assert self.thinking_effort in ('high', 'medium', 'low'), 'reasoning thinking_effor must be one of: high, medium, low'
         except AssertionError as e:
             raise ValueError(e)
 

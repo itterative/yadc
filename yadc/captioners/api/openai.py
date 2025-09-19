@@ -83,6 +83,9 @@ class OpenAICaptioner(Captioner):
                 - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
                 - `prompt_template` (str): Direct template string to override file-based templates.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
+                - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
+                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
+                - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
 
         Raises:
             ValueError: If `api_url` is not provided.
@@ -94,6 +97,10 @@ class OpenAICaptioner(Captioner):
         self._api_token: str = kwargs.pop('api_token', '')
         self._store_conversation: bool = kwargs.pop('store_conversation', False)
         self._image_quality: str = kwargs.pop('image_quality', 'auto')
+
+        self._reasoning: bool = kwargs.pop('reasoning', False)
+        self._reasoning_effort: str = kwargs.pop('reasoning_effort', 'low')
+        self._reasoning_exclude_output: bool = kwargs.pop('reasoning_exclude_output', 'low')
 
         if not self._api_url:
             raise ValueError("no api_url")
@@ -365,10 +372,6 @@ class OpenAICaptioner(Captioner):
             'top_p': top_p,
             'top_k': top_k,
             'store': self._store_conversation,
-            'reasoning': {
-                'max_tokens': 1024,
-                'exclude': True,
-            },
             'messages': [
                 {
                     "role": "system",
@@ -397,6 +400,12 @@ class OpenAICaptioner(Captioner):
                 },
             ],
         }
+
+        if self._reasoning:
+            conversation['reasoning'] = {
+                'effort': self._reasoning_effort,
+                'exclude': self._reasoning_exclude_output,
+            }
 
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
         if self._api_type == APITypes.KOBOLDCPP:
