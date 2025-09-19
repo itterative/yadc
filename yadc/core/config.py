@@ -80,7 +80,7 @@ class ConfigSettings(pydantic.BaseModel):
 class ConfigReasoning(pydantic.BaseModel):
     enable: bool = False
     thinking_effort: str = 'low'
-    exclude_from_response: bool = True
+    exclude_from_output: bool = True
 
     @pydantic.model_validator(mode='after')
     def validate_(self):

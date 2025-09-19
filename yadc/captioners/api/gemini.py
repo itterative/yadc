@@ -94,7 +94,7 @@ class GeminiCaptioner(Captioner):
 
         self._reasoning: bool = kwargs.pop('reasoning', False)
         self._reasoning_effort: str = kwargs.pop('reasoning_effort', 'low')
-        self._reasoning_exclude_output: bool = kwargs.pop('reasoning_exclude_output', 'low')
+        self._reasoning_exclude_output: bool = kwargs.pop('reasoning_exclude_output', True)
 
         if not self._api_url:
             raise ValueError("no api_url")

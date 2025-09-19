@@ -144,7 +144,7 @@ def caption(dataset_path: str):
         image_quality=dataset_toml.settings.image_quality,
         reasoning=dataset_toml.reasoning.enable,
         reasoning_effort=dataset_toml.reasoning.thinking_effort,
-        reasoning_exclude_output=dataset_toml.reasoning.exclude_from_response,
+        reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
     )
 
     try:

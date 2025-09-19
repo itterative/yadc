@@ -57,7 +57,7 @@ thinking_effort = "low"
 # excludes the thought/reasoning section of the output
 #
 # recommendation: set as true and disable it if you want to see more details about what the model is thinking
-exclude_from_response = true
+exclude_from_output = true
 
 [settings]
 # controls how many tokens the model is allowed to output
