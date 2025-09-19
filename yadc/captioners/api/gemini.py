@@ -122,47 +122,15 @@ class GeminiCaptioner(Captioner):
         pass
 
 
-    def encode_image(self, image: DatasetImage, **kwargs):
-        call_depth = kwargs.pop('call_depth', 0)
-        assert isinstance(call_depth, int), f"encode_image called with bad call_depth type: {type(call_depth)}"
-        assert call_depth < 5, f"encode_image reached maximum call depth"
-
-        image_format = kwargs.pop('image_format', 'PNG')
-        assert isinstance(image_format, str), f"encode_image called with bad image_format type: {type(image_format)}"
-
-        image_format = image_format.upper()
-        assert image_format in ('JPEG', 'PNG'), f"encode_image called with bad image_format: only JPEG or PNG is allowed"
-
-        image_quality = kwargs.pop('image_quality', None)
-        assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
-        assert image_quality is None or (image_quality > 10 and image_quality <= 100), f"encode_image called with bad image_quality: {image_quality}"
-
-        buffer = io.BytesIO()
-        image_obj = image.read_image()
-
-        # resize image if too large
-        image_obj.thumbnail(APITypes.BASE.max_image_size, Image.Resampling.LANCZOS)
-
-        if image_format == 'JPEG' and image_obj.mode in ('RGBA', 'LA'):
-            image_composite = Image.new('RGB', image_obj.size, (255, 255, 255))
-            image_composite.paste(image_obj, mask=image_obj.split()[-1])
-            image_obj = image_composite
-
-        image_obj.save(buffer, format=image_format)
-        encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-        if len(encoded_image) > APITypes.BASE.max_image_encoded_size:
-            # start at lossless, then degrade with each iteration
-            image_quality = 100 if image_quality is None else image_quality - 10
-
-            return self.encode_image(image, image_format='JPEG', call_depth=call_depth+1, image_quality=image_quality, **kwargs)
-
-        return f'image/{image_format.lower()}', base64.b64encode(buffer.getvalue()).decode('utf-8')
-
     def conversation(self, image: DatasetImage, **kwargs):
         system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
 
-        mime_type, encoded_image = self.encode_image(image, **kwargs)
+        mime_type, encoded_image = self._encode_image(
+            image,
+            max_image_size=APITypes.BASE.max_image_size,
+            max_image_encoded_size=APITypes.BASE.max_image_encoded_size,
+            **kwargs
+        )
 
         temperature = kwargs.pop('temperature', 0.8)
         top_p = kwargs.pop('top_p', 0.9)
