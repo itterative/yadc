@@ -1,7 +1,7 @@
 # This is a minimal example showing how you can use the official Gemini endpoints.
 
 [api]
-url = "https://generativelanguage.googleapis.com"
+url = "https://generativelanguage.googleapis.com/v1beta"
 token = "your_gemini_token_here"
 model_name = "gemini-2.5-flash"
 

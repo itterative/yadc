@@ -8,6 +8,7 @@ from .gemini import GeminiCaptioner
 
 OPENAI_DOMAIN = 'api.openai.com'
 GEMINI_DOMAIN = 'generativelanguage.googleapis.com'
+VORTEX_DOMAIN = '-aiplatform.googleapis.com'
 
 class APICaptioner(Captioner):
     inner_captioner: Captioner
@@ -15,7 +16,7 @@ class APICaptioner(Captioner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        api_url = kwargs.get('api_url', '')
+        api_url: str = kwargs.get('api_url', '')
 
         if not api_url:
             raise ValueError("no api_url")
@@ -26,6 +27,8 @@ class APICaptioner(Captioner):
             if parsed_url.netloc == OPENAI_DOMAIN:
                 self.inner_captioner = OpenAICaptioner(**kwargs)
             elif parsed_url.netloc == GEMINI_DOMAIN:
+                self.inner_captioner = GeminiCaptioner(**kwargs)
+            elif parsed_url.netloc.endswith(VORTEX_DOMAIN):
                 self.inner_captioner = GeminiCaptioner(**kwargs)
             else: # default
                 self.inner_captioner = OpenAICaptioner(**kwargs)

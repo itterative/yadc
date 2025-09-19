@@ -55,7 +55,7 @@ class GeminiCaptioner(Captioner):
     Example:
     ```
         captioner = GeminiCaptioner(
-            api_url="https://generativelanguage.googleapis.com",
+            api_url="https://generativelanguage.googleapis.com/v1beta",
             api_token="your-api-key"
         )
         captioner.load_model("gemini-pro-vision")
@@ -71,10 +71,10 @@ class GeminiCaptioner(Captioner):
         Initializes the GeminiCaptioner with API and template configuration.
 
         Args:
-            api_url (str): Base URL for the Gemini API endpoint.
             api_token (str): Google API key for authentication.
 
             **kwargs: Optional keyword arguments:
+                - `api_url` (str): Base URL for the Gemini API endpoint.
                 - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
                 - `prompt_template` (str): Direct template string to override file-based templates.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
@@ -83,12 +83,12 @@ class GeminiCaptioner(Captioner):
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
 
         Raises:
-            ValueError: If `api_url` or `api_token` is not provided.
+            ValueError: If `api_token` is not provided.
         """
 
         super().__init__(**kwargs)
 
-        self._api_url: str = kwargs.pop('api_url', '')
+        self._api_url: str = kwargs.pop('api_url', 'https://generativelanguage.googleapis.com/v1beta')
         self._api_token: str = kwargs.pop('api_token', '')
         self._image_quality: str = kwargs.pop('image_quality', 'auto')
 
@@ -108,7 +108,7 @@ class GeminiCaptioner(Captioner):
     def load_model(self, model_repo: str, **kwargs) -> None:
         model_repo = model_repo.removeprefix('models/')
 
-        with self._session.get(f'/v1beta/models/{model_repo}') as model_resp:
+        with self._session.get(f'models/{model_repo}') as model_resp:
             if model_resp.ok:
                 model_resp_json = model_resp.json()
                 model = GeminiModel(**model_resp_json)
@@ -130,9 +130,9 @@ class GeminiCaptioner(Captioner):
 
         while not model_found:
             if next_token is not None:
-                models_url_path = f'/v1beta/models?pageToken={next_token}'
+                models_url_path = f'models?pageToken={next_token}'
             else:
-                models_url_path = f'/v1beta/models'
+                models_url_path = f'models'
 
             with self._session.get(models_url_path) as models_resp:
                 models_resp.raise_for_status()
@@ -231,7 +231,7 @@ class GeminiCaptioner(Captioner):
 
         conversation = self.conversation(image, **kwargs)
 
-        with self._session.post(f'/v1beta/models/{self._current_model}:streamGenerateContent?alt=sse', stream=True, json=conversation) as conversation_resp:
+        with self._session.post(f'models/{self._current_model}:streamGenerateContent?alt=sse', stream=True, json=conversation) as conversation_resp:
             try:
                 conversation_resp.raise_for_status()
             except requests.exceptions.HTTPError as e:
