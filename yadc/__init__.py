@@ -3,4 +3,4 @@ from yadc.core.dataset import DatasetImage
 
 from yadc.captioners.api import APICaptioner, OpenAICaptioner, GeminiCaptioner
 
-__version__ = '0.2.2'
+__version__ = '0.2.3'
