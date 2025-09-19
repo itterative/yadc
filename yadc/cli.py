@@ -393,6 +393,9 @@ def caption(dataset_path: str):
 
                     caption = ''.join(caption).strip()
             except KeyboardInterrupt:
+                if not dataset_toml.interactive:
+                    raise
+
                 print('')
                 print('Cancelled captioning.')
                 caption = ''
