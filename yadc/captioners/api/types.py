@@ -63,6 +63,13 @@ class _GeminiStreamingCandidateContent(pydantic.BaseModel):
 class _GeminiStreamingCandidatePart(pydantic.BaseModel):
     text: str = ''
 
+class OpenRouterCreditsResponse(pydantic.BaseModel):
+    data: '_OpenRouterCredits'
+
+class _OpenRouterCredits(pydantic.BaseModel):
+    total_credits: float
+    total_usage: float
+
 class KoboldServiceInfoResponse(pydantic.BaseModel):
     software: '_KoboldServiceInfoSoftware'
 

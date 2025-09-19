@@ -19,6 +19,7 @@ from .types import (
     OpenAIModelsResponse,
     OpenAIStreamingResponse,
     OpenAIErrorResponse,
+    OpenRouterCreditsResponse,
     KoboldAdminSettingsReponse,
     KoboldAdminReloadModelReponse,
     KoboldAdminCurrentModelResponse,
@@ -117,6 +118,8 @@ class OpenAICaptioner(Captioner):
         self._api_type = self._infer_api_type()
         _logger.info('API set to %s.', self._api_type)
 
+        self._log_api_information()
+
     def _infer_api_type(self):
         # early exit
 
@@ -196,6 +199,20 @@ class OpenAICaptioner(Captioner):
             pass
 
         return APITypes.OPENAI
+
+    def _log_api_information(self):
+        if self._api_type == APITypes.OPENROUTER:
+            with self._session.get('credits') as credits_resp:
+                try:
+                    credits_resp.raise_for_status()
+
+                    credits_resp_json = credits_resp.json()
+                    assert isinstance(credits_resp_json, dict)
+
+                    credits = OpenRouterCreditsResponse(**credits_resp_json).data
+                    _logger.info('You have used %.2f out of %.2f credits with this api token.', credits.total_usage, credits.total_credits)
+                except:
+                    _logger.warning('Warning: failed to retrieve current credits for api token.')
 
 
     def load_model(self, model_repo: str, **kwargs) -> None:
