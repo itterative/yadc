@@ -211,6 +211,8 @@ def caption(dataset_path: str):
             _logger.info('------------')
             _logger.info('')
 
+    caption_loop_start = time()
+
     for i_dataset_image, dataset_image in enumerate(dataset_to_do):
         if do_quit:
             break
@@ -415,6 +417,8 @@ def caption(dataset_path: str):
 
         _logger.info('')
 
-    _logger.info('Done.')
+    caption_loop_end = time()
+
+    _logger.info('Done. (%.1f sec)', caption_loop_end - caption_loop_start)
 
     return 0
