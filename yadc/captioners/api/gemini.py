@@ -281,6 +281,10 @@ class GeminiCaptioner(Captioner):
 
                         for part in candidate.content.parts:
                             if text := part.text:
+                                # skip for now
+                                if part.thought:
+                                    continue
+
                                 yield text
 
                                 found_candidate = True

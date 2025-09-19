@@ -62,6 +62,7 @@ class _GeminiStreamingCandidateContent(pydantic.BaseModel):
 
 class _GeminiStreamingCandidatePart(pydantic.BaseModel):
     text: str = ''
+    thought: bool = False
 
 class OpenRouterCreditsResponse(pydantic.BaseModel):
     data: '_OpenRouterCredits'
