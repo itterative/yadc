@@ -3,13 +3,12 @@ from typing import Literal, Optional
 import pydantic
 
 class OpenAIModelsResponse(pydantic.BaseModel):
-    object: Literal['list']
     data: list['OpenAIModel']
 
 class OpenAIModel(pydantic.BaseModel):
     id: str
-    object: Literal['model']
-    owned_by: str = ''
+    object: Literal['model'] = 'model'
+    owned_by: str = 'default'
 
 class OpenAIStreamingResponse(pydantic.BaseModel):
     error: Optional['_OpenAIStreamingError'] = None
