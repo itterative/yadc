@@ -55,6 +55,8 @@ enable = false
 thinking_effort = "low"
 
 # excludes the thought/reasoning section of the output
+# since providers might hide this from the actual response, you might not see the reasoning regardless
+# of the setting here
 #
 # recommendation: set as true and disable it if you want to see more details about what the model is thinking
 exclude_from_output = true
