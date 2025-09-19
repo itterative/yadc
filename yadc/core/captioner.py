@@ -17,11 +17,65 @@ import yadc.templates
 _logger = logging.get_logger(__name__)
 
 class CaptionerRound(pydantic.BaseModel):
+    """
+    Represents a single round of captioning in a multi-round captioning.
+
+    Attributes:
+        iteration (int): The sequence number of this caption round (e.g., 1st, 2nd).
+        caption (str): The caption generated in this round.
+    """
+
     iteration: int
     caption: str
 
 class Captioner(abc.ABC):
+    """
+    Abstract base class for image captioning models.
+
+    This class provides a standardized interface for loading models, encoding images,
+    generating prompts via Jinja2 templates, and producing captions from images.
+    Subclasses must implement model-specific logic for prediction and model management.
+
+    The captioning process supports:
+    - Customizable prompt templates using Jinja2
+    - Multi-round captioning (e.g., for iterative refinement)
+    - Image resizing and base64 encoding with size constraints
+    - Logging and debugging of generated prompts
+
+    Template Loading:
+    - Looks for templates first in the current working directory
+    - Falls back to built-in templates in `yadc.templates`
+    - Supports overriding templates via direct string input
+
+    Example template variables (from `DatasetImage` fields):
+    - `image_id`, `file_path`, `width`, `height`, etc.
+
+    Usage:
+    ```
+        class MyCaptioner(Captioner):
+            def load_model(self, model_repo, **kwargs):
+                ...
+            def predict_stream(self, image:, **kwargs)
+                ...
+            def predict(self, image, **kwargs):
+                ...
+
+        captioner = MyCaptioner(prompt_template_name="custom.jinja")
+        captioner.load_model("my-model-id")
+        caption = captioner.predict(dataset_image)
+    ```
+    """
+
     def __init__(self, **kwargs):
+        """
+        Initializes the Captioner with optional template configuration.
+
+        Args:
+            **kwargs: Optional keyword arguments:
+                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
+                - `prompt_template` (str): Direct template string to override file-based templates.
+        """
+
         self._prompt_template_name: str = kwargs.pop('prompt_template_name', 'default.jinja')
         self._prompt_template: str = kwargs.pop('prompt_template', '').strip()
 
@@ -37,6 +91,31 @@ class Captioner(abc.ABC):
         return '\n'.join([ line.lstrip() for line in template.splitlines() ])
 
     def _load_jinja_template(self, template: str):
+        """
+        Loads a Jinja2 template by name using a custom loading mechanism.
+
+        Resolves special template names:
+        - `__system_prompt__`: Loads the system prompt combining default and user templates.
+        - `__user_prompt__`: Loads the user prompt for single-round captioning.
+        - `__user_prompt_multiple_rounds__`: Loads the prompt for multi-round interactions.
+        - `__default_template__`: Refers to the built-in default template.
+        - `__user_template__`: Refers to the user-provided template (file or string).
+
+        Template resolution order:
+        1. Direct string via `prompt_template`
+        2. File in current working directory
+        3. Built-in template from `yadc.templates`
+
+        Args:
+            template (str): The logical template name to load.
+
+        Returns:
+            str: The loaded template content.
+
+        Raises:
+            ValueError: If an invalid template name is requested.
+        """
+
         if template == '__system_prompt__':
             return self._unindent_template('''
                 {% import "__default_template__" as default_template %}
@@ -85,9 +164,32 @@ class Captioner(abc.ABC):
 
 
     def _prompts_from_image(self, dataset_image: DatasetImage, **kwargs):
-        caption_rounds: list[CaptionerRound] = kwargs.pop('caption_rounds', [])
-        assert isinstance(caption_rounds, list)
-        assert all(map(lambda r: isinstance(r, CaptionerRound), caption_rounds))
+        """
+        Generates system and user prompts for a given image using Jinja2 templating.
+
+        Supports both single-round and multi-round captioning based on provided history.
+
+        Args:
+            dataset_image (DatasetImage): The image to generate prompts for.
+            **kwargs: Optional arguments:
+                - `caption_rounds` (list[CaptionerRound]): Previous caption rounds for context.
+                - `system_prompt_override` (str): Override for the system prompt.
+                - `user_prompt_override` (str): Override for the user prompt.
+                - `debug_prompt` (bool): If True, logs prompts to debug output.
+
+        Returns:
+            tuple[str, str]: A tuple containing (system_prompt, user_prompt).
+
+        Raises:
+            ValueError: If `caption_rounds` is not a list of `CaptionerRound` instances.
+        """
+
+        try:
+            caption_rounds: list[CaptionerRound] = kwargs.pop('caption_rounds', [])
+            assert isinstance(caption_rounds, list)
+            assert all(map(lambda r: isinstance(r, CaptionerRound), caption_rounds))
+        except:
+            raise ValueError("bad argument for caption_rounds")
 
         system_prompt_override: str = kwargs.pop('system_prompt_override', '')
         user_prompt_override: str = kwargs.pop('user_prompt_override', '')
@@ -118,19 +220,49 @@ class Captioner(abc.ABC):
         return system_prompt, user_prompt
     
     def _encode_image(self, image: DatasetImage, max_image_size: tuple[int, int], max_image_encoded_size: int, **kwargs):
+        """
+        Encodes an image as a base64 string suitable for API transmission.
+
+        Automatically resizes images and adjusts quality to meet size limits.
+
+        Process:
+        - Resizes image to fit within `max_image_size` using LANCZOS resampling.
+        - Converts RGBA/LA images to RGB when saving as JPEG.
+        - Attempts lossless encoding first, then reduces JPEG quality iteratively if needed.
+
+        Args:
+            image (DatasetImage): The image to encode.
+            max_image_size (tuple[int, int]): Maximum allowed dimensions (width, height).
+            max_image_encoded_size (int): Maximum allowed size of base64 string in bytes.
+            **kwargs: Optional arguments:
+                - `call_depth` (int): Internal recursion counter (max 5).
+                - `image_format` (str): Output format ('JPEG' or 'PNG', default: 'PNG').
+                - `image_quality` (int): JPEG quality level (10-100, default: 100 on retry).
+
+        Returns:
+            tuple[str, str]: A tuple of (media_type, base64_encoded_image), e.g., ('image/jpeg', '...').
+
+        Raises:
+            ValueError: On invalid argument types.
+            AssertionError: On excessive recursion.
+        """
+
         call_depth = kwargs.pop('call_depth', 0)
         assert isinstance(call_depth, int), f"encode_image called with bad call_depth type: {type(call_depth)}"
         assert call_depth < 5, f"encode_image reached maximum call depth"
 
-        image_format = kwargs.pop('image_format', 'PNG')
-        assert isinstance(image_format, str), f"encode_image called with bad image_format type: {type(image_format)}"
+        try:
+            image_format = kwargs.pop('image_format', 'PNG')
+            assert isinstance(image_format, str), f"encode_image called with bad image_format type: {type(image_format)}"
 
-        image_format = image_format.upper()
-        assert image_format in ('JPEG', 'PNG'), f"encode_image called with bad image_format: only JPEG or PNG is allowed"
+            image_format = image_format.upper()
+            assert image_format in ('JPEG', 'PNG'), f"encode_image called with bad image_format: only JPEG or PNG is allowed"
 
-        image_quality = kwargs.pop('image_quality', None)
-        assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
-        assert image_quality is None or (image_quality > 10 and image_quality <= 100), f"encode_image called with bad image_quality: {image_quality}"
+            image_quality = kwargs.pop('image_quality', None)
+            assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
+            assert image_quality is None or (image_quality > 10 and image_quality <= 100), f"encode_image called with bad image_quality: {image_quality}"
+        except AssertionError as e:
+            raise ValueError(e)
 
         buffer = io.BytesIO()
         image_obj = image.read_image()
@@ -156,20 +288,82 @@ class Captioner(abc.ABC):
 
     @abc.abstractmethod
     def load_model(self, model_repo: str, **kwargs) -> None:
+        """
+        Loads the captioning model through the API or from a repository or local path.
+
+        Args:
+            model_repo (str): Identifier or path to the model (e.g., Hugging Face repo ID).
+            **kwargs: Model-specific loading options (e.g., device, dtype, cache_dir).
+
+        Example:
+            captioner.load_model("nlpconnect/vit-gpt2-image-captioning", device="cuda")
+        """
+
         raise NotImplemented
 
     @abc.abstractmethod
     def unload_model(self) -> None:
+        """
+        Unloads the model from memory.
+
+        Should free all resources associated with the loaded model.
+        Called when switching models or shutting down.
+        """
+
         raise NotImplemented
 
     @abc.abstractmethod
     def offload_model(self) -> None:
+        """
+        Offloads the model to CPU to free GPU memory.
+
+        Useful when the model is not actively in use.
+        """
+
         raise NotImplemented
 
     @abc.abstractmethod
     def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str]':
+        """
+        Generates a caption incrementally and yields partial results.
+
+        Ideal for real-time interfaces where streaming output is desired.
+
+        Args:
+            image (DatasetImage): The input image to caption.
+            **kwargs: Model-specific inference parameters.
+
+        Yields:
+            str: Caption text chunk as it becomes available.
+
+        Raises:
+            ValueError: If the API returns an error.
+
+        Example:
+        ```
+            for token in captioner.predict_stream(img):
+                print(token, end='', flush=True)
+        ```
+        """
+
         raise NotImplemented
 
     @abc.abstractmethod
     def predict(self, image: DatasetImage, **kwargs) -> str:
+        """
+        Generates a complete caption for the given image.
+
+        Blocks until the full caption is generated.
+
+        Args:
+            image (DatasetImage): The input image to caption.
+            **kwargs: Model-specific inference parameters.
+
+        Raises:
+            ValueError: If the API returns an error.
+
+        Returns:
+            str: The final generated caption.
+        """
+
         raise NotImplemented

@@ -52,9 +52,42 @@ class APITypes(str, Enum):
             case _: return 25 * 1024 * 1024 # slightly increased for local backends
 
 class OpenAICaptioner(Captioner):
+    """
+    Implementation for image captioning models using OpenAI-compatible endpoints.
+
+    Required API credentials:
+    - `api_token`: Your OpenAI API key (not required not unathenticated APIs)
+
+    Example:
+    ```
+        captioner = OpenAICaptioner(
+            api_url="https://api.openai.com",
+            api_token="your-api-key"
+        )
+        captioner.load_model("gpt-5-mini")
+        caption = captioner.predict(dataset_image)
+    ```
+    """
+
     _current_model: str|None = None
 
     def __init__(self, **kwargs):
+        """
+        Initializes the OpenAICaptioner with API and template configuration.
+
+        Args:
+            api_url (str): Base URL for the OpenAI API endpoint.
+
+            **kwargs: Optional keyword arguments:
+                - `api_token` (str): OpenAI API key for authentication.
+                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
+                - `prompt_template` (str): Direct template string to override file-based templates.
+                - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
+
+        Raises:
+            ValueError: If `api_url` is not provided.
+        """
+
         super().__init__(**kwargs)
 
         self._api_url: str = kwargs.pop('api_url', '')
@@ -318,8 +351,8 @@ class OpenAICaptioner(Captioner):
             **kwargs
         )
 
-        temperature = kwargs.pop('temperature', 0.8)
-        top_p = kwargs.pop('top_p', 0.9)
+        temperature = kwargs.pop('temperature', 0.7)
+        top_p = kwargs.pop('top_p', 0.95)
         top_k = kwargs.pop('top_k', 64)
         max_tokens = kwargs.pop('max_new_tokens', 512)
 
@@ -332,6 +365,10 @@ class OpenAICaptioner(Captioner):
             'top_p': top_p,
             'top_k': top_k,
             'store': self._store_conversation,
+            'reasoning': {
+                'max_tokens': 1024,
+                'exclude': True,
+            },
             'messages': [
                 {
                     "role": "system",
@@ -408,6 +445,9 @@ class OpenAICaptioner(Captioner):
 
                     for choice in line_response.choices:
                         if content := choice.delta.content:
+                            content = content.replace('◁', '<')
+                            content = content.replace('▷', '>\n')
+
                             yield content
                             break # only retrieve first choice
                 except pydantic.ValidationError:

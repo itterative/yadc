@@ -37,10 +37,43 @@ class APITypes(str, Enum):
         return 5 * 1024 * 1024
 
 class GeminiCaptioner(Captioner):
+    """
+    Implementation for image captioning models using the Google Gemini API.
+
+    Required API credentials:
+    - `api_token`: Your Google AI API key (from Google Cloud Console or AI Studio)
+
+    Example:
+    ```
+        captioner = GeminiCaptioner(
+            api_url="https://generativelanguage.googleapis.com",
+            api_token="your-api-key"
+        )
+        captioner.load_model("gemini-pro-vision")
+        caption = captioner.predict(dataset_image)
+    ```
+    """
+
     _current_model: str|None = None
     _is_thinking_model: bool = False
 
     def __init__(self, **kwargs):
+        """
+        Initializes the GeminiCaptioner with API and template configuration.
+
+        Args:
+            api_url (str): Base URL for the Gemini API endpoint.
+            api_token (str): Google API key for authentication.
+
+            **kwargs: Optional keyword arguments:
+                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
+                - `prompt_template` (str): Direct template string to override file-based templates.
+                - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
+
+        Raises:
+            ValueError: If `api_url` or `api_token` is not provided.
+        """
+
         super().__init__(**kwargs)
 
         self._api_url: str = kwargs.pop('api_url', '')

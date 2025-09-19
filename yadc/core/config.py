@@ -3,6 +3,20 @@ import pydantic
 from .dataset import DatasetImage
 
 class Config(pydantic.BaseModel):
+    """
+    Main configuration model used for configuring the CLI.
+
+    Attributes:
+        api: Configuration for connecting to the external API.
+        settings: Runtime settings for prompt handling, token limits, and output behavior.
+        dataset: Configuration for dataset paths and pre-loaded images.
+
+        interactive: If True, enables interactive mode (e.g., manual confirmation between steps).
+        rounds: Number of captioning rounds to perform per image (must be >= 1).
+        caption_suffix: File extension for generated caption files (must start with '.').
+        overwrite_captions: If True, existing caption files will be overwritten.
+    """
+
     api: 'ConfigApi' = pydantic.Field(default_factory=lambda: ConfigApi())
     settings: 'ConfigSettings' = pydantic.Field(default_factory=lambda: ConfigSettings())
     dataset: 'ConfigDataset' = pydantic.Field(default_factory=lambda: ConfigDataset())
@@ -24,6 +38,21 @@ class Config(pydantic.BaseModel):
         return self
 
 class ConfigSettings(pydantic.BaseModel):
+    """
+    Configuration for runtime behavior and prompt generation.
+
+    Attributes:
+        hf_token: Hugging Face API token for accessing gated models (optional).
+        max_tokens: Maximum number of tokens to generate (between 100 and 2048).
+
+        prompt_template: Inline Jinja template used for generating prompts (takes precedence over file).
+        prompt_template_path: Path to a Jinja template file if no inline template is provided.
+
+        store_conversation: If True, retains full conversation history (depends on API implementation).
+        image_quality: Image upload quality setting; one of 'auto', 'high', or 'low'.
+        debug_prompt: If True, prints the final rendered prompt before sending to the API.
+    """
+
     hf_token: str = ''
     max_tokens: int = 512
 
@@ -48,6 +77,15 @@ class ConfigSettings(pydantic.BaseModel):
         return self
 
 class ConfigApi(pydantic.BaseModel):
+    """
+    Configuration for connecting to a remote inference API.
+
+    Attributes:
+        url: Base URL of the API endpoint (must start with http:// or https://).
+        token: Authorization token for API access (optional depending on server requirements).
+        model_name: Identifier of the model to use on the API server (e.g., 'gpt-5-mini', 'gemini-2.5-flash').
+    """
+
     url: str = ''
     token: str = ''
     model_name: str = ''
@@ -65,5 +103,16 @@ class ConfigApi(pydantic.BaseModel):
         return self
 
 class ConfigDataset(pydantic.BaseModel):
+    """
+    Configuration for dataset input sources.
+
+    Attributes:
+        paths: List of file or directory paths to load images and their configuration from.
+               Images are searched at top-level only.
+        images: Pre-loaded list of image configuration.
+                Configuration defined in this list will be merged with matching ones from the paths.
+                Extra arguments will take priority when given here.
+    """
+
     paths: list[str] = []
     images: list[DatasetImage] = []
