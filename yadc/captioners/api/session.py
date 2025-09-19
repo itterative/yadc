@@ -19,18 +19,18 @@ class Session:
         backoff_factor: float = 1.0,
         status_forcelist: tuple[int, ...] = (429, 502, 503, 504),
     ):
-        self.base_url = urlparse(base_url)
+        self.base_url = urlparse(base_url.rstrip('/'))
         self.headers = headers or {}
 
-        self.headers['User-Agent'] = self._user_agent
+        self.headers['User-Agent'] = self.user_agent
 
         self._session = requests.Session()
         self._setup_retries(max_retries, backoff_factor, status_forcelist)
 
         self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')
 
-    @property
-    def _user_agent(self):
+    @functools.cached_property
+    def user_agent(self):
         import yadc # dependency loop if used at the top
         return f'yadc/{yadc.__version__} (python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})'
 
@@ -57,6 +57,9 @@ class Session:
 
 
     def _create_url(self, path: str):
+        if not path.startswith('/'):
+            path = self.base_url.path + '/' + path
+
         path_result = urlparse(path)
 
         result = ParseResult(

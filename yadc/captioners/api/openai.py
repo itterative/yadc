@@ -105,12 +105,6 @@ class OpenAICaptioner(Captioner):
         if not self._api_url:
             raise ValueError("no api_url")
 
-        try:
-            url = urlparse(self._api_url)
-            self._api_url = f'{url.scheme}://{url.netloc}'
-        except:
-            pass
-
         session_headers = {}
 
         if self._api_token:
@@ -219,7 +213,7 @@ class OpenAICaptioner(Captioner):
         if self._current_model == model_repo:
             return
 
-        with self._session.get('/v1/models') as model_resp:
+        with self._session.get('models') as model_resp:
             assert model_resp.ok
 
             model_resp_json = model_resp.json()
@@ -418,7 +412,7 @@ class OpenAICaptioner(Captioner):
 
         conversation = self.conversation(image, **kwargs)
 
-        with self._session.post('/v1/chat/completions', stream=True, json=conversation) as converation_resp:
+        with self._session.post('chat/completions', stream=True, json=conversation) as converation_resp:
             converation_resp.raise_for_status()
 
             converation_stopped = False

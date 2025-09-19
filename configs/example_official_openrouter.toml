@@ -1,0 +1,9 @@
+# This is a minimal example showing how you can use the official OpenRouter endpoints.
+
+[api]
+url = "https://openrouter.ai/api/v1"
+token = "your_openrouter_token_here"
+model = "gpt-5-mini"
+
+[dataset]
+paths = [ "path_1", "path_2" ]
