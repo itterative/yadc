@@ -429,13 +429,15 @@ class OpenAICaptioner(Captioner):
 
         conversation = self.conversation(image, **kwargs)
 
-        with self._session.post('chat/completions', stream=True, json=conversation) as converation_resp:
-            converation_resp.raise_for_status()
+        with self._session.post('chat/completions', stream=True, json=conversation) as conversation_resp:
+            conversation_resp.raise_for_status()
 
             converation_stopped = False
 
-            for line in converation_resp.iter_lines(decode_unicode=True):
-                assert isinstance(line, str)
+            for line in conversation_resp.iter_lines():
+                # NOTE: decode_unicode option doesn't seem to work properly for some characters
+                assert isinstance(line, bytes)
+                line = line.decode()
 
                 if not line or converation_stopped:
                     continue

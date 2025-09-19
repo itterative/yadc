@@ -241,8 +241,10 @@ class GeminiCaptioner(Captioner):
             conversation_error = ''
             conversation_stopped = False
 
-            for line in conversation_resp.iter_lines(decode_unicode=True):
-                assert isinstance(line, str)
+            for line in conversation_resp.iter_lines():
+                # NOTE: decode_unicode option doesn't seem to work properly for some characters
+                assert isinstance(line, bytes)
+                line = line.decode()
 
                 if not line or conversation_stopped:
                     continue
