@@ -330,67 +330,73 @@ def caption(dataset_path: str):
             if not do_prompt and caption:
                 break
 
-            if dataset_toml.rounds <= 1:
-                caption = []
-                _logger.info('')
-                start_t = time()
-                for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
-                    caption.append(token)
-                    print(token, end='', flush=True)
-                end_t = time()
-                print('')
+            try:
+                if dataset_toml.rounds <= 1:
+                    caption = []
+                    _logger.info('')
+                    start_t = time()
+                    for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                        caption.append(token)
+                        print(token, end='', flush=True)
+                    end_t = time()
+                    print('')
 
-                _logger.info('Captioning done (%.3f sec)', end_t - start_t)
-                _logger.info('')
+                    _logger.info('Captioning done (%.3f sec)', end_t - start_t)
+                    _logger.info('')
 
-                caption = ''.join(caption).strip()
-            else:
-                j = 0
-
-                if caption_rounds:
-                    j = dataset_toml.rounds
+                    caption = ''.join(caption).strip()
                 else:
-                    _logger.info('Doing %d rounds...', dataset_toml.rounds)
+                    j = 0
 
-                while j < dataset_toml.rounds:
-                    j +=1
+                    if caption_rounds:
+                        j = dataset_toml.rounds
+                    else:
+                        _logger.info('Doing %d rounds...', dataset_toml.rounds)
 
-                    new_caption = ''
-                    new_caption = prompt_for_override(f'round #{j}', default='')
+                    while j < dataset_toml.rounds:
+                        j +=1
 
-                    if not new_caption:
-                        start_t = time()
-                        new_caption = model.predict(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, use_cache=True, debug_prompt=dataset_toml.settings.debug_prompt and caption_rounds_debug).strip()
-                        end_t = time()
+                        new_caption = ''
+                        new_caption = prompt_for_override(f'round #{j}', default='')
 
-                        caption_rounds_debug = False
+                        if not new_caption:
+                            start_t = time()
+                            new_caption = model.predict(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, use_cache=True, debug_prompt=dataset_toml.settings.debug_prompt and caption_rounds_debug).strip()
+                            end_t = time()
 
-                        if dataset_toml.interactive:
-                            _logger.info(new_caption)
+                            caption_rounds_debug = False
 
-                        _logger.info('Round #%d done. (%.3f ssec)', j, end_t - start_t)
+                            if dataset_toml.interactive:
+                                _logger.info(new_caption)
 
-                        if not prompt_for_yes('Accept caption?', default=True):
-                            j -= 1
-                            caption_rounds.pop()
-                            continue
+                            _logger.info('Round #%d done. (%.3f ssec)', j, end_t - start_t)
 
-                    caption_rounds.append(CaptionerRound(iteration=j, caption=new_caption))
+                            if not prompt_for_yes('Accept caption?', default=True):
+                                j -= 1
+                                caption_rounds.pop()
+                                continue
 
-                caption = []
+                        caption_rounds.append(CaptionerRound(iteration=j, caption=new_caption))
 
-                _logger.info('')
-                start_t = time()
-                for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
-                    caption.append(token)
-                    print(token, end='', flush=True)
-                end_t = time()
+                    caption = []
+
+                    _logger.info('')
+                    start_t = time()
+                    for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                        caption.append(token)
+                        print(token, end='', flush=True)
+                    end_t = time()
+                    print('')
+
+                    _logger.info('End round done. (%.3f sec)', end_t - start_t)
+                    _logger.info('')
+
+                    caption = ''.join(caption).strip()
+            except KeyboardInterrupt:
                 print('')
-
-                _logger.info('End round done. (%.3f sec)', end_t - start_t)
-                _logger.info('')
-
-                caption = ''.join(caption).strip()
+                print('Cancelled captioning.')
+                caption = ''
+                pass
 
         if not caption:
             continue
