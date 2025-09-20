@@ -2,21 +2,17 @@ import json
 import requests
 import pydantic
 
-import io
-import base64
-
 from enum import Enum
-from PIL import Image
 
 from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
+from .mixins import ErrorNormalizationMixin
 
 from .types import (
     GeminiModelsResponse,
     GeminiModel,
-    GeminiErrorResponse,
     GeminiStreamingResponse,
 )
 
@@ -45,7 +41,7 @@ class APITypes(str, Enum):
             # shouldn't happen, but we should have a default
             case _: return 512
 
-class GeminiCaptioner(Captioner):
+class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
     """
     Implementation for image captioning models using the Google Gemini API.
 
@@ -104,8 +100,15 @@ class GeminiCaptioner(Captioner):
 
         self._session = Session(self._api_url, headers={ 'x-goog-api-key': self._api_token })
 
-
     def load_model(self, model_repo: str, **kwargs) -> None:
+        try:
+            self._load_model(model_repo, **kwargs)
+        except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
+        except requests.ConnectionError:
+            raise ValueError(f'api unavailable: {self._api_url}')
+
+    def _load_model(self, model_repo: str, **kwargs) -> None:
         model_repo = model_repo.removeprefix('models/')
 
         with self._session.get(f'models/{model_repo}') as model_resp:
@@ -232,11 +235,7 @@ class GeminiCaptioner(Captioner):
         conversation = self.conversation(image, **kwargs)
 
         with self._session.post(f'models/{self._current_model}:streamGenerateContent?alt=sse', stream=True, json=conversation) as conversation_resp:
-            try:
-                conversation_resp.raise_for_status()
-            except requests.exceptions.HTTPError as e:
-                _logger.debug('HTTP request failed. Body: %s', e.response.text)
-                raise
+            conversation_resp.raise_for_status()
 
             conversation_error = ''
             conversation_stopped = False
@@ -300,52 +299,14 @@ class GeminiCaptioner(Captioner):
                 conversation_error += '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
                 conversation_error = conversation_error.strip()
 
-                # override the response
-                raise ValueError(-1, conversation_error)
+                raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
     def _generate_prediction(self, image: DatasetImage, **kwargs):
         try:
             yield from self._generate_prediction_inner(image, **kwargs)
             return
-        except ValueError as e:
-            # TODO: better exception here
-            error_code = f'sse {e.args[0]}'
-            response_text = e.args[1]
-        except requests.HTTPError as e:
-            error_code = f'http {e.response.status_code}'
-            response_text = e.response.text
-
-        error_status = ''
-        error_message = 'unknown error'
-
-        try:
-            conversation_error_json = json.loads(response_text)
-            assert isinstance(conversation_error_json, dict)
-
-            error_response = GeminiErrorResponse(**conversation_error_json).error
-
-            error_code = str(error_response.code)
-            error_status = error_response.status
-            error_message = error_response.message
-        except:
-            _logger.warning('Warning: failed to process http error: %s', response_text)
-
-        # some defaults if response cannot be processed
-        if not error_message:
-            match error_code:
-                case 400: error_message = 'request could not be completed'
-                case 401: error_message = 'authentication failure'
-                case 402: error_message = 'not enough api credits; payment needed'
-                case 429: error_message = 'overloaded'
-                case 502: error_message = 'unavailable'
-                case 503: error_message = 'unavailable'
-                case _: error_message = 'unknown error'
-
-        if not error_status:
-            raise ValueError(f'api returned an error ({error_code}): {error_message}')
-
-        raise ValueError(f'api returned an error ({error_status} {error_code}): {error_message}')
-
+        except requests.HTTPError|ErrorNormalizationMixin.GenerationError as e:
+            raise ValueError(self._normalize_error(e))
 
     def predict(self, image: DatasetImage, **kwargs):
         return ''.join(list(self._generate_prediction(image, **kwargs)))

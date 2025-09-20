@@ -17,6 +17,7 @@ class OpenAIStreamingResponse(pydantic.BaseModel):
 class _OpenAIStreamingError(pydantic.BaseModel):
     code: str
     message: str
+    metadata: Optional[dict] = None
 
 class _OpenAIStreamingChoice(pydantic.BaseModel):
     delta: '_OpenAIStreamingChoiceDelta'
@@ -31,6 +32,7 @@ class OpenAIErrorResponse(pydantic.BaseModel):
 class _OpenAIError(pydantic.BaseModel):
     code: int
     message: str
+    metadata: Optional[dict] = None
 
 class GeminiModelsResponse(pydantic.BaseModel):
     models: list['GeminiModel']
@@ -70,6 +72,12 @@ class OpenRouterCreditsResponse(pydantic.BaseModel):
 class _OpenRouterCredits(pydantic.BaseModel):
     total_credits: float
     total_usage: float
+
+class OpenRouterModerationError(pydantic.BaseModel):
+    reasons: list[str] = []
+    flagged_input: str = ''
+    provider_name: str = ''
+    model_slug: str = ''
 
 class KoboldServiceInfoResponse(pydantic.BaseModel):
     software: '_KoboldServiceInfoSoftware'

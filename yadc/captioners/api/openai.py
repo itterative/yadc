@@ -1,24 +1,20 @@
+
 import time
 import json
 import requests
 import pydantic
 
-import io
-import base64
-
 from enum import Enum
-from urllib.parse import urlparse
-from PIL import Image
 
 from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
 
 from .session import Session
+from .mixins import ErrorNormalizationMixin
 
 from .types import (
     OpenAIModelsResponse,
     OpenAIStreamingResponse,
-    OpenAIErrorResponse,
     OpenRouterCreditsResponse,
     KoboldAdminSettingsReponse,
     KoboldAdminReloadModelReponse,
@@ -52,7 +48,7 @@ class APITypes(str, Enum):
             case APITypes.OPENROUTER: return 10 * 1024 * 1024
             case _: return 25 * 1024 * 1024 # slightly increased for local backends
 
-class OpenAICaptioner(Captioner):
+class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
     """
     Implementation for image captioning models using OpenAI-compatible endpoints.
 
@@ -152,7 +148,7 @@ class OpenAICaptioner(Captioner):
                 assert koboldcpp_service_info.software.name.lower() == 'koboldcpp'
 
                 return APITypes.KOBOLDCPP
-        except AssertionError|pydantic.ValidationError|requests.exceptions.JSONDecodeError:
+        except AssertionError|pydantic.ValidationError|requests.JSONDecodeError:
             pass
 
         # the following aren't very good checks (might not work in the future)
@@ -221,9 +217,11 @@ class OpenAICaptioner(Captioner):
                 self._load_model_koboldcpp(model_repo)
             else:
                 self._load_model_openai(model_repo)
-        except requests.exceptions.ConnectionError:
+        except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
+        except requests.ConnectionError:
             raise ValueError(f'api unavailable: {self._api_url}')
-        
+
         _logger.info('Model set to %s.', self._current_model)
 
     def _load_model_openai(self, model_repo: str):
@@ -231,13 +229,16 @@ class OpenAICaptioner(Captioner):
             return
 
         with self._session.get('models') as model_resp:
-            assert model_resp.ok
+            model_resp.raise_for_status()
 
             model_resp_json = model_resp.json()
             assert isinstance(model_resp_json, dict)
 
-            models = OpenAIModelsResponse(**model_resp_json)
-            available_models: list[str] = []
+            try:
+                models = OpenAIModelsResponse(**model_resp_json)
+                available_models: list[str] = []
+            except pydantic.ValidationError as e:
+                raise ValueError(f'failed to parse model list response') from e
 
             for model in models.data:
                 available_models.append(model.id)
@@ -246,6 +247,9 @@ class OpenAICaptioner(Captioner):
                     self._current_model = model_repo
 
             if not self._current_model:
+                if len(available_models) > 5:
+                    raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models[:5])}, +{len(available_models)-1} more')
+
                 if available_models:
                     raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models)}')
 
@@ -385,7 +389,7 @@ class OpenAICaptioner(Captioner):
             'store': self._store_conversation,
             'messages': [
                 {
-                    "role": "system",
+                    "role": "developer",
                     "content": [
                         {
                             "type": "text",
@@ -412,7 +416,7 @@ class OpenAICaptioner(Captioner):
             ],
         }
 
-        if self._reasoning:
+        if self._reasoning or True:
             conversation['reasoning'] = {
                 'effort': self._reasoning_effort,
                 'exclude': self._reasoning_exclude_output,
@@ -421,6 +425,8 @@ class OpenAICaptioner(Captioner):
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
         if self._api_type == APITypes.KOBOLDCPP:
             conversation['stop'] = ['<|im_end|>']
+        elif self._api_type == APITypes.OPENROUTER:
+            conversation['user'] = self._session.user_agent
 
         return conversation
 
@@ -462,10 +468,13 @@ class OpenAICaptioner(Captioner):
                     assert isinstance(line_json, dict), "not a dict"
                     line_response = OpenAIStreamingResponse(**line_json)
 
-                    if error := line_response.error:
-                        raise ValueError(f'api returned an error ({error.code}): {error.message}')
-
+                    if line_response.error:
+                        raise ValueError(self._normalize_error(line_response))
+                    
                     for choice in line_response.choices:
+                        if choice.finish_reason and choice.finish_reason != 'stop':
+                            raise ValueError(self._normalize_error(line_response))
+
                         if content := choice.delta.content:
                             content = content.replace('◁', '<')
                             content = content.replace('▷', '>\n')
@@ -484,34 +493,7 @@ class OpenAICaptioner(Captioner):
             yield from self._generate_prediction_inner(image, **kwargs)
             return
         except requests.HTTPError as e:
-            error_code = f'http {e.response.status_code}'
-            error_message = ''
-
-            try:
-                response_json = e.response.json()
-                assert isinstance(response_json, dict)
-
-                error_response = OpenAIErrorResponse(**response_json).error
-
-                error_code = f'api {error_response.code}'
-                error_message = error_response.message
-            except:
-                _logger.warning('Warning: failed to process http error: %s', e.response.text)
-
-        # some defaults if response cannot be processed
-        if not error_message:
-            match error_code:
-                case 400: error_message = 'request could not be completed'
-                case 401: error_message = 'authentication failure'
-                case 402: error_message = 'not enough api credits; payment needed'
-                case 429: error_message = 'overloaded'
-                case 502: error_message = 'unavailable'
-                case 503: error_message = 'unavailable'
-                case _: error_message = 'unknown error'
-
-            raise ValueError(f'api returned an error ({error_code}): {error_message}')
-
-        raise ValueError(f'api returned an error ({error_code}): {error_message}')
+            raise ValueError(self._normalize_error(e))
 
 
     def predict(self, image: DatasetImage, **kwargs):
@@ -519,4 +501,3 @@ class OpenAICaptioner(Captioner):
     
     def predict_stream(self, image: DatasetImage, **kwargs):
         yield from self._generate_prediction(image, **kwargs)
-    
