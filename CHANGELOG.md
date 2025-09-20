@@ -1,4 +1,12 @@
 # Release History
+## 0.3.0 (pre-release)
+
+- Basic support for thinking models
+- Support for Vortex projects
+- Improve error handling in streamed responses
+- Statistics at the end of captioning
+- Unit tests
+
 ## 0.2.3 (pre-release)
 
 - Improved error handling for model responses
@@ -11,7 +19,7 @@
 ## 0.2.2 (pre-release)
 
 - Types for streamed responses
-- Improve error handling in streamed responsed
+- Improve error handling in streamed responses
 - Improved logging
 
 ## 0.2.1 (pre-release)
