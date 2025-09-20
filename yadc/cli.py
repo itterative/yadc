@@ -340,10 +340,16 @@ def caption(dataset_path: str):
                     caption = []
                     _logger.info('')
                     start_t = time()
-                    for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
-                        caption.append(token)
-                        print(token, end='', flush=True)
-                    end_t = time()
+
+                    try:
+                        for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                            caption.append(token)
+                            print(token, end='', flush=True)
+                        end_t = time()
+                    except KeyboardInterrupt:
+                        print('')
+                        raise
+
                     print('')
 
                     _logger.info('Captioning done (%.3f sec)', end_t - start_t)
@@ -387,10 +393,16 @@ def caption(dataset_path: str):
 
                     _logger.info('')
                     start_t = time()
-                    for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
-                        caption.append(token)
-                        print(token, end='', flush=True)
-                    end_t = time()
+
+                    try:
+                        for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                            caption.append(token)
+                            print(token, end='', flush=True)
+                        end_t = time()
+                    except KeyboardInterrupt:
+                        print('')
+                        raise
+
                     print('')
 
                     _logger.info('End round done. (%.3f sec)', end_t - start_t)
@@ -405,8 +417,7 @@ def caption(dataset_path: str):
 
                     break
 
-                print('')
-                print('Cancelled captioning.')
+                _logger.info('Cancelled captioning.')
                 caption = ''
                 pass
 
