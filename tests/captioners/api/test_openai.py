@@ -2,6 +2,7 @@
 import re
 import mock
 import pytest
+import requests
 
 from yadc.core import DatasetImage
 from yadc.captioners.api import OpenAICaptioner
@@ -11,20 +12,24 @@ def koboldcpp(session, request_mocker, load_test_data):
     def _koboldcpp(case: str, model: str, loaded: bool = True, base_url: str = 'mock://koboldcpp'):
         loaded_model = model if loaded else 'inactive'
 
-        def load_model(model: str):
-            def _load_model(r, c):
-                nonlocal loaded_model
-                loaded_model = model
-                return {'success': True}
-            
-            return _load_model
+        def load_model(r: requests.Request, c):
+            nonlocal loaded_model
+
+            data = r.json() # type: ignore
+            assert isinstance(data, dict)
+
+            data_filename = data.get('filename')
+            assert isinstance(data_filename, str)
+
+            loaded_model = 'inactive' if data_filename == 'unload_model' else data_filename
+            return {'success': True}
 
         request_mocker.register_uri('GET', 'mock://koboldcpp/.well-known/serviceinfo', json={'software': {'name': 'koboldcpp'}})
         request_mocker.register_uri('GET', 'mock://koboldcpp/v1/models', json=lambda r, c: {'data': [{'id': loaded_model, 'object': 'model', 'owned_by': 'koboldcpp'}]})
         request_mocker.register_uri('GET', 'mock://koboldcpp/api/v1/model', json=lambda r, c: {'result': loaded_model})
-        request_mocker.register_uri('GET', 'mock://koboldcpp/api/admin/list_options', json=['inactive', model])
+        request_mocker.register_uri('GET', 'mock://koboldcpp/api/admin/list_options', json=['unload_model', model])
 
-        request_mocker.register_uri('POST', 'mock://koboldcpp/api/admin/reload_config', json=load_model(model))
+        request_mocker.register_uri('POST', 'mock://koboldcpp/api/admin/reload_config', json=load_model)
 
         request_mocker.register_uri('POST', 'mock://koboldcpp/v1/chat/completions', text=load_test_data(case))
 
