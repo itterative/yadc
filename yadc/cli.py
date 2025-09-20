@@ -399,7 +399,11 @@ def caption(dataset_path: str):
                     caption = ''.join(caption).strip()
             except KeyboardInterrupt:
                 if not dataset_toml.interactive:
-                    raise
+                    caption = '' # don't write to history if cancelled
+                    do_quit = True
+                    do_prompt = False
+
+                    break
 
                 print('')
                 print('Cancelled captioning.')
@@ -422,6 +426,7 @@ def caption(dataset_path: str):
 
     caption_loop_end = time()
 
+    model.log_usage()
     _logger.info('Done. (%.1f sec)', caption_loop_end - caption_loop_start)
 
     return 0

@@ -5,8 +5,9 @@ import pydantic
 from enum import Enum
 
 from yadc.core import logging
-from yadc.core import Captioner, DatasetImage
+from yadc.core import DatasetImage
 
+from .base import BaseAPICaptioner
 from .session import Session
 from .mixins import ErrorNormalizationMixin
 
@@ -41,7 +42,20 @@ class APITypes(str, Enum):
             # shouldn't happen, but we should have a default
             case _: return 512
 
-class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
+class APIUsage:
+    def __init__(
+        self,
+        prompt_tokens: int,
+        response_tokens: int,
+        total_tokens: int,
+        thoughts_tokens: int,
+    ):
+        self.prompt_tokens = prompt_tokens
+        self.response_tokens = response_tokens
+        self.total_tokens = total_tokens
+        self.thoughts_tokens = thoughts_tokens
+
+class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
     """
     Implementation for image captioning models using the Google Gemini API.
 
@@ -103,6 +117,24 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
         assert session is None or isinstance(session, requests.Session)
 
         self._session = Session(self._api_url, headers={ 'x-goog-api-key': self._api_token }, session=session)
+        self._api_usage: dict[str, APIUsage] = {}
+
+    def log_usage(self):
+        usage = APIUsage(prompt_tokens=0, response_tokens=0, total_tokens=0, thoughts_tokens=0)
+
+        for response_usage in self._api_usage.values():
+            usage.prompt_tokens += response_usage.prompt_tokens
+            usage.response_tokens += response_usage.response_tokens
+            usage.total_tokens += response_usage.total_tokens
+            usage.thoughts_tokens += response_usage.thoughts_tokens
+
+        if usage.total_tokens == 0:
+            return
+        
+        if usage.thoughts_tokens == 0:
+            _logger.info('Used a total of %d tokens (prompt: %d, response: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens)
+        else:
+            _logger.info('Used a total of %d tokens (prompt: %d, response: %d, reasoning: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens, usage.thoughts_tokens)
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         try:
@@ -282,6 +314,14 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
                 try:
                     assert isinstance(line_json, dict), "not a dict"
                     line_response = GeminiStreamingResponse(**line_json)
+
+                    if line_response.usageMetadata and line_response.responseId != "SKIPPED":
+                        self._api_usage[line_response.responseId] = APIUsage(
+                            response_tokens=line_response.usageMetadata.candidatesTokenCount,
+                            prompt_tokens=line_response.usageMetadata.promptTokenCount,
+                            total_tokens=line_response.usageMetadata.totalTokenCount,
+                            thoughts_tokens=line_response.usageMetadata.thoughtsTokenCount,
+                        )
 
                     found_candidate = False
                     for candidate in line_response.candidates:

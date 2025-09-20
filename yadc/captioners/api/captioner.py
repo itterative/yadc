@@ -1,8 +1,9 @@
 from typing import Generator
 from urllib.parse import urlparse
 
-from yadc.core import Captioner, DatasetImage
+from yadc.core import DatasetImage
 
+from .base import BaseAPICaptioner
 from .openai import OpenAICaptioner
 from .gemini import GeminiCaptioner
 
@@ -10,8 +11,8 @@ OPENAI_DOMAIN = 'api.openai.com'
 GEMINI_DOMAIN = 'generativelanguage.googleapis.com'
 VORTEX_DOMAIN = '-aiplatform.googleapis.com'
 
-class APICaptioner(Captioner):
-    inner_captioner: Captioner
+class APICaptioner(BaseAPICaptioner):
+    inner_captioner: BaseAPICaptioner
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -20,7 +21,7 @@ class APICaptioner(Captioner):
 
         if not api_url:
             raise ValueError("no api_url")
-        
+
         try:
             parsed_url = urlparse(api_url)
 
@@ -34,7 +35,9 @@ class APICaptioner(Captioner):
                 self.inner_captioner = OpenAICaptioner(**kwargs)
         except Exception as e:
             raise ValueError(f'failed to infer caption by api url') from e
-        
+
+    def log_usage(self):
+        self.inner_captioner.log_usage()
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         return self.inner_captioner.load_model(model_repo, **kwargs)

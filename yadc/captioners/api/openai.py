@@ -8,8 +8,9 @@ from enum import Enum
 from urllib.parse import urlparse
 
 from yadc.core import logging
-from yadc.core import Captioner, DatasetImage
+from yadc.core import DatasetImage
 
+from .base import BaseAPICaptioner
 from .session import Session
 from .mixins import ErrorNormalizationMixin
 
@@ -49,7 +50,20 @@ class APITypes(str, Enum):
             case APITypes.OPENROUTER: return 10 * 1024 * 1024
             case _: return 25 * 1024 * 1024 # slightly increased for local backends
 
-class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
+class APIUsage:
+    def __init__(
+        self,
+        prompt_tokens: int,
+        response_tokens: int,
+        total_tokens: int,
+        thoughts_tokens: int,
+    ):
+        self.prompt_tokens = prompt_tokens
+        self.response_tokens = response_tokens
+        self.total_tokens = total_tokens
+        self.thoughts_tokens = thoughts_tokens
+
+class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
     """
     Implementation for image captioning models using OpenAI-compatible endpoints.
 
@@ -120,6 +134,24 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
         _logger.info('API set to %s.', self._api_type)
 
         self._log_api_information()
+        self._api_usage: dict[str, APIUsage] = {}
+
+    def log_usage(self):
+        usage = APIUsage(prompt_tokens=0, response_tokens=0, total_tokens=0, thoughts_tokens=0)
+
+        for response_usage in self._api_usage.values():
+            usage.prompt_tokens += response_usage.prompt_tokens
+            usage.response_tokens += response_usage.response_tokens
+            usage.total_tokens += response_usage.total_tokens
+            usage.thoughts_tokens += response_usage.thoughts_tokens
+
+        if usage.total_tokens == 0:
+            return
+        
+        if usage.thoughts_tokens == 0:
+            _logger.info('Used a total of %d tokens (prompt: %d, response: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens)
+        else:
+            _logger.info('Used a total of %d tokens (prompt: %d, response: %d, reasoning: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens, usage.thoughts_tokens)
 
     def _infer_api_type(self):
         # early exit
@@ -485,6 +517,14 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
                 try:
                     assert isinstance(line_json, dict), "not a dict"
                     line_response = OpenAIStreamingResponse(**line_json)
+
+                    if line_response.usage and line_response.id != "SKIPPED":
+                        self._api_usage[line_response.id] = APIUsage(
+                            response_tokens=line_response.usage.completion_tokens,
+                            prompt_tokens=line_response.usage.prompt_tokens,
+                            total_tokens=line_response.usage.total_tokens,
+                            thoughts_tokens=0 if not line_response.usage.completion_tokens_details else line_response.usage.completion_tokens_details.reasoning_tokens,
+                        )
 
                     if line_response.error:
                         raise ValueError(self._normalize_error(line_response))

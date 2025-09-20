@@ -11,8 +11,10 @@ class OpenAIModel(pydantic.BaseModel):
     owned_by: str = 'default'
 
 class OpenAIStreamingResponse(pydantic.BaseModel):
+    id: str = 'SKIPPED'
     error: Optional['_OpenAIStreamingError'] = None
     choices: list['_OpenAIStreamingChoice'] = []
+    usage: Optional['_OpenAIUsage'] = None
 
 class _OpenAIStreamingError(pydantic.BaseModel):
     code: str
@@ -34,6 +36,15 @@ class _OpenAIError(pydantic.BaseModel):
     message: str
     metadata: Optional[dict] = None
 
+class _OpenAIUsage(pydantic.BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    completion_tokens_details: Optional['_OpenAIUsageCompletionDetails'] = None
+
+class _OpenAIUsageCompletionDetails(pydantic.BaseModel):
+    reasoning_tokens: int = 0
+
 class GeminiModelsResponse(pydantic.BaseModel):
     models: list['GeminiModel']
     nextPageToken: Optional[str] = None
@@ -54,8 +65,10 @@ class _GeminiError(pydantic.BaseModel):
     status: str
 
 class GeminiStreamingResponse(pydantic.BaseModel):
+    responseId: str = 'SKIPPED'
     candidates: list['_GeminiStreamingCandidate']
     promptFeedback: Optional['_GeminiStreamingPromptFeedback'] = None
+    usageMetadata: Optional['_GeminiStreamingUsageMetadata'] = None
 
 class _GeminiStreamingCandidate(pydantic.BaseModel):
     content: '_GeminiStreamingCandidateContent'
@@ -71,6 +84,12 @@ class _GeminiStreamingCandidatePart(pydantic.BaseModel):
 class _GeminiStreamingPromptFeedback(pydantic.BaseModel):
     blockReason: str = 'BLOCK_REASON_UNSPECIFIED'
     safetyRatings: list[str] = []
+
+class _GeminiStreamingUsageMetadata(pydantic.BaseModel):
+    candidatesTokenCount: int = 0
+    promptTokenCount: int = 0
+    totalTokenCount: int = 0
+    thoughtsTokenCount: int = 0
 
 class OpenRouterCreditsResponse(pydantic.BaseModel):
     data: '_OpenRouterCredits'
