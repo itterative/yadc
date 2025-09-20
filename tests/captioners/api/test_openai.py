@@ -2,13 +2,15 @@
 import re
 import mock
 import pytest
+
 import requests
+import requests_mock
 
 from yadc.core import DatasetImage
 from yadc.captioners.api import OpenAICaptioner
 
 @pytest.fixture
-def koboldcpp(session, request_mocker, load_test_data):
+def koboldcpp(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
     def _koboldcpp(case: str, model: str, loaded: bool = True, base_url: str = 'mock://koboldcpp'):
         loaded_model = model if loaded else 'inactive'
 
@@ -24,14 +26,14 @@ def koboldcpp(session, request_mocker, load_test_data):
             loaded_model = 'inactive' if data_filename == 'unload_model' else data_filename
             return {'success': True}
 
-        request_mocker.register_uri('GET', 'mock://koboldcpp/.well-known/serviceinfo', json={'software': {'name': 'koboldcpp'}})
-        request_mocker.register_uri('GET', 'mock://koboldcpp/v1/models', json=lambda r, c: {'data': [{'id': loaded_model, 'object': 'model', 'owned_by': 'koboldcpp'}]})
-        request_mocker.register_uri('GET', 'mock://koboldcpp/api/v1/model', json=lambda r, c: {'result': loaded_model})
-        request_mocker.register_uri('GET', 'mock://koboldcpp/api/admin/list_options', json=['unload_model', model])
+        request_mocker.register_uri('GET', f'{base_url}/.well-known/serviceinfo', json={'software': {'name': 'koboldcpp'}})
+        request_mocker.register_uri('GET', f'{base_url}/v1/models', json=lambda r, c: {'data': [{'id': loaded_model, 'object': 'model', 'owned_by': 'koboldcpp'}]})
+        request_mocker.register_uri('GET', f'{base_url}/api/v1/model', json=lambda r, c: {'result': loaded_model})
+        request_mocker.register_uri('GET', f'{base_url}/api/admin/list_options', json=['unload_model', model])
 
-        request_mocker.register_uri('POST', 'mock://koboldcpp/api/admin/reload_config', json=load_model)
+        request_mocker.register_uri('POST', f'{base_url}/api/admin/reload_config', json=load_model)
 
-        request_mocker.register_uri('POST', 'mock://koboldcpp/v1/chat/completions', text=load_test_data(case))
+        request_mocker.register_uri('POST', f'{base_url}/v1/chat/completions', text=load_test_data(case))
 
         captioner = OpenAICaptioner(api_url=f'{base_url}/v1', session=session)
 
@@ -40,7 +42,7 @@ def koboldcpp(session, request_mocker, load_test_data):
     return _koboldcpp
 
 @pytest.fixture
-def openrouter(session, request_mocker, load_test_data):
+def openrouter(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
     def _openrouter(case: str, model: str, base_url: str = 'mock://openrouter.ai/api/v1'):
         request_mocker.register_uri('GET', f'{base_url}/credits', json={'data': {'total_credits': 1.0, 'total_usage': 0.1}})
         request_mocker.register_uri('GET', f'{base_url}/models', json={'data': [{'id': model, 'object': 'model', 'owned_by': 'koboldcpp'}]})

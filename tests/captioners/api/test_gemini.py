@@ -2,11 +2,14 @@ import re
 import mock
 import pytest
 
+import requests
+import requests_mock
+
 from yadc.core import DatasetImage
 from yadc.captioners.api import GeminiCaptioner
 
 @pytest.fixture
-def gemini(session, request_mocker, load_test_data):
+def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
     def _gemini(case: str, model: str, base_url: str = 'mock://generativelanguage.googleapis.com/v1beta'):
         request_mocker.register_uri('GET', f'{base_url}/models/unknown', status_code=404)
 
