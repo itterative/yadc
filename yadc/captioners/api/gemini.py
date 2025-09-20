@@ -202,6 +202,8 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
 
         if self._image_quality == 'low':
             generation_config['mediaResolution'] = 'MEDIA_RESOLUTION_LOW'
+        elif self._image_quality == 'medium':
+            generation_config['mediaResolution'] = 'MEDIA_RESOLUTION_MEDIUM'
         elif self._image_quality == 'high':
             generation_config['mediaResolution'] = 'MEDIA_RESOLUTION_HIGH'
 
