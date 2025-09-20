@@ -11,6 +11,7 @@ from .types import (
     OpenAIStreamingResponse,
     OpenRouterModerationError,
     GeminiErrorResponse,
+    GeminiStreamingResponse,
 )
 
 _logger = logging.get_logger(__name__)
@@ -22,7 +23,7 @@ class _ParsedError:
         self.message = error_message
 
 class ErrorNormalizationMixin:
-    class GenerationError(Exception):
+    class GenerationError(BaseException):
         def __init__(self, error: str) -> None:
             super().__init__(error)
 
@@ -108,7 +109,18 @@ class ErrorNormalizationMixin:
 
                 return f'api stopped generating: reason: {choice.finish_reason}'
 
-            _logger.warning('Warning: failed to process openai streaming response error')
+            _logger.warning('Warning: failed to process openai streaming response')
+        elif isinstance(error, GeminiStreamingResponse):
+            if error.promptFeedback:
+                return f'api stopped generating: reason: {error.promptFeedback.blockReason}: {"; ".join(error.promptFeedback.safetyRatings)}'
+
+            for candidate in error.candidates:
+                if not candidate.finishReason:
+                    continue
+
+                return f'api stopped generating: reason: {candidate.finishReason}'
+
+            _logger.warning('Warning: failed to process gemini streaming response')
         else:
             _logger.debug('Unhandled error %s: %s', type(error), error)
 

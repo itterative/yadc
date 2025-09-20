@@ -55,9 +55,11 @@ class _GeminiError(pydantic.BaseModel):
 
 class GeminiStreamingResponse(pydantic.BaseModel):
     candidates: list['_GeminiStreamingCandidate']
+    promptFeedback: Optional['_GeminiStreamingPromptFeedback'] = None
 
 class _GeminiStreamingCandidate(pydantic.BaseModel):
     content: '_GeminiStreamingCandidateContent'
+    finishReason: Optional[str] = None
 
 class _GeminiStreamingCandidateContent(pydantic.BaseModel):
     parts: list['_GeminiStreamingCandidatePart']
@@ -65,6 +67,10 @@ class _GeminiStreamingCandidateContent(pydantic.BaseModel):
 class _GeminiStreamingCandidatePart(pydantic.BaseModel):
     text: str = ''
     thought: bool = False
+
+class _GeminiStreamingPromptFeedback(pydantic.BaseModel):
+    blockReason: str = 'BLOCK_REASON_UNSPECIFIED'
+    safetyRatings: list[str] = []
 
 class OpenRouterCreditsResponse(pydantic.BaseModel):
     data: '_OpenRouterCredits'

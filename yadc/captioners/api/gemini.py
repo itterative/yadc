@@ -280,6 +280,9 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
                         if found_candidate:
                             break
 
+                        if candidate.finishReason and candidate.finishReason != 'STOP':
+                            raise ValueError(self._normalize_error(line_response))
+
                         for part in candidate.content.parts:
                             if text := part.text:
                                 # skip for now
