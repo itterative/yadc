@@ -28,7 +28,7 @@ overwrite_captions = false
 
 [api]
 # only the hostname and port should be set here, without any other url paths
-url = "http://localhost:5001"
+url = "http://localhost:5001/v1"
 
 # fill this in with your api token (necessary for public endpoints such as OpenAI's)
 # if you are hosting the api locally, you leave this empty

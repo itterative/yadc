@@ -1,7 +1,7 @@
 # This is an example of how you can use prompt template to give additional context to the model.
 
 [api]
-url = "http://localhost:5001"
+url = "http://localhost:5001/v1"
 token = ""
 
 [settings]

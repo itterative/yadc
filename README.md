@@ -26,7 +26,7 @@ Minimal example:
 
 ```toml
 [api]
-url = "http://localhost:5001"
+url = "http://localhost:5001/v1"
 model_name = "gemma-3n-E4B-it-Q8_0"
 
 [dataset]
