@@ -9,6 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from urllib.parse import urlparse, ParseResult
 
+from yadc.core import logging
+
+_logger = logging.get_logger(__name__)
 
 class Session:
     def __init__(
@@ -80,11 +83,15 @@ class Session:
         headers = kwargs.pop('headers', {})
         assert isinstance(headers, dict)
 
+        path = self._create_url(path)
+
+        _logger.debug('HTTP Request: %s %s', method, path)
+
         headers.update(self.headers)
 
         stream = kwargs.pop('stream', False)
 
-        request = requests.Request(method, url=self._create_url(path), headers=headers, **kwargs)
+        request = requests.Request(method, url=path, headers=headers, **kwargs)
         session = self._session
 
         t = self._pool.submit(functools.partial(session.send, session.prepare_request(request,), stream=stream))
