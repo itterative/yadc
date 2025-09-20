@@ -18,9 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "secretstorage>=3.4.0",
-    "keyring-pass>=0.9.3",
+test = [
+    "mock>=5.2.0",
+    "pytest>=8.4.2",
+    "requests-mock>=1.12.1",
 ]
 
 [project.scripts]

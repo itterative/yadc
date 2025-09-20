@@ -13,6 +13,7 @@ from yadc.core import logging
 
 _logger = logging.get_logger(__name__)
 
+
 class Session:
     def __init__(
         self,
@@ -21,13 +22,14 @@ class Session:
         max_retries: int = 3,
         backoff_factor: float = 1.0,
         status_forcelist: tuple[int, ...] = (429, 502, 503, 504),
+        session: requests.Session|None = None,
     ):
         self.base_url = urlparse(base_url.rstrip('/'))
         self.headers = headers or {}
 
         self.headers['User-Agent'] = self.user_agent
 
-        self._session = requests.Session()
+        self._session = session or requests.Session()
         self._setup_retries(max_retries, backoff_factor, status_forcelist)
 
         self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')

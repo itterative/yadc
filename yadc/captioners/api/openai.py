@@ -5,6 +5,7 @@ import requests
 import pydantic
 
 from enum import Enum
+from urllib.parse import urlparse
 
 from yadc.core import logging
 from yadc.core import Captioner, DatasetImage
@@ -83,6 +84,7 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
+                - `session` (requests.Session, options): Override the session for the API calls
 
         Raises:
             ValueError: If `api_url` is not provided.
@@ -109,7 +111,10 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
         else:
             _logger.warning('Warning: no api_token is set, requests will fail if api uses authentication')
 
-        self._session = Session(self._api_url, headers=session_headers)
+        session: requests.Session|None = kwargs.pop('session', None)
+        assert session is None or isinstance(session, requests.Session)
+
+        self._session = Session(self._api_url, headers=session_headers, session=session)
 
         self._api_type = self._infer_api_type()
         _logger.info('API set to %s.', self._api_type)
@@ -119,11 +124,16 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
     def _infer_api_type(self):
         # early exit
 
-        if self._api_url.startswith('https://api.openai.com'):
-            return APITypes.OPENAI
-        
-        if self._api_url.startswith('https://openrouter.ai'):
-            return APITypes.OPENROUTER
+        try:
+            api_url = urlparse(self._api_url)
+
+            if api_url.netloc == 'api.openai.com':
+                return APITypes.OPENAI
+            
+            if api_url.netloc == 'openrouter.ai':
+                return APITypes.OPENROUTER
+        except:
+            pass
 
         # NOTE: might be worth to infer based on the model list
         # 
@@ -148,7 +158,11 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
                 assert koboldcpp_service_info.software.name.lower() == 'koboldcpp'
 
                 return APITypes.KOBOLDCPP
-        except AssertionError|pydantic.ValidationError|requests.JSONDecodeError:
+        except AssertionError:
+            pass
+        except requests.JSONDecodeError:
+            pass
+        except pydantic.ValidationError:
             pass
 
         # the following aren't very good checks (might not work in the future)
@@ -174,7 +188,9 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
                 assert 'version' in vllm_json
 
             return APITypes.VLLM
-        except AssertionError|requests.JSONDecodeError:
+        except AssertionError:
+            pass
+        except requests.JSONDecodeError:
             pass
 
         try:
@@ -191,7 +207,9 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
                 assert 'version' in ollama_json
 
             return APITypes.OLLAMA
-        except AssertionError|requests.JSONDecodeError:
+        except AssertionError:
+            pass
+        except requests.JSONDecodeError:
             pass
 
         return APITypes.OPENAI
@@ -327,7 +345,7 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
         start_t = time.time()
         end_t = start_t + timeout
 
-        time.sleep(5) # NOTE: the api should be down within 5s; after that we keep checking which model is loaded
+        # time.sleep(5) # NOTE: the api should be down within 5s; after that we keep checking which model is loaded
 
         while time.time() < end_t:
             try:

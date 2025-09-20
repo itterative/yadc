@@ -77,6 +77,7 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
+                - `session` (requests.Session, options): Override the session for the API calls
 
         Raises:
             ValueError: If `api_token` is not provided.
@@ -97,8 +98,11 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
 
         if not self._api_token:
             raise ValueError("no api_token")
+        
+        session: requests.Session|None = kwargs.pop('session', None)
+        assert session is None or isinstance(session, requests.Session)
 
-        self._session = Session(self._api_url, headers={ 'x-goog-api-key': self._api_token })
+        self._session = Session(self._api_url, headers={ 'x-goog-api-key': self._api_token }, session=session)
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         try:
@@ -310,7 +314,9 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
         try:
             yield from self._generate_prediction_inner(image, **kwargs)
             return
-        except requests.HTTPError|ErrorNormalizationMixin.GenerationError as e:
+        except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
+        except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
     def predict(self, image: DatasetImage, **kwargs):

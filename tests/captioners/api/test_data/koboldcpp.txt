@@ -1,0 +1,253 @@
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "Close-up, circular frame featuring a raccoon"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " with"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a mischievous"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " expression"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " The"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367344, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " raccoon"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " has"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " dark"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " fur"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " with"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " lighter"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " markings"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " around"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " its"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " eyes"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " muzzle"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " It"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "\u2019"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "s gazing"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " directly"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " at"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " the"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " viewer"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " with"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " wide"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " dark"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " eyes"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367345, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " its"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " tiny"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " paws"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " are"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " raised"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " as"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " if"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " in"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a playful"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " gesture"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " The"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " background"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " is"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " blurred"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " dark"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " creating"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a spotlight"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " effect"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " on"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " the"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " raccoon"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367346, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "\u2019"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "s face"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " The"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " image"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " appears"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " to"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " be"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " taken"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " from"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a low"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " angle"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " looking"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " up"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " at"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " the"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " raccoon"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " possibly"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " through"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a distorted"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " lens"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367347, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " or"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a fis"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "he"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "ye"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " effect"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " referencing"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " the"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " infamous"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " meme"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " \""}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "Pedro"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " Pedro"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " Pedro"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "\"."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " The"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " lighting"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " is"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " soft"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " diffused"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " casting"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " gentle"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " shadows"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367348, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " highlighting"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " the"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " raccoon"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "\u2019"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "s fur"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " The"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " overall"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " mood"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " is"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " humorous"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " and"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " quirky"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": ","}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " evoking"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " a sense"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " of playful"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " chaos"}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "koboldcpp", "object": "chat.completion.chunk", "created": 1758367349, "model": "koboldcpp/gemma-3-27b", "choices": [{"index": 0, "finish_reason": "stop", "delta": {"role": "assistant", "content": ""}}]}
+
+data: [DONE]
