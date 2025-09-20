@@ -389,7 +389,7 @@ class OpenAICaptioner(Captioner, ErrorNormalizationMixin):
             'store': self._store_conversation,
             'messages': [
                 {
-                    "role": "developer",
+                    "role": "system",
                     "content": [
                         {
                             "type": "text",
