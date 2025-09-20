@@ -3,6 +3,7 @@
 [api]
 url = "http://localhost:5001/v1"
 token = ""
+model_name = ""
 
 [settings]
 prompt_template = """
