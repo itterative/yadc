@@ -111,6 +111,8 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
             raise ValueError(self._normalize_error(e))
         except requests.ConnectionError:
             raise ValueError(f'api unavailable: {self._api_url}')
+        except AssertionError as e:
+            raise ValueError(str(e))
 
     def _load_model(self, model_repo: str, **kwargs) -> None:
         model_repo = model_repo.removeprefix('models/')
@@ -145,6 +147,8 @@ class GeminiCaptioner(Captioner, ErrorNormalizationMixin):
                 models_resp.raise_for_status()
 
                 models_resp_json = models_resp.json()
+                assert isinstance(models_resp_json, dict), "bad model response"
+
                 models = GeminiModelsResponse(**models_resp_json)
 
                 for model in models.models:
