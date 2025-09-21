@@ -32,7 +32,7 @@ class OpenAIErrorResponse(pydantic.BaseModel):
     error: '_OpenAIError'
 
 class _OpenAIError(pydantic.BaseModel):
-    code: int
+    code: int|str
     message: str
     metadata: Optional[dict] = None
 

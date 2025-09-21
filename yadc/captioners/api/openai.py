@@ -486,7 +486,14 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
         conversation = self.conversation(image, **kwargs)
 
         with self._session.post('chat/completions', stream=True, json=conversation) as conversation_resp:
-            conversation_resp.raise_for_status()
+            try:
+                conversation_resp.raise_for_status()
+            except:
+                # NOTE: consume the stream so error can be parsed
+                conversation_error = '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
+                conversation_error = conversation_error.strip()
+
+                raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
             converation_stopped = False
 
@@ -528,7 +535,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                     if line_response.error:
                         raise ValueError(self._normalize_error(line_response))
-                    
+
                     for choice in line_response.choices:
                         if choice.finish_reason and choice.finish_reason != 'stop':
                             raise ValueError(self._normalize_error(line_response))
@@ -551,6 +558,8 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             yield from self._generate_prediction_inner(image, **kwargs)
             return
         except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
+        except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
 

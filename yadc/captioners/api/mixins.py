@@ -17,7 +17,7 @@ from .types import (
 _logger = logging.get_logger(__name__)
 
 class _ParsedError:
-    def __init__(self, error_source: str, error_code: int, error_message: str):
+    def __init__(self, error_source: str, error_code: int|str, error_message: str):
         self.source = error_source
         self.code = error_code
         self.message = error_message
@@ -76,6 +76,9 @@ class ErrorNormalizationMixin:
         error_message = ''
 
         if isinstance(error, requests.HTTPError):
+            # FIXME: doesn't work for streaming content
+
+            _logger.debug('HTTP error %d: headers %s', error.response.status_code, error.response.headers)
             _logger.debug('HTTP error %d: %s', error.response.status_code, error.response.text)
 
             error_source = 'http'

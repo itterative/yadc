@@ -277,7 +277,14 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
         conversation = self.conversation(image, **kwargs)
 
         with self._session.post(f'models/{self._current_model}:streamGenerateContent?alt=sse', stream=True, json=conversation) as conversation_resp:
-            conversation_resp.raise_for_status()
+            try:
+                conversation_resp.raise_for_status()
+            except:
+                # NOTE: consume the stream so error can be parsed
+                conversation_error = '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
+                conversation_error = conversation_error.strip()
+
+                raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
             conversation_error = ''
             conversation_stopped = False
