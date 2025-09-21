@@ -349,7 +349,7 @@ def caption(dataset_path: str, env: str = 'default'):
                             dataset_image_tmp,
                             max_new_tokens=dataset_toml.settings.max_tokens,
                             debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                            configuration_overrides=caption_overrides,
+                            conversation_overrides=caption_overrides,
                         )
 
                         for token in tokens:
@@ -392,7 +392,7 @@ def caption(dataset_path: str, env: str = 'default'):
                                     max_new_tokens=dataset_toml.settings.max_tokens,
                                     use_cache=True,
                                     debug_prompt=dataset_toml.settings.advanced.debug_prompt and caption_rounds_debug,
-                                    configuration_overrides=caption_overrides,
+                                    conversation_overrides=caption_overrides,
                                 ).strip()
 
                                 end_t = time()
@@ -421,7 +421,7 @@ def caption(dataset_path: str, env: str = 'default'):
                             caption_rounds=caption_rounds,
                             max_new_tokens=dataset_toml.settings.max_tokens,
                             debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                            configuration_overrides=caption_overrides,
+                            conversation_overrides=caption_overrides,
                         )
 
                         for token in tokens:
