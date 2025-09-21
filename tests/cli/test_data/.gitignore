@@ -1,0 +1,7 @@
+*.txt
+*.toml
+*.toml~
+*.history~
+
+!test*.dataset
+!test*.jpg

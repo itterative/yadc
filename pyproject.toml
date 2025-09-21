@@ -23,6 +23,8 @@ dependencies = [
 test = [
     "mock>=5.2.0",
     "pytest>=8.4.2",
+    "pytest-integration>=0.2.3",
+    "pytest-timeout>=2.4.0",
     "requests-mock>=1.12.1",
 ]
 
@@ -35,3 +37,6 @@ yadc = "yadc.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["yadc*"]
+
+[tool.pytest.ini_options]
+timeout = 5

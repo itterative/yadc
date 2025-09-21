@@ -1,0 +1,29 @@
+interactive = false
+overwrite_captions = true
+
+[reasoning]
+enable = true
+thinking_effort = 'low'
+exclude_from_output = false
+
+[settings]
+max_tokens = 1536
+
+prompt_template = """
+{% set system_prompt %}
+You are a useful assistant. You help the user caption the images they are sending. You shall provide only the caption, without any other additions.
+
+Describe the setting, the characters, their clothing, their age, their interactions, their expressions and their feelings as well. Describe the composition of the image as well. Describe the perspective, type of the shot and the angle of the image related to the viewer as well. Describe the lighting, shading and the brightness of the image as well. Don't add unnecessary commentary.
+{% endset %}
+
+{% set user_prompt %}
+Describe the image. Use the following additional context when describing the image: {{ context }}
+{% endset %}
+"""
+
+[dataset]
+paths = []
+
+[[dataset.images]]
+path = "test_pedro.jpg"
+context = "This is an image of an infamous racoon from the meme song Pedro Pedro Pedro."
