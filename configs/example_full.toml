@@ -64,6 +64,9 @@ exclude_from_output = true
 [settings]
 # controls how many tokens the model is allowed to output
 # recommendation: 512 tokens is enough for most captioning scenarios
+#                 1024 for when reasoning is enabled with low thinking effort
+#                 1536 for when reasoning is enabled with medium thinking effort
+#                 1536-2048 for when reasoning is enabled with high thinking effort
 max_tokens = 512
 
 # allows you to override the prompt template used in the captioning process
