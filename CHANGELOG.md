@@ -1,4 +1,8 @@
 # Release History
+## 0.4.1 (pre-release)
+
+- Fix api errors not being processed
+
 ## 0.4.0 (pre-release)
 
 - Basic user config support enabled
