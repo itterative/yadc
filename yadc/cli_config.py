@@ -274,7 +274,7 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
             encrypted_value = _encrypt_setting(value)
             _set_env_config(config_toml, env, key, encrypted_value)
         except Exception as e:
-            _logger.error("Error: Failed to encrypt token: %s", e)
+            _logger.error("Error: Failed to encrypt setting: %s", e)
             return 1
     else:
         _set_env_config(config_toml, env, key, value)
