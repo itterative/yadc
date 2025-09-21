@@ -396,7 +396,7 @@ def config_list(env: str = "default"):
         if key.endswith('_encrypted'):
             key = key.removesuffix('_encrypted')
             decrypted = _decrypt_setting(value)
-            if decrypted:
+            if decrypted is not None:
                 buffer += f"{key} = [REDACTED]\n"
             else:
                 buffer += f"{key} = [DECRYPTION FAILED]\n"
