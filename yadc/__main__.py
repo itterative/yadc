@@ -23,7 +23,7 @@ def main():
 
     config_subparser = config_parser.add_subparsers(dest='subcommand', description='subcommands to run')
 
-    config_envs_parser = config_subparser.add_parser('envs', help='List available envs', description='List available envs in user config', parents=[common_parser])
+    config_envs_parser = config_subparser.add_parser('envs', help='List available envs', description='List available envs in user config')
     config_envs_parser.set_defaults(_subaction='envs')
 
     config_list_parser = config_subparser.add_parser('list', help='List all settings', description='List all settings in user config', parents=[common_parser])
