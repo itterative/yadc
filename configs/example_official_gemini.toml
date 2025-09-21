@@ -1,4 +1,4 @@
-# This is a minimal example showing how you can use the official Gemini endpoints.
+# This is a example showing how you can use the official Gemini endpoints.
 
 [api]
 url = "https://generativelanguage.googleapis.com/v1beta"
@@ -7,3 +7,59 @@ model_name = "gemini-2.5-flash"
 
 [dataset]
 paths = [ "path_1", "path_2" ]
+
+
+# gemini allows configurable safety settings. for more details, check the official documentation
+# these are not set by default by the captioner, so you might want to change these
+#
+# documentation: https://ai.google.dev/api/generate-content
+# documentation: https://ai.google.dev/api/generate-content#v1beta.SafetySetting
+[[settings.safety_settings]]
+category = "HARM_CATEGORY_HATE_SPEECH"
+threshold = "BLOCK_LOW"
+[[settings.safety_settings]]
+category = "HARM_CATEGORY_HARASSMENT"
+threshold = "BLOCK_MEDIUM_AND_ABOVE"
+[[settings.safety_settings]]
+category = "HARM_CATEGORY_SEXUALLY_EXPLICIT"
+threshold = "BLOCK_ONLY_HIGH"
+
+
+[settings.advanced.generation_config]
+
+# the following fields can be optionally set as necessary
+# documentation: https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
+#
+# generally, you should use the defaults from Gemini API. however, if you want more
+# control, you can change them. some settings do not make sense for a captioner,
+# so not all are listed here
+
+# determines the randomness of the output (0.2 less random, 0.8 more random)
+# note: not all models will support this
+# note: should not be used together with topP and topK
+#
+# range: 0.0 to 2.0
+temperature = 1.0
+
+# determines which tokens to consider (e.g. 0.1 will consider the top 10% tokens, 
+# ordered by their likelyhood)
+# note: not all models will support this
+# note: should not be used together with temperature
+#
+# range: 0.0 to 1.0
+topP = 1.0
+
+# same as topP, but using a number of tokens instead of probability (e.g. 100 will
+# consider the top 100 tokens, ordered by their likelyhood)
+topK = 100
+
+# setting this value should make the results deterministic
+seed = 1234
+
+# range: -2.0 to 2.0
+frequencyPenalty = 0.0
+
+# range: -2.0 to 2.0
+presencePenalty = 0.0
+
+

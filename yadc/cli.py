@@ -107,9 +107,6 @@ def caption(dataset_path: str, env: str = 'default'):
         _logger.error('Error loading %s: %s', dataset_path, e)
         return 1
 
-    if dataset_toml.settings.hf_token:
-        os.environ['HF_TOKEN'] = dataset_toml.settings.hf_token
-
     skipped_from_dataset = 0
     dataset_to_do: list[DatasetImage] = []
 
@@ -216,6 +213,9 @@ def caption(dataset_path: str, env: str = 'default'):
             _logger.info('')
 
     caption_loop_start = time()
+
+    caption_overrides = dataset_toml.settings.advanced.model_dump()
+    caption_overrides.pop('debug_prompt', None) # fix: don't want to pass this to the API
 
     for i_dataset_image, dataset_image in enumerate(dataset_to_do):
         if do_quit:
@@ -345,7 +345,14 @@ def caption(dataset_path: str, env: str = 'default'):
                     start_t = time()
 
                     try:
-                        for token in model.predict_stream(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                        tokens = model.predict_stream(
+                            dataset_image_tmp,
+                            max_new_tokens=dataset_toml.settings.max_tokens,
+                            debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                            configuration_overrides=caption_overrides,
+                        )
+
+                        for token in tokens:
                             caption.append(token)
                             print(token, end='', flush=True)
                         end_t = time()
@@ -379,7 +386,15 @@ def caption(dataset_path: str, env: str = 'default'):
 
                             if not new_caption:
                                 start_t = time()
-                                new_caption = model.predict(dataset_image_tmp, max_new_tokens=dataset_toml.settings.max_tokens, use_cache=True, debug_prompt=dataset_toml.settings.debug_prompt and caption_rounds_debug).strip()
+
+                                new_caption = model.predict(
+                                    dataset_image_tmp,
+                                    max_new_tokens=dataset_toml.settings.max_tokens,
+                                    use_cache=True,
+                                    debug_prompt=dataset_toml.settings.advanced.debug_prompt and caption_rounds_debug,
+                                    configuration_overrides=caption_overrides,
+                                ).strip()
+
                                 end_t = time()
 
                                 caption_rounds_debug = False
@@ -401,7 +416,15 @@ def caption(dataset_path: str, env: str = 'default'):
                         _logger.info('')
                         start_t = time()
 
-                        for token in model.predict_stream(DatasetImage(path=dataset_image.path), caption_rounds=caption_rounds, max_new_tokens=dataset_toml.settings.max_tokens, debug_prompt=dataset_toml.settings.debug_prompt):
+                        tokens = model.predict_stream(
+                            DatasetImage(path=dataset_image.path),
+                            caption_rounds=caption_rounds,
+                            max_new_tokens=dataset_toml.settings.max_tokens,
+                            debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                            configuration_overrides=caption_overrides,
+                        )
+
+                        for token in tokens:
                             caption.append(token)
                             print(token, end='', flush=True)
                         end_t = time()

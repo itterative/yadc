@@ -26,6 +26,8 @@ caption_suffix = '.txt'
 # recommendation: use in conjunction with interactive mode
 overwrite_captions = false
 
+
+
 [api]
 # only the hostname and port should be set here, without any other url paths
 url = "http://localhost:5001/v1"
@@ -37,6 +39,8 @@ token = ""
 # the model which should be used (e.g. gpt-5-mini)
 # for more details, see README.md
 model_name = ""
+
+
 
 [reasoning]
 # enables chain-of-though / extra reasoning behaviour for models that support it
@@ -60,6 +64,8 @@ thinking_effort = "low"
 #
 # recommendation: set as true and disable it if you want to see more details about what the model is thinking
 exclude_from_output = true
+
+
 
 [settings]
 # controls how many tokens the model is allowed to output
@@ -100,12 +106,40 @@ store_conversation = false
 # recommendation: auto
 image_quality = "auto"
 
+
+[settings.advanced]
+
 # if you wish to see both the system_prompt and user_prompts that are sent to the api, you can
 # set this to true
 # when updating the prompt templates, this is useful to see how the model is prompted
 #
 # recommendation: leave it as false, unless you wish to see the prompts
 debug_prompt = false
+
+# in most scenarios, you don't need to change this from the default. this options is for the official
+# OpenAI, since o4 and newer models use 'developer' instead
+#
+# options: system, developer
+# recommendation: leave it as system unless you use newer models from the OpenAI API directly
+system_role = "system"
+
+# added here for completion's sake, it does not allow you to change it from the default at the moment
+#
+# options: user
+user_role = "user"
+
+# settings.advanced section will allow you to add more fields here than defined above
+# change them as needed and based on the API you are actually using
+#
+# note: setting to null will remove these settings from the API requests
+# note: some options are provided in the settings section since they can
+#       be used across different APIs, so try not to override those ones
+#       unless you need to
+#
+# some examples below (from OpenAI documentation):
+temperature = 1.0
+frequency_penalty = 0.0
+
 
 [dataset]
 # a list of paths where the captioner will search for images

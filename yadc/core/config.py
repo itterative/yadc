@@ -43,7 +43,6 @@ class ConfigSettings(pydantic.BaseModel):
     Configuration for runtime behavior and prompt generation.
 
     Attributes:
-        hf_token: Hugging Face API token for accessing gated models (optional).
         max_tokens: Maximum number of tokens to generate (between 100 and 2048).
 
         prompt_template: Inline Jinja template used for generating prompts (takes precedence over file).
@@ -51,10 +50,8 @@ class ConfigSettings(pydantic.BaseModel):
 
         store_conversation: If True, retains full conversation history (depends on API implementation).
         image_quality: Image upload quality setting; one of 'auto', 'high', or 'low'.
-        debug_prompt: If True, prints the final rendered prompt before sending to the API.
     """
 
-    hf_token: str = ''
     max_tokens: int = 512
 
     prompt_template: str = ''
@@ -62,7 +59,8 @@ class ConfigSettings(pydantic.BaseModel):
 
     store_conversation: bool = False
     image_quality: str = 'auto'
-    debug_prompt: bool = False
+
+    advanced: 'ConfigSettingsAdvanced' = pydantic.Field(default_factory=lambda: ConfigSettingsAdvanced())
 
     @pydantic.model_validator(mode='after')
     def validate_(self):
@@ -72,6 +70,35 @@ class ConfigSettings(pydantic.BaseModel):
             assert self.prompt_template or self.prompt_template_path, 'either prompt_template or prompt_template_name must be provided in the config'
 
             assert self.image_quality in ('auto', 'high', 'low'), 'config image_quality must be one of: auto, high, low'
+        except AssertionError as e:
+            raise ValueError(e)
+
+        return self
+
+class ConfigSettingsAdvanced(pydantic.BaseModel):
+    """
+    Configuration for runtime behavior and prompt generation.
+
+    Attributes:
+        role (str): The role to use in the system prompt (either developer or system). This is useful for newer OpenAI models.
+        debug_prompt (bool): If True, prints the final rendered prompt before sending to the API.
+
+    Extra Fields:
+        Any additional fields will be passed in the requests to the API.
+    """
+
+    debug_prompt: bool = False
+
+    system_role: str = 'system'
+    user_role: str = 'user'
+
+    model_config = pydantic.ConfigDict(extra='allow')
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        try:
+            assert self.system_role in ('system', 'developer'), 'advanced settings system role must be one of: developer, system'
+            assert self.user_role in ('user'), 'advanced settings user role must be one of: user'
         except AssertionError as e:
             raise ValueError(e)
 

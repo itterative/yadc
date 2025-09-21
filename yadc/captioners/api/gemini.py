@@ -1,4 +1,7 @@
+from typing import Optional
+
 import json
+import copy
 import requests
 import pydantic
 
@@ -41,6 +44,51 @@ class APITypes(str, Enum):
 
             # shouldn't happen, but we should have a default
             case _: return 512
+
+class SafetySettings(pydantic.BaseModel):
+    data: Optional[list['SafetySetting']] = None
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        existing_categories = set()
+
+        if self.data is None:
+            return self
+
+        for setting in self.data:
+            if setting.category in existing_categories:
+                raise ValueError(f'duplicate safetty setting: {setting.category}')
+            
+            existing_categories.add(setting.category)
+        
+        return self
+
+class SafetySetting(pydantic.BaseModel):
+    category: str
+    threshold: str
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        try:
+            assert self.category in (
+                'HARM_CATEGORY_HARASSMENT',
+                'HARM_CATEGORY_HATE_SPEECH',
+                'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                'HARM_CATEGORY_DANGEROUS_CONTENT',
+            ), 'invalid safety setting category: refer to documentation at https://ai.google.dev/api/generate-content#v1beta.HarmCategory'
+
+            assert self.threshold in (
+                'BLOCK_LOW_AND_ABOVE',
+                'BLOCK_MEDIUM_AND_ABOVE',
+                'BLOCK_ONLY_HIGH',
+                'BLOCK_NONE',
+                'OFF',
+            ), f'invalid safety setting threshold for {self.category}: refer to documentation at https://ai.google.dev/api/generate-content#HarmBlockThreshold'
+        except AssertionError as e:
+            raise ValueError(e)
+
+        return self
+
 
 class APIUsage:
     def __init__(
@@ -224,16 +272,35 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             **kwargs
         )
 
-        temperature = kwargs.pop('temperature', 0.8)
-        top_p = kwargs.pop('top_p', 0.9)
-        top_k = kwargs.pop('top_k', 64)
+        try:
+            conversation_overrides = kwargs.pop('conversation_overrides', {})
+            assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}'
+            
+            conversation_overrides = copy.deepcopy(conversation_overrides)
+            
+            # just make sure this is not overridden
+            conversation_overrides.pop('contents', None)
+
+            system_role = conversation_overrides.pop('system_role', None) or 'system'
+            assert isinstance(system_role, str), f'bad value for conversation_overrides/advanced settings system_role; expected a str, got: {type(system_role)}'
+
+            user_role = conversation_overrides.pop('user_role', None) or 'user'
+            assert isinstance(user_role, str), f'bad value for conversation_overrides/advanced settings user_role; expected a str, got: {type(user_role)}'
+
+            try:
+                safety_settings_overrides = SafetySettings(data=conversation_overrides.get('safety_settings', None))
+            except pydantic.ValidationError as e:
+                raise AssertionError(f'bad value for conversation_overrides/advanced settings safety settings: {e}')
+            
+            generation_config_overrides = conversation_overrides.get('generation_config', {})
+            assert isinstance(generation_config_overrides, dict), f'bad value for conversation_overrides/advanced settings generation_config; expected a dict, got: {type(generation_config_overrides)}'
+        except AssertionError as e:
+            raise ValueError(e)
+
         max_tokens = kwargs.pop('max_new_tokens', 512)
 
         generation_config = {
             'maxOutputTokens': max_tokens,
-            'temperature': temperature,
-            'topP': top_p,
-            'topK': top_k,
             'responseModalities': [ 'TEXT' ],
         }
 
@@ -264,6 +331,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                 'includeThoughts': not self._reasoning_exclude_output,
                 'thinkingBudget': APITypes.BASE.get_thinking_budget(self._reasoning_effort),
             }
+
+        if safety_settings_overrides.data is not None:
+            conversation['safetySettings'] = safety_settings_overrides.model_dump()['data']
+
+        if generation_config_overrides:
+            generation_config.update(generation_config_overrides)
 
         return conversation
    

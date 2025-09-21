@@ -1,4 +1,4 @@
-# This is a minimal example showing how you can use the official OpenAI endpoints.
+# This is a example showing how you can use the official OpenAI endpoints.
 
 [api]
 url = "https://api.openai.com/v1"
@@ -7,3 +7,50 @@ model_name = "gpt-5-mini"
 
 [dataset]
 paths = [ "path_1", "path_2" ]
+
+
+[settings.advanced]
+# models newer than o4 use 'developer' instead of 'system'
+system_role = "developer"
+
+# the following fields can be optionally set as necessary
+# documentation: https://platform.openai.com/docs/api-reference/chat/create
+#
+# generally, you should use the defaults from OpenAI. however, if you want more
+# control, you can change them. some settings do not make sense for a captioner,
+# so not all are listed here
+
+# options: auto, default, flex, priority
+service_tier = "auto"
+
+# changes how yappy the model is
+# note: not all models support this
+#
+# optios: low, medium, high
+verbosity = "medium"
+
+# determines the randomness of the output (0.2 less random, 0.8 more random)
+# note: not all models will support this
+# note: cannot be used together with top_p
+#
+# range: 0.0 to 2.0
+temperature = 1.0
+
+# determines which tokens to consider (e.g. 0.1 will consider the top 10% tokens, 
+# ordered by their likelyhood)
+# note: not all models will support this
+# note: cannot be used together with temperature
+#
+# range: 0.0 to 1.0
+top_p = 1.0
+
+# range: -2.0 to 2.0
+frequency_penalty = 0.0
+
+# up to 4 series of words that can be used to stop the model from generating
+# note: not all models support this
+stop = [ "...", "..." ]
+
+# useful for improving cache hits on OpenAI's backend, however this is mostly
+# geared towards applications with multiple users
+prompt_cache_key = "..."

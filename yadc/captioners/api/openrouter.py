@@ -38,4 +38,6 @@ class OpenRouterCaptioner(OpenAICaptioner):
                 'exclude': self._reasoning_exclude_output,
             }
 
+        conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
+
         return conversation

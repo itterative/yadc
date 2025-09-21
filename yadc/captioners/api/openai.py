@@ -195,7 +195,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         try:
             conversation_overrides = kwargs.pop('conversation_overrides', {})
-            assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides; expected a dict, got: {type(conversation_overrides)}'
+            assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}'
             
             conversation_overrides = copy.deepcopy(conversation_overrides)
             
@@ -204,17 +204,21 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             conversation_overrides.pop('messages', None)
 
             system_role = conversation_overrides.pop('system_role', None) or 'system'
-            assert isinstance(system_role, str), f'bad value for conversation_overrides system_role; expected a str, got: {type(system_role)}'
+            assert isinstance(system_role, str), f'bad value for conversation_overrides/advanced settings system_role; expected a str, got: {type(system_role)}'
 
             user_role = conversation_overrides.pop('user_role', None) or 'user'
-            assert isinstance(user_role, str), f'bad value for conversation_overrides user_role; expected a str, got: {type(user_role)}'
+            assert isinstance(user_role, str), f'bad value for conversation_overrides/advanced settings user_role; expected a str, got: {type(user_role)}'
         except AssertionError as e:
             raise ValueError(e)
+        
+        max_tokens = kwargs.pop('max_new_tokens', 512)
+        assert isinstance(max_tokens, int), f'bad value for max_tokens; expected int, got: {type(max_tokens)}'
 
         conversation = {
             'model': self._current_model,
             'stream': True,
             'store': self._store_conversation,
+            'max_completion_tokens': max_tokens,
             'messages': [
                 {
                     "role": system_role,
@@ -248,6 +252,10 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             conversation['reasoning_effort'] = self._reasoning_effort
 
         conversation.update(conversation_overrides)
+
+        for key, value in list(conversation.items()):
+            if value is None:
+                conversation.pop(key)
 
         return conversation
 

@@ -1,0 +1,46 @@
+# This is a example showing how you can use the models hosted locally through
+# software such as llama.cpp, koboldcpp, vLLM, Ollama, etc
+
+[api]
+url = "http://localhost:5001/v1"
+token = "your_auth_token_here"
+model_name = "gemma-5-27b"
+
+[dataset]
+paths = [ "path_1", "path_2" ]
+
+
+[settings.advanced]
+# the following fields can be optionally set as necessary
+# refer to the documentation of the software you are using, as some of these
+# options might not be valid
+#
+# generally, you should use the defaults (usually these come from the model weights).
+# however, if you want more control, you can change them. some settings do
+# not make sense for a captioner, so not all are listed here
+
+# determines the randomness of the output (0.2 less random, 0.8 more random)
+# note: not all models will support this
+# note: cannot be used together with top_p
+#
+# range: 0.0 to 2.0
+temperature = 1.0
+
+# determines which tokens to consider (e.g. 0.1 will consider the top 10% tokens, 
+# ordered by their likelyhood)
+# note: not all models will support this
+# note: cannot be used together with temperature
+#
+# range: 0.0 to 1.0
+top_p = 1.0
+
+# same as top_p, but using a number of tokens instead of probability (e.g. 100 will
+# consider the top 100 tokens, ordered by their likelyhood)
+top_k = 100
+
+# range: -2.0 to 2.0
+frequency_penalty = 0.0
+
+# up to 4 series of words that can be used to stop the model from generating
+# note: not all models support this
+stop = [ "...", "..." ]

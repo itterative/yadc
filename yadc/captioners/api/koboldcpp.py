@@ -123,4 +123,6 @@ class KoboldcppCaptioner(OpenAICaptioner):
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
         conversation.setdefault('stop', ['<|im_end|>'])
 
+        conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
+
         return conversation

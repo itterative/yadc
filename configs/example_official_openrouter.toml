@@ -7,3 +7,55 @@ model_name = "openai/gpt-5-mini"
 
 [dataset]
 paths = [ "path_1", "path_2" ]
+
+
+[settings.advanced]
+
+# the following fields can be optionally set as necessary
+# documentation: https://openrouter.ai/docs/api-reference/chat-completion
+#
+# generally, you should use the defaults from OpenAI. however, if you want more
+# control, you can change them. some settings do not make sense for a captioner,
+# so not all are listed here
+
+# allows you to control how providers are selected for the model
+# 
+# options (sort): price, throughput
+provider = { sort = "price" }
+
+# OpenRouter API allows you to select multiple models at the same time
+models = [ "...", "..." ]
+
+# determines the randomness of the output (0.2 less random, 0.8 more random)
+# note: not all models will support this
+# note: should not be used together with top_p and top_k
+#
+# range: 0.0 to 2.0
+temperature = 1.0
+
+# determines which tokens to consider (e.g. 0.1 will consider the top 10% tokens, 
+# ordered by their likelyhood)
+# note: not all models will support this
+# note: should not be used together with temperature
+#
+# range: 0.0 to 1.0
+top_p = 1.0
+
+# same as top_p, but using a number of tokens instead of probability (e.g. 100 will
+# consider the top 100 tokens, ordered by their likelyhood)
+top_k = 100
+
+# range: -2.0 to 2.0
+frequency_penalty = 0.0
+
+# range: -2.0 to 2.0
+presence_penalty = 0.0
+
+# range: 0.0 to 2.0
+repetition_penalty = 0.0
+
+# determines which tokens to consider based on their likelyhood (e.g. 0.35 will
+# consider only tokens that are at least 35% to appear next)
+#
+# range: 0.0 to 1.0
+min_p = 0.35
