@@ -1,4 +1,8 @@
 # Release History
+## 0.4.0 (pre-release)
+
+- Basic user config support enabled
+
 ## 0.3.0 (pre-release)
 
 - Basic support for thinking models
