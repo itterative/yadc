@@ -1,4 +1,11 @@
 # Release History
+## 0.5.0 (pre-release)
+
+- Implement advanced settings for models
+- Fix OpenAPI official API captioning
+- Split captioner into several implementation
+- Integration tests
+
 ## 0.4.1 (pre-release)
 
 - Fix api errors not being processed
