@@ -1,5 +1,9 @@
 # Release History
-## 0.5.0 (pre-release)
+## 0.5.1 (release)
+
+- Fix advanced settings not being passed
+
+## 0.5.0 (release)
 
 - Implement advanced settings for models
 - Fix OpenAPI official API captioning
