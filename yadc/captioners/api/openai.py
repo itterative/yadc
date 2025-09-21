@@ -1,27 +1,20 @@
 
-import time
+import copy
 import json
 import requests
 import pydantic
 
 from enum import Enum
-from urllib.parse import urlparse
 
 from yadc.core import logging
 from yadc.core import DatasetImage
 
 from .base import BaseAPICaptioner
-from .session import Session
 from .mixins import ErrorNormalizationMixin
 
 from .types import (
     OpenAIModelsResponse,
     OpenAIStreamingResponse,
-    OpenRouterCreditsResponse,
-    KoboldAdminSettingsReponse,
-    KoboldAdminReloadModelReponse,
-    KoboldAdminCurrentModelResponse,
-    KoboldServiceInfoResponse,
 )
 
 _logger = logging.get_logger(__name__)
@@ -73,7 +66,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
     Example:
     ```
         captioner = OpenAICaptioner(
-            api_url="https://api.openai.com",
+            api_url="https://api.openai.com/v1",
             api_token="your-api-key"
         )
         captioner.load_model("gpt-5-mini")
@@ -89,9 +82,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         Args:
             api_url (str): Base URL for the OpenAI API endpoint.
+            api_token (str): OpenAI API key for authentication.
 
             **kwargs: Optional keyword arguments:
-                - `api_token` (str): OpenAI API key for authentication.
                 - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
                 - `prompt_template` (str): Direct template string to override file-based templates.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
@@ -106,7 +99,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         super().__init__(**kwargs)
 
-        self._api_url: str = kwargs.pop('api_url', '')
+        self._api_url: str = kwargs.pop('api_url', 'https://api.openai.com/v1')
         self._api_token: str = kwargs.pop('api_token', '')
         self._store_conversation: bool = kwargs.pop('store_conversation', False)
         self._image_quality: str = kwargs.pop('image_quality', 'auto')
@@ -118,22 +111,11 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
         if not self._api_url:
             raise ValueError("no api_url")
 
-        session_headers = {}
+        if not hasattr(self, '_api_type'):
+            self._api_type = APITypes.OPENAI
 
-        if self._api_token:
-            session_headers['Authorization'] = f'Bearer {self._api_token}'
-        else:
-            _logger.warning('Warning: no api_token is set, requests will fail if api uses authentication')
-
-        session: requests.Session|None = kwargs.pop('session', None)
-        assert session is None or isinstance(session, requests.Session)
-
-        self._session = Session(self._api_url, headers=session_headers, session=session)
-
-        self._api_type = self._infer_api_type()
         _logger.info('API set to %s.', self._api_type)
 
-        self._log_api_information()
         self._api_usage: dict[str, APIUsage] = {}
 
     def log_usage(self):
@@ -147,126 +129,16 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         if usage.total_tokens == 0:
             return
-        
+
         if usage.thoughts_tokens == 0:
             _logger.info('Used a total of %d tokens (prompt: %d, response: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens)
         else:
             _logger.info('Used a total of %d tokens (prompt: %d, response: %d, reasoning: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens, usage.thoughts_tokens)
 
-    def _infer_api_type(self):
-        # early exit
-
-        try:
-            api_url = urlparse(self._api_url)
-
-            if api_url.netloc == 'api.openai.com':
-                return APITypes.OPENAI
-            
-            if api_url.netloc == 'openrouter.ai':
-                return APITypes.OPENROUTER
-        except:
-            pass
-
-        # NOTE: might be worth to infer based on the model list
-        # 
-        # kobold: models are prefixed with 'koboldcpp/'
-        #         and owned_by set to 'koboldcpp'
-        # vllm: owned_by set to 'vllm'
-        # ollama: owned_by set to ollama user or 'library'
-
-        try:
-            # koboldcpp has well defined endpoint
-            #
-            # reference: https://lite.koboldai.net/koboldcpp_api#/serviceinfo/get__well_known_serviceinfo
-
-            with self._session.get('/.well-known/serviceinfo') as koboldcpp_resp:
-                assert koboldcpp_resp.ok
-
-                koboldcpp_json = koboldcpp_resp.json()
-                assert isinstance(koboldcpp_json, dict)
-
-                koboldcpp_service_info = KoboldServiceInfoResponse(**koboldcpp_json)
-
-                assert koboldcpp_service_info.software.name.lower() == 'koboldcpp'
-
-                return APITypes.KOBOLDCPP
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-        except pydantic.ValidationError:
-            pass
-
-        # the following aren't very good checks (might not work in the future)
-
-        try:
-            # vllm doesn't list their apis clearly
-            # so, check for some found in their code
-            #
-            # /ping: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L365
-            # /version: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L465
-
-            with self._session.get('/ping') as vllm_resp:
-                assert vllm_resp.ok
-
-            with self._session.post('/ping') as vllm_resp:
-                assert vllm_resp.ok
-
-            with self._session.get('/version') as vllm_resp:
-                assert vllm_resp.ok
-
-                vllm_json = vllm_resp.json()
-                assert isinstance(vllm_json, dict)
-                assert 'version' in vllm_json
-
-            return APITypes.VLLM
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-
-        try:
-            # ollama doesn't have a well defined endpoint
-            # so just use one that their docs
-            #
-            # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
-
-            with self._session.get('/api/version') as ollama_resp:
-                assert ollama_resp.ok
-
-                ollama_json = ollama_resp.json()
-                assert isinstance(ollama_json, dict)
-                assert 'version' in ollama_json
-
-            return APITypes.OLLAMA
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-
-        return APITypes.OPENAI
-
-    def _log_api_information(self):
-        if self._api_type == APITypes.OPENROUTER:
-            with self._session.get('credits') as credits_resp:
-                try:
-                    credits_resp.raise_for_status()
-
-                    credits_resp_json = credits_resp.json()
-                    assert isinstance(credits_resp_json, dict)
-
-                    credits = OpenRouterCreditsResponse(**credits_resp_json).data
-                    _logger.info('You have used %.2f out of %.2f credits with this api token.', credits.total_usage, credits.total_credits)
-                except:
-                    _logger.warning('Warning: failed to retrieve current credits for api token.')
-
 
     def load_model(self, model_repo: str, **kwargs) -> None:
         try:
-            if self._api_type == APITypes.KOBOLDCPP:
-                self._load_model_koboldcpp(model_repo)
-            else:
-                self._load_model_openai(model_repo)
+            self._load_model(model_repo)
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
         except requests.ConnectionError:
@@ -274,7 +146,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         _logger.info('Model set to %s.', self._current_model)
 
-    def _load_model_openai(self, model_repo: str):
+    def _load_model(self, model_repo: str):
         if self._current_model == model_repo:
             return
 
@@ -304,111 +176,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                     raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models)}')
 
                 raise ValueError(f'model not found: {model_repo}; no models available')
-            
-
-    def _load_model_koboldcpp(self, model_repo: str, timeout: float = 60):
-        if self._current_model == model_repo:
-            return
-        
-        # koboldcpp api doesn't expose enough information to make sure that the right settings are already loaded
-        # so we have to add some extra prefixes (e.g. koboldcpp/MODEL) and suffixes (e.g. MODEL.kcpps; assumes there is a matching kcpps file)
-
-        # the logic goes as following
-        #   1. if the openai endpoint shows the model is already loaded, use that
-        #   2. if the kobold endpoint shows the model is already loaded, use that
-        #   3. otherwise, unload the model, then wait for it to be loaded
-
-        try:
-            # early exit if the model is already loaded
-            self._load_model_openai(model_repo)
-            return
-        except ValueError:
-            pass
-
-        model_koboldcpp = 'koboldcpp/' + model_repo
-        model_kcpss = model_repo + '.kcpps'
-
-        # early exit if already loaded
-        with self._session.get('/api/v1/model') as model_current_resp:
-            assert model_current_resp.ok
-
-            model_current_resp_json = model_current_resp.json()
-            assert isinstance(model_current_resp_json, dict)
-
-            model_current = KoboldAdminCurrentModelResponse(**model_current_resp_json)
-
-            if model_current.result == model_repo or model_current.result == model_koboldcpp:
-                self._current_model = model_current.result
-                return
-
-        with self._session.get('/api/admin/list_options') as model_options_resp:
-            assert model_options_resp.ok
-
-            model_options_resp_json = model_options_resp.json()
-            assert isinstance(model_options_resp_json, list)
-
-            models = KoboldAdminSettingsReponse(data=model_options_resp_json)
-            available_models: list[str] = []
-
-            for model in models.data:
-                if model == "unload_model":
-                    continue
-
-                available_models.append(model)
-
-                if model == model_repo or model == model_kcpss:
-                    self._current_model = model
-
-            if not self._current_model:
-                if available_models:
-                    raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models)}')
-
-                raise ValueError(f'model not found: {model_repo}; no models available')
-
-        with self._session.post('/api/admin/reload_config', json={"filename": self._current_model}) as model_reload_resp:
-            assert model_reload_resp.ok
-
-            model_reload_resp_json = model_reload_resp.json()
-            assert isinstance(model_reload_resp_json, dict)
-
-            if not KoboldAdminReloadModelReponse(**model_reload_resp_json).success:
-                raise ValueError(f'failed to load model: {model_repo}')
-
-        start_t = time.time()
-        end_t = start_t + timeout
-
-        # time.sleep(5) # NOTE: the api should be down within 5s; after that we keep checking which model is loaded
-
-        while time.time() < end_t:
-            try:
-                with self._session.get('/api/v1/model') as model_current_resp:
-                    assert model_current_resp.ok
-
-                    model_current_resp_json = model_current_resp.json()
-                    assert isinstance(model_current_resp_json, dict)
-
-                    model_current = KoboldAdminCurrentModelResponse(**model_current_resp_json)
-
-                    if model_current.result == "inactive":
-                        time.sleep(0.5)
-                        continue
-
-                    self._current_model = model_current.result
-                    break
-            except requests.exceptions.ConnectionError:
-                time.sleep(0.5)
-                continue
-        else:
-            raise TimeoutError(f'failed to load model in time: {model_repo}')
-
 
     def unload_model(self):
-        try:
-            if self._api_type == APITypes.KOBOLDCPP:
-                with self._session.post('/api/admin/reload_config', json={"filename": "unload_model"}) as unload_model_resp:
-                    assert unload_model_resp.ok
-        except AssertionError as e:
-            raise ValueError("failed to unload model") from e
+        pass
 
     def offload_model(self):
         pass
@@ -423,23 +193,31 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             **kwargs
         )
 
-        temperature = kwargs.pop('temperature', 0.7)
-        top_p = kwargs.pop('top_p', 0.95)
-        top_k = kwargs.pop('top_k', 64)
-        max_tokens = kwargs.pop('max_new_tokens', 512)
+        try:
+            conversation_overrides = kwargs.pop('conversation_overrides', {})
+            assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides; expected a dict, got: {type(conversation_overrides)}'
+            
+            conversation_overrides = copy.deepcopy(conversation_overrides)
+            
+            # just make sure this is not overridden
+            conversation_overrides.pop('store', None)
+            conversation_overrides.pop('messages', None)
+
+            system_role = conversation_overrides.pop('system_role', None) or 'system'
+            assert isinstance(system_role, str), f'bad value for conversation_overrides system_role; expected a str, got: {type(system_role)}'
+
+            user_role = conversation_overrides.pop('user_role', None) or 'user'
+            assert isinstance(user_role, str), f'bad value for conversation_overrides user_role; expected a str, got: {type(user_role)}'
+        except AssertionError as e:
+            raise ValueError(e)
 
         conversation = {
             'model': self._current_model,
-            'metadata': { 'topic': 'yadt:caption' },
-            'temperature': temperature,
             'stream': True,
-            'max_tokens': max_tokens,
-            'top_p': top_p,
-            'top_k': top_k,
             'store': self._store_conversation,
             'messages': [
                 {
-                    "role": "system",
+                    "role": system_role,
                     "content": [
                         {
                             "type": "text",
@@ -448,14 +226,14 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                     ]
                 },
                 {
-                    "role": "user",
+                    "role": user_role,
                     "content": [
                         {
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:{mime_type};base64,{encoded_image}",
+                                "detail": self._image_quality,
                             },
-                            "detail": self._image_quality,
                         },
                         {
                             "type": "text",
@@ -466,17 +244,10 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             ],
         }
 
-        if self._reasoning or True:
-            conversation['reasoning'] = {
-                'effort': self._reasoning_effort,
-                'exclude': self._reasoning_exclude_output,
-            }
+        if self._reasoning:
+            conversation['reasoning_effort'] = self._reasoning_effort
 
-        # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
-        if self._api_type == APITypes.KOBOLDCPP:
-            conversation['stop'] = ['<|im_end|>']
-        elif self._api_type == APITypes.OPENROUTER:
-            conversation['user'] = self._session.user_agent
+        conversation.update(conversation_overrides)
 
         return conversation
 

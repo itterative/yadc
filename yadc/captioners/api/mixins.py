@@ -1,7 +1,6 @@
 from typing import Any
 
 import json
-import pydantic
 import requests
 
 from yadc.core import logging

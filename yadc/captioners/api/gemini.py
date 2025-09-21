@@ -112,11 +112,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         if not self._api_token:
             raise ValueError("no api_token")
-        
-        session: requests.Session|None = kwargs.pop('session', None)
-        assert session is None or isinstance(session, requests.Session)
 
-        self._session = Session(self._api_url, headers={ 'x-goog-api-key': self._api_token }, session=session)
+        self._session.headers = { 'x-goog-api-key': self._api_token }
         self._api_usage: dict[str, APIUsage] = {}
 
     def log_usage(self):

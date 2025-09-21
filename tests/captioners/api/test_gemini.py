@@ -6,7 +6,7 @@ import requests
 import requests_mock
 
 from yadc.core import DatasetImage
-from yadc.captioners.api import GeminiCaptioner
+from yadc.captioners.api import APICaptioner
 
 @pytest.fixture
 def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
@@ -18,7 +18,7 @@ def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, loa
 
         request_mocker.register_uri('POST', f'{base_url}/models/{model}:streamGenerateContent?alt=sse', text=load_test_data(case))
 
-        captioner = GeminiCaptioner(
+        captioner = APICaptioner(
             api_url=base_url,
             api_token='secret token',
             session=session,
@@ -29,7 +29,7 @@ def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, loa
     return _gemini
 
 def test_gemini(gemini, load_test_data):
-    captioner: GeminiCaptioner = gemini('gemini.txt', 'gemini-2.5-flash')
+    captioner: APICaptioner = gemini('gemini.txt', 'gemini-2.5-flash')
     captioner.load_model('gemini-2.5-flash')
 
     expected = load_test_data('gemini_result.txt')
@@ -38,7 +38,7 @@ def test_gemini(gemini, load_test_data):
     assert got == expected, 'bad prediction'
 
 def test_gemini_raises_error_on_bad_model(gemini):
-    captioner: GeminiCaptioner = gemini('gemini.txt', 'gemini-2.5-flash')
+    captioner: APICaptioner = gemini('gemini.txt', 'gemini-2.5-flash')
 
     with pytest.raises(ValueError, match=re.compile('model not found: .*')):
         captioner.load_model('unknown')
