@@ -316,21 +316,59 @@ def config_delete(key: str, env: str = "default", force: bool = False):
 
     return 0
 
-def config_clear():
-    try:
-        if CONFIG_PATH.exists():
-            CONFIG_PATH.unlink()
+def config_clear(env: str = "default", all_envs: bool = False):
+    if all_envs:
+        try:
+            if CONFIG_PATH.exists():
+                CONFIG_PATH.unlink()
 
-        if PUBLIC_KEY_PATH.exists():
-            PUBLIC_KEY_PATH.unlink()
+            if PUBLIC_KEY_PATH.exists():
+                PUBLIC_KEY_PATH.unlink()
+        except PermissionError:
+            _logger.error("Error: user config could not be cleared: permission denied")
+            return 1
+        except Exception as e:
+            _logger.error("Error: user config could not be cleared: %s", e)
+            return 1
+
+        _logger.info("User config cleared.")
+        return 0
+    
+    try:
+        config_toml = _load_config_toml()
+
+        if env is None:
+            config_toml = {}
+        else:
+            if "env" in config_toml:
+                config_toml["env"].pop(env, None)
+
+        _save_config_toml(config_toml)
+        _logger.info("User config cleared. (env: %s)", env)
     except PermissionError:
         _logger.error("Error: user config could not be cleared: permission denied")
         return 1
     except Exception as e:
         _logger.error("Error: user config could not be cleared: %s", e)
         return 1
+    return 0
 
-    _logger.info("User config cleared.")
+def config_list_envs():
+    try:
+        config_toml = _load_config_toml()
+    except Exception as e:
+        _logger.error('Error: failed to read user config: %s', e)
+        return 1
+
+    envs: list[str] = config_toml.get("env", {}).keys()
+
+    if not envs:
+        _logger.warning("No environment found in user config.")
+        return 0
+
+    for env in envs:
+        print(env)
+
     return 0
 
 def config_list(env: str = "default"):

@@ -23,6 +23,9 @@ def main():
 
     config_subparser = config_parser.add_subparsers(dest='subcommand', description='subcommands to run')
 
+    config_envs_parser = config_subparser.add_parser('envs', help='List available envs', description='List available envs in user config', parents=[common_parser])
+    config_envs_parser.set_defaults(_subaction='envs')
+
     config_list_parser = config_subparser.add_parser('list', help='List all settings', description='List all settings in user config', parents=[common_parser])
     config_list_parser.set_defaults(_subaction='list')
 
@@ -41,7 +44,8 @@ def main():
     config_delete_parser.add_argument('--force', default=False, action=argparse.BooleanOptionalAction, type=bool, help='Overwrites the config if invalid')
     config_delete_parser.set_defaults(_subaction='delete')
 
-    config_clear_parser = config_subparser.add_parser('clear', help='Clear the user config (all envs)', description='Clear the user config. All environments set are removed.')
+    config_clear_parser = config_subparser.add_parser('clear', help='Clear the user config', description='Clear the user config. You can either clear on environment or all.', parents=[common_parser])
+    config_clear_parser.add_argument('--all', default=False, action='store_true', help='Clears all environments (including encryption keys)')
     config_clear_parser.set_defaults(_subaction='clear')
 
     try:
@@ -59,11 +63,12 @@ def main():
         match (args._action, args._subaction):
             case ('caption', _): action = functools.partial(cli.caption, args.dataset_toml, env=args.env)
 
+            case ('config', 'envs'): action = functools.partial(cli_config.config_list_envs)
             case ('config', 'list'): action = functools.partial(cli_config.config_list, env=args.env)
             case ('config', 'get'): action = functools.partial(cli_config.config_get, args.key, env=args.env)
             case ('config', 'set'): action = functools.partial(cli_config.config_set, args.key, args.value, force=args.force, env=args.env)
             case ('config', 'delete'): action = functools.partial(cli_config.config_delete, args.key, force=args.force, env=args.env)
-            case ('config', 'clear'): action = functools.partial(cli_config.config_clear)
+            case ('config', 'clear'): action = functools.partial(cli_config.config_clear, env=args.env, all_envs=args.all)
             case ('config', _): action = functools.partial(config_parser.print_help)
 
             case _: action = functools.partial(parser.print_help)
