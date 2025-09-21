@@ -201,6 +201,7 @@ def caption(dataset_path: str, env: str = 'default'):
 
     do_quit = False
     do_print_separator = False
+    return_code = 0
 
     def print_dataset_image_meta(dataset_image: DatasetImage):
         print('Path:', dataset_image.path)
@@ -238,6 +239,8 @@ def caption(dataset_path: str, env: str = 'default'):
         do_prompt = True
 
         while do_prompt:
+            return_code = 0
+
             action = prompt_for_action('Next action', dict(
                 q='quit',
                 s='skip',
@@ -420,6 +423,7 @@ def caption(dataset_path: str, env: str = 'default'):
                     caption = '' # don't write to history if cancelled
                     do_quit = True
                     do_prompt = False
+                    return_code = 1
 
                     break
 
@@ -446,4 +450,4 @@ def caption(dataset_path: str, env: str = 'default'):
     model.log_usage()
     _logger.info('Done. (%.1f sec)', caption_loop_end - caption_loop_start)
 
-    return 0
+    return return_code
