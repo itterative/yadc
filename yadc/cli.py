@@ -19,10 +19,10 @@ from yadc.cli_config import load_config
 
 _logger = logging.get_logger(__name__)
 
-def caption(dataset_path: str):
+def caption(dataset_path: str, env: str = 'default'):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
-    user_config = load_config()
+    user_config = load_config(env=env)
 
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
