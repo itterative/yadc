@@ -4,6 +4,18 @@ import pytest
 
 @pytest.mark.timeout(60)
 @pytest.mark.integration_test
+def test_pedro_llamacpp(cli):
+    cli_cmd: Callable[[str], str] = cli(env='integration-tests-local-llamacpp')
+    cli_cmd('caption test_pedro.dataset --no-stream')
+
+@pytest.mark.timeout(60)
+@pytest.mark.integration_test
+def test_pedro_llamacpp_streaming(cli):
+    cli_cmd: Callable[[str], str] = cli(env='integration-tests-local-llamacpp')
+    cli_cmd('caption test_pedro.dataset --stream')
+
+@pytest.mark.timeout(60)
+@pytest.mark.integration_test
 def test_pedro_koboldcpp(cli):
     cli_cmd: Callable[[str], str] = cli(env='integration-tests-local-koboldcpp')
     cli_cmd('caption test_pedro.dataset --no-stream')
