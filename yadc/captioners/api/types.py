@@ -37,12 +37,13 @@ class _OpenAIChatCompletionChoice(pydantic.BaseModel):
     finish_reason: Optional[str] = None
 
 class _OpenAIChatCompletionChoiceMessage(pydantic.BaseModel):
-    content: str
     role: str = 'assistant'
+    refusal: Optional[str] = None
     content: Optional[str] = None
 
 class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
     role: str = 'assistant'
+    refusal: Optional[str] = None
     content: Optional[str] = None
 
 class OpenAIErrorResponse(pydantic.BaseModel):

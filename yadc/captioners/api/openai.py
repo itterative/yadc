@@ -335,7 +335,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                         if choice.finish_reason and choice.finish_reason != 'stop':
                             raise ValueError(self._normalize_error(line_response))
 
-                        if content := choice.delta.content:
+                        content = choice.delta.content or choice.delta.refusal
+
+                        if content:
                             content = content.replace('◁', '<')
                             content = content.replace('▷', '>\n')
 
@@ -401,7 +403,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                 if choice.finish_reason and choice.finish_reason != 'stop':
                     raise ValueError(self._normalize_error(conversation_response))
 
-                if content := choice.message.content:
+                content = choice.message.content or choice.message.refusal
+
+                if content:
                     content = content.replace('◁', '<')
                     content = content.replace('▷', '>\n')
 
