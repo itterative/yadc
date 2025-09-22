@@ -24,6 +24,9 @@ _logger = logging.get_logger(__name__)
     help='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc'
 )
 @click.argument('dataset', type=click.File('r'))
+@click.option('--api-url', type=str, default=None, help='Override API url')
+@click.option('--api-token', type=str, default=None, help='Override API auth token')
+@click.option('--api-model-name', type=str, default=None, help='Override API model')
 @click.option('--stream/--no-stream', is_flag=True, default=None, help='Enable the streaming of captions')
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
@@ -46,6 +49,10 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
         sys.exit(1)
 
     # cli arguments
+    dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
+    dataset_toml.api.token = str(cli_option('api_token', default=dataset_toml.api.token))
+    dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
+
     do_stream = bool(cli_option('stream', default=False))
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
     rounds = int(cli_option('rounds', default=dataset_toml.rounds))
