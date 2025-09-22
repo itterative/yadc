@@ -5,14 +5,16 @@ import toml
 import pathlib
 
 import click
-from . import cli_common
+from . import cli_common, cli_utils
 
 from time import time
 
 from yadc.core import logging
-from yadc.core.config import Config
+from yadc.core.config import Config, ConfigSettings
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
+
+from yadc.captioners.api import APICaptioner
 
 from yadc.cli_config import load_config
 
@@ -30,7 +32,7 @@ _logger = logging.get_logger(__name__)
 @cli_common.log_level
 @cli_common.env
 def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
-    def _cli_override(option: str, default):
+    def cli_option(option: str, default):
         value = kwargs.get(option, None)
         if value is not None:
             return value
@@ -38,83 +40,8 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
-    user_config = load_config(env=env)
-
-    dataset: list[DatasetImage] = []
-    i_dataset: dict[pathlib.Path, DatasetImage] = {}
-
     try:
-        dataset_toml_raw = toml.load(dataset_path)
-
-        # merge with use config
-        dataset_toml_raw.setdefault('api', {})
-        dataset_toml_raw_api = dataset_toml_raw['api']
-
-        assert isinstance(dataset_toml_raw_api, dict)
-        dataset_toml_raw_api.setdefault('url', user_config.api.url)
-        dataset_toml_raw_api.setdefault('token', user_config.api.token)
-        dataset_toml_raw_api.setdefault('model_name', user_config.api.model_name)
-
-        dataset_toml = Config(**dataset_toml_raw)
-
-        for index, path in enumerate(dataset_toml.dataset.paths):
-            assert isinstance(path, str), f'path at index {index} is not a string'
-
-            path = pathlib.Path(path)
-
-            if not path.is_dir():
-                _logger.warning('Warning: path %s is not a directory', path)
-                continue
-
-            for file_path in path.iterdir():
-                try:
-                    dataset_image = DatasetImage(path=str(file_path))
-                    dataset_image.read_image()
-                except:
-                    continue
-
-                if not dataset_image.toml_path.exists():
-                    _logger.warning('Warning: path %s has no toml', file_path)
-                    dataset_image_toml = {}
-                else:
-                    try:
-                        with open(dataset_image.toml_path, 'r') as f:
-                            dataset_image_toml = toml.load(f)
-                    except:
-                        _logger.warning('Warning: path %s contains an invalid toml', file_path)
-                        continue
-
-                dataset_image_toml['path'] = str(dataset_image.absolute_path)
-                dataset_image_toml['caption_suffix'] = dataset_toml.caption_suffix
-
-                dataset_image = DatasetImage(**dataset_image_toml)
-                dataset_image.caption = dataset_image.read_caption()
-
-                dataset.append(dataset_image)
-                i_dataset[dataset_image.absolute_path] = dataset_image
-
-
-        for index, dataset_image in enumerate(dataset_toml.dataset.images):
-            existing_dataset_image = i_dataset.get(dataset_image.absolute_path, None)
-            
-            if existing_dataset_image is None:
-                dataset.append(dataset_image)
-                i_dataset[dataset_image.absolute_path] = dataset_image
-
-                continue
-
-            # overwrites
-            assert existing_dataset_image.__pydantic_extra__
-            assert dataset_image.__pydantic_extra__
-
-            for k, v in dataset_image.__pydantic_extra__.items():
-                if not v:
-                    continue
-
-                existing_dataset_image.__pydantic_extra__[k] = v
-
-            existing_dataset_image.caption = dataset_image.caption or existing_dataset_image.caption
-
+        dataset_toml = _load_dataset(dataset_path, env=env)
     except FileNotFoundError:
         _logger.error('Error loading %s: file not found', dataset_path)
         sys.exit(1)
@@ -123,16 +50,16 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
         sys.exit(1)
 
     # cli arguments
-    do_stream = _cli_override('stream', default=False)
-    dataset_toml.interactive = _cli_override('interactive', default=dataset_toml.interactive)
-    dataset_toml.rounds = _cli_override('rounds', default=dataset_toml.rounds)
-    dataset_toml.overwrite_captions = _cli_override('overwrite', default=dataset_toml.overwrite_captions)
+    do_stream = bool(cli_option('stream', default=False))
+    interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
+    rounds = int(cli_option('rounds', default=dataset_toml.rounds))
+    overwrite_captions = bool(cli_option('overwrite', default=dataset_toml.overwrite_captions))
 
     skipped_from_dataset = 0
     dataset_to_do: list[DatasetImage] = []
 
-    for dataset_image in dataset:
-        should_skip = not dataset_toml.overwrite_captions and dataset_image.caption_path.exists()
+    for dataset_image in dataset_toml.dataset.images:
+        should_skip = not overwrite_captions and dataset_image.caption_path.exists()
 
         if should_skip:
             skipped_from_dataset += 1
@@ -140,7 +67,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
         dataset_to_do.append(dataset_image)
 
-    _logger.info('Found %d images.', len(dataset))
+    _logger.info('Found %d images.', len(dataset_toml.dataset.images))
 
     if skipped_from_dataset:
         _logger.info('Skipped %d images.', skipped_from_dataset)
@@ -150,8 +77,6 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
         sys.exit(0)
 
     _logger.info('Loading model...')
-
-    from yadc.captioners.api import APICaptioner
 
     model = APICaptioner(
         api_url=dataset_toml.api.url,
@@ -174,14 +99,120 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
     _logger.info('')
     _logger.info('Captioning...')
 
+    
+    with cli_utils.Timer() as timer:
+        return_code = _caption(
+            dataset=dataset_to_do,
+            model=model,
+            settings=dataset_toml.settings,
+            do_stream=do_stream,
+            interactive=interactive,
+            rounds=rounds,
+        )
+
+    model.log_usage()
+    _logger.info('Done. (%.1f sec)', timer.elapsed)
+
+    sys.exit(return_code)
+
+def _load_dataset(dataset_stream: TextIO, env: str):
+    dataset_toml_raw = toml.load(dataset_stream)
+
+    user_config = load_config(env=env)
+
+    dataset: list[DatasetImage] = []
+    i_dataset: dict[pathlib.Path, DatasetImage] = {}
+
+    # merge with use config
+    dataset_toml_raw.setdefault('api', {})
+    dataset_toml_raw_api = dataset_toml_raw['api']
+
+    assert isinstance(dataset_toml_raw_api, dict)
+    dataset_toml_raw_api.setdefault('url', user_config.api.url)
+    dataset_toml_raw_api.setdefault('token', user_config.api.token)
+    dataset_toml_raw_api.setdefault('model_name', user_config.api.model_name)
+
+    dataset_toml = Config(**dataset_toml_raw)
+
+    for index, path in enumerate(dataset_toml.dataset.paths):
+        assert isinstance(path, str), f'path at index {index} is not a string'
+
+        path = pathlib.Path(path)
+
+        if not path.is_dir():
+            _logger.warning('Warning: path %s is not a directory', path)
+            continue
+
+        for file_path in path.iterdir():
+            try:
+                dataset_image = DatasetImage(path=str(file_path))
+                dataset_image.read_image()
+            except:
+                continue
+
+            if not dataset_image.toml_path.exists():
+                _logger.warning('Warning: path %s has no toml', file_path)
+                dataset_image_toml = {}
+            else:
+                try:
+                    with open(dataset_image.toml_path, 'r') as f:
+                        dataset_image_toml = toml.load(f)
+                except:
+                    _logger.warning('Warning: path %s contains an invalid toml', file_path)
+                    continue
+
+            dataset_image_toml['path'] = str(dataset_image.absolute_path)
+            dataset_image_toml['caption_suffix'] = dataset_toml.caption_suffix
+
+            dataset_image = DatasetImage(**dataset_image_toml)
+            dataset_image.caption = dataset_image.read_caption()
+
+            dataset.append(dataset_image)
+            i_dataset[dataset_image.absolute_path] = dataset_image
+
+
+    for index, dataset_image in enumerate(dataset_toml.dataset.images):
+        existing_dataset_image = i_dataset.get(dataset_image.absolute_path, None)
+        
+        if existing_dataset_image is None:
+            dataset.append(dataset_image)
+            i_dataset[dataset_image.absolute_path] = dataset_image
+
+            continue
+
+        # overwrites
+        assert existing_dataset_image.__pydantic_extra__
+        assert dataset_image.__pydantic_extra__
+
+        for k, v in dataset_image.__pydantic_extra__.items():
+            if not v:
+                continue
+
+            existing_dataset_image.__pydantic_extra__[k] = v
+
+        existing_dataset_image.caption = dataset_image.caption or existing_dataset_image.caption
+
+    dataset_toml.dataset.paths = []
+    dataset_toml.dataset.images = dataset
+
+    return dataset_toml
+
+def _caption(
+    dataset: list[DatasetImage],
+    model: APICaptioner,
+    settings: ConfigSettings,
+    do_stream: bool,
+    interactive: bool,
+    rounds: int,
+):
     def prompt_for_yes(prompt: str, default: bool = False) -> bool:
-        if not dataset_toml.interactive:
+        if not interactive:
             return default
 
         return click.confirm(prompt, default=default)
         
     def prompt_for_override(value: str, default: str) -> str:
-        if not dataset_toml.interactive:
+        if not interactive:
             return default
 
         response: str = click.prompt(f'Override {value}? ({default}) ' if default else f'Override {value}? ', show_default=False, default=default)
@@ -194,7 +225,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
     def prompt_for_action(prompt: str, actions: dict[str, str], default_action: str):
         assert default_action in actions
 
-        if not dataset_toml.interactive:
+        if not interactive:
             return actions[default_action]
 
         prompt = f'{prompt} ({" ".join(map(lambda kv: kv[0] + "=" + kv[1], actions.items()))}) [{actions[default_action]}] '
@@ -223,12 +254,10 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
             _logger.info('------------')
             _logger.info('')
 
-    caption_loop_start = time()
+    conversation_overrides = settings.advanced.model_dump()
+    conversation_overrides.pop('debug_prompt', None) # fix: don't want to pass this to the API
 
-    caption_overrides = dataset_toml.settings.advanced.model_dump()
-    caption_overrides.pop('debug_prompt', None) # fix: don't want to pass this to the API
-
-    for i_dataset_image, dataset_image in enumerate(dataset_to_do):
+    for dataset_image in dataset:
         if do_quit:
             break
 
@@ -241,7 +270,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
         print_dataset_image_meta(dataset_image)
 
-        dataset_image_tmp = DatasetImage(**dataset_image.model_dump())
+        dataset_image_current = DatasetImage(**dataset_image.model_dump())
 
         caption = ''
         caption_rounds = []
@@ -285,7 +314,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
                 case 'edit':
                     while True:
-                        dataset_image_tmp_edited = click.edit(dataset_image_tmp.dump_toml(), extension='.toml', require_save=True)
+                        dataset_image_tmp_edited = click.edit(dataset_image_current.dump_toml(), extension='.toml', require_save=True)
 
                         if dataset_image_tmp_edited is None:
                             _logger.info('Dataset image toml editing was cancelled.')
@@ -293,6 +322,15 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
                         try:
                             dataset_image_toml = toml.loads(dataset_image_tmp_edited)
+
+                            dataset_image_current = DatasetImage(
+                                path=dataset_image_current.path,
+                                caption=dataset_image_current.caption,
+                                caption_suffix=dataset_image_current.caption_suffix,
+                                toml_suffix=dataset_image_current.toml_suffix,
+                                history_suffix=dataset_image_current.history_suffix,
+                                **dataset_image_toml,
+                            )
                         except:
                             _logger.warning('Warning: toml is not valid')
 
@@ -308,7 +346,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
                     continue
 
                 case 'print':
-                    print_dataset_image_meta(dataset_image_tmp)
+                    print_dataset_image_meta(dataset_image_current)
                     continue
 
                 case _:
@@ -318,31 +356,30 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
                 break
 
             try:
-                if dataset_toml.rounds <= 1:
+                if rounds <= 1:
                     caption = []
                     _logger.info('')
-                    start_t = time()
 
                     try:
-                        if do_stream:
-                            tokens = model.predict_stream(
-                                dataset_image_tmp,
-                                max_new_tokens=dataset_toml.settings.max_tokens,
-                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                                conversation_overrides=caption_overrides,
-                            )
-                        else:
-                            tokens = [model.predict(
-                                dataset_image_tmp,
-                                max_new_tokens=dataset_toml.settings.max_tokens,
-                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                                conversation_overrides=caption_overrides,
-                            )]
+                        with cli_utils.Timer() as timer_prediction:
+                            if do_stream:
+                                tokens = model.predict_stream(
+                                    dataset_image_current,
+                                    max_new_tokens=settings.max_tokens,
+                                    debug_prompt=settings.advanced.debug_prompt,
+                                    conversation_overrides=conversation_overrides,
+                                )
+                            else:
+                                tokens = [model.predict(
+                                    dataset_image_current,
+                                    max_new_tokens=settings.max_tokens,
+                                    debug_prompt=settings.advanced.debug_prompt,
+                                    conversation_overrides=conversation_overrides,
+                                )]
 
-                        for token in tokens:
-                            caption.append(token)
-                            click.echo(token, nl=False)
-                        end_t = time()
+                            for token in tokens:
+                                caption.append(token)
+                                click.echo(token, nl=False)
                     except ValueError as e:
                         _logger.error('Error: %s', e)
                         raise KeyboardInterrupt
@@ -352,7 +389,7 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
                     click.echo('')
 
-                    _logger.info('Captioning done (%.3f sec)', end_t - start_t)
+                    _logger.info('Captioning done (%.3f sec)', timer_prediction.elapsed)
                     _logger.info('')
 
                     caption = ''.join(caption).strip()
@@ -360,36 +397,32 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
                     j = 0
 
                     if caption_rounds:
-                        j = dataset_toml.rounds
+                        j = rounds
                     else:
-                        _logger.info('Doing %d rounds...', dataset_toml.rounds)
+                        _logger.info('Doing %d rounds...', rounds)
 
                     try:
-                        while j < dataset_toml.rounds:
+                        while j < rounds:
                             j +=1
 
-                            new_caption = ''
                             new_caption = prompt_for_override(f'round #{j}', default='')
 
                             if not new_caption:
-                                start_t = time()
-
-                                new_caption = model.predict(
-                                    dataset_image_tmp,
-                                    max_new_tokens=dataset_toml.settings.max_tokens,
-                                    use_cache=True,
-                                    debug_prompt=dataset_toml.settings.advanced.debug_prompt and caption_rounds_debug,
-                                    conversation_overrides=caption_overrides,
-                                ).strip()
-
-                                end_t = time()
+                                with cli_utils.Timer() as timer_round:
+                                    new_caption = model.predict(
+                                        dataset_image_current,
+                                        max_new_tokens=settings.max_tokens,
+                                        use_cache=True,
+                                        debug_prompt=settings.advanced.debug_prompt and caption_rounds_debug,
+                                        conversation_overrides=conversation_overrides,
+                                    ).strip()
 
                                 caption_rounds_debug = False
 
-                                if dataset_toml.interactive:
+                                if interactive:
                                     _logger.info(new_caption)
 
-                                _logger.info('Round #%d done. (%.3f ssec)', j, end_t - start_t)
+                                _logger.info('Round #%d done. (%.3f ssec)', j, timer_round.elapsed)
 
                                 if not prompt_for_yes('Accept caption?', default=True):
                                     j -= 1
@@ -401,29 +434,28 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
                         caption = []
 
                         _logger.info('')
-                        start_t = time()
 
-                        if do_stream:
-                            tokens = model.predict_stream(
-                                DatasetImage(path=dataset_image.path),
-                                caption_rounds=caption_rounds,
-                                max_new_tokens=dataset_toml.settings.max_tokens,
-                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                                conversation_overrides=caption_overrides,
-                            )
-                        else:
-                            tokens = [model.predict(
-                                DatasetImage(path=dataset_image.path),
-                                caption_rounds=caption_rounds,
-                                max_new_tokens=dataset_toml.settings.max_tokens,
-                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                                conversation_overrides=caption_overrides,
-                            )]
+                        with cli_utils.Timer() as timer_end_round:
+                            if do_stream:
+                                tokens = model.predict_stream(
+                                    DatasetImage(path=dataset_image.path),
+                                    caption_rounds=caption_rounds,
+                                    max_new_tokens=settings.max_tokens,
+                                    debug_prompt=settings.advanced.debug_prompt,
+                                    conversation_overrides=conversation_overrides,
+                                )
+                            else:
+                                tokens = [model.predict(
+                                    DatasetImage(path=dataset_image.path),
+                                    caption_rounds=caption_rounds,
+                                    max_new_tokens=settings.max_tokens,
+                                    debug_prompt=settings.advanced.debug_prompt,
+                                    conversation_overrides=conversation_overrides,
+                                )]
 
-                        for token in tokens:
-                            caption.append(token)
-                            click.echo(token, nl=False)
-                        end_t = time()
+                            for token in tokens:
+                                caption.append(token)
+                                click.echo(token, nl=False)
                     except ValueError as e:
                         _logger.error('Error: %s', e)
                         raise KeyboardInterrupt
@@ -433,13 +465,14 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
 
                     click.echo('')
 
-                    _logger.info('End round done. (%.3f sec)', end_t - start_t)
+                    _logger.info('End round done. (%.3f sec)', timer_end_round.elapsed)
                     _logger.info('')
 
                     caption = ''.join(caption).strip()
             except (KeyboardInterrupt, click.Abort):
-                if not dataset_toml.interactive:
+                if not interactive:
                     caption = '' # don't write to history if cancelled
+                    caption_rounds = []
                     do_quit = True
                     do_prompt = False
                     return_code = 1
@@ -457,16 +490,11 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
         if dataset_image.caption:
             dataset_image.save_history(when_not_exists=True)
 
-        dataset_image_tmp.update_caption(caption)
-        dataset_image_tmp.save_history(when_not_exists=False)
+        dataset_image_current.update_caption(caption)
+        dataset_image_current.save_history(when_not_exists=False)
 
         caption = ''
 
         _logger.info('')
 
-    caption_loop_end = time()
-
-    model.log_usage()
-    _logger.info('Done. (%.1f sec)', caption_loop_end - caption_loop_start)
-
-    sys.exit(return_code)
+    return return_code
