@@ -1,4 +1,10 @@
 # Release History
+## 0.6.0 (release)
+
+- Improved cli options
+- Implement non-streaming options for captioners
+- Basic refusal support for OpenAI endpoints
+
 ## 0.5.1 (release)
 
 - Fix advanced settings not being passed
