@@ -183,7 +183,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
     def offload_model(self):
         pass
 
-    def conversation(self, image: DatasetImage, **kwargs):
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
 
         mime_type, encoded_image = self._encode_image(
@@ -200,6 +200,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             conversation_overrides = copy.deepcopy(conversation_overrides)
             
             # just make sure this is not overridden
+            conversation_overrides.pop('stream', None)
             conversation_overrides.pop('store', None)
             conversation_overrides.pop('messages', None)
 
@@ -216,7 +217,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         conversation = {
             'model': self._current_model,
-            'stream': True,
+            'stream': stream,
             'store': self._store_conversation,
             'max_completion_tokens': max_tokens,
             'messages': [
@@ -248,6 +249,11 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             ],
         }
 
+        if stream:
+            conversation['stream_options'] = {
+                'include_usage': True,
+            }
+
         if self._reasoning:
             conversation['reasoning_effort'] = self._reasoning_effort
 
@@ -262,7 +268,10 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
     def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "model not loaded"
 
-        conversation = self.conversation(image, **kwargs)
+        # make sure stream is not set in kwargs
+        kwargs.pop('stream', None)
+
+        conversation = self.conversation(image, stream=True, **kwargs)
 
         with self._session.post('chat/completions', stream=True, json=conversation) as conversation_resp:
             try:
