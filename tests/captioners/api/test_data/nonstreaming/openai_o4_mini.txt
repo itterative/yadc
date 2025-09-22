@@ -1,0 +1,35 @@
+{
+  "id": "REDACTED",
+  "object": "chat.completion",
+  "created": 1758556197,
+  "model": "o4-mini-2025-04-16",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "A tight circular close-up shot frames a young raccoon’s face and one outstretched paw pressed against a translucent barrier. Its fur is a mix of dark grays and warm browns, with the characteristic black mask around wide, curious eyes that glisten with reflected light. The animal’s small, white-mottled snout and slightly parted mouth suggest a gentle, inquisitive expression. The perspective places the viewer directly opposite the raccoon, as if peering through a peephole or small window. Soft, even lighting from behind the barrier creates a gentle glow around the edges of its fur, while the background falls into deep shadow, drawing full attention to the raccoon’s features and the delicate texture of its whiskers.",
+        "refusal": null,
+        "annotations": []
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1906,
+    "completion_tokens": 230,
+    "total_tokens": 2136,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 64,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": null
+}

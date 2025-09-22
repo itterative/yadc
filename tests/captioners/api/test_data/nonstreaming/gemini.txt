@@ -1,0 +1,38 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "**My Analysis of the \"Pedro Pedro Pedro\" Raccoon Image**\n\nOkay, so I'm looking at this image, and immediately, my brain starts breaking it down. The goal here is a detailed caption, and since it's *the* \"Pedro Pedro Pedro\" raccoon, the meme context needs to be woven in subtly.\n\nFirst, the setting. It's a clean, almost sterile background. Light-colored, probably intentionally. This helps the raccoon pop, acting as a great contrast. \n\nThe main character, obviously, is the raccoon. It's young, that's clear from its size and features. No clothes, of course, it's a raccoon!\n\nThe way it's interacting with the viewer is what grabs you. It's *looking* at you. Curious, playful, maybe a little mischievous, but definitely endearing. That raised paw? It's like it's saying \"Hey!\" or reaching out for a treat.\n\nThe expression is fantastic. Those big, dark eyes are a key feature. That alert and curious expression? It's pure innocence, almost. So playful. It just screams \"meme potential.\"\n\nCompositionally, the circular crop is a smart move. It focuses the viewer's attention and gives the image a clean, distinct shape. The raccoon isn't perfectly centered, which adds a bit of dynamism. It's looking up and to the right, which gives a sense of movement.\n\nThe low angle is interesting. It makes the raccoon appear a little larger and perhaps more imposing. A closer shot, it has to be either a close-up or a medium close-up, focusing on its head and upper body.\n\nThe lighting is soft and even, and that's crucial. It prevents harsh shadows and highlights the raccoon's fur and features beautifully. There's subtle shading that adds dimension to its face. The brightness of the image is just right. It's bright within the circle, and this contrast makes the raccoon even more defined.\n\nSo, taking all this in, I know I can create a compelling caption. This image isn't just a raccoon; it's a personality. A meme. It's the \"Pedro Pedro Pedro\" raccoon!\n",
+            "thought": true
+          },
+          {
+            "text": "A low-angle, medium close-up shot, framed in a circular crop with a black background, captures a young raccoon from the viral \"Pedro Pedro Pedro\" meme. The raccoon, likely a juvenile, is positioned slightly to the right within the circle, gazing upward and to the right with wide, dark, and expressive eyes, conveying curiosity and alertness. Its characteristic black mask around the eyes, dark and light brown fur patterns, and pointed ears are clearly visible. The raccoon's left paw is raised on the left side of the frame, appearing to reach or wave.\n\nThe setting is ambiguous, with a soft, plain, light-colored background that fills the upper and right portions of the circular frame, suggesting an indoor or controlled environment. The lighting is soft and bright, illuminating the raccoon's fur and features evenly from the front, creating subtle shading that adds texture and depth to its face and paw. The overall brightness within the circular frame is high, contrasting sharply with the deep black surrounding it. The raccoon's expression is one of innocent inquisitiveness and playful engagement."
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 394,
+    "candidatesTokenCount": 219,
+    "totalTokenCount": 1030,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 136
+      },
+      {
+        "modality": "IMAGE",
+        "tokenCount": 258
+      }
+    ],
+    "thoughtsTokenCount": 417
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "REDACTED"
+}

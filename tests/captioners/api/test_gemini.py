@@ -10,13 +10,13 @@ from yadc.captioners.api import APICaptioner
 
 @pytest.fixture
 def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
-    def _gemini(case: str, model: str, base_url: str = 'mock://generativelanguage.googleapis.com/v1beta'):
+    def _gemini(case: str, model: str, base_url: str = 'mock://generativelanguage.googleapis.com/v1beta', method: str = 'generateContent'):
         request_mocker.register_uri('GET', f'{base_url}/models/unknown', status_code=404)
 
         request_mocker.register_uri('GET', f'{base_url}/models/{model}', json={'name': model, 'version': '1', 'displayName': 'Model', 'supportedGenerationMethods': ['generateContent'], 'thinking': True})
         request_mocker.register_uri('GET', f'{base_url}/models', json={'models': [{'name': model, 'version': '1', 'displayName': 'Model', 'supportedGenerationMethods': ['generateContent'], 'thinking': True}]})
 
-        request_mocker.register_uri('POST', f'{base_url}/models/{model}:streamGenerateContent?alt=sse', text=load_test_data(case))
+        request_mocker.register_uri('POST', f'{base_url}/models/{model}:{method}', text=load_test_data(case))
 
         captioner = APICaptioner(
             api_url=base_url,
@@ -29,16 +29,25 @@ def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, loa
     return _gemini
 
 def test_gemini(gemini, load_test_data):
-    captioner: APICaptioner = gemini('gemini_stream.txt', 'gemini-2.5-flash')
+    captioner: APICaptioner = gemini('nonstreaming/gemini.txt', 'gemini-2.5-flash', method='generateContent')
     captioner.load_model('gemini-2.5-flash')
 
-    expected = load_test_data('gemini_stream_result.txt')
+    expected = load_test_data('nonstreaming/gemini_result.txt')
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+
+    assert got == expected, 'bad prediction'
+
+def test_gemini_streaming(gemini, load_test_data):
+    captioner: APICaptioner = gemini('streaming/gemini.txt', 'gemini-2.5-flash', method='streamGenerateContent?alt=sse')
+    captioner.load_model('gemini-2.5-flash')
+
+    expected = load_test_data('streaming/gemini_result.txt')
     got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
 def test_gemini_raises_error_on_bad_model(gemini):
-    captioner: APICaptioner = gemini('gemini_stream.txt', 'gemini-2.5-flash')
+    captioner: APICaptioner = gemini('nonstreaming/gemini.txt', 'gemini-2.5-flash')
 
     with pytest.raises(ValueError, match=re.compile('model not found: .*')):
         captioner.load_model('unknown')
