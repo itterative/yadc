@@ -17,6 +17,7 @@ dependencies = [
     "platformdirs>=4.4.0",
     "keyring>=25.6.0",
     "keyring-pass>=0.9.3",
+    "click>=8.3.0",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +30,7 @@ test = [
 ]
 
 [project.scripts]
-yadc = "yadc.__main__:main"
+yadc = "yadc.cli:cli"
 
 [tool.setuptools.package-data]
 "yadc.templates" = ["*"]

@@ -1,11 +1,15 @@
 from typing import Optional, Dict, Any
 
 import os
+import sys
 import toml
 import base64
 import pydantic
 import platformdirs
 import functools
+
+import click
+from . import cli_common
 
 import keyring
 from cryptography.hazmat.backends import default_backend
@@ -29,6 +33,15 @@ ENV_KEYS = [ 'api_url', 'api_token', 'api_model_name', ]
 ENCRYPTED_KEYS = [ 'api_token_encrypted' ]
 
 _logger = logging.get_logger(__name__)
+
+@click.group(
+    'config',
+    short_help='Manage the user config',
+    help='Manage the user config. The user config is stored as plain-text currently, so any tokens are visible to programs running under your user.',
+)
+def config():
+    pass
+
 
 def _generate_key_pair():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -218,10 +231,19 @@ def load_config(env: str = "default") -> UserConfig:
 
     return UserConfig(api=UserConfigApi())
 
+
+@config.command(
+    'get',
+    short_help='Retrieve a setting',
+    help='Retrieve a setting value from user config',
+)
+@click.argument('key', type=click.Choice(ENV_KEYS))
+@cli_common.log_level
+@cli_common.env
 def config_get(key: str, env: str = "default"):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        return 3
+        sys.exit(3)
 
     key_encrypted = key + '_encrypted'
 
@@ -234,27 +256,37 @@ def config_get(key: str, env: str = "default"):
 
         if not value:
             _logger.error('Error: key not found: %s (env: %s)', key, env)
-            return 3
+            sys.exit(3)
 
         # Special handling for token
         if key_encrypted in ENCRYPTED_KEYS:
             decrypted = _decrypt_setting(value)
             if decrypted is None:
                 _logger.error("Error: failed to decrypted setting.")
-                return 1
+                sys.exit(1)
             value = decrypted
 
-        print(value)
-        return 0
+        click.echo(value)
 
     except Exception as e:
         _logger.error('Error: failed to read config: %s', e)
-        return 1
+        sys.exit(1)
 
+
+@config.command(
+    'set',
+    short_help='Update a setting',
+    help='Update a setting value in user config',
+)
+@click.argument('key', type=click.Choice(ENV_KEYS))
+@click.argument('value', type=str)
+@click.option('--force', is_flag=True, help='Recreates the user config if invalid')
+@cli_common.log_level
+@cli_common.env
 def config_set(key: str, value: str, env: str = "default", force: bool = False):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        return 3
+        sys.exit(3)
 
     key_encrypted = key + '_encrypted'
 
@@ -263,11 +295,11 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error('Error: user config is invalid')
-            return 1
+            sys.exit(1)
         config_toml = {}
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        return 1
+        sys.exit(1)
 
     if key_encrypted in ENCRYPTED_KEYS:
         try:
@@ -275,7 +307,7 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
             _set_env_config(config_toml, env, key, encrypted_value)
         except Exception as e:
             _logger.error("Error: Failed to encrypt setting: %s", e)
-            return 1
+            sys.exit(1)
     else:
         _set_env_config(config_toml, env, key, value)
 
@@ -284,25 +316,33 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
         _logger.info("User config %s (env: %s) has been updated.", key, env)
     except Exception as e:
         _logger.error("Error: user config could not be updated: %s", e)
-        return 1
+        sys.exit(1)
 
-    return 0
 
+@config.command(
+    'delete',
+    short_help='Delete a setting',
+    help='Delete a setting from user config'
+)
+@click.argument('key', type=click.Choice(ENV_KEYS))
+@click.option('--force', is_flag=True, help='Recreates the user config if invalid')
+@cli_common.log_level
+@cli_common.env
 def config_delete(key: str, env: str = "default", force: bool = False):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        return 3
+        sys.exit(3)
 
     try:
         config_toml = _load_config_toml()
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error('Error: user config is invalid')
-            return 1
+            sys.exit(1)
         config_toml = {}
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        return 1
+        sys.exit(1)
 
     if "env" in config_toml and env in config_toml["env"]:
         config_toml["env"][env].pop(key, None)
@@ -312,12 +352,19 @@ def config_delete(key: str, env: str = "default", force: bool = False):
         _logger.info("User config %s (env: %s) has been deleted.", key, env)
     except Exception as e:
         _logger.error("Error: user config could not be updated: %s", e)
-        return 1
+        sys.exit(1)
 
-    return 0
 
-def config_clear(env: str = "default", all_envs: bool = False):
-    if all_envs:
+@config.command(
+    'clear',
+    short_help='Clear the user config',
+    help='Clear the user config. You can either clear on environment or all.'
+)
+@click.option('--all', is_flag=True, help='Clears all environments (including encryption keys)')
+@cli_common.log_level
+@cli_common.env
+def config_clear(env: str = "default", all: bool = False):
+    if all:
         try:
             if CONFIG_PATH.exists():
                 CONFIG_PATH.unlink()
@@ -326,13 +373,13 @@ def config_clear(env: str = "default", all_envs: bool = False):
                 PUBLIC_KEY_PATH.unlink()
         except PermissionError:
             _logger.error("Error: user config could not be cleared: permission denied")
-            return 1
+            sys.exit(1)
         except Exception as e:
             _logger.error("Error: user config could not be cleared: %s", e)
-            return 1
+            sys.exit(1)
 
         _logger.info("User config cleared.")
-        return 0
+        sys.exit(0)
     
     try:
         config_toml = _load_config_toml()
@@ -347,36 +394,48 @@ def config_clear(env: str = "default", all_envs: bool = False):
         _logger.info("User config cleared. (env: %s)", env)
     except PermissionError:
         _logger.error("Error: user config could not be cleared: permission denied")
-        return 1
+        sys.exit(1)
     except Exception as e:
         _logger.error("Error: user config could not be cleared: %s", e)
-        return 1
-    return 0
+        sys.exit(1)
 
+
+@config.command(
+    'envs',
+    short_help='List available envs',
+    help='List available envs in user config'
+)
+@cli_common.log_level
 def config_list_envs():
     try:
         config_toml = _load_config_toml()
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        return 1
+        sys.exit(1)
 
     envs: list[str] = config_toml.get("env", {}).keys()
 
     if not envs:
         _logger.warning("No environment found in user config.")
-        return 0
+        sys.exit(0)
 
     for env in envs:
-        print(env)
+        click.echo(env)
 
-    return 0
 
+@config.command(
+    'list',
+    short_help='List all settings',
+    help='List all settings in user config. Secret settings are redacted. If you want to view the values for secret settings, use "config get SETTING"'
+)
+@cli_common.log_level
+@cli_common.env
 def config_list(env: str = "default"):
     try:
         config_toml = _load_config_toml()
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        return 1
+        sys.exit(1)
 
     found = False
 
@@ -407,8 +466,6 @@ def config_list(env: str = "default"):
 
     if not found:
         _logger.warning("No user config values found.")
-        return 0
+        sys.exit(0)
 
-    print(buffer.strip())
-
-    return 0
+    click.echo(buffer.strip())
