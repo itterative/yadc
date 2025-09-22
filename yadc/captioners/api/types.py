@@ -81,28 +81,28 @@ class _GeminiError(pydantic.BaseModel):
     message: str
     status: str
 
-class GeminiStreamingResponse(pydantic.BaseModel):
+class GeminiContentResponse(pydantic.BaseModel):
     responseId: str = 'SKIPPED'
-    candidates: list['_GeminiStreamingCandidate']
-    promptFeedback: Optional['_GeminiStreamingPromptFeedback'] = None
-    usageMetadata: Optional['_GeminiStreamingUsageMetadata'] = None
+    candidates: list['_GeminiContentCandidate']
+    promptFeedback: Optional['_GeminiContentPromptFeedback'] = None
+    usageMetadata: Optional['_GeminiContentUsageMetadata'] = None
 
-class _GeminiStreamingCandidate(pydantic.BaseModel):
-    content: '_GeminiStreamingCandidateContent'
+class _GeminiContentCandidate(pydantic.BaseModel):
+    content: '_GeminiContentCandidateContent'
     finishReason: Optional[str] = None
 
-class _GeminiStreamingCandidateContent(pydantic.BaseModel):
-    parts: list['_GeminiStreamingCandidatePart']
+class _GeminiContentCandidateContent(pydantic.BaseModel):
+    parts: list['_GeminiContentCandidatePart']
 
-class _GeminiStreamingCandidatePart(pydantic.BaseModel):
+class _GeminiContentCandidatePart(pydantic.BaseModel):
     text: str = ''
     thought: bool = False
 
-class _GeminiStreamingPromptFeedback(pydantic.BaseModel):
+class _GeminiContentPromptFeedback(pydantic.BaseModel):
     blockReason: str = 'BLOCK_REASON_UNSPECIFIED'
     safetyRatings: list[str] = []
 
-class _GeminiStreamingUsageMetadata(pydantic.BaseModel):
+class _GeminiContentUsageMetadata(pydantic.BaseModel):
     candidatesTokenCount: int = 0
     promptTokenCount: int = 0
     totalTokenCount: int = 0

@@ -11,7 +11,7 @@ from .types import (
     OpenAIChatCompletionChunkResponse,
     OpenRouterModerationError,
     GeminiErrorResponse,
-    GeminiStreamingResponse,
+    GeminiContentResponse,
 )
 
 _logger = logging.get_logger(__name__)
@@ -121,7 +121,7 @@ class ErrorNormalizationMixin:
                 return f'api stopped generating: reason: {choice.finish_reason}'
 
             _logger.warning('Warning: failed to process openai streaming response')
-        elif isinstance(error, GeminiStreamingResponse):
+        elif isinstance(error, GeminiContentResponse):
             if error.promptFeedback:
                 return f'api stopped generating: reason: {error.promptFeedback.blockReason}: {"; ".join(error.promptFeedback.safetyRatings)}'
 

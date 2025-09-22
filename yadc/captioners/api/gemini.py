@@ -17,7 +17,7 @@ from .mixins import ErrorNormalizationMixin
 from .types import (
     GeminiModelsResponse,
     GeminiModel,
-    GeminiStreamingResponse,
+    GeminiContentResponse,
 )
 
 _logger = logging.get_logger(__name__)
@@ -341,7 +341,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
         return conversation
    
 
-    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "no model loaded"
 
         conversation = self.conversation(image, **kwargs)
@@ -356,7 +356,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                 raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
-            conversation_error = ''
+            conversation_error = '' # in some scenarios, gemini api will just send the error directly instead of as a sse data line
             conversation_stopped = False
 
             for line in conversation_resp.iter_lines():
@@ -390,7 +390,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    line_response = GeminiStreamingResponse(**line_json)
+                    line_response = GeminiContentResponse(**line_json)
 
                     if line_response.usageMetadata and line_response.responseId != "SKIPPED":
                         self._api_usage[line_response.responseId] = APIUsage(
@@ -431,17 +431,73 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                 raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
         try:
-            yield from self._generate_prediction_inner(image, **kwargs)
+            yield from self._generate_stream_prediction_inner(image, **kwargs)
             return
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
+    def _generate_prediction(self, image: DatasetImage, **kwargs):
+        assert self._current_model, "model not loaded"
+
+        # make sure stream is not set in kwargs
+        kwargs.pop('stream', None)
+
+        conversation = self.conversation(image, **kwargs)
+
+        with self._session.post(f'models/{self._current_model}:generateContent', stream=False, json=conversation) as conversation_resp:
+            conversation_resp.raise_for_status()
+
+            try:
+                conversation_json = json.loads(conversation_resp.text)
+                assert isinstance(conversation_json, dict), "api did not return valid json"
+            except AssertionError as e:
+                _logger.debug('Failed to decode response to json: %s', conversation_resp.text)
+                raise ValueError(str(e))
+            except json.JSONDecodeError as e:
+                _logger.debug('Failed to decode response to json: %s', conversation_resp.text)
+                raise ValueError('api did not return json')
+
+            try:
+                conversation_response = GeminiContentResponse(**conversation_json)
+            except AssertionError as e:
+                _logger.debug('Failed to decode response to object: %s', conversation_resp.text)
+                raise ValueError(str(e))
+            except pydantic.ValidationError as e:
+                _logger.debug('Failed to decode response to object: %s', conversation_resp.text)
+                raise ValueError('api did not return a valid response')
+
+            if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
+                self._api_usage[conversation_response.responseId] = APIUsage(
+                    response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
+                    prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
+                    total_tokens=conversation_response.usageMetadata.totalTokenCount,
+                    thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
+                )
+
+            for candidate in conversation_response.candidates:
+                if candidate.finishReason and candidate.finishReason != 'STOP':
+                    raise ValueError(self._normalize_error(conversation_response))
+
+                for part in candidate.content.parts:
+                    if text := part.text:
+                        # skip for now
+                        if part.thought:
+                            continue
+
+                        return text
+
+            raise ValueError('api did not return text')
+
+
     def predict(self, image: DatasetImage, **kwargs):
-        return ''.join(list(self._generate_prediction(image, **kwargs)))
+        try:
+            return self._generate_prediction(image, **kwargs)
+        except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
     
     def predict_stream(self, image: DatasetImage, **kwargs):
-        yield from self._generate_prediction(image, **kwargs)
+        yield from self._generate_stream_prediction(image, **kwargs)
