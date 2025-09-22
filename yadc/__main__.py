@@ -16,6 +16,7 @@ def main():
 
     caption_parser = subparser.add_parser('caption', help='Caption a dataset', description='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc', parents=[common_parser])
     caption_parser.add_argument('dataset_toml', type=str)
+    caption_parser.add_argument('--stream', default=False, action=argparse.BooleanOptionalAction, type=bool, help='Enable the streaming of captions')
     caption_parser.set_defaults(_action='caption', _subaction='default')
 
     config_parser = subparser.add_parser('config', help='Manage the user config', description='Manage the user config. The user config is stored as plain-text currently, so any tokens are visible to programs running under your user.', parents=[common_parser])
@@ -61,7 +62,7 @@ def main():
 
     try:
         match (args._action, args._subaction):
-            case ('caption', _): action = functools.partial(cli.caption, args.dataset_toml, env=args.env)
+            case ('caption', _): action = functools.partial(cli.caption, args.dataset_toml, do_stream=args.stream, env=args.env)
 
             case ('config', 'envs'): action = functools.partial(cli_config.config_list_envs)
             case ('config', 'list'): action = functools.partial(cli_config.config_list, env=args.env)

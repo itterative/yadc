@@ -19,7 +19,7 @@ from yadc.cli_config import load_config
 
 _logger = logging.get_logger(__name__)
 
-def caption(dataset_path: str, env: str = 'default'):
+def caption(dataset_path: str, do_stream: bool, env: str = 'default'):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     user_config = load_config(env=env)
@@ -345,12 +345,20 @@ def caption(dataset_path: str, env: str = 'default'):
                     start_t = time()
 
                     try:
-                        tokens = model.predict_stream(
-                            dataset_image_tmp,
-                            max_new_tokens=dataset_toml.settings.max_tokens,
-                            debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                            conversation_overrides=caption_overrides,
-                        )
+                        if do_stream:
+                            tokens = model.predict_stream(
+                                dataset_image_tmp,
+                                max_new_tokens=dataset_toml.settings.max_tokens,
+                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                                conversation_overrides=caption_overrides,
+                            )
+                        else:
+                            tokens = [model.predict(
+                                dataset_image_tmp,
+                                max_new_tokens=dataset_toml.settings.max_tokens,
+                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                                conversation_overrides=caption_overrides,
+                            )]
 
                         for token in tokens:
                             caption.append(token)
@@ -360,7 +368,7 @@ def caption(dataset_path: str, env: str = 'default'):
                         _logger.error('Error: %s', e)
                         raise KeyboardInterrupt
                     except KeyboardInterrupt:
-                        print('')
+                        if do_stream: print('')
                         raise
 
                     print('')
@@ -416,13 +424,22 @@ def caption(dataset_path: str, env: str = 'default'):
                         _logger.info('')
                         start_t = time()
 
-                        tokens = model.predict_stream(
-                            DatasetImage(path=dataset_image.path),
-                            caption_rounds=caption_rounds,
-                            max_new_tokens=dataset_toml.settings.max_tokens,
-                            debug_prompt=dataset_toml.settings.advanced.debug_prompt,
-                            conversation_overrides=caption_overrides,
-                        )
+                        if do_stream:
+                            tokens = model.predict_stream(
+                                DatasetImage(path=dataset_image.path),
+                                caption_rounds=caption_rounds,
+                                max_new_tokens=dataset_toml.settings.max_tokens,
+                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                                conversation_overrides=caption_overrides,
+                            )
+                        else:
+                            tokens = [model.predict(
+                                DatasetImage(path=dataset_image.path),
+                                caption_rounds=caption_rounds,
+                                max_new_tokens=dataset_toml.settings.max_tokens,
+                                debug_prompt=dataset_toml.settings.advanced.debug_prompt,
+                                conversation_overrides=caption_overrides,
+                            )]
 
                         for token in tokens:
                             caption.append(token)
@@ -432,7 +449,7 @@ def caption(dataset_path: str, env: str = 'default'):
                         _logger.error('Error: %s', e)
                         raise KeyboardInterrupt
                     except KeyboardInterrupt:
-                        print('')
+                        if do_stream: print('')
                         raise
 
                     print('')
