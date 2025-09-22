@@ -59,12 +59,13 @@ class APICaptioner(BaseAPICaptioner):
         """
 
         super().__init__(**kwargs)
+        kwargs['_warnings'] = False
 
         try:
             api_type = self._infer_api_type()
         except Exception as e:
             raise ValueError(f'failed to infer captioner by api url: {self._api_url}') from e
-        
+
         match api_type:
             case APITypes.OPENAI:
                 self.inner_captioner = OpenAICaptioner(**kwargs)

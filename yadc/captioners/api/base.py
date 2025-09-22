@@ -29,6 +29,8 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
         super().__init__(**kwargs)
 
+        warnings: bool = kwargs.get('_warnings', True)
+
         self._api_url: str = kwargs.get('api_url', '')
         self._api_token: str = kwargs.get('api_token', '')
 
@@ -39,7 +41,7 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
         if self._api_token:
             session_headers['Authorization'] = f'Bearer {self._api_token}'
-        else:
+        elif warnings:
             _logger.warning('Warning: no api_token is set, requests will fail if api uses authentication')
 
         session: requests.Session|None = kwargs.get('session', None)
