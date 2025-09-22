@@ -42,25 +42,25 @@ def koboldcpp(session: requests.Session, request_mocker: requests_mock.Adapter, 
     return _koboldcpp
 
 def test_koboldcpp(koboldcpp, load_test_data):
-    captioner: APICaptioner = koboldcpp('koboldcpp.txt', 'koboldcpp/gemma-3-27b')
+    captioner: APICaptioner = koboldcpp('koboldcpp_stream.txt', 'koboldcpp/gemma-3-27b')
     captioner.load_model('koboldcpp/gemma-3-27b')
 
-    expected = load_test_data('koboldcpp_result.txt')
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    expected = load_test_data('koboldcpp_stream_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
 def test_koboldcpp_should_load_model(koboldcpp, load_test_data):
-    captioner: APICaptioner = koboldcpp('koboldcpp.txt', 'koboldcpp/gemma-3-27b', loaded=False)
+    captioner: APICaptioner = koboldcpp('koboldcpp_stream.txt', 'koboldcpp/gemma-3-27b', loaded=False)
     captioner.load_model('koboldcpp/gemma-3-27b')
 
-    expected = load_test_data('koboldcpp_result.txt')
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    expected = load_test_data('koboldcpp_stream_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
 def test_koboldcpp_should_raise_error_on_bad_model(koboldcpp):
-    captioner: APICaptioner = koboldcpp('koboldcpp.txt', 'koboldcpp/gemma-3-27b', loaded=False)
+    captioner: APICaptioner = koboldcpp('koboldcpp_stream.txt', 'koboldcpp/gemma-3-27b', loaded=False)
 
     with pytest.raises(ValueError, match=re.compile('model not found: .*')):
         captioner.load_model('koboldcpp/unknown')

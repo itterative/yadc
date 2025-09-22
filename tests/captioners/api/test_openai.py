@@ -23,16 +23,16 @@ def openai(session: requests.Session, request_mocker: requests_mock.Adapter, loa
     return _openrouter
 
 def test_openai_o4_mini(openai, load_test_data):
-    captioner: APICaptioner = openai('openai_o4_mini.txt', 'o4-mini')
+    captioner: APICaptioner = openai('openai_o4_mini_stream.txt', 'o4-mini')
     captioner.load_model('o4-mini')
 
-    expected = load_test_data('openai_o4_mini_result.txt')
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    expected = load_test_data('openai_o4_mini_stream_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
 def test_openai_raises_error_on_bad_model(openai):
-    captioner: APICaptioner = openai('openai_o4_mini.txt', 'o4-mini')
+    captioner: APICaptioner = openai('openai_o4_mini_stream.txt', 'o4-mini')
 
     with pytest.raises(ValueError, match=re.compile('model not found: .*')):
         captioner.load_model('unknown')

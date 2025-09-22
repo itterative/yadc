@@ -7,7 +7,8 @@ from yadc.core import logging
 
 from .types import (
     OpenAIErrorResponse,
-    OpenAIStreamingResponse,
+    OpenAIChatCompletionResponse,
+    OpenAIChatCompletionChunkResponse,
     OpenRouterModerationError,
     GeminiErrorResponse,
     GeminiStreamingResponse,
@@ -98,7 +99,15 @@ class ErrorNormalizationMixin:
                 return f'api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}'
 
             _logger.warning('Warning: failed to process generation error')
-        elif isinstance(error, OpenAIStreamingResponse):
+        elif isinstance(error, OpenAIChatCompletionResponse):
+            for choice in error.choices:
+                if not choice.finish_reason:
+                    continue
+
+                return f'api stopped generating: reason: {choice.finish_reason}'
+
+            _logger.warning('Warning: failed to process openai response')
+        elif isinstance(error, OpenAIChatCompletionChunkResponse):
             error_response = error.error
 
             if error_response is not None:
@@ -140,5 +149,5 @@ class ErrorNormalizationMixin:
                 case ('http', 502): error_message = 'unavailable'
                 case ('http', 503): error_message = 'unavailable'
                 case ('app', _): error_message = 'unknown error'
-    
+
         return f'api returned an error ({error_source} {error_code}): {error_message}'

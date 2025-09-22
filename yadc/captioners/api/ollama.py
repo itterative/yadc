@@ -12,8 +12,8 @@ class OllamaCaptioner(OpenAICaptioner):
         super().__init__(**kwargs)
 
 
-    def conversation(self, image: DatasetImage, **kwargs):
-        conversation = super().conversation(image, **kwargs)
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
+        conversation = super().conversation(image, stream=stream, **kwargs)
 
         conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
 

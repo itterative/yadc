@@ -14,10 +14,14 @@ from .mixins import ErrorNormalizationMixin
 
 from .types import (
     OpenAIModelsResponse,
-    OpenAIStreamingResponse,
+    OpenAIChatCompletionResponse,
+    OpenAIChatCompletionChunkResponse,
 )
 
 _logger = logging.get_logger(__name__)
+
+CHAT_COMPLETION_OBJECT = 'chat.completion'
+CHAT_COMPLETION_CHUNK_OBJECT = 'chat.completion.chunk'
 
 class APITypes(str, Enum):
     OPENAI = 'openai'
@@ -265,7 +269,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         return conversation
 
-    def _generate_prediction_inner(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -311,7 +315,10 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    line_response = OpenAIStreamingResponse(**line_json)
+                    line_response = OpenAIChatCompletionChunkResponse(**line_json)
+
+                    if line_response.object != CHAT_COMPLETION_CHUNK_OBJECT:
+                        continue
 
                     if line_response.usage and line_response.id != "SKIPPED":
                         self._api_usage[line_response.id] = APIUsage(
@@ -341,9 +348,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                     _logger.error('Error: failed to process line: %s: %s', e, line)
                     break
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
         try:
-            yield from self._generate_prediction_inner(image, **kwargs)
+            yield from self._generate_stream_prediction_inner(image, **kwargs)
             return
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
@@ -351,8 +358,63 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             raise ValueError(self._normalize_error(e))
 
 
+    def _generate_prediction(self, image: DatasetImage, **kwargs):
+        assert self._current_model, "model not loaded"
+
+        # make sure stream is not set in kwargs
+        kwargs.pop('stream', None)
+
+        conversation = self.conversation(image, stream=False, **kwargs)
+
+        with self._session.post('chat/completions', stream=False, json=conversation) as conversation_resp:
+            conversation_resp.raise_for_status()
+
+            try:
+                conversation_json = json.loads(conversation_resp.text)
+                assert isinstance(conversation_json, dict), "api did not return valid json"
+            except AssertionError as e:
+                _logger.debug('Failed to decode response to json: %s', conversation_resp.text)
+                raise ValueError(str(e))
+            except json.JSONDecodeError as e:
+                _logger.debug('Failed to decode response to json: %s', conversation_resp.text)
+                raise ValueError('api did not return json')
+
+            try:
+                conversation_response = OpenAIChatCompletionResponse(**conversation_json)
+                assert conversation_response.object == CHAT_COMPLETION_OBJECT, f'api did not return a chat completion response'
+            except AssertionError as e:
+                _logger.debug('Failed to decode response to object: %s', conversation_resp.text)
+                raise ValueError(str(e))
+            except pydantic.ValidationError as e:
+                _logger.debug('Failed to decode response to object: %s', conversation_resp.text)
+                raise ValueError('api did not return a valid response')
+
+            if conversation_response.usage and conversation_response.id != "SKIPPED":
+                self._api_usage[conversation_response.id] = APIUsage(
+                    response_tokens=conversation_response.usage.completion_tokens,
+                    prompt_tokens=conversation_response.usage.prompt_tokens,
+                    total_tokens=conversation_response.usage.total_tokens,
+                    thoughts_tokens=0 if not conversation_response.usage.completion_tokens_details else conversation_response.usage.completion_tokens_details.reasoning_tokens,
+                )
+
+            for choice in conversation_response.choices:
+                if choice.finish_reason and choice.finish_reason != 'stop':
+                    raise ValueError(self._normalize_error(conversation_response))
+
+                if content := choice.message.content:
+                    content = content.replace('◁', '<')
+                    content = content.replace('▷', '>\n')
+
+                    return content
+
+            raise ValueError('api did not return text')
+
+
     def predict(self, image: DatasetImage, **kwargs):
-        return ''.join(list(self._generate_prediction(image, **kwargs)))
-    
+        try:
+            return self._generate_prediction(image, **kwargs)
+        except requests.HTTPError as e:
+            raise ValueError(self._normalize_error(e))
+
     def predict_stream(self, image: DatasetImage, **kwargs):
-        yield from self._generate_prediction(image, **kwargs)
+        yield from self._generate_stream_prediction(image, **kwargs)

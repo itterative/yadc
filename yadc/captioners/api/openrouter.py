@@ -27,8 +27,8 @@ class OpenRouterCaptioner(OpenAICaptioner):
             except:
                 _logger.warning('Warning: failed to retrieve current credits for api token.')
 
-    def conversation(self, image: DatasetImage, **kwargs):
-        conversation = super().conversation(image, **kwargs)
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
+        conversation = super().conversation(image, stream=stream, **kwargs)
 
         if self._reasoning:
             conversation.pop('reasoning_effort', None) # remove any existing openai reasoning config
@@ -37,6 +37,9 @@ class OpenRouterCaptioner(OpenAICaptioner):
                 'effort': self._reasoning_effort,
                 'exclude': self._reasoning_exclude_output,
             }
+
+        conversation.pop('stream_options', None)
+        conversation['usage'] = { 'include': True }
 
         conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
 

@@ -10,23 +10,40 @@ class OpenAIModel(pydantic.BaseModel):
     object: Literal['model'] = 'model'
     owned_by: str = 'default'
 
-class OpenAIStreamingResponse(pydantic.BaseModel):
+class OpenAIChatCompletionChunkResponse(pydantic.BaseModel):
     id: str = 'SKIPPED'
-    error: Optional['_OpenAIStreamingError'] = None
-    choices: list['_OpenAIStreamingChoice'] = []
+    object: str = 'chat.completion.cunk'
+    error: Optional['_OpenAIChatCompletionError'] = None
+    choices: list['_OpenAIChatCompletionChunkChoice'] = []
     usage: Optional['_OpenAIUsage'] = None
 
-class _OpenAIStreamingError(pydantic.BaseModel):
+class OpenAIChatCompletionResponse(pydantic.BaseModel):
+    id: str = 'SKIPPED'
+    object: str = 'chat.completion'
+    choices: list['_OpenAIChatCompletionChoice'] = []
+    usage: Optional['_OpenAIUsage'] = None
+
+class _OpenAIChatCompletionError(pydantic.BaseModel):
     code: str
     message: str
     metadata: Optional[dict] = None
 
-class _OpenAIStreamingChoice(pydantic.BaseModel):
-    delta: '_OpenAIStreamingChoiceDelta'
+class _OpenAIChatCompletionChunkChoice(pydantic.BaseModel):
+    delta: '_OpenAIChatCompletionChunkChoiceDelta'
     finish_reason: Optional[str] = None
 
-class _OpenAIStreamingChoiceDelta(pydantic.BaseModel):
-    content: str = ''
+class _OpenAIChatCompletionChoice(pydantic.BaseModel):
+    message: '_OpenAIChatCompletionChoiceMessage'
+    finish_reason: Optional[str] = None
+
+class _OpenAIChatCompletionChoiceMessage(pydantic.BaseModel):
+    content: str
+    role: str = 'assistant'
+    content: Optional[str] = None
+
+class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
+    role: str = 'assistant'
+    content: Optional[str] = None
 
 class OpenAIErrorResponse(pydantic.BaseModel):
     error: '_OpenAIError'

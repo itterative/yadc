@@ -24,16 +24,16 @@ def openrouter(session: requests.Session, request_mocker: requests_mock.Adapter,
     return _openrouter
 
 def test_openrouter_gpt_5_mini(openrouter, load_test_data):
-    captioner: APICaptioner = openrouter('openrouter_gpt_5_mini.txt', 'openai/gpt-5-mini')
+    captioner: APICaptioner = openrouter('openrouter_gpt_5_mini_stream.txt', 'openai/gpt-5-mini')
     captioner.load_model('openai/gpt-5-mini')
 
-    expected = load_test_data('openrouter_gpt_5_mini_result.txt')
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    expected = load_test_data('openrouter_gpt_5_mini_stream_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
 def test_openrouter_raises_error_on_bad_model(openrouter):
-    captioner: APICaptioner = openrouter('openrouter_gpt_5_mini.txt', 'openai/gpt-5-mini')
+    captioner: APICaptioner = openrouter('openrouter_gpt_5_mini_stream.txt', 'openai/gpt-5-mini')
 
     with pytest.raises(ValueError, match=re.compile('model not found: .*')):
         captioner.load_model('unknown')
