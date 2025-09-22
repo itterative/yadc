@@ -3,11 +3,10 @@ from typing import TextIO
 import sys
 import toml
 import pathlib
+import pydantic
 
 import click
 from . import cli_common, cli_utils
-
-from time import time
 
 from yadc.core import logging
 from yadc.core.config import Config, ConfigSettings
@@ -24,14 +23,14 @@ _logger = logging.get_logger(__name__)
     short_help='Caption a dataset',
     help='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc'
 )
-@click.argument('dataset_path', type=click.File('r'))
+@click.argument('dataset', type=click.File('r'))
 @click.option('--stream/--no-stream', is_flag=True, default=None, help='Enable the streaming of captions')
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
 @click.option('--rounds', type=click.IntRange(min=1, max_open=True), default=None, required=False, help='How many captioning rounds to do')
 @cli_common.log_level
 @cli_common.env
-def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
+def caption(dataset: TextIO, env: str = 'default', **kwargs):
     def cli_option(option: str, default):
         value = kwargs.get(option, None)
         if value is not None:
@@ -41,12 +40,9 @@ def caption(dataset_path: TextIO, env: str = 'default', **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
-        dataset_toml = _load_dataset(dataset_path, env=env)
-    except FileNotFoundError:
-        _logger.error('Error loading %s: file not found', dataset_path)
-        sys.exit(1)
+        dataset_toml = _load_dataset(dataset, env=env)
     except ValueError as e:
-        _logger.error('Error loading %s: %s', dataset_path, e)
+        _logger.error('Error loading dataset: %s', e)
         sys.exit(1)
 
     # cli arguments
@@ -132,7 +128,10 @@ def _load_dataset(dataset_stream: TextIO, env: str):
     dataset_toml_raw_api.setdefault('token', user_config.api.token)
     dataset_toml_raw_api.setdefault('model_name', user_config.api.model_name)
 
-    dataset_toml = Config(**dataset_toml_raw)
+    try:
+        dataset_toml = Config(**dataset_toml_raw)
+    except pydantic.ValidationError as e:
+        raise ValueError(f'invalid configuration: {e}')
 
     for index, path in enumerate(dataset_toml.dataset.paths):
         assert isinstance(path, str), f'path at index {index} is not a string'
