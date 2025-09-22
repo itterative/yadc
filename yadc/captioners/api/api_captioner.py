@@ -65,6 +65,8 @@ class APICaptioner(BaseAPICaptioner):
 
         try:
             api_type = self._infer_api_type()
+        except requests.ConnectionError:
+            raise ValueError(f'failed to infer captioner by api url ({self._api_url}): api is down')
         except Exception as e:
             raise ValueError(f'failed to infer captioner by api url ({self._api_url}): are you using the wrong url? (e.g. http://localhost:5001/v1): {e}') from e
 
