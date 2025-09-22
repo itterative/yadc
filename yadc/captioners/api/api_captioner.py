@@ -13,6 +13,7 @@ from .openai import OpenAICaptioner
 from .openrouter import OpenRouterCaptioner
 from .gemini import GeminiCaptioner
 from .koboldcpp import KoboldcppCaptioner
+from .llamacpp import LlamacppCaptioner
 from .ollama import OllamaCaptioner
 from .vllm import VllmCaptioner
 
@@ -27,6 +28,7 @@ class APITypes(str, Enum):
     GEMINI = 'gemini'
     OPENAI = 'openai'
     OPENROUTER = 'openrouter'
+    LLAMACPP = 'llamacpp'
     KOBOLDCPP = 'koboldcpp'
     VLLM = 'vllm'
     OLLAMA = 'ollama'
@@ -76,12 +78,15 @@ class APICaptioner(BaseAPICaptioner):
             case APITypes.GEMINI:
                 self.inner_captioner = GeminiCaptioner(**kwargs)
 
+            case APITypes.LLAMACPP:
+                self.inner_captioner = LlamacppCaptioner(**kwargs)
+
             case APITypes.KOBOLDCPP:
                 self.inner_captioner = KoboldcppCaptioner(**kwargs)
 
             case APITypes.VLLM:
                 self.inner_captioner = VllmCaptioner(**kwargs)
-            
+
             case APITypes.OLLAMA:
                 self.inner_captioner = OllamaCaptioner(**kwargs)
     
@@ -114,6 +119,17 @@ class APICaptioner(BaseAPICaptioner):
         # ollama: owned_by set to ollama user or 'library'
 
         try:
+            with self._session.get('/health') as health_resp:
+                assert health_resp.ok
+
+                server = health_resp.headers.get('server', 'unknown').lower()
+
+                if 'llama.cpp' in server:
+                    return APITypes.LLAMACPP
+        except:
+            pass
+
+        try:
             # koboldcpp has well defined endpoint
             #
             # reference: https://lite.koboldai.net/koboldcpp_api#/serviceinfo/get__well_known_serviceinfo
@@ -134,6 +150,35 @@ class APICaptioner(BaseAPICaptioner):
         except requests.JSONDecodeError:
             pass
         except pydantic.ValidationError:
+            pass
+
+        try:
+            # reference: https://github.com/ollama/ollama/blob/c23e6f4cae3cbf62db68c2c9bf993925626fbe7c/server/routes.go#L1413
+            # HEAD / returns "Ollama is running"
+            with self._session.request('HEAD', '/') as ollama_resp:
+                assert ollama_resp.ok
+
+                ollama_resp_text = ollama_resp.text.lower()
+                if 'ollama' in ollama_resp_text:
+                    return APITypes.OLLAMA
+
+            # fallback
+
+            # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
+            # GET /api/version will return the ollama version
+            # this is not really a good check, since this might be the same as other software
+
+            with self._session.get('/api/version') as ollama_resp:
+                assert ollama_resp.ok
+
+                ollama_json = ollama_resp.json()
+                assert isinstance(ollama_json, dict)
+                assert 'version' in ollama_json
+
+            return APITypes.OLLAMA
+        except AssertionError:
+            pass
+        except requests.JSONDecodeError:
             pass
 
         # the following aren't very good checks (might not work in the future)
@@ -159,25 +204,6 @@ class APICaptioner(BaseAPICaptioner):
                 assert 'version' in vllm_json
 
             return APITypes.VLLM
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-
-        try:
-            # ollama doesn't have a well defined endpoint
-            # so just use one that their docs
-            #
-            # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
-
-            with self._session.get('/api/version') as ollama_resp:
-                assert ollama_resp.ok
-
-                ollama_json = ollama_resp.json()
-                assert isinstance(ollama_json, dict)
-                assert 'version' in ollama_json
-
-            return APITypes.OLLAMA
         except AssertionError:
             pass
         except requests.JSONDecodeError:

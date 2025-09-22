@@ -26,6 +26,7 @@ CHAT_COMPLETION_CHUNK_OBJECT = 'chat.completion.chunk'
 class APITypes(str, Enum):
     OPENAI = 'openai'
     OPENROUTER = 'openrouter'
+    LLAMACPP = 'llamacpp'
     KOBOLDCPP = 'koboldcpp'
     VLLM = 'vllm'
     OLLAMA = 'ollama'
