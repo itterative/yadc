@@ -99,11 +99,12 @@ class Session:
         t = self._pool.submit(functools.partial(session.send, session.prepare_request(request,), stream=stream))
         response = t.result()
 
+        _logger.debug('HTTP Response: %s %s: %d', method, path, response.status_code)
         _logger.debug('HTTP Response headers: %s %s: %s', method, path, response.headers)
         if not stream:
-            _logger.debug('HTTP Response: %s %s: %s', method, path, response.text)
+            _logger.debug('HTTP Response Body: %s %s: %s', method, path, response.text)
         else:
-            _logger.debug('HTTP Response: %s %s: (streamed)', method, path)
+            _logger.debug('HTTP Response Body: %s %s: (streamed)', method, path)
 
         # ensure response is closed
         with response:

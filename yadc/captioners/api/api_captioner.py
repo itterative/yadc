@@ -17,7 +17,7 @@ from .llamacpp import LlamacppCaptioner
 from .ollama import OllamaCaptioner
 from .vllm import VllmCaptioner
 
-from .types import KoboldServiceInfoResponse
+from .types import KoboldServiceInfoResponse, OpenAIModelsResponse
 
 OPENAI_DOMAIN = 'api.openai.com'
 OPENROUTER_DOMAIN = 'openrouter.ai'
@@ -66,7 +66,7 @@ class APICaptioner(BaseAPICaptioner):
         try:
             api_type = self._infer_api_type()
         except Exception as e:
-            raise ValueError(f'failed to infer captioner by api url: {self._api_url}') from e
+            raise ValueError(f'failed to infer captioner by api url ({self._api_url}): are you using the wrong url? (e.g. http://localhost:5001/v1): {e}') from e
 
         match api_type:
             case APITypes.OPENAI:
@@ -111,12 +111,37 @@ class APICaptioner(BaseAPICaptioner):
         except:
             pass
 
-        # NOTE: might be worth to infer based on the model list
-        # 
+        # infer based on models response initially
+
+        # llamacpp: owned_by set to 'llamacpp'
         # kobold: models are prefixed with 'koboldcpp/'
         #         and owned_by set to 'koboldcpp'
         # vllm: owned_by set to 'vllm'
         # ollama: owned_by set to ollama user or 'library'
+
+        try:
+            with self._session.get('models') as models_resp:
+                assert models_resp.ok, f'request failed with http {models_resp.status_code}'
+
+                models_json = models_resp.json()
+                assert isinstance(models_json, dict), f'bad models response type; expected dict, got {type(models_json)}'
+
+                models = OpenAIModelsResponse(**models_json)
+
+                for model in models.data:
+                    if model.owned_by == 'llamacpp':
+                        return APITypes.LLAMACPP
+                
+                    if model.owned_by == 'koboldcpp':
+                        return APITypes.KOBOLDCPP
+
+                    if model.owned_by == 'vllm':
+                        return APITypes.VLLM
+        except AssertionError as e:
+            raise ValueError(f'failed to retrieve model list: {e}')
+        
+
+        # fallback to specific api checks
 
         try:
             with self._session.get('/health') as health_resp:
@@ -155,23 +180,28 @@ class APICaptioner(BaseAPICaptioner):
         try:
             # reference: https://github.com/ollama/ollama/blob/c23e6f4cae3cbf62db68c2c9bf993925626fbe7c/server/routes.go#L1413
             # HEAD / returns "Ollama is running"
-            with self._session.request('HEAD', '/') as ollama_resp:
-                assert ollama_resp.ok
+            with self._session.request('HEAD', '/') as models_resp:
+                assert models_resp.ok
 
-                ollama_resp_text = ollama_resp.text.lower()
+                ollama_resp_text = models_resp.text.lower()
                 if 'ollama' in ollama_resp_text:
                     return APITypes.OLLAMA
+        except AssertionError:
+            pass
 
-            # fallback
 
+        # last fallback
+        # the following aren't very good checks (might not work in the future)
+
+        try:
             # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
             # GET /api/version will return the ollama version
             # this is not really a good check, since this might be the same as other software
 
-            with self._session.get('/api/version') as ollama_resp:
-                assert ollama_resp.ok
+            with self._session.get('/api/version') as models_resp:
+                assert models_resp.ok
 
-                ollama_json = ollama_resp.json()
+                ollama_json = models_resp.json()
                 assert isinstance(ollama_json, dict)
                 assert 'version' in ollama_json
 
@@ -181,7 +211,6 @@ class APICaptioner(BaseAPICaptioner):
         except requests.JSONDecodeError:
             pass
 
-        # the following aren't very good checks (might not work in the future)
 
         try:
             # vllm doesn't list their apis clearly
