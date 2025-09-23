@@ -339,9 +339,6 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                         content = choice.delta.content or choice.delta.refusal
 
                         if content:
-                            content = content.replace('◁', '<')
-                            content = content.replace('▷', '>\n')
-
                             yield content
                             break # only retrieve first choice
                 except pydantic.ValidationError:

@@ -6,7 +6,9 @@ import pathlib
 import pydantic
 
 import click
-from . import cli_common, cli_utils
+
+from .core import utils
+from . import cli_common
 
 from yadc.core import logging
 from yadc.core.config import Config, ConfigSettings
@@ -103,7 +105,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
     _logger.info('Captioning...')
 
     
-    with cli_utils.Timer() as timer:
+    with utils.Timer() as timer:
         return_code = _caption(
             dataset=dataset_to_do,
             model=model,
@@ -367,7 +369,7 @@ def _caption(
                     _logger.info('')
 
                     try:
-                        with cli_utils.Timer() as timer_prediction:
+                        with utils.Timer() as timer_prediction:
                             if do_stream:
                                 tokens = model.predict_stream(
                                     dataset_image_current,
@@ -414,7 +416,7 @@ def _caption(
                             new_caption = prompt_for_override(f'round #{j}', default='')
 
                             if not new_caption:
-                                with cli_utils.Timer() as timer_round:
+                                with utils.Timer() as timer_round:
                                     new_caption = model.predict(
                                         dataset_image_current,
                                         max_new_tokens=settings.max_tokens,
@@ -441,7 +443,7 @@ def _caption(
 
                         _logger.info('')
 
-                        with cli_utils.Timer() as timer_end_round:
+                        with utils.Timer() as timer_end_round:
                             if do_stream:
                                 tokens = model.predict_stream(
                                     DatasetImage(path=dataset_image.path),
