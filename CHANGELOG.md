@@ -1,4 +1,11 @@
 # Release History
+## 0.7.0 (release)
+
+- Basic llama.cpp support
+- Improved reasoning outputs
+- Allow overriding API options in caption command
+- Fix dataset loading cli error
+
 ## 0.6.0 (release)
 
 - Improved cli options
