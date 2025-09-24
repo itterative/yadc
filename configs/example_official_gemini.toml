@@ -14,13 +14,13 @@ paths = [ "path_1", "path_2" ]
 #
 # documentation: https://ai.google.dev/api/generate-content
 # documentation: https://ai.google.dev/api/generate-content#v1beta.SafetySetting
-[[settings.safety_settings]]
+[[settings.advanced.safety_settings]]
 category = "HARM_CATEGORY_HATE_SPEECH"
 threshold = "BLOCK_LOW"
-[[settings.safety_settings]]
+[[settings.advanced.safety_settings]]
 category = "HARM_CATEGORY_HARASSMENT"
 threshold = "BLOCK_MEDIUM_AND_ABOVE"
-[[settings.safety_settings]]
+[[settings.advanced.safety_settings]]
 category = "HARM_CATEGORY_SEXUALLY_EXPLICIT"
 threshold = "BLOCK_ONLY_HIGH"
 
