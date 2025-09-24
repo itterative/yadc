@@ -8,7 +8,6 @@ _logger = logging.get_logger(__name__)
 FLAG_STRIP_CAPTION = True
 
 class ThinkingMixin:
-
     def _handle_thinking_streaming(self, stream: Generator[str]):
         thinking_start = '<think>'
         thinking_end = '</think>'
@@ -63,7 +62,7 @@ class ThinkingMixin:
                 break
 
         if thinking_buffer:
-            _logger.debug(thinking_buffer)
+            _logger.info(_indent_thinking(thinking_buffer))
 
         if did_think:
             _logger.info('Thinking done (%.2f sec)\n', timer.elapsed)
@@ -124,12 +123,14 @@ class ThinkingMixin:
 
         if thinking_buffer:
             _logger.debug('')
-            _logger.debug('THOUGHT -------')
-            _logger.debug(thinking_buffer)
-            _logger.debug('---------------')
-            _logger.debug('')
+            _logger.info('Thinking...')
+            _logger.info(_indent_thinking(thinking_buffer))
+            _logger.info('Thinking done.\n')
 
         if not FLAG_STRIP_CAPTION:
             return content
 
         return content.strip()
+
+def _indent_thinking(buffer: str):
+    return '\n'.join(map(lambda s: '> ' + s, buffer.splitlines()))
