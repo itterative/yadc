@@ -41,6 +41,24 @@ def test_openrouter_gpt_5_mini_streaming(openrouter, load_test_data):
 
     assert got == expected, 'bad prediction'
 
+def test_openrouter_qwen3_vl(openrouter, load_test_data):
+    captioner: APICaptioner = openrouter('nonstreaming/openrouter_qwen3_vl.txt', 'qwen/qwen3-vl-235b-a22b-thinking')
+    captioner.load_model('qwen/qwen3-vl-235b-a22b-thinking')
+
+    expected = load_test_data('nonstreaming/openrouter_qwen3_vl_result.txt')
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+
+    assert got == expected, 'bad prediction'
+
+def test_openrouter_qwen3_vl_streaming(openrouter, load_test_data):
+    captioner: APICaptioner = openrouter('streaming/openrouter_qwen3_vl.txt', 'qwen/qwen3-vl-235b-a22b-thinking')
+    captioner.load_model('qwen/qwen3-vl-235b-a22b-thinking')
+
+    expected = load_test_data('streaming/openrouter_qwen3_vl_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+
+    assert got == expected, 'bad prediction'
+
 def test_openrouter_raises_error_on_bad_model(openrouter):
     captioner: APICaptioner = openrouter('nonstreaming/openrouter_gpt_5_mini.txt', 'openai/gpt-5-mini')
 

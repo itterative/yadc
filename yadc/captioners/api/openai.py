@@ -9,6 +9,7 @@ from enum import Enum
 from yadc.core import logging
 from yadc.core import DatasetImage
 
+from . import utils
 from .base import BaseAPICaptioner
 from .mixins import ErrorNormalizationMixin
 
@@ -290,6 +291,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
             converation_stopped = False
 
+            is_thinking = False   # used to wrap the thoughts in <think>...</think>
+            is_prediction = False # prevents the thoughts from being printed if the first thought is done
+
             for line in conversation_resp.iter_lines():
                 # NOTE: decode_unicode option doesn't seem to work properly for some characters
                 assert isinstance(line, bytes)
@@ -336,11 +340,26 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                         if choice.finish_reason and choice.finish_reason != 'stop':
                             raise ValueError(self._normalize_error(line_response))
 
+                        if not is_prediction and (thought := choice.delta.reasoning):
+                            if not is_thinking:
+                                yield '<think>'
+                                is_thinking = True
+
+                            yield thought
+
                         content = choice.delta.content or choice.delta.refusal
 
-                        if content:
-                            yield content
-                            break # only retrieve first choice
+                        if not content:
+                            continue
+
+                        if is_thinking:
+                            yield '</think>'
+                            is_thinking = False
+
+                        is_prediction = True
+
+                        yield content
+                        break # only retrieve first choice
                 except pydantic.ValidationError:
                     _logger.error('Error: failed to process line: not a stream response: %s', line)
                     break
@@ -365,6 +384,8 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
         kwargs.pop('stream', None)
 
         conversation = self.conversation(image, stream=False, **kwargs)
+
+        is_thinking = False   # used to wrap the thoughts in <think>...</think>
 
         with self._session.post('chat/completions', stream=False, json=conversation) as conversation_resp:
             conversation_resp.raise_for_status()
@@ -397,26 +418,43 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                     thoughts_tokens=0 if not conversation_response.usage.completion_tokens_details else conversation_response.usage.completion_tokens_details.reasoning_tokens,
                 )
 
+            thought_buffer = ''
+
             for choice in conversation_response.choices:
                 if choice.finish_reason and choice.finish_reason != 'stop':
                     raise ValueError(self._normalize_error(conversation_response))
 
+                thought_content = choice.message.reasoning
+                if thought_content:
+                    if not is_thinking:
+                        thought_buffer += '<think>'
+                        is_thinking = True
+
+                    thought_buffer += thought_content
+
+                if is_thinking:
+                    thought_buffer += '</think>'
+                    is_thinking = False
+
                 content = choice.message.content or choice.message.refusal
 
-                if content:
-                    content = content.replace('◁', '<')
-                    content = content.replace('▷', '>\n')
+                if not content:
+                    continue
 
-                    return content
+                if is_thinking:
+                    thought_buffer += '</think>'
+                    is_thinking = False
+
+                return thought_buffer + content
 
             raise ValueError('api did not return text')
 
 
     def predict(self, image: DatasetImage, **kwargs):
         try:
-            return self._generate_prediction(image, **kwargs)
+            return utils.handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
     def predict_stream(self, image: DatasetImage, **kwargs):
-        yield from self._generate_stream_prediction(image, **kwargs)
+        yield from utils.handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

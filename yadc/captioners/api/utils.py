@@ -5,6 +5,8 @@ from yadc.core.utils import Timer
 
 _logger = logging.get_logger(__name__)
 
+FLAG_STRIP_CAPTION = True
+
 def handle_thinking_streaming(stream: Generator[str]):
     thinking_start = '<think>'
     thinking_end = '</think>'
@@ -19,6 +21,7 @@ def handle_thinking_streaming(stream: Generator[str]):
     with Timer() as timer:
         for content in stream:
             raw_buffer += content # no processing
+            raw_buffer = raw_buffer.lstrip() # just in case, just remove starting whitespace
 
             # edge case: somehow kimi-vl returns this instead of angled brackets
             content = content.replace('◁', '<')
@@ -28,20 +31,14 @@ def handle_thinking_streaming(stream: Generator[str]):
             buffer = buffer.lstrip() # just in case, just remove starting whitespace
 
             if not buffer.startswith('<'):
-                yield raw_buffer
-
                 buffer = ''
-                raw_buffer = ''
                 break
 
             if len(buffer) < len(thinking_start):
                 continue
 
             if not buffer.startswith(thinking_start):
-                yield raw_buffer
-
                 buffer = ''
-                raw_buffer = ''
                 break
 
             if not is_thinking:
@@ -58,10 +55,9 @@ def handle_thinking_streaming(stream: Generator[str]):
 
             # note: should be the same size as long as the edge cases don't change length
             thinking_buffer = raw_buffer[len(thinking_start):i_thinking_end]
-            yield raw_buffer[i_thinking_end+len(thinking_end):]
+            raw_buffer = raw_buffer[i_thinking_end+len(thinking_end):]
 
             buffer = ''
-            raw_buffer = ''
             break
 
     if thinking_buffer:
@@ -70,16 +66,43 @@ def handle_thinking_streaming(stream: Generator[str]):
     if did_think:
         _logger.info('Thinking done (%.2f sec)\n', timer.elapsed)
 
-    yield from stream
+    if not FLAG_STRIP_CAPTION:
+        yield raw_buffer
+        yield from stream
+        return
+
+    buffer = raw_buffer
+
+    for content in stream:
+        buffer += content
+
+        if not buffer or buffer.isspace():
+            continue
+
+        yield buffer.lstrip()
+        break
+
+    buffer = ''
+
+    for content in stream:
+        buffer += content
+
+        if not content or content.isspace():
+            continue
+
+        yield buffer
+        buffer = ''
+
+    yield buffer.rstrip()
 
 def handle_thinking(content: str):
     thinking_start = '<think>'
     thinking_end = '</think>'
 
     thinking_buffer = ''
-    raw_content = content
 
     content = content.lstrip() # just in case, just remove starting whitespace
+    raw_content = content
 
     # edge case: somehow kimi-vl returns this instead of angled brackets
     content = content.replace('◁', '<')
@@ -104,4 +127,7 @@ def handle_thinking(content: str):
         _logger.debug('---------------')
         _logger.debug('')
 
-    return content
+    if not FLAG_STRIP_CAPTION:
+        return content
+
+    return content.strip()

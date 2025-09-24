@@ -10,6 +10,7 @@ from enum import Enum
 from yadc.core import logging
 from yadc.core import DatasetImage
 
+from . import utils
 from .base import BaseAPICaptioner
 from .session import Session
 from .mixins import ErrorNormalizationMixin
@@ -359,6 +360,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
             conversation_error = '' # in some scenarios, gemini api will just send the error directly instead of as a sse data line
             conversation_stopped = False
 
+            is_thinking = False   # used to wrap the thoughts in <think>...</think>
+            is_prediction = False # prevents the thoughts from being printed if the first thought is done
+
             for line in conversation_resp.iter_lines():
                 # NOTE: decode_unicode option doesn't seem to work properly for some characters
                 assert isinstance(line, bytes)
@@ -410,9 +414,23 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
                         for part in candidate.content.parts:
                             if text := part.text:
-                                # skip for now
                                 if part.thought:
+                                    if is_prediction:
+                                        continue
+
+                                    if not is_thinking:
+                                        yield '<think>'
+                                        is_thinking = True
+
+                                    yield text
+
                                     continue
+
+                                if is_thinking:
+                                    yield '</think>'
+                                    is_thinking = False
+
+                                is_prediction = True
 
                                 yield text
 
@@ -448,6 +466,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
         conversation = self.conversation(image, **kwargs)
 
+        is_thinking = False   # used to wrap the thoughts in <think>...</think>
+
         with self._session.post(f'models/{self._current_model}:generateContent', stream=False, json=conversation) as conversation_resp:
             conversation_resp.raise_for_status()
 
@@ -478,26 +498,42 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
                     thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
                 )
 
+            thought_buffer = ''
+
             for candidate in conversation_response.candidates:
                 if candidate.finishReason and candidate.finishReason != 'STOP':
                     raise ValueError(self._normalize_error(conversation_response))
 
                 for part in candidate.content.parts:
                     if text := part.text:
-                        # skip for now
+                        if not part.thought:
+                            continue
+
+                        if not is_thinking:
+                            thought_buffer += '<think>'
+                            is_thinking = True
+                        
+                        thought_buffer += text
+
+                if is_thinking:
+                    thought_buffer += '</think>'
+                    is_thinking = False
+
+                for part in candidate.content.parts:
+                    if text := part.text:
                         if part.thought:
                             continue
 
-                        return text
+                        return thought_buffer + text
 
             raise ValueError('api did not return text')
 
 
     def predict(self, image: DatasetImage, **kwargs):
         try:
-            return self._generate_prediction(image, **kwargs)
+            return utils.handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
     
     def predict_stream(self, image: DatasetImage, **kwargs):
-        yield from self._generate_stream_prediction(image, **kwargs)
+        yield from utils.handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))
