@@ -5,7 +5,7 @@ import requests
 
 from yadc.core import logging
 
-from .types import (
+from ..types import (
     OpenAIErrorResponse,
     OpenAIChatCompletionResponse,
     OpenAIChatCompletionChunkResponse,

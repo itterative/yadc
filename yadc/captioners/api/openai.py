@@ -9,9 +9,8 @@ from enum import Enum
 from yadc.core import logging
 from yadc.core import DatasetImage
 
-from . import utils
 from .base import BaseAPICaptioner
-from .mixins import ErrorNormalizationMixin
+from .utils import ErrorNormalizationMixin, ThinkingMixin
 
 from .types import (
     OpenAIModelsResponse,
@@ -62,7 +61,7 @@ class APIUsage:
         self.total_tokens = total_tokens
         self.thoughts_tokens = thoughts_tokens
 
-class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
+class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
     """
     Implementation for image captioning models using OpenAI-compatible endpoints.
 
@@ -452,9 +451,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin):
 
     def predict(self, image: DatasetImage, **kwargs):
         try:
-            return utils.handle_thinking(self._generate_prediction(image, **kwargs))
+            return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
     def predict_stream(self, image: DatasetImage, **kwargs):
-        yield from utils.handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))
+        yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))
