@@ -38,7 +38,23 @@ def test_llamacpp_streaming(llamacpp, load_test_data):
     expected = load_test_data('streaming/llamacpp_result.txt')
     got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
-    print(got)
+    assert got == expected, 'bad prediction'
+
+def test_llamacpp_cot(llamacpp, load_test_data):
+    captioner: APICaptioner = llamacpp('nonstreaming/llamacpp_cot.txt', 'llamacpp/gemma-3-27b')
+    captioner.load_model('llamacpp/gemma-3-27b')
+
+    expected = load_test_data('nonstreaming/llamacpp_cot_result.txt')
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+
+    assert got == expected, 'bad prediction'
+
+def test_llamacpp_streaming_cot(llamacpp, load_test_data):
+    captioner: APICaptioner = llamacpp('streaming/llamacpp_cot.txt', 'llamacpp/gemma-3-27b')
+    captioner.load_model('llamacpp/gemma-3-27b')
+
+    expected = load_test_data('streaming/llamacpp_cot_result.txt')
+    got = ''.join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
 
     assert got == expected, 'bad prediction'
 
