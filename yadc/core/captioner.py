@@ -1,18 +1,18 @@
-import abc
 from typing import Generator
 
 import io
+import abc
 import base64
-import jinja2
 import pathlib
+
+import jinja2
 import pydantic
 
-from importlib import resources
 from PIL import Image
 
 from yadc.core import logging
 from yadc.core.dataset import DatasetImage
-import yadc.templates
+from yadc import templates
 
 _logger = logging.get_logger(__name__)
 
@@ -138,7 +138,7 @@ class Captioner(abc.ABC):
             ''')
 
         if template == '__default_template__':
-            template = 'default.jinja'
+            return templates.default_template()
         elif template == '__user_template__':
             # early exit if prompt template is given directly
             if self._prompt_template:
@@ -156,9 +156,10 @@ class Captioner(abc.ABC):
                 return f.read()
 
         # if the prompt template is from the template folder, use that
-        with resources.path(yadc.templates, self._prompt_template_name) as prompt_template_resource:
-            with open(prompt_template_resource, 'r') as f:
-                return f.read()
+        try:
+            return templates.load_user_template(self._prompt_template_name)
+        except:
+            pass
 
         raise ValueError(f'bad jinja template: {self._prompt_template_name}')
 
