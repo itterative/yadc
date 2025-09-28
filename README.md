@@ -33,6 +33,8 @@ model_name = "gemma-3n-E4B-it-Q8_0"
 paths = [ "path_to_your_images" ]
 ```
 
+*You can set certain config values, such as API settings, through `yadc config` command. This allows you to share API configuration across different configs.*
+
 ### Dataset
 
 In your config, you can either give certain paths or specificy images directory. When using them both at the same time, this allows you to override the toml settings for each image.
