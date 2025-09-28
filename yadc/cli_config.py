@@ -5,7 +5,6 @@ import sys
 import toml
 import base64
 import pydantic
-import platformdirs
 import functools
 
 import click
@@ -16,18 +15,17 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 
-from yadc.core import logging
+from yadc.core import logging, env
 from yadc.core.user_config import UserConfig, UserConfigApi
 
 # NOTE: storing tokens in plain text is not great, but using keyrings comes with some caveats
 
-APP_NAME = 'yadc'
 CONFIG_NAME = 'config.toml'
-CONFIG_PATH = platformdirs.user_config_path(APP_NAME) / CONFIG_NAME
+CONFIG_PATH = env.CONFIG_PATH / CONFIG_NAME
 
-KEYRING_SERVICE = f"{APP_NAME}_keys"
+KEYRING_SERVICE = f"{env.APP_NAME}_keys"
 PRIVATE_KEY_KEYRING_KEY = "private_key_pem"
-PUBLIC_KEY_PATH = platformdirs.user_config_path(APP_NAME) / "public_key.pem"
+PUBLIC_KEY_PATH = env.CONFIG_PATH / "public_key.pem"
 
 ENV_KEYS = [ 'api_url', 'api_token', 'api_model_name', ]
 ENCRYPTED_KEYS = [ 'api_token_encrypted' ]
@@ -149,7 +147,7 @@ def _decrypt_setting(encrypted_token: str) -> Optional[str]:
 
 
 def _load_config_toml() -> dict:
-    config_path = platformdirs.user_config_path(APP_NAME) / CONFIG_NAME
+    config_path = env.CONFIG_PATH / CONFIG_NAME
 
     try:
         with open(config_path, 'r') as f:
@@ -162,7 +160,7 @@ def _load_config_toml() -> dict:
         raise ValueError('user config is invalid') from e
 
 def _save_config_toml(config: dict):
-    config_path = platformdirs.user_config_path(APP_NAME, ensure_exists=True) / CONFIG_NAME
+    config_path = env.CONFIG_PATH / CONFIG_NAME
 
     with open(config_path, 'w') as f:
         toml.dump(config, f)
