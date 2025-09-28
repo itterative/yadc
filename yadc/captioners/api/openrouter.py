@@ -30,13 +30,16 @@ class OpenRouterCaptioner(OpenAICaptioner):
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         conversation = super().conversation(image, stream=stream, **kwargs)
 
-        if self._reasoning:
-            conversation.pop('reasoning_effort', None) # remove any existing openai reasoning config
+        conversation.pop('reasoning_effort', None) # remove any existing openai reasoning config
 
+        if self._reasoning:
             conversation['reasoning'] = {
+                'enabled': True,
                 'effort': self._reasoning_effort,
                 'exclude': self._reasoning_exclude_output,
             }
+        else:
+            conversation['reasoning'] = { 'enabled': False }
 
         conversation.pop('stream_options', None)
         conversation['usage'] = { 'include': True }
