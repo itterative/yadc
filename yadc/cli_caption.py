@@ -29,6 +29,7 @@ _logger = logging.get_logger(__name__)
 @click.option('--api-url', type=str, default=None, help='Override API url')
 @click.option('--api-token', type=str, default=None, help='Override API auth token')
 @click.option('--api-model-name', type=str, default=None, help='Override API model')
+@click.option('--user-template', type=str, default=None, help='Override user template')
 @click.option('--stream/--no-stream', is_flag=True, default=None, help='Enable the streaming of captions')
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
@@ -54,6 +55,10 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
     dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
     dataset_toml.api.token = str(cli_option('api_token', default=dataset_toml.api.token))
     dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
+
+    if user_template := cli_option('user_template', default=None):
+        dataset_toml.settings.prompt_template = ''
+        dataset_toml.settings.prompt_template_path = user_template
 
     do_stream = bool(cli_option('stream', default=False))
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
