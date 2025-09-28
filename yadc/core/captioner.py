@@ -72,11 +72,11 @@ class Captioner(abc.ABC):
 
         Args:
             **kwargs: Optional keyword arguments:
-                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
+                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default').
                 - `prompt_template` (str): Direct template string to override file-based templates.
         """
 
-        self._prompt_template_name: str = kwargs.pop('prompt_template_name', 'default.jinja')
+        self._prompt_template_name: str = kwargs.pop('prompt_template_name', 'default')
         self._prompt_template: str = kwargs.pop('prompt_template', '').strip()
 
         self._jinja = jinja2.Environment(
@@ -155,9 +155,15 @@ class Captioner(abc.ABC):
             with open(prompt_template, 'r') as f:
                 return f.read()
 
-        # if the prompt template is from the template folder, use that
+        # if the prompt template is from the user templates, use that
         try:
             return templates.load_user_template(self._prompt_template_name)
+        except:
+            pass
+
+        # if the prompt template is from the template folder, use that
+        try:
+            return templates.load_builtin_template(self._prompt_template_name)
         except:
             pass
 
