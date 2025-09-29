@@ -65,7 +65,7 @@ class ConfigSettings(pydantic.BaseModel):
     @pydantic.model_validator(mode='after')
     def validate_(self):
         try:
-            assert 100 <= self.max_tokens <= 2048, 'config max_tokens must be between 100 and 2048'
+            assert 100 <= self.max_tokens <= 16384, 'config max_tokens must be between 100 and 16384'
 
             assert self.prompt_template or self.prompt_template_path, 'either prompt_template or prompt_template_name must be provided in the config'
 
