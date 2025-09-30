@@ -5,7 +5,9 @@ from importlib import resources
 import click
 
 import yadc.templates
+
 from yadc.core import logging, env
+from yadc.cmd import status
 
 from . import cli_common
 
@@ -51,7 +53,7 @@ def add(name: str):
         yadc.templates.load_user_template(name)
 
         _logger.error('Error: template with name "%s" already exists. Use "templates edit" to edit it.', name)
-        sys.exit(3)
+        sys.exit(status.STATUS_USER_ERROR)
     except FileNotFoundError:
         pass
 
@@ -67,7 +69,7 @@ def add(name: str):
         yadc.templates.save_user_template(name, user_template)
     except PermissionError:
         _logger.error('Error: failed to save user template: permissions error')
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     _logger.info('Added new user template: %s', name)
 
@@ -95,7 +97,7 @@ def edit(name: str):
         user_template = yadc.templates.load_user_template(name)
     except FileNotFoundError:
         _logger.error('Error: template with name "%s" does not exit. Use "templates add" to add it.', name)
-        sys.exit(3)
+        sys.exit(status.STATUS_USER_ERROR)
 
 
     user_template = click.edit(user_template, extension='.jinja', require_save=True)
@@ -108,6 +110,6 @@ def edit(name: str):
         yadc.templates.save_user_template(name, user_template)
     except PermissionError:
         _logger.error('Error: failed to save user template: permissions error')
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     _logger.info('Updated user template: %s', name)

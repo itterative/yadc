@@ -19,6 +19,8 @@ from yadc.captioners.api import APICaptioner, APITypes
 
 from yadc.cli_config import load_config
 
+from yadc.cmd import status
+
 _logger = logging.get_logger(__name__)
 
 @click.command(
@@ -49,7 +51,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
         dataset_toml = _load_dataset(dataset, env=env)
     except ValueError as e:
         _logger.error('Error loading dataset: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_OK)
 
     # cli arguments
     dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
@@ -84,7 +86,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
 
     if len(dataset_to_do) == 0:
         _logger.info('Nothing to do.')
-        sys.exit(0)
+        sys.exit(status.STATUS_OK)
 
     _logger.info('Loading model...')
 
@@ -104,7 +106,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
         _logger.error('Error: failed to load model: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_OK)
 
     _logger.info('')
     _logger.info('Captioning...')
@@ -253,7 +255,7 @@ def _caption(
 
     do_quit = False
     do_print_separator = False
-    return_code = 0
+    return_code = status.STATUS_OK
 
     def print_dataset_image_meta(dataset_image: DatasetImage):
         click.echo(f'Path: {dataset_image.path}')
@@ -296,7 +298,7 @@ def _caption(
         do_prompt = True
 
         while do_prompt:
-            return_code = 0
+            return_code = status.STATUS_OK
 
             try:
                 action = prompt_for_action('Next action', dict(
@@ -494,7 +496,7 @@ def _caption(
                     caption_rounds = []
                     do_quit = True
                     do_prompt = False
-                    return_code = 1
+                    return_code = status.STATUS_ERROR
 
                     break
 

@@ -18,6 +18,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from yadc.core import logging, env
 from yadc.core.user_config import UserConfig, UserConfigApi
 
+from yadc.cmd import status
+
 # NOTE: storing tokens in plain text is not great, but using keyrings comes with some caveats
 
 CONFIG_NAME = 'config.toml'
@@ -241,7 +243,7 @@ def load_config(env: str = "default") -> UserConfig:
 def config_get(key: str, env: str = "default"):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        sys.exit(3)
+        sys.exit(status.STATUS_USER_ERROR)
 
     key_encrypted = key + '_encrypted'
 
@@ -254,21 +256,21 @@ def config_get(key: str, env: str = "default"):
 
         if not value:
             _logger.error('Error: key not found: %s (env: %s)', key, env)
-            sys.exit(3)
+            sys.exit(status.STATUS_USER_ERROR)
 
         # Special handling for token
         if key_encrypted in ENCRYPTED_KEYS:
             decrypted = _decrypt_setting(value)
             if decrypted is None:
                 _logger.error("Error: failed to decrypted setting.")
-                sys.exit(1)
+                sys.exit(status.STATUS_ERROR)
             value = decrypted
 
         click.echo(value)
 
     except Exception as e:
         _logger.error('Error: failed to read config: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
 
 @config.command(
@@ -284,7 +286,7 @@ def config_get(key: str, env: str = "default"):
 def config_set(key: str, value: str, env: str = "default", force: bool = False):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        sys.exit(3)
+        sys.exit(status.STATUS_USER_ERROR)
 
     key_encrypted = key + '_encrypted'
 
@@ -293,11 +295,11 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error('Error: user config is invalid')
-            sys.exit(1)
+            sys.exit(status.STATUS_ERROR)
         config_toml = {}
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     if key_encrypted in ENCRYPTED_KEYS:
         try:
@@ -305,7 +307,7 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
             _set_env_config(config_toml, env, key, encrypted_value)
         except Exception as e:
             _logger.error("Error: Failed to encrypt setting: %s", e)
-            sys.exit(1)
+            sys.exit(status.STATUS_ERROR)
     else:
         _set_env_config(config_toml, env, key, value)
 
@@ -314,7 +316,7 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
         _logger.info("User config %s (env: %s) has been updated.", key, env)
     except Exception as e:
         _logger.error("Error: user config could not be updated: %s", e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
 
 @config.command(
@@ -329,18 +331,18 @@ def config_set(key: str, value: str, env: str = "default", force: bool = False):
 def config_delete(key: str, env: str = "default", force: bool = False):
     if key not in ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
-        sys.exit(3)
+        sys.exit(status.STATUS_USER_ERROR)
 
     try:
         config_toml = _load_config_toml()
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error('Error: user config is invalid')
-            sys.exit(1)
+            sys.exit(status.STATUS_ERROR)
         config_toml = {}
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     if "env" in config_toml and env in config_toml["env"]:
         config_toml["env"][env].pop(key, None)
@@ -350,7 +352,7 @@ def config_delete(key: str, env: str = "default", force: bool = False):
         _logger.info("User config %s (env: %s) has been deleted.", key, env)
     except Exception as e:
         _logger.error("Error: user config could not be updated: %s", e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
 
 @config.command(
@@ -371,13 +373,13 @@ def config_clear(env: str = "default", all: bool = False):
                 PUBLIC_KEY_PATH.unlink()
         except PermissionError:
             _logger.error("Error: user config could not be cleared: permission denied")
-            sys.exit(1)
+            sys.exit(status.STATUS_ERROR)
         except Exception as e:
             _logger.error("Error: user config could not be cleared: %s", e)
-            sys.exit(1)
+            sys.exit(status.STATUS_ERROR)
 
         _logger.info("User config cleared.")
-        sys.exit(0)
+        sys.exit(status.STATUS_OK)
     
     try:
         config_toml = _load_config_toml()
@@ -392,10 +394,10 @@ def config_clear(env: str = "default", all: bool = False):
         _logger.info("User config cleared. (env: %s)", env)
     except PermissionError:
         _logger.error("Error: user config could not be cleared: permission denied")
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
     except Exception as e:
         _logger.error("Error: user config could not be cleared: %s", e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
 
 @config.command(
@@ -409,13 +411,13 @@ def config_list_envs():
         config_toml = _load_config_toml()
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     envs: list[str] = config_toml.get("env", {}).keys()
 
     if not envs:
         _logger.warning("No environment found in user config.")
-        sys.exit(0)
+        sys.exit(status.STATUS_OK)
 
     for env in envs:
         click.echo(env)
@@ -433,7 +435,7 @@ def config_list(env: str = "default"):
         config_toml = _load_config_toml()
     except Exception as e:
         _logger.error('Error: failed to read user config: %s', e)
-        sys.exit(1)
+        sys.exit(status.STATUS_ERROR)
 
     found = False
 
@@ -464,6 +466,6 @@ def config_list(env: str = "default"):
 
     if not found:
         _logger.warning("No user config values found.")
-        sys.exit(0)
+        sys.exit(status.STATUS_OK)
 
     click.echo(buffer.strip())
