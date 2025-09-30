@@ -1,6 +1,6 @@
 import click
 
-from . import cli_caption, cli_config, cli_template
+from . import cli_caption, cli_envs, cli_template
 
 @click.group(
     'yadc',
@@ -10,7 +10,7 @@ def cli():
     pass
 
 cli.add_command(cli_caption.caption)
-cli.add_command(cli_config.config)
+cli.add_command(cli_envs.envs)
 cli.add_command(cli_template.templates)
 
 @cli.command(

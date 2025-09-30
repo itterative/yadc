@@ -17,9 +17,7 @@ from yadc.core.captioner import CaptionerRound
 
 from yadc.captioners.api import APICaptioner, APITypes
 
-from yadc.cli_config import load_config
-
-from yadc.cmd import status
+from yadc.cmd import status as cmd_status, envs as cmd_envs
 
 _logger = logging.get_logger(__name__)
 
@@ -51,7 +49,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
         dataset_toml = _load_dataset(dataset, env=env)
     except ValueError as e:
         _logger.error('Error loading dataset: %s', e)
-        sys.exit(status.STATUS_OK)
+        sys.exit(cmd_status.STATUS_OK)
 
     # cli arguments
     dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
@@ -86,7 +84,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
 
     if len(dataset_to_do) == 0:
         _logger.info('Nothing to do.')
-        sys.exit(status.STATUS_OK)
+        sys.exit(cmd_status.STATUS_OK)
 
     _logger.info('Loading model...')
 
@@ -106,7 +104,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
         _logger.error('Error: failed to load model: %s', e)
-        sys.exit(status.STATUS_OK)
+        sys.exit(cmd_status.STATUS_OK)
 
     _logger.info('')
     _logger.info('Captioning...')
@@ -130,7 +128,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
 def _load_dataset(dataset_stream: TextIO, env: str):
     dataset_toml_raw = toml.load(dataset_stream)
 
-    user_config = load_config(env=env)
+    user_config = cmd_envs.load_env(env=env)
 
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
@@ -255,7 +253,7 @@ def _caption(
 
     do_quit = False
     do_print_separator = False
-    return_code = status.STATUS_OK
+    return_code = cmd_status.STATUS_OK
 
     def print_dataset_image_meta(dataset_image: DatasetImage):
         click.echo(f'Path: {dataset_image.path}')
@@ -298,7 +296,7 @@ def _caption(
         do_prompt = True
 
         while do_prompt:
-            return_code = status.STATUS_OK
+            return_code = cmd_status.STATUS_OK
 
             try:
                 action = prompt_for_action('Next action', dict(
@@ -496,7 +494,7 @@ def _caption(
                     caption_rounds = []
                     do_quit = True
                     do_prompt = False
-                    return_code = status.STATUS_ERROR
+                    return_code = cmd_status.STATUS_ERROR
 
                     break
 
