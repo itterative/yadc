@@ -1,6 +1,6 @@
 import click
 
-from . import cli_caption, cli_envs, cli_template
+from . import cli_caption, cli_envs, cli_templates
 
 @click.group(
     'yadc',
@@ -11,7 +11,7 @@ def cli():
 
 cli.add_command(cli_caption.caption)
 cli.add_command(cli_envs.envs)
-cli.add_command(cli_template.templates)
+cli.add_command(cli_templates.templates)
 
 @cli.command(
     short_help='Print version',

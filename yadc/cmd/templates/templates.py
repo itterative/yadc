@@ -1,7 +1,7 @@
-from yadc.core import env
+from yadc.cmd import app
 
-TEMPLATE_PATH = env.STATE_PATH / 'templates'
-        
+TEMPLATE_PATH = app.STATE_PATH / 'templates'
+
 def load_user_template(name: str):
     template = TEMPLATE_PATH / f'{name}.jinja'
 

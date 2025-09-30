@@ -1,19 +1,11 @@
 import sys
 
-from importlib import resources
-
 import click
 
-import yadc.templates
-
-from yadc.core import logging, env
-from yadc.cmd import status
+from yadc.core import logging
+from yadc.cmd import status as cmd_status, templates as cmd_templates
 
 from . import cli_common
-
-APP_NAME= 'yadc'
-TEMPLATE_PATH = env.STATE_PATH / 'templates'
-TEMPLATE_PATH.mkdir(mode=0o750, exist_ok=True)
 
 _logger = logging.get_logger(__name__)
 
@@ -32,7 +24,7 @@ def templates():
 )
 @cli_common.log_level
 def list():
-    templates = yadc.templates.list_user_template()
+    templates = cmd_templates.list_user_template()
 
     if not templates:
         _logger.warning('No user templates found.')
@@ -50,14 +42,14 @@ def list():
 @cli_common.log_level
 def add(name: str):
     try:
-        yadc.templates.load_user_template(name)
+        cmd_templates.load_user_template(name)
 
         _logger.error('Error: template with name "%s" already exists. Use "templates edit" to edit it.', name)
-        sys.exit(status.STATUS_USER_ERROR)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
     except FileNotFoundError:
         pass
 
-    default_template = '# Edit the template below\n\n' + yadc.templates.default_template()
+    default_template = '# Edit the template below\n\n' + cmd_templates.default_template()
 
     user_template = click.edit(default_template, extension='.jinja', require_save=True)
 
@@ -66,10 +58,10 @@ def add(name: str):
         return
 
     try:
-        yadc.templates.save_user_template(name, user_template)
+        cmd_templates.save_user_template(name, user_template)
     except PermissionError:
         _logger.error('Error: failed to save user template: permissions error')
-        sys.exit(status.STATUS_ERROR)
+        sys.exit(cmd_status.STATUS_ERROR)
 
     _logger.info('Added new user template: %s', name)
 
@@ -81,7 +73,7 @@ def add(name: str):
 @click.argument('name', type=str)
 @cli_common.log_level
 def delete(name: str):
-    if not yadc.templates.delete_user_template(name):
+    if not cmd_templates.delete_user_template(name):
         _logger.warning('Warning: template with name "%s" dot not exist.', name)
         return
 
@@ -94,10 +86,10 @@ def delete(name: str):
 @cli_common.log_level
 def edit(name: str):
     try:
-        user_template = yadc.templates.load_user_template(name)
+        user_template = cmd_templates.load_user_template(name)
     except FileNotFoundError:
         _logger.error('Error: template with name "%s" does not exit. Use "templates add" to add it.', name)
-        sys.exit(status.STATUS_USER_ERROR)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
 
 
     user_template = click.edit(user_template, extension='.jinja', require_save=True)
@@ -107,9 +99,9 @@ def edit(name: str):
         return
 
     try:
-        yadc.templates.save_user_template(name, user_template)
+        cmd_templates.save_user_template(name, user_template)
     except PermissionError:
         _logger.error('Error: failed to save user template: permissions error')
-        sys.exit(status.STATUS_ERROR)
+        sys.exit(cmd_status.STATUS_ERROR)
 
     _logger.info('Updated user template: %s', name)
