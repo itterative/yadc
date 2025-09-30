@@ -33,7 +33,7 @@ test = [
 yadc = "yadc.cli:cli"
 
 [tool.setuptools.package-data]
-"yadc.templates" = ["*"]
+"yadc.templates.jinja" = ["*"]
 
 [tool.setuptools.packages.find]
 where = ["."]
