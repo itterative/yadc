@@ -358,14 +358,14 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
     def _extract_assistant_prefill(self, conversation: dict):
         try:
             last_message = conversation['contents'][-1]
-            if last_message['is_prefill']:
+            if last_message.get('is_prefill', False):
                 assistant_prefill = last_message['parts'][0]['text']
                 last_message.pop('is_prefill', None)
             else:
                 assistant_prefill = ''
 
             assert isinstance(assistant_prefill, str)
-        except:
+        except Exception:
             _logger.debug('Failed to extract assistant prefill', exc_info=True)
             assistant_prefill = ''
 
