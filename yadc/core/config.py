@@ -55,7 +55,7 @@ class ConfigSettings(pydantic.BaseModel):
     max_tokens: int = 512
 
     prompt_template: str = ''
-    prompt_template_path: str = 'default.jinja'
+    prompt_template_path: str = 'default'
 
     store_conversation: bool = False
     image_quality: str = 'auto'

@@ -17,7 +17,7 @@ from yadc.core.captioner import CaptionerRound
 
 from yadc.captioners.api import APICaptioner, APITypes
 
-from yadc.cmd import status as cmd_status, envs as cmd_envs, configs as cmd_configs
+from yadc.cmd import status as cmd_status, envs as cmd_envs, configs as cmd_configs, templates as cmd_templates
 
 _logger = logging.get_logger(__name__)
 
@@ -58,8 +58,8 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
     dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
 
     if user_template := cli_option('user_template', default=None):
-        dataset_toml.settings.prompt_template = ''
-        dataset_toml.settings.prompt_template_path = user_template
+        dataset_toml.settings.prompt_template = cmd_templates.load_user_template(user_template)
+        dataset_toml.settings.prompt_template_path = ''
 
     do_stream = bool(cli_option('stream', default=False))
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))

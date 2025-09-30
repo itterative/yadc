@@ -155,12 +155,6 @@ class Captioner(abc.ABC):
             with open(prompt_template, 'r') as f:
                 return f.read()
 
-        # if the prompt template is from the user templates, use that
-        try:
-            return templates.load_user_template(self._prompt_template_name)
-        except:
-            pass
-
         # if the prompt template is from the template folder, use that
         try:
             return templates.load_builtin_template(self._prompt_template_name)
