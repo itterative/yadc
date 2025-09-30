@@ -31,16 +31,16 @@ def cli():
     def _cli(env: str):
         nonlocal current_env
 
-        envs = _cmd('config envs').splitlines()
+        envs = _cmd('envs list').splitlines()
         if env not in envs:
             pytest.skip(f"env {env} not found; available: {', '.join(envs)}")
 
         current_env = env
 
         # ensure these exist
-        _cmd('config get api_url')
-        _cmd('config get api_token')
-        _cmd('config get api_model_name')
+        _cmd('envs get api_url')
+        _cmd('envs get api_token')
+        _cmd('envs get api_model_name')
 
         return _cmd
 
