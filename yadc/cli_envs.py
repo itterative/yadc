@@ -1,3 +1,5 @@
+from typing import Optional
+
 import sys
 import pydantic
 
@@ -60,14 +62,18 @@ def envs_get(key: str, env: str = "default"):
     help='Update a setting value in user environments',
 )
 @click.argument('key', type=click.Choice(cmd_envs.ENV_KEYS))
-@click.argument('value', type=str)
+@click.argument('value', type=str, required=False, default=None)
 @click.option('--force', is_flag=True, help='Recreates the user environment if invalid')
 @cli_common.log_level
 @cli_common.env
-def envs_set(key: str, value: str, env: str = "default", force: bool = False):
+def envs_set(key: str, value: Optional[str], env: str = "default", force: bool = False):
     if key not in cmd_envs.ENV_KEYS:
         _logger.error('Error: invalid setting: %s', key)
         sys.exit(cmd_status.STATUS_USER_ERROR)
+
+    if value is None:
+        secret_value = key in cmd_envs.ENCRYPTED_KEYS
+        value = click.prompt(f'Enter {key}', hide_input=secret_value)
 
     try:
         config_toml = cmd_app.load_config()
