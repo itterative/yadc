@@ -15,7 +15,7 @@ from yadc.core.config import Config, ConfigSettings
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
 
-from yadc.captioners.api import APICaptioner
+from yadc.captioners.api import APICaptioner, APITypes
 
 from yadc.cli_config import load_config
 
@@ -267,8 +267,12 @@ def _caption(
             _logger.info('------------')
             _logger.info('')
 
+    if settings.advanced.assistant_prefill and model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
+        _logger.warning("Warning: assistant prefill is set, but the API might not support it")
+
     conversation_overrides = settings.advanced.model_dump()
     conversation_overrides.pop('debug_prompt', None) # fix: don't want to pass this to the API
+
 
     for dataset_image in dataset:
         if do_quit:
@@ -381,6 +385,7 @@ def _caption(
                                     max_new_tokens=settings.max_tokens,
                                     debug_prompt=settings.advanced.debug_prompt,
                                     conversation_overrides=conversation_overrides,
+                                    prefill=settings.advanced.assistant_prefill,
                                 )
                             else:
                                 tokens = [model.predict(
@@ -428,6 +433,7 @@ def _caption(
                                         use_cache=True,
                                         debug_prompt=settings.advanced.debug_prompt and caption_rounds_debug,
                                         conversation_overrides=conversation_overrides,
+                                        prefill=settings.advanced.assistant_prefill,
                                     ).strip()
 
                                 caption_rounds_debug = False

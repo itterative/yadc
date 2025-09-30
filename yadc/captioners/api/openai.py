@@ -214,9 +214,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
             user_role = conversation_overrides.pop('user_role', None) or 'user'
             assert isinstance(user_role, str), f'bad value for conversation_overrides/advanced settings user_role; expected a str, got: {type(user_role)}'
+
+            assistant_role = conversation_overrides.pop('assistant_role', None) or 'assistant'
+            assert isinstance(assistant_role, str), f'bad value for conversation_overrides/advanced settings assistant_role; expected a str, got: {type(assistant_role)}'
+
+            assistant_prefill = conversation_overrides.pop('assistant_prefill', '')
+            assert isinstance(assistant_prefill, str), f'bad value for conversation_overrides/advanced settings assistant_prefill; expected a str, got: {type(assistant_prefill)}'
         except AssertionError as e:
             raise ValueError(e)
-        
+
         max_tokens = kwargs.pop('max_new_tokens', 512)
         assert isinstance(max_tokens, int), f'bad value for max_tokens; expected int, got: {type(max_tokens)}'
 
@@ -254,6 +260,13 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             ],
         }
 
+        if assistant_prefill:
+            conversation['messages'].append({
+                "role": assistant_role,
+                "content": assistant_prefill,
+                "is_prefill": True,
+            })
+
         if stream:
             conversation['stream_options'] = {
                 'include_usage': True,
@@ -270,6 +283,24 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return conversation
 
+    def _extract_assistant_prefill(self, conversation: dict):
+        assistant_prefill = ''
+        try:
+            last_message = conversation['messages'][-1]
+            if last_message['is_prefill']:
+                assistant_prefill = last_message['content']
+                last_message.pop('is_prefill', None)
+            else:
+                assistant_prefill = ''
+
+            assert isinstance(assistant_prefill, str)
+        except:
+            _logger.debug('Failed to extract assistant prefill', exc_info=True)
+            assistant_prefill = ''
+
+        return assistant_prefill
+
+
     def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "model not loaded"
 
@@ -277,6 +308,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         kwargs.pop('stream', None)
 
         conversation = self.conversation(image, stream=True, **kwargs)
+        assistant_prefill = self._extract_assistant_prefill(conversation)
 
         with self._session.post('chat/completions', stream=True, json=conversation) as conversation_resp:
             try:
@@ -287,6 +319,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 conversation_error = conversation_error.strip()
 
                 raise ErrorNormalizationMixin.GenerationError(conversation_error)
+
+            if assistant_prefill:
+                yield assistant_prefill
 
             converation_stopped = False
 
@@ -383,6 +418,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         kwargs.pop('stream', None)
 
         conversation = self.conversation(image, stream=False, **kwargs)
+        assistant_prefill = self._extract_assistant_prefill(conversation)
 
         is_thinking = False   # used to wrap the thoughts in <think>...</think>
 
@@ -443,6 +479,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 if is_thinking:
                     thought_buffer += '</think>'
                     is_thinking = False
+
+                if assistant_prefill:
+                    content = assistant_prefill + content
 
                 return thought_buffer + content
 

@@ -287,6 +287,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             user_role = conversation_overrides.pop('user_role', None) or 'user'
             assert isinstance(user_role, str), f'bad value for conversation_overrides/advanced settings user_role; expected a str, got: {type(user_role)}'
 
+            assistant_role = conversation_overrides.pop('assistant_role', None) or 'model'
+            assert isinstance(assistant_role, str), f'bad value for conversation_overrides/advanced settings assistant_role; expected a str, got: {type(assistant_role)}'
+
+            assistant_prefill = conversation_overrides.pop('assistant_prefill', '')
+            assert isinstance(assistant_prefill, str), f'bad value for conversation_overrides/advanced settings assistant_prefill; expected a str, got: {type(assistant_prefill)}'
+
             try:
                 safety_settings_overrides = SafetySettings(data=conversation_overrides.get('safety_settings', None))
             except pydantic.ValidationError as e:
@@ -318,6 +324,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 ],
             },
             'contents': [{
+                'role': user_role,
                 'parts': [
                     { 'inline_data': { 'mime_type': mime_type, 'data': encoded_image } },
                     { 'text': user_prompt },
@@ -325,6 +332,13 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             }],
             'generationConfig': generation_config,
         }
+
+        if assistant_prefill:
+            conversation['contents'].append({
+                'role': assistant_role,
+                'parts': [{ 'text': assistant_prefill }],
+                'is_prefill': True,
+            })
 
         if self._is_thinking_model and self._reasoning:
             conversation['generationConfig']['thinkingConfig'] = {
@@ -339,12 +353,28 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             generation_config.update(generation_config_overrides)
 
         return conversation
-   
+
+    def _extract_assistant_prefill(self, conversation: dict):
+        try:
+            last_message = conversation['contents'][-1]
+            if last_message['is_prefill']:
+                assistant_prefill = last_message['parts'][0]['text']
+                last_message.pop('is_prefill', None)
+            else:
+                assistant_prefill = ''
+
+            assert isinstance(assistant_prefill, str)
+        except:
+            _logger.debug('Failed to extract assistant prefill', exc_info=True)
+            assistant_prefill = ''
+
+        return assistant_prefill
 
     def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
         assert self._current_model, "no model loaded"
 
         conversation = self.conversation(image, **kwargs)
+        assistant_prefill = self._extract_assistant_prefill(conversation)
 
         with self._session.post(f'models/{self._current_model}:streamGenerateContent?alt=sse', stream=True, json=conversation) as conversation_resp:
             try:
@@ -355,6 +385,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 conversation_error = conversation_error.strip()
 
                 raise ErrorNormalizationMixin.GenerationError(conversation_error)
+
+            if assistant_prefill:
+                yield assistant_prefill
 
             conversation_error = '' # in some scenarios, gemini api will just send the error directly instead of as a sse data line
             conversation_stopped = False
@@ -464,6 +497,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         kwargs.pop('stream', None)
 
         conversation = self.conversation(image, **kwargs)
+        assistant_prefill = self._extract_assistant_prefill(conversation)
 
         is_thinking = False   # used to wrap the thoughts in <think>...</think>
 
@@ -522,6 +556,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                     if text := part.text:
                         if part.thought:
                             continue
+
+                        if assistant_prefill:
+                            text = assistant_prefill + text
 
                         return thought_buffer + text
 

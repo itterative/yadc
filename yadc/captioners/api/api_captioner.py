@@ -37,6 +37,7 @@ class APITypes(str, Enum):
         return self.value
 
 class APICaptioner(BaseAPICaptioner):
+    api_type: APITypes
     inner_captioner: BaseAPICaptioner
 
     def __init__(self, **kwargs):
@@ -64,13 +65,13 @@ class APICaptioner(BaseAPICaptioner):
         kwargs['_warnings'] = False
 
         try:
-            api_type = self._infer_api_type()
+            self.api_type = self._infer_api_type()
         except requests.ConnectionError:
             raise ValueError(f'failed to infer captioner by api url ({self._api_url}): api is down')
         except Exception as e:
             raise ValueError(f'failed to infer captioner by api url ({self._api_url}): are you using the wrong url? (e.g. http://localhost:5001/v1): {e}') from e
 
-        match api_type:
+        match self.api_type:
             case APITypes.OPENAI:
                 self.inner_captioner = OpenAICaptioner(**kwargs)
 

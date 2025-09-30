@@ -128,6 +128,12 @@ system_role = "system"
 # options: user
 user_role = "user"
 
+# prefill the AI's response
+# some APIs do not support this, so make sure they do before using it
+#
+# recommendation: use a thinking token (e.g. <think>) if the model requires it
+assistant_prefill = ""
+
 # settings.advanced section will allow you to add more fields here than defined above
 # change them as needed and based on the API you are actually using
 #
