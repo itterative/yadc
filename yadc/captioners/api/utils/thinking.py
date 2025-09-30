@@ -12,7 +12,7 @@ class ThinkingMixin:
         self._reasoning_start_token: str = kwargs.pop('reasoning_start_token', '<think>')
         self._reasoning_end_token: str = kwargs.pop('reasoning_end_token', '</think>')
 
-    def _handle_thinking_streaming(self, stream: Generator[str]):
+    def _handle_thinking_streaming(self, stream: Generator[str, None, None]):
         is_thinking = False
         did_think = False
 

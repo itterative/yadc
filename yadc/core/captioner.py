@@ -324,7 +324,7 @@ class Captioner(abc.ABC):
         raise NotImplemented
 
     @abc.abstractmethod
-    def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str]':
+    def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str, None, None]':
         """
         Generates a caption incrementally and yields partial results.
 

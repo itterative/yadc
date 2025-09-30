@@ -256,7 +256,7 @@ class APICaptioner(BaseAPICaptioner):
     def offload_model(self) -> None:
         self.inner_captioner.offload_model()
 
-    def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str]':
+    def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str, None, None]':
         return self.inner_captioner.predict_stream(image, **kwargs)
 
     def predict(self, image: DatasetImage, **kwargs) -> str:
