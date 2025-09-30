@@ -26,6 +26,7 @@ _logger = logging.get_logger(__name__)
     help='Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc'
 )
 @click.argument('dataset', type=click.File('r'))
+@click.option('--env', type=str, default=None, help='Configuration environment')
 @click.option('--api-url', type=str, default=None, help='Override API url')
 @click.option('--api-token', type=str, default=None, help='Override API auth token')
 @click.option('--api-model-name', type=str, default=None, help='Override API model')
@@ -35,7 +36,6 @@ _logger = logging.get_logger(__name__)
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
 @click.option('--rounds', type=click.IntRange(min=1, max_open=True), default=None, required=False, help='How many captioning rounds to do')
-@click.option('--env', type=str, default=None, help='Configuration environment')
 @cli_common.log_level
 def caption(dataset: TextIO, **kwargs):
     def cli_option(option: str, default):
@@ -100,6 +100,8 @@ def caption(dataset: TextIO, **kwargs):
         reasoning=dataset_toml.reasoning.enable,
         reasoning_effort=dataset_toml.reasoning.thinking_effort,
         reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
+        reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
+        reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
     )
 
     try:

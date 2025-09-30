@@ -102,7 +102,8 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             ValueError: If `api_url` is not provided.
         """
 
-        super().__init__(**kwargs)
+        BaseAPICaptioner.__init__(self, **kwargs)
+        ThinkingMixin.__init__(self, **kwargs)
 
         self._api_url: str = kwargs.pop('api_url', 'https://api.openai.com/v1')
         self._api_token: str = kwargs.pop('api_token', '')
@@ -376,7 +377,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                         if not is_prediction and (thought := choice.delta.reasoning):
                             if not is_thinking:
-                                yield '<think>'
+                                yield self._reasoning_start_token
                                 is_thinking = True
 
                             yield thought
@@ -387,7 +388,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                             continue
 
                         if is_thinking:
-                            yield '</think>'
+                            yield self._reasoning_end_token
                             is_thinking = False
 
                         is_prediction = True
@@ -462,13 +463,13 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 thought_content = choice.message.reasoning
                 if thought_content:
                     if not is_thinking:
-                        thought_buffer += '<think>'
+                        thought_buffer += self._reasoning_start_token
                         is_thinking = True
 
                     thought_buffer += thought_content
 
                 if is_thinking:
-                    thought_buffer += '</think>'
+                    thought_buffer += self._reasoning_end_token
                     is_thinking = False
 
                 content = choice.message.content or choice.message.refusal
@@ -477,7 +478,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                     continue
 
                 if is_thinking:
-                    thought_buffer += '</think>'
+                    thought_buffer += self._reasoning_end_token
                     is_thinking = False
 
                 if assistant_prefill:

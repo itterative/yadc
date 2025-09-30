@@ -145,7 +145,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             ValueError: If `api_token` is not provided.
         """
 
-        super().__init__(**kwargs)
+        BaseAPICaptioner.__init__(self, **kwargs)
+        ThinkingMixin.__init__(self, **kwargs)
 
         self._api_url: str = kwargs.pop('api_url', 'https://generativelanguage.googleapis.com/v1beta')
         self._api_token: str = kwargs.pop('api_token', '')
@@ -451,7 +452,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                                         continue
 
                                     if not is_thinking:
-                                        yield '<think>'
+                                        yield self._reasoning_start_token
                                         is_thinking = True
 
                                     yield text
@@ -459,7 +460,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                                     continue
 
                                 if is_thinking:
-                                    yield '</think>'
+                                    yield self._reasoning_end_token
                                     is_thinking = False
 
                                 is_prediction = True
@@ -543,13 +544,13 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                             continue
 
                         if not is_thinking:
-                            thought_buffer += '<think>'
+                            thought_buffer += self._reasoning_start_token
                             is_thinking = True
                         
                         thought_buffer += text
 
                 if is_thinking:
-                    thought_buffer += '</think>'
+                    thought_buffer += self._reasoning_end_token
                     is_thinking = False
 
                 for part in candidate.content.parts:

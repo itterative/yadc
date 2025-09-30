@@ -118,6 +118,8 @@ class ConfigReasoning(pydantic.BaseModel):
     thinking_effort: str = 'low'
     exclude_from_output: bool = True
 
+    advanced: 'ConfigReasoningAdvanced' = pydantic.Field(default_factory=lambda: ConfigReasoningAdvanced())
+
     @pydantic.model_validator(mode='after')
     def validate_(self):
         try:
@@ -126,6 +128,10 @@ class ConfigReasoning(pydantic.BaseModel):
             raise ValueError(e)
 
         return self
+    
+class ConfigReasoningAdvanced(pydantic.BaseModel):
+    thinking_start: str = '<think>'
+    thinking_end: str = '</think>'
 
 class ConfigApi(pydantic.BaseModel):
     """

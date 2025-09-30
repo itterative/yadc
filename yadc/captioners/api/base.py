@@ -27,7 +27,7 @@ class BaseAPICaptioner(Captioner, abc.ABC):
             ValueError: If `api_url` is not provided.
         """
 
-        super().__init__(**kwargs)
+        Captioner.__init__(self, **kwargs)
 
         warnings: bool = kwargs.get('_warnings', True)
 

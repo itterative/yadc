@@ -8,38 +8,29 @@ _logger = logging.get_logger(__name__)
 FLAG_STRIP_CAPTION = True
 
 class ThinkingMixin:
-    def _handle_thinking_streaming(self, stream: Generator[str]):
-        thinking_start = '<think>'
-        thinking_end = '</think>'
+    def __init__(self, **kwargs):
+        self._reasoning_start_token: str = kwargs.pop('reasoning_start_token', '<think>')
+        self._reasoning_end_token: str = kwargs.pop('reasoning_end_token', '</think>')
 
+    def _handle_thinking_streaming(self, stream: Generator[str]):
         is_thinking = False
         did_think = False
 
         thinking_buffer = ''
-        raw_buffer = ''
         buffer = ''
 
         with Timer() as timer:
             for content in stream:
-                raw_buffer += content # no processing
-                raw_buffer = raw_buffer.lstrip() # just in case, just remove starting whitespace
-
-                # edge case: somehow kimi-vl returns this instead of angled brackets
-                content = content.replace('◁', '<')
-                content = content.replace('▷', '>')
-
                 buffer += content
                 buffer = buffer.lstrip() # just in case, just remove starting whitespace
 
-                if not buffer.startswith('<'):
-                    buffer = ''
+                if not buffer.startswith(self._reasoning_start_token[:1]):
                     break
 
-                if len(buffer) < len(thinking_start):
+                if len(buffer) < len(self._reasoning_start_token):
                     continue
 
-                if not buffer.startswith(thinking_start):
-                    buffer = ''
+                if not buffer.startswith(self._reasoning_start_token):
                     break
 
                 if not is_thinking:
@@ -48,15 +39,15 @@ class ThinkingMixin:
                 is_thinking = True
 
                 try:
-                    i_thinking_end = buffer.rindex(thinking_end)
+                    i_thinking_end = buffer.rindex(self._reasoning_end_token)
                 except ValueError:
                     continue
 
                 did_think = True
 
                 # note: should be the same size as long as the edge cases don't change length
-                thinking_buffer = raw_buffer[len(thinking_start):i_thinking_end]
-                raw_buffer = raw_buffer[i_thinking_end+len(thinking_end):]
+                thinking_buffer = buffer[len(self._reasoning_start_token):i_thinking_end]
+                buffer = buffer[i_thinking_end+len(self._reasoning_end_token):]
 
                 buffer = ''
                 break
@@ -68,11 +59,9 @@ class ThinkingMixin:
             _logger.info('Thinking done (%.2f sec)\n', timer.elapsed)
 
         if not FLAG_STRIP_CAPTION:
-            yield raw_buffer
+            yield buffer
             yield from stream
             return
-
-        buffer = raw_buffer
 
         for content in stream:
             buffer += content
@@ -97,29 +86,21 @@ class ThinkingMixin:
         yield buffer.rstrip()
 
     def _handle_thinking(self, content: str):
-        thinking_start = '<think>'
-        thinking_end = '</think>'
-
         thinking_buffer = ''
 
         content = content.lstrip() # just in case, just remove starting whitespace
-        raw_content = content
 
-        # edge case: somehow kimi-vl returns this instead of angled brackets
-        content = content.replace('◁', '<')
-        content = content.replace('▷', '>')
-
-        if not content.startswith(thinking_start):
-            return raw_content
+        if not content.startswith(self._reasoning_start_token):
+            return content
         
         try:
-            i_thinking_end = content.rindex(thinking_end)
+            i_thinking_end = content.rindex(self._reasoning_end_token)
         except ValueError:
-            return raw_content
+            return content
 
         # note: should be the same size as long as the edge cases don't change length
-        thinking_buffer = raw_content[len(thinking_start):i_thinking_end]
-        content = raw_content[i_thinking_end+len(thinking_end):]
+        thinking_buffer = content[len(self._reasoning_start_token):i_thinking_end]
+        content = content[i_thinking_end+len(self._reasoning_end_token):]
 
         if thinking_buffer:
             _logger.debug('')
