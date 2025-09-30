@@ -17,6 +17,7 @@ def log_level(f):
 def env(f):
     return click.option(
         '--env',
+        type=str,
         default='default',
         help='Configuration environment',
     )(f)

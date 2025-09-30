@@ -35,9 +35,9 @@ _logger = logging.get_logger(__name__)
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
 @click.option('--rounds', type=click.IntRange(min=1, max_open=True), default=None, required=False, help='How many captioning rounds to do')
+@click.option('--env', type=str, default=None, help='Configuration environment')
 @cli_common.log_level
-@cli_common.env
-def caption(dataset: TextIO, env: str = 'default', **kwargs):
+def caption(dataset: TextIO, **kwargs):
     def cli_option(option: str, default):
         value = kwargs.get(option, None)
         if value is not None:
@@ -47,12 +47,13 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
-        dataset_toml = _load_dataset(dataset, env=env, user_config=cli_option('user_config', None))
+        dataset_toml = _load_dataset(dataset, env=cli_option('env', None), user_config=cli_option('user_config', None))
     except ValueError as e:
         _logger.error('Error loading dataset: %s', e)
         sys.exit(cmd_status.STATUS_OK)
 
     # cli arguments
+    dataset_toml.env = str(cli_option('env', default=dataset_toml.env) or 'default')
     dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
     dataset_toml.api.token = str(cli_option('api_token', default=dataset_toml.api.token))
     dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
@@ -126,7 +127,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
 
     sys.exit(return_code)
 
-def _load_dataset(dataset_stream: TextIO, env: str, user_config: Optional[str]):
+def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optional[str]):
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
 
@@ -138,6 +139,8 @@ def _load_dataset(dataset_stream: TextIO, env: str, user_config: Optional[str]):
         dataset_toml_raw = cmd_configs.merge_user_config(user_config, dataset_toml_raw)
 
     # merge with user env
+    env = str(env or dataset_toml_raw.get('env', 'default'))
+
     _logger.info('Using %s user environment.', env)
     user_env = cmd_envs.load_env(env=env)
 

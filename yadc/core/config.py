@@ -11,6 +11,7 @@ class Config(pydantic.BaseModel):
         settings: Runtime settings for prompt handling, token limits, and output behavior.
         dataset: Configuration for dataset paths and pre-loaded images.
 
+        env: Which user environment to use.
         interactive: If True, enables interactive mode (e.g., manual confirmation between steps).
         rounds: Number of captioning rounds to perform per image (must be >= 1).
         caption_suffix: File extension for generated caption files (must start with '.').
@@ -22,6 +23,7 @@ class Config(pydantic.BaseModel):
     reasoning: 'ConfigReasoning' = pydantic.Field(default_factory=lambda: ConfigReasoning())
     dataset: 'ConfigDataset' = pydantic.Field(default_factory=lambda: ConfigDataset())
 
+    env: str = ''
     interactive: bool = False
     rounds: int = 1
     caption_suffix: str = '.txt'
