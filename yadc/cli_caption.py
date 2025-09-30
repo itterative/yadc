@@ -1,4 +1,4 @@
-from typing import TextIO
+from typing import Optional, TextIO
 
 import sys
 import toml
@@ -17,7 +17,7 @@ from yadc.core.captioner import CaptionerRound
 
 from yadc.captioners.api import APICaptioner, APITypes
 
-from yadc.cmd import status as cmd_status, envs as cmd_envs
+from yadc.cmd import status as cmd_status, envs as cmd_envs, configs as cmd_configs
 
 _logger = logging.get_logger(__name__)
 
@@ -29,6 +29,7 @@ _logger = logging.get_logger(__name__)
 @click.option('--api-url', type=str, default=None, help='Override API url')
 @click.option('--api-token', type=str, default=None, help='Override API auth token')
 @click.option('--api-model-name', type=str, default=None, help='Override API model')
+@click.option('--user-config', type=str, default=None, help='Base user config')
 @click.option('--user-template', type=str, default=None, help='Override user template')
 @click.option('--stream/--no-stream', is_flag=True, default=None, help='Enable the streaming of captions')
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
@@ -46,7 +47,7 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
-        dataset_toml = _load_dataset(dataset, env=env)
+        dataset_toml = _load_dataset(dataset, env=env, user_config=cli_option('user_config', None))
     except ValueError as e:
         _logger.error('Error loading dataset: %s', e)
         sys.exit(cmd_status.STATUS_OK)
@@ -125,22 +126,28 @@ def caption(dataset: TextIO, env: str = 'default', **kwargs):
 
     sys.exit(return_code)
 
-def _load_dataset(dataset_stream: TextIO, env: str):
-    dataset_toml_raw = toml.load(dataset_stream)
-
-    user_config = cmd_envs.load_env(env=env)
-
+def _load_dataset(dataset_stream: TextIO, env: str, user_config: Optional[str]):
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
 
-    # merge with use config
+    dataset_toml_raw = toml.load(dataset_stream)
+
+    # merge with user config
+    if user_config is not None:
+        _logger.info('Using %s user config.', user_config)
+        dataset_toml_raw = cmd_configs.merge_user_config(user_config, dataset_toml_raw)
+
+    # merge with user env
+    _logger.info('Using %s user environment.', env)
+    user_env = cmd_envs.load_env(env=env)
+
     dataset_toml_raw.setdefault('api', {})
     dataset_toml_raw_api = dataset_toml_raw['api']
 
     assert isinstance(dataset_toml_raw_api, dict)
-    dataset_toml_raw_api.setdefault('url', user_config.api.url)
-    dataset_toml_raw_api.setdefault('token', user_config.api.token)
-    dataset_toml_raw_api.setdefault('model_name', user_config.api.model_name)
+    dataset_toml_raw_api.setdefault('url', user_env.api.url)
+    dataset_toml_raw_api.setdefault('token', user_env.api.token)
+    dataset_toml_raw_api.setdefault('model_name', user_env.api.model_name)
 
     try:
         dataset_toml = Config(**dataset_toml_raw)
