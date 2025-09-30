@@ -107,10 +107,10 @@ def update_env(key: str, value: Optional[str], env: str = "default", config_toml
     if key in ENCRYPTED_KEYS:
         value = encrypt_setting(value) if value is not None else None
 
-    if env_config is not None:
-        config_toml['env'][env] = env_config
+    if value is None:
+        env_config.pop(key, None)
     else:
-        config_toml['env'].pop(env, None)
+        env_config[key] = value
 
     return env_config
 

@@ -127,7 +127,7 @@ def envs_delete(key: str, env: str = "default", force: bool = False):
 
     try:
         cmd_envs.save_env(env=env, env_config=env_config, config_toml=config_toml)
-        _logger.info("User config %s (env: %s) has been updated.", key, env)
+        _logger.info("User environment setting %s (env: %s) has been removed.", key, env)
     except Exception as e:
         _logger.error("Error: user environments could not be updated: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
