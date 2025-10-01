@@ -23,7 +23,7 @@
   * [Can I regenerate captions for already-processed images?](#can-i-regenerate-captions-for-already-processed-images)
   * [How do I run multiple captioning rounds?](#how-do-i-run-multiple-captioning-rounds)
 * [Troubleshooting](#troubleshooting)
-  * [I get an error: "Configuration environment not found"](#i-get-an-error-configuration-environment-not-found)
+  * [I get an error: "Error loading dataset: invalid configuration: ..."](#i-get-an-error-error-loading-dataset-invalid-configuration-)
   * [My API token isn't being recognized](#my-api-token-isnt-being-recognized)
   * [How do I reset everything?](#how-do-i-reset-everything)
 * [Advanced](#advanced)
