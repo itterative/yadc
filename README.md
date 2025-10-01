@@ -18,6 +18,10 @@ If you want to use it as an executable, you can also install it directly using y
 * Python 3.11 (or later)
 * OpenAI compatible API (e.g. koboldcpp) or Gemini API
 
+### Documentation
+
+See the [docs folder](/docs/README.md).
+
 ## Config
 
 The captioner takes in a toml file as config. Some examples are available in `configs/`.
