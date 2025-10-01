@@ -12,7 +12,7 @@ _logger = logging.get_logger(__name__)
 @click.group(
     'configs',
     short_help='Manage the user configs',
-    help='Manage the user configs'
+    help='User configs allow you to reuse certain settings across multiple datasets, for example, when you want to have specific settings applied to one model.'
 )
 def configs():
     pass

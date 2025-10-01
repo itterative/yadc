@@ -25,7 +25,7 @@ class OpenRouterCaptioner(OpenAICaptioner):
                 credits = OpenRouterCreditsResponse(**credits_resp_json).data
                 _logger.info('You have used %.2f out of %.2f credits with this api token.', credits.total_usage, credits.total_credits)
             except:
-                _logger.warning('Warning: failed to retrieve current credits for api token.')
+                _logger.warning('Warning: failed to retrieve current credits. Is you API token correct?')
 
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         conversation = super().conversation(image, stream=stream, **kwargs)

@@ -65,7 +65,7 @@ def load_env(env: str = "default") -> UserConfig:
                 model_name=config.get('api_model_name', ''),
             ),
         )
-    except pydantic.ValidationError|ValueError:
+    except (pydantic.ValidationError, ValueError):
         _logger.warning('Warning: user config is invalid')
     except PermissionError:
         _logger.warning('Warning: failed to read user config: permission denied')
@@ -90,7 +90,13 @@ def get_env(env: str = "default", config_toml: Optional[dict] = None) -> Dict[st
     if config_toml is None:
         config_toml = app.load_config()
 
-    env_section = config_toml.get("env", {}).get(env, {})
+    env_section = config_toml.get("env", {}).get(env, None)
+
+    if env_section is None and env != "default":
+        _logger.warning('Warning: user environment %s not found.', env)
+        env_section = {}
+
+    assert isinstance(env_section, dict)
 
     return {
         "api_url": Setting(value=env_section.get("api_url", None)),

@@ -12,7 +12,7 @@ _logger = logging.get_logger(__name__)
 @click.group(
     'templates',
     short_help='Manage the user templates',
-    help='Manage the user templates'
+    help='User templates allow you to reuse certain prompt templates across multiple datasets.'
 )
 def templates():
     pass

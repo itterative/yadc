@@ -13,8 +13,8 @@ _logger = logging.get_logger(__name__)
 
 @click.group(
     'envs',
-    short_help='Manage the user environment',
-    help='Manage the user environment. The user environment is stored as plain-text currently, so any tokens are visible to programs running under your user.',
+    short_help='Manage the user environments',
+    help='User environments are used in order to store API details in a safe manner. They allow you to reuse APIs over different captioning datasets without having to add them in the dataset TOML file.',
 )
 def envs():
     pass
