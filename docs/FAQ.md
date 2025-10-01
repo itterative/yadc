@@ -277,19 +277,12 @@ model_name = "dataset_model"
 [settings]
 max_tokens = 1024
 
-[reasoning]
-enable = true
-thinking_effort = "low"
-
 # user config "myconfig"
 [api]
 model_name = "myconfig_model"
 
 [settings.advanced]
 temperature = 0.8
-
-[reasoning]
-thinking_effort = null
 
 # final result
 [api]
@@ -300,10 +293,6 @@ max_tokens = 1024
 
 [settings.advanced]
 temperature = 0.8
-
-[reasoning]
-enable = true
-# thinking_effort is removed due to null
 ```
 
 ### What logging levels are available?
