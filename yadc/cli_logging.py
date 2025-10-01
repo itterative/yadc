@@ -11,6 +11,7 @@ class ClickHandler(logging.Handler):
             'exception': dict(fg='red'),
             'critical': dict(fg='red'),
             'debug': dict(fg='blue'),
+            'trace': dict(fg='bright_blue'),
             'warning': dict(fg='yellow')
         }
 

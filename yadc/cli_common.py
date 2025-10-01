@@ -8,7 +8,7 @@ def log_level(f):
     return click.option(
         '--log-level',
         default='info',
-        type=click.Choice(['info', 'warning', 'error', 'debug']),
+        type=click.Choice(['info', 'warning', 'error', 'debug', 'trace']),
         help='Set the logging level',
         expose_value=False,
         callback=set_log_level,

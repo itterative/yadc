@@ -301,7 +301,8 @@ Use `--log-level` with any command:
 - `info` (default)
 - `warning`
 - `error`
-- `debug` (most verbose)
+- `debug` (for troubleshooting)
+- `trace` (most verbose, for development)
 
 Example:
 
