@@ -1,19 +1,37 @@
 import toml
+import copy
 
 from yadc.cmd import app
 
 CONFIG_PATH = app.STATE_PATH / 'configs'
 
 def merge_user_config(name: str, config: dict) -> dict:
-    def _deep_merge(config_part, user_config_part):
-        if isinstance(config_part, dict) and isinstance(user_config_part, dict):
-            for key, value in user_config_part.items():
+    def _deep_merge(config_part, config_part_overrides):
+        if isinstance(config_part, dict) and isinstance(config_part_overrides, dict):
+            # override the values from config_path with config_part_overrides
+            for key, value in config_part_overrides.items():
                 if key in config_part:
                     config_part[key] = _deep_merge(config_part[key], value)
                 else:
                     config_part[key] = value
 
-        return config_part
+            # add the values from config_path into config_part_overrides if they are missing
+            for key, value in config_part.items():
+                if key in config_part_overrides:
+                    continue
+
+                config_part_overrides[key] = value
+
+            # remove any values that are set to null (i.e. use the defaults)
+            for key, value in list(config_part_overrides.items()):
+                if value is not None:
+                    continue
+
+                config_part_overrides.pop(key, None)
+
+        return config_part_overrides
+
+    config = copy.deepcopy(config)
 
     try:
         user_config = toml.loads(load_user_config(name))

@@ -141,7 +141,9 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
         dataset_toml_raw = cmd_configs.merge_user_config(user_config, dataset_toml_raw)
 
     # merge with user env
-    env = str(env or dataset_toml_raw.get('env', 'default'))
+    env = env or dataset_toml_raw.get('env', 'default')
+
+    assert isinstance(env, str)
 
     _logger.info('Using %s user environment.', env)
     user_env = cmd_envs.load_env(env=env)
@@ -150,9 +152,9 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
     dataset_toml_raw_api = dataset_toml_raw['api']
 
     assert isinstance(dataset_toml_raw_api, dict)
-    dataset_toml_raw_api.setdefault('url', user_env.api.url)
-    dataset_toml_raw_api.setdefault('token', user_env.api.token)
-    dataset_toml_raw_api.setdefault('model_name', user_env.api.model_name)
+    dataset_toml_raw_api['url'] = user_env.api.url or dataset_toml_raw_api.get('url', '')
+    dataset_toml_raw_api['token'] = user_env.api.token or dataset_toml_raw_api.get('token', '')
+    dataset_toml_raw_api['model_name'] = user_env.api.model_name or dataset_toml_raw_api.get('model_name', '')
 
     try:
         dataset_toml = Config(**dataset_toml_raw)
