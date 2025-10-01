@@ -47,7 +47,7 @@ def caption(dataset: TextIO, **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
-        dataset_toml = _load_dataset(dataset, env=cli_option('env', None), user_config=cli_option('user_config', None))
+        dataset_toml = _load_dataset(dataset, env=cli_option('env', None), user_config=cli_option('user_config', None), user_template=cli_option('user_template', default=None))
     except ValueError as e:
         _logger.error('Error loading dataset: %s', e)
         sys.exit(cmd_status.STATUS_OK)
@@ -63,10 +63,6 @@ def caption(dataset: TextIO, **kwargs):
     rounds = int(cli_option('rounds', default=dataset_toml.rounds))
     overwrite_captions = bool(cli_option('overwrite', default=dataset_toml.overwrite_captions))
 
-
-    if user_template := cli_option('user_template', default=None):
-        dataset_toml.prompt.name = user_template
-        dataset_toml.prompt.template = cmd_templates.load_user_template(user_template)
 
     if not dataset_toml.prompt.template:
         try:
@@ -92,6 +88,9 @@ def caption(dataset: TextIO, **kwargs):
         except:
             _logger.error('Error: default prompt template could be loaded')
             sys.exit(cmd_status.STATUS_ERROR)
+
+    if dataset_toml.prompt.name:
+        _logger.info('Using prompt template: %s', dataset_toml.prompt.name)
 
 
     skipped_from_dataset = 0
@@ -155,7 +154,7 @@ def caption(dataset: TextIO, **kwargs):
 
     sys.exit(return_code)
 
-def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optional[str]):
+def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optional[str], user_template: Optional[str]):
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
 
@@ -181,6 +180,13 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
     dataset_toml_raw_api['url'] = user_env.api.url or dataset_toml_raw_api.get('url', '')
     dataset_toml_raw_api['token'] = user_env.api.token or dataset_toml_raw_api.get('token', '')
     dataset_toml_raw_api['model_name'] = user_env.api.model_name or dataset_toml_raw_api.get('model_name', '')
+
+    dataset_toml_raw.setdefault('prompt', {})
+    dataset_toml_raw_prompt = dataset_toml_raw['prompt']
+
+    if user_template is not None:
+        dataset_toml_raw_prompt['name'] = user_template
+        dataset_toml_raw_prompt.pop('template', None)
 
     try:
         dataset_toml = Config(**dataset_toml_raw)
