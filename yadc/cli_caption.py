@@ -58,14 +58,41 @@ def caption(dataset: TextIO, **kwargs):
     dataset_toml.api.token = str(cli_option('api_token', default=dataset_toml.api.token))
     dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
 
-    if user_template := cli_option('user_template', default=None):
-        dataset_toml.settings.prompt_template = cmd_templates.load_user_template(user_template)
-        dataset_toml.settings.prompt_template_path = ''
-
     do_stream = bool(cli_option('stream', default=False))
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
     rounds = int(cli_option('rounds', default=dataset_toml.rounds))
     overwrite_captions = bool(cli_option('overwrite', default=dataset_toml.overwrite_captions))
+
+
+    if user_template := cli_option('user_template', default=None):
+        dataset_toml.prompt.name = user_template
+        dataset_toml.prompt.template = cmd_templates.load_user_template(user_template)
+
+    if not dataset_toml.prompt.template:
+        try:
+            dataset_toml.prompt.template = cmd_templates.load_user_template(dataset_toml.prompt.name)
+        except:
+            _logger.debug('No user template found: %s', dataset_toml.prompt.name)
+
+    if not dataset_toml.prompt.template:
+        try:
+            dataset_toml.prompt.template = cmd_templates.load_builtin_template(dataset_toml.prompt.name)
+        except:
+            _logger.debug('No built-in template found: %s', dataset_toml.prompt.name)
+
+    if not dataset_toml.prompt.template:
+        if dataset_toml.prompt.name:
+            _logger.error('Error: prompt template could be loaded: %s', dataset_toml.prompt.name)
+            sys.exit(cmd_status.STATUS_USER_ERROR)
+
+        _logger.warning('Warning: no prompt template defined. Will use the default.')
+
+        try:
+            dataset_toml.prompt.template = cmd_templates.default_template()
+        except:
+            _logger.error('Error: default prompt template could be loaded')
+            sys.exit(cmd_status.STATUS_ERROR)
+
 
     skipped_from_dataset = 0
     dataset_to_do: list[DatasetImage] = []
@@ -93,8 +120,7 @@ def caption(dataset: TextIO, **kwargs):
     model = APICaptioner(
         api_url=dataset_toml.api.url,
         api_token=dataset_toml.api.token,
-        prompt_template=dataset_toml.settings.prompt_template,
-        prompt_template_name=dataset_toml.settings.prompt_template_path,
+        prompt_template=dataset_toml.prompt.template,
         store_conversation=dataset_toml.settings.store_conversation,
         image_quality=dataset_toml.settings.image_quality,
         reasoning=dataset_toml.reasoning.enable,

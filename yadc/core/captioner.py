@@ -42,11 +42,6 @@ class Captioner(abc.ABC):
     - Image resizing and base64 encoding with size constraints
     - Logging and debugging of generated prompts
 
-    Template Loading:
-    - Looks for templates first in the current working directory
-    - Falls back to built-in templates in `yadc.templates`
-    - Supports overriding templates via direct string input
-
     Example template variables (from `DatasetImage` fields):
     - `image_id`, `file_path`, `width`, `height`, etc.
 
@@ -72,11 +67,9 @@ class Captioner(abc.ABC):
 
         Args:
             **kwargs: Optional keyword arguments:
-                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default').
-                - `prompt_template` (str): Direct template string to override file-based templates.
+                - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
         """
 
-        self._prompt_template_name: str = kwargs.pop('prompt_template_name', 'default')
         self._prompt_template: str = kwargs.pop('prompt_template', '').strip()
 
         self._jinja = jinja2.Environment(
@@ -100,11 +93,6 @@ class Captioner(abc.ABC):
         - `__user_prompt_multiple_rounds__`: Loads the prompt for multi-round interactions.
         - `__default_template__`: Refers to the built-in default template.
         - `__user_template__`: Refers to the user-provided template (file or string).
-
-        Template resolution order:
-        1. Direct string via `prompt_template`
-        2. File in current working directory
-        3. Built-in template from `yadc.templates`
 
         Args:
             template (str): The logical template name to load.
@@ -144,24 +132,9 @@ class Captioner(abc.ABC):
             if self._prompt_template:
                 return self._prompt_template
 
-            pass
+            return templates.default_template()
         else:
             raise ValueError(f'bad jinja template: {template}')
-
-        prompt_template: pathlib.Path = pathlib.Path(self._prompt_template_name)
-
-        # if the prompt template exists in the current working directory, use that
-        if prompt_template.exists():
-            with open(prompt_template, 'r') as f:
-                return f.read()
-
-        # if the prompt template is from the template folder, use that
-        try:
-            return templates.load_builtin_template(self._prompt_template_name)
-        except:
-            pass
-
-        raise ValueError(f'bad jinja template: {self._prompt_template_name}')
 
 
     def _prompts_from_image(self, dataset_image: DatasetImage, **kwargs):

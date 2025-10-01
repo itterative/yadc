@@ -78,6 +78,26 @@ thinking_end = "</think>"
 
 
 
+[prompt]
+# allows you to set the which prompt template to use
+# the captioner will look in the current working directory (the directory from where
+# the cli is called), then in the predefined templates in yadc/templates
+# an error is given if the prompt template cannot be found
+#
+# recommendation: unless you want to share prompt templates between different dataset
+#                 configs, you should set "template" instead of "name"
+# recommendation: to avoid confusion, using absolute paths instead of relative is recommended
+name = "default"
+
+# allows you to override the prompt template used in the captioning process
+# if not set, the template used will be either the one set in name
+# or the default template
+#
+# for more details, see README.md
+template = ""
+
+
+
 [settings]
 # controls how many tokens the model is allowed to output
 # recommendation: 512 tokens is enough for most captioning scenarios
@@ -85,23 +105,6 @@ thinking_end = "</think>"
 #                 1536 for when reasoning is enabled with medium thinking effort
 #                 1536-2048 for when reasoning is enabled with high thinking effort
 max_tokens = 512
-
-# allows you to override the prompt template used in the captioning process
-# if not set, the template used will be either the one set in prompt_template_path
-# or the default template
-#
-# for more details, see README.md
-prompt_template = ""
-
-# allows you to set the path of the prompt template
-# the captioner will look in the current working directory (the directory from where
-# the cli is called), then in the predefined templates in yadc/templates
-# an error is given if the prompt template cannot be found
-#
-# recommendation: unless you want to share prompt templates between different dataset
-#                 configs, you should set prompt_template instead of prompt_template_path
-# recommendation: to avoid confusion, using absolute paths instead of relative is recommended
-prompt_template_path = "default.jinja"
 
 # official OpenAI endpoints can store conversations for you for viewing later
 # when this is set to false, this will tell the api to not store the conversation

@@ -48,8 +48,8 @@ The toml files are optional, however they are recommended since you can improve 
 Example:
 
 ```toml
-[settings]
-prompt_template = """
+[prompt]
+template = """
 {% set user_prompt %}
 Describe the image. Use the following additional context when describing the image: {{ context }}
 {% endset %}
@@ -64,7 +64,7 @@ context = "this is an image of my labrador Nessie."
 
 You can use [Jinja](https://jinja.palletsprojects.com/en/stable/) templates for prompting the models. Some examples can be found in `templates/` folder.
 
-If you wish to create your own template, you can either put them directly in the config, use `yadc templates` command, or put them in your local filesystem. Any templates found in the current working directory will take precedence over templates added through the CLI or any built-in templates.
+If you wish to create your own template, you can either put them directly in the config, or use `yadc templates` command. The captioner will try to load from the templates created through the CLI and fallback to the ones in `yadc/templates/jinja` if it cannot find it.
 
 You can use variables as provided in your `.toml` files associated with your images, or as part of the overrides in the databset toml file.
 

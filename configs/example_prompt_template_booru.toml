@@ -5,8 +5,8 @@ url = "http://localhost:5001/v1"
 token = ""
 model_name = ""
 
-[settings]
-prompt_template = """
+[prompt]
+template = """
 {% set user_prompt %}
 Provide a long detailed description for this image. Don't mention something if it is not present in the image or doesn't exists in the image. You should keep the description within a paragraph, without losing important details.
 

@@ -19,6 +19,7 @@ class Config(pydantic.BaseModel):
     """
 
     api: 'ConfigApi' = pydantic.Field(default_factory=lambda: ConfigApi())
+    prompt: 'ConfigPrompt' = pydantic.Field(default_factory=lambda: ConfigPrompt())
     settings: 'ConfigSettings' = pydantic.Field(default_factory=lambda: ConfigSettings())
     reasoning: 'ConfigReasoning' = pydantic.Field(default_factory=lambda: ConfigReasoning())
     dataset: 'ConfigDataset' = pydantic.Field(default_factory=lambda: ConfigDataset())
@@ -40,6 +41,53 @@ class Config(pydantic.BaseModel):
         
         return self
 
+class ConfigApi(pydantic.BaseModel):
+    """
+    Configuration for connecting to a remote inference API.
+
+    Attributes:
+        url: Base URL of the API endpoint (must start with http:// or https://).
+        token: Authorization token for API access (optional depending on server requirements).
+        model_name: Identifier of the model to use on the API server (e.g., 'gpt-5-mini', 'gemini-2.5-flash').
+    """
+
+    url: str = ''
+    token: str = ''
+    model_name: str = ''
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        try:
+            assert self.url, 'api url must be provided'
+            assert self.url.startswith('http://') or self.url.startswith('https://'), 'api url must be an http link'
+
+            assert self.model_name, 'api model_name must be provided'
+        except AssertionError as e:
+            raise ValueError(e)
+
+        return self
+    
+class ConfigPrompt(pydantic.BaseModel):
+    """
+    Configuration for connecting to a remote inference API.
+
+    Attributes:
+        name: The name of the user/built-in template
+        template: The prompt template itself
+    """
+
+    name: str = ''
+    template: str = ''
+
+    @pydantic.model_validator(mode='after')
+    def validate_(self):
+        try:
+            assert self.name or self.template, 'either prompt name or prompt template must be provided in the config'
+        except AssertionError as e:
+            raise ValueError(e)
+
+        return self
+
 class ConfigSettings(pydantic.BaseModel):
     """
     Configuration for runtime behavior and prompt generation.
@@ -47,17 +95,11 @@ class ConfigSettings(pydantic.BaseModel):
     Attributes:
         max_tokens: Maximum number of tokens to generate (between 100 and 2048).
 
-        prompt_template: Inline Jinja template used for generating prompts (takes precedence over file).
-        prompt_template_path: Path to a Jinja template file if no inline template is provided.
-
         store_conversation: If True, retains full conversation history (depends on API implementation).
         image_quality: Image upload quality setting; one of 'auto', 'high', or 'low'.
     """
 
     max_tokens: int = 512
-
-    prompt_template: str = ''
-    prompt_template_path: str = 'default'
 
     store_conversation: bool = False
     image_quality: str = 'auto'
@@ -68,8 +110,6 @@ class ConfigSettings(pydantic.BaseModel):
     def validate_(self):
         try:
             assert 100 <= self.max_tokens <= 16384, 'config max_tokens must be between 100 and 16384'
-
-            assert self.prompt_template or self.prompt_template_path, 'either prompt_template or prompt_template_name must be provided in the config'
 
             assert self.image_quality in ('auto', 'high', 'low'), 'config image_quality must be one of: auto, high, low'
         except AssertionError as e:
@@ -132,32 +172,6 @@ class ConfigReasoning(pydantic.BaseModel):
 class ConfigReasoningAdvanced(pydantic.BaseModel):
     thinking_start: str = '<think>'
     thinking_end: str = '</think>'
-
-class ConfigApi(pydantic.BaseModel):
-    """
-    Configuration for connecting to a remote inference API.
-
-    Attributes:
-        url: Base URL of the API endpoint (must start with http:// or https://).
-        token: Authorization token for API access (optional depending on server requirements).
-        model_name: Identifier of the model to use on the API server (e.g., 'gpt-5-mini', 'gemini-2.5-flash').
-    """
-
-    url: str = ''
-    token: str = ''
-    model_name: str = ''
-
-    @pydantic.model_validator(mode='after')
-    def validate_(self):
-        try:
-            assert self.url, 'api url must be provided'
-            assert self.url.startswith('http://') or self.url.startswith('https://'), 'api url must be an http link'
-
-            assert self.model_name, 'api model_name must be provided'
-        except AssertionError as e:
-            raise ValueError(e)
-
-        return self
 
 class ConfigDataset(pydantic.BaseModel):
     """

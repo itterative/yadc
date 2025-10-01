@@ -5,8 +5,8 @@ url = "http://localhost:5001/v1"
 token = ""
 model_name = ""
 
-[settings]
-prompt_template = """
+[prompt]
+template = """
 {% set user_prompt %}
 Describe the image. Use the following additional context when describing the image: {{ context }}
 {% endset %}

@@ -49,8 +49,7 @@ class APICaptioner(BaseAPICaptioner):
             api_token (str): API key for authentication. (optional for local backend)
 
             **kwargs: Optional keyword arguments:
-                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
-                - `prompt_template` (str): Direct template string to override file-based templates.
+                - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 

@@ -133,8 +133,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
             **kwargs: Optional keyword arguments:
                 - `api_url` (str): Base URL for the Gemini API endpoint.
-                - `prompt_template_name` (str): Filename of the Jinja2 template to use (default: 'default.jinja').
-                - `prompt_template` (str): Direct template string to override file-based templates.
+                - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
