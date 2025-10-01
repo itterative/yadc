@@ -26,7 +26,7 @@ class _logger:
         self._logger.log(logging.WARNING, msg, *args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
-        self._logger.error(logging.WARNING, msg, *args, **kwargs)
+        self._logger.log(logging.ERROR, msg, *args, **kwargs)
 
     def addHandler(self, handler: logging.Handler):
         self._logger.addHandler(handler)
