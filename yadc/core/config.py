@@ -122,7 +122,6 @@ class ConfigSettingsAdvanced(pydantic.BaseModel):
     Configuration for runtime behavior and prompt generation.
 
     Attributes:
-        debug_prompt (bool): If True, prints the final rendered prompt before sending to the API.
         system_role (str): The role to use in the system prompt (either developer or system). This is useful for newer OpenAI models.
         user_role (str): The role to use in the user prompt
         assistant_role (str): The role to use in the assistant prompt
@@ -131,8 +130,6 @@ class ConfigSettingsAdvanced(pydantic.BaseModel):
     Extra Fields:
         Any additional fields will be passed in the requests to the API.
     """
-
-    debug_prompt: bool = False
 
     system_role: str = 'system'
     user_role: str = 'user'

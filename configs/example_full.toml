@@ -122,14 +122,6 @@ image_quality = "auto"
 
 
 [settings.advanced]
-
-# if you wish to see both the system_prompt and user_prompts that are sent to the api, you can
-# set this to true
-# when updating the prompt templates, this is useful to see how the model is prompted
-#
-# recommendation: leave it as false, unless you wish to see the prompts
-debug_prompt = false
-
 # in most scenarios, you don't need to change this from the default. this options is for the official
 # OpenAI, since o4 and newer models use 'developer' instead
 #

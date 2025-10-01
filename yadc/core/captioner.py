@@ -182,7 +182,7 @@ class Captioner(abc.ABC):
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
 
-        if kwargs.get('debug_prompt', False):
+        if kwargs.get('debug_prompt', True):
             _logger.debug('')
             _logger.debug('SYSTEM PROMPT ---------')
             _logger.debug(system_prompt)

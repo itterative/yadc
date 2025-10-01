@@ -311,7 +311,6 @@ def _caption(
         _logger.warning("Warning: assistant prefill is set, but the API might not support it")
 
     conversation_overrides = settings.advanced.model_dump()
-    conversation_overrides.pop('debug_prompt', None) # fix: don't want to pass this to the API
 
 
     for dataset_image in dataset:
@@ -423,7 +422,6 @@ def _caption(
                                 tokens = model.predict_stream(
                                     dataset_image_current,
                                     max_new_tokens=settings.max_tokens,
-                                    debug_prompt=settings.advanced.debug_prompt,
                                     conversation_overrides=conversation_overrides,
                                     prefill=settings.advanced.assistant_prefill,
                                 )
@@ -431,7 +429,6 @@ def _caption(
                                 tokens = [model.predict(
                                     dataset_image_current,
                                     max_new_tokens=settings.max_tokens,
-                                    debug_prompt=settings.advanced.debug_prompt,
                                     conversation_overrides=conversation_overrides,
                                 )]
 
@@ -471,7 +468,7 @@ def _caption(
                                         dataset_image_current,
                                         max_new_tokens=settings.max_tokens,
                                         use_cache=True,
-                                        debug_prompt=settings.advanced.debug_prompt and caption_rounds_debug,
+                                        debug_prompt=caption_rounds_debug,
                                         conversation_overrides=conversation_overrides,
                                         prefill=settings.advanced.assistant_prefill,
                                     ).strip()
@@ -500,7 +497,6 @@ def _caption(
                                     DatasetImage(path=dataset_image.path),
                                     caption_rounds=caption_rounds,
                                     max_new_tokens=settings.max_tokens,
-                                    debug_prompt=settings.advanced.debug_prompt,
                                     conversation_overrides=conversation_overrides,
                                 )
                             else:
@@ -508,7 +504,6 @@ def _caption(
                                     DatasetImage(path=dataset_image.path),
                                     caption_rounds=caption_rounds,
                                     max_new_tokens=settings.max_tokens,
-                                    debug_prompt=settings.advanced.debug_prompt,
                                     conversation_overrides=conversation_overrides,
                                 )]
 
