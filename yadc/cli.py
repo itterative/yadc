@@ -1,13 +1,14 @@
 import click
 
-from . import cli_caption, cli_envs, cli_configs, cli_templates
+from . import cli_logging, cli_caption, cli_envs, cli_configs, cli_templates
 
 @click.group(
     'yadc',
     help='Yet Another Dataset Captioner',
 )
 def cli():
-    pass
+    from yadc.core import logging
+    logging.set_handler(cli_logging.ClickHandler())
 
 cli.add_command(cli_caption.caption)
 cli.add_command(cli_envs.envs)
