@@ -1,4 +1,16 @@
 # Release History
+## 0.8.0 (release)
+* **(BREAKING)** Moved "yadc config" command to "yadc envs"
+* **(BREAKING)** Moved settings.prompt_template to prompt.template
+* **(BREAKING)** Moved settings.prompt_template_path to prompt.name
+
+* Implement user configs
+* Implement user templates
+* Implement advanced options for reasoning
+* Implement assistant prefill
+* Colored logging
+* More documentation
+
 ## 0.7.0 (release)
 
 - Basic llama.cpp support
