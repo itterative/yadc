@@ -15,19 +15,19 @@ class _logger:
 
     def trace(self, msg, *args, **kwargs):
         self._logger.log(TRACE_LEVEL, msg, *args, **kwargs)
-    
+
     def debug(self, msg, *args, **kwargs):
         self._logger.log(logging.DEBUG, msg, *args, **kwargs)
-    
+
     def info(self, msg, *args, **kwargs):
         self._logger.log(logging.INFO, msg, *args, **kwargs)
-    
+
     def warning(self, msg, *args, **kwargs):
         self._logger.log(logging.WARNING, msg, *args, **kwargs)
-    
+
     def error(self, msg, *args, **kwargs):
         self._logger.error(logging.WARNING, msg, *args, **kwargs)
-    
+
     def addHandler(self, handler: logging.Handler):
         self._logger.addHandler(handler)
 

@@ -117,7 +117,7 @@ class Captioner(abc.ABC):
                 {% import "__user_template__" as user_template %}
                 {{ user_template.user_prompt|default(default_template.user_prompt, true) }}
             ''')
-        
+
         if template == '__user_prompt_multiple_rounds__':
             return self._unindent_template('''
                 {% import "__default_template__" as default_template %}
@@ -192,7 +192,7 @@ class Captioner(abc.ABC):
             _logger.debug('')
 
         return system_prompt, user_prompt
-    
+
     def _encode_image(self, image: DatasetImage, max_image_size: tuple[int, int], max_image_encoded_size: int, **kwargs):
         """
         Encodes an image as a base64 string suitable for API transmission.

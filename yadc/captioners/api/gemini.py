@@ -35,7 +35,7 @@ class APITypes(str, Enum):
     @property
     def max_image_encoded_size(self):
         return 5 * 1024 * 1024
-    
+
     def get_thinking_budget(self, effort: str):
         match effort:
             case 'low': return 512
@@ -58,9 +58,9 @@ class SafetySettings(pydantic.BaseModel):
         for setting in self.data:
             if setting.category in existing_categories:
                 raise ValueError(f'duplicate safetty setting: {setting.category}')
-            
+
             existing_categories.add(setting.category)
-        
+
         return self
 
 class SafetySetting(pydantic.BaseModel):
@@ -175,7 +175,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         if usage.total_tokens == 0:
             return
-        
+
         if usage.thoughts_tokens == 0:
             _logger.info('Used a total of %d tokens (prompt: %d, response: %d).', usage.total_tokens, usage.prompt_tokens, usage.response_tokens)
         else:
@@ -201,7 +201,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 if 'generateContent' not in model.supportedGenerationMethods:
                     raise ValueError(f"model {model_repo} does not have generative capabilities: available capabilities: {', '.join(model.supportedGenerationMethods)}")
-                
+
                 self._is_thinking_model = model.thinking
                 self._current_model = model.name.removeprefix('models/')
                 _logger.info('Model set to %s.', self._current_model)
@@ -236,7 +236,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         self._is_thinking_model = model.thinking
                         self._current_model = model.name.removeprefix('models/')
                         break
-                    
+
                     available_models.append(model.name.removeprefix('models/'))
 
                 next_token = models.nextPageToken
@@ -275,9 +275,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         try:
             conversation_overrides = kwargs.pop('conversation_overrides', {})
             assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}'
-            
+
             conversation_overrides = copy.deepcopy(conversation_overrides)
-            
+
             # just make sure this is not overridden
             conversation_overrides.pop('contents', None)
 
@@ -297,7 +297,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 safety_settings_overrides = SafetySettings(data=conversation_overrides.get('safety_settings', None))
             except pydantic.ValidationError as e:
                 raise AssertionError(f'bad value for conversation_overrides/advanced settings safety settings: {e}')
-            
+
             generation_config_overrides = conversation_overrides.get('generation_config', {})
             assert isinstance(generation_config_overrides, dict), f'bad value for conversation_overrides/advanced settings generation_config; expected a dict, got: {type(generation_config_overrides)}'
         except AssertionError as e:
@@ -545,7 +545,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         if not is_thinking:
                             thought_buffer += self._reasoning_start_token
                             is_thinking = True
-                        
+
                         thought_buffer += text
 
                 if is_thinking:
@@ -570,6 +570,6 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
-    
+
     def predict_stream(self, image: DatasetImage, **kwargs):
         yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

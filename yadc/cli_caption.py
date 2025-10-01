@@ -139,7 +139,7 @@ def caption(dataset: TextIO, **kwargs):
     _logger.info('')
     _logger.info('Captioning...')
 
-    
+
     with utils.Timer() as timer:
         return_code = _caption(
             dataset=dataset_to_do,
@@ -226,7 +226,7 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
 
     for index, dataset_image in enumerate(dataset_toml.dataset.images):
         existing_dataset_image = i_dataset.get(dataset_image.absolute_path, None)
-        
+
         if existing_dataset_image is None:
             dataset.append(dataset_image)
             i_dataset[dataset_image.absolute_path] = dataset_image
@@ -263,7 +263,7 @@ def _caption(
             return default
 
         return click.confirm(prompt, default=default)
-        
+
     def prompt_for_override(value: str, default: str) -> str:
         if not interactive:
             return default
@@ -364,7 +364,7 @@ def _caption(
 
                 case 'continue':
                     do_prompt = not caption
-            
+
                 case 'retry':
                     pass
 
@@ -394,7 +394,7 @@ def _caption(
                                 break
 
                             continue
-                        
+
                         _logger.info('Dataset image toml was updated.')
                         break
 

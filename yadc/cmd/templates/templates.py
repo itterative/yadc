@@ -26,6 +26,6 @@ def delete_user_template(name: str):
 
     if not template.exists():
         return False
-    
+
     template.unlink()
     return True

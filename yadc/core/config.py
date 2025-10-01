@@ -38,7 +38,7 @@ class Config(pydantic.BaseModel):
             assert self.rounds > 0, 'rounds must be a positive number'
         except AssertionError as e:
             raise ValueError(e)
-        
+
         return self
 
 class ConfigApi(pydantic.BaseModel):
@@ -66,7 +66,7 @@ class ConfigApi(pydantic.BaseModel):
             raise ValueError(e)
 
         return self
-    
+
 class ConfigPrompt(pydantic.BaseModel):
     """
     Configuration for connecting to a remote inference API.
@@ -165,7 +165,7 @@ class ConfigReasoning(pydantic.BaseModel):
             raise ValueError(e)
 
         return self
-    
+
 class ConfigReasoningAdvanced(pydantic.BaseModel):
     thinking_start: str = '<think>'
     thinking_end: str = '</think>'

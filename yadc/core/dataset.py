@@ -40,11 +40,11 @@ class DatasetImage(BaseModel):
     @cached_property
     def absolute_path(self):
         return pathlib.Path(self.path).absolute()
-    
+
     @cached_property
     def caption_path(self):
         return self.absolute_path.with_suffix(self.caption_suffix)
-    
+
     @cached_property
     def toml_path(self):
         return self.absolute_path.with_suffix(self.toml_suffix)
@@ -56,7 +56,7 @@ class DatasetImage(BaseModel):
     @cached_property
     def history_path(self):
         return self.absolute_path.with_suffix(self.history_suffix)
-    
+
     def read_image(self):
         """
         Opens and returns the image in RGB format.
@@ -77,7 +77,7 @@ class DatasetImage(BaseModel):
 
         if not self.caption_path.exists():
             return self.caption
-        
+
         with open(self.caption_path, 'r') as f:
             return f.read().strip()
 
@@ -91,7 +91,7 @@ class DatasetImage(BaseModel):
 
         if self.history_path.exists() and when_not_exists:
             return
-        
+
         with open(self.history_path, 'a') as f:
             f.write(self._serialize_toml_history())
 
@@ -140,6 +140,6 @@ class DatasetImage(BaseModel):
 
         if with_caption:
             toml_dict['caption'] = self.caption
-        
+
         return toml.dumps(toml_dict)
 

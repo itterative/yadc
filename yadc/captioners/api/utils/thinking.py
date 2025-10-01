@@ -92,7 +92,7 @@ class ThinkingMixin:
 
         if not content.startswith(self._reasoning_start_token):
             return content
-        
+
         try:
             i_thinking_end = content.rindex(self._reasoning_end_token)
         except ValueError:

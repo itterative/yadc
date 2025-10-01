@@ -11,7 +11,7 @@ def load_test_data():
 
         with open(package_root / 'test_data' / case, 'r') as f:
             return f.read()
-    
+
     return _load_test_data
 
 @pytest.fixture(scope='function')

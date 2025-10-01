@@ -8,7 +8,7 @@ class Timer:
     def __enter__(self):
         self.start_t = time()
         return self
-    
+
     def __exit__(self, *args):
         self.end_t = time()
 

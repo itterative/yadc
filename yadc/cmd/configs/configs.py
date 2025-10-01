@@ -64,6 +64,6 @@ def delete_user_config(name: str):
 
     if not config.exists():
         return False
-    
+
     config.unlink()
     return True

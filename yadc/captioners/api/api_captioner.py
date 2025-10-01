@@ -91,7 +91,7 @@ class APICaptioner(BaseAPICaptioner):
 
             case APITypes.OLLAMA:
                 self.inner_captioner = OllamaCaptioner(**kwargs)
-    
+
         assert hasattr(self, 'inner_captioner')
 
     def _infer_api_type(self):
@@ -101,10 +101,10 @@ class APICaptioner(BaseAPICaptioner):
 
             if api_url.netloc == OPENAI_DOMAIN:
                 return APITypes.OPENAI
-            
+
             if api_url.netloc == OPENROUTER_DOMAIN:
                 return APITypes.OPENROUTER
-            
+
             if api_url.netloc == GEMINI_DOMAIN:
                 return APITypes.GEMINI
 
@@ -133,7 +133,7 @@ class APICaptioner(BaseAPICaptioner):
                 for model in models.data:
                     if model.owned_by == 'llamacpp':
                         return APITypes.LLAMACPP
-                
+
                     if model.owned_by == 'koboldcpp':
                         return APITypes.KOBOLDCPP
 
@@ -141,7 +141,7 @@ class APICaptioner(BaseAPICaptioner):
                         return APITypes.VLLM
         except AssertionError as e:
             raise ValueError(f'failed to retrieve model list: {e}')
-        
+
 
         # fallback to specific api checks
 

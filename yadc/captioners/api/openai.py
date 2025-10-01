@@ -33,14 +33,14 @@ class APITypes(str, Enum):
 
     def __str__(self) -> str:
         return self.value
-    
+
     @property
     def max_image_size(self):
         match self:
             case APITypes.OPENAI: return (1024, 1024)
             case APITypes.OPENROUTER: return (1024, 1024)
             case _: return (1536, 1536) # slightly increased for local backends
-    
+
     @property
     def max_image_encoded_size(self):
         match self:
@@ -201,9 +201,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         try:
             conversation_overrides = kwargs.pop('conversation_overrides', {})
             assert isinstance(conversation_overrides, dict), f'bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}'
-            
+
             conversation_overrides = copy.deepcopy(conversation_overrides)
-            
+
             # just make sure this is not overridden
             conversation_overrides.pop('stream', None)
             conversation_overrides.pop('store', None)
