@@ -26,6 +26,10 @@ caption_suffix = '.txt'
 # recommendation: use in conjunction with interactive mode
 overwrite_captions = false
 
+# which user environment to use
+#
+# recommendation: set this if you want to set up the api section outside of the TOML file
+env = "default"
 
 
 [api]
@@ -64,6 +68,13 @@ thinking_effort = "low"
 #
 # recommendation: set as true and disable it if you want to see more details about what the model is thinking
 exclude_from_output = true
+
+[reasoning.advanced]
+# allows you to control which thinking tokens should be used
+#
+# recommendation: leave it as the default, unless the model uses a different token (e.g. Kimi-VL)
+thinking_start = "<think>"
+thinking_end = "</think>"
 
 
 
