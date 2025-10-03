@@ -78,6 +78,10 @@ def caption(dataset: TextIO, **kwargs):
 
     if not dataset_toml.prompt.template:
         if dataset_toml.prompt.name:
+            if user_templates := cmd_templates.list_user_template():
+                _logger.error('Error: prompt template could be loaded: %s; available templates: %s', dataset_toml.prompt.name, ', '.join(user_templates))
+                sys.exit(cmd_status.STATUS_USER_ERROR)
+
             _logger.error('Error: prompt template could be loaded: %s', dataset_toml.prompt.name)
             sys.exit(cmd_status.STATUS_USER_ERROR)
 
@@ -116,20 +120,20 @@ def caption(dataset: TextIO, **kwargs):
 
     _logger.info('Loading model...')
 
-    model = APICaptioner(
-        api_url=dataset_toml.api.url,
-        api_token=dataset_toml.api.token,
-        prompt_template=dataset_toml.prompt.template,
-        store_conversation=dataset_toml.settings.store_conversation,
-        image_quality=dataset_toml.settings.image_quality,
-        reasoning=dataset_toml.reasoning.enable,
-        reasoning_effort=dataset_toml.reasoning.thinking_effort,
-        reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
-        reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
-        reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
-    )
-
     try:
+        model = APICaptioner(
+            api_url=dataset_toml.api.url,
+            api_token=dataset_toml.api.token,
+            prompt_template=dataset_toml.prompt.template,
+            store_conversation=dataset_toml.settings.store_conversation,
+            image_quality=dataset_toml.settings.image_quality,
+            reasoning=dataset_toml.reasoning.enable,
+            reasoning_effort=dataset_toml.reasoning.thinking_effort,
+            reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
+            reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
+            reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
+        )
+
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
         _logger.error('Error: failed to load model: %s', e)
@@ -160,10 +164,19 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
 
     dataset_toml_raw = toml.load(dataset_stream)
 
-    # merge with user config
-    if user_config is not None:
-        _logger.info('Using %s user config.', user_config)
-        dataset_toml_raw = cmd_configs.merge_user_config(user_config, dataset_toml_raw)
+    try:
+        # merge with user config
+        if user_config is not None:
+            _logger.info('Using %s user config.', user_config)
+            dataset_toml_raw = cmd_configs.merge_user_config(user_config, 
+            dataset_toml_raw)
+    except ValueError:
+        if user_configs := cmd_configs.list_user_config():
+            _logger.error('Error: failed to load user config: %s; available templates: %s', user_config, ', '.join(user_configs))
+            sys.exit(cmd_status.STATUS_USER_ERROR)
+
+        _logger.error('Error: failed to load user config: %s', user_config)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
 
     # merge with user env
     env = env or dataset_toml_raw.get('env', 'default')
@@ -400,6 +413,9 @@ def _caption(
                                 break
 
                             continue
+
+                        with open(dataset_image_current.toml_path, 'w') as f:
+                            f.write(dataset_image_current.dump_toml())
 
                         _logger.info('Dataset image toml was updated.')
                         break
