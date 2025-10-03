@@ -47,16 +47,20 @@ def caption(dataset: TextIO, **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
-        dataset_toml = _load_dataset(dataset, env=cli_option('env', None), user_config=cli_option('user_config', None), user_template=cli_option('user_template', default=None))
-    except ValueError as e:
+        dataset_toml = _load_dataset(
+            dataset,
+            env=cli_option('env', None),
+            user_config=cli_option('user_config', None),
+            user_template=cli_option('user_template', default=None),
+            api_url = str(cli_option('api_url', default=None)),
+            api_token = str(cli_option('api_token', default=None)),
+            api_model_name = str(cli_option('api_model_name', default=None)),
+        )
+    except (AssertionError, ValueError) as e:
         _logger.error('Error loading dataset: %s', e)
         sys.exit(cmd_status.STATUS_OK)
 
     # cli arguments
-    dataset_toml.env = str(cli_option('env', default=dataset_toml.env) or 'default')
-    dataset_toml.api.url = str(cli_option('api_url', default=dataset_toml.api.url))
-    dataset_toml.api.token = str(cli_option('api_token', default=dataset_toml.api.token))
-    dataset_toml.api.model_name = str(cli_option('api_model_name', default=dataset_toml.api.model_name))
 
     do_stream = bool(cli_option('stream', default=False))
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
@@ -158,7 +162,15 @@ def caption(dataset: TextIO, **kwargs):
 
     sys.exit(return_code)
 
-def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optional[str], user_template: Optional[str]):
+def _load_dataset(
+    dataset_stream: TextIO,
+    env: Optional[str],
+    user_config: Optional[str],
+    user_template: Optional[str],
+    api_url: Optional[str],
+    api_token: Optional[str],
+    api_model_name: Optional[str],
+):
     dataset: list[DatasetImage] = []
     i_dataset: dict[pathlib.Path, DatasetImage] = {}
 
@@ -181,7 +193,7 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
     # merge with user env
     env = env or dataset_toml_raw.get('env', 'default')
 
-    assert isinstance(env, str)
+    assert isinstance(env, str), "invalid dataset toml env"
 
     _logger.info('Using %s user environment.', env)
     user_env = cmd_envs.load_env(env=env)
@@ -189,10 +201,10 @@ def _load_dataset(dataset_stream: TextIO, env: Optional[str], user_config: Optio
     dataset_toml_raw.setdefault('api', {})
     dataset_toml_raw_api = dataset_toml_raw['api']
 
-    assert isinstance(dataset_toml_raw_api, dict)
-    dataset_toml_raw_api['url'] = user_env.api.url or dataset_toml_raw_api.get('url', '')
-    dataset_toml_raw_api['token'] = user_env.api.token or dataset_toml_raw_api.get('token', '')
-    dataset_toml_raw_api['model_name'] = user_env.api.model_name or dataset_toml_raw_api.get('model_name', '')
+    assert isinstance(dataset_toml_raw_api, dict), "invalid dataset toml api section"
+    dataset_toml_raw_api['url'] = api_url or user_env.api.url or dataset_toml_raw_api.get('url', '')
+    dataset_toml_raw_api['token'] = api_token or user_env.api.token or dataset_toml_raw_api.get('token', '')
+    dataset_toml_raw_api['model_name'] = api_model_name or user_env.api.model_name or dataset_toml_raw_api.get('model_name', '')
 
     dataset_toml_raw.setdefault('prompt', {})
     dataset_toml_raw_prompt = dataset_toml_raw['prompt']
