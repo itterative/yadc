@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import toml
 
 import torch
+torch.set_float32_matmul_precision('high')
 
 from transformers import AutoProcessor, Gemma3nForConditionalGeneration, Gemma3nProcessor
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
@@ -28,26 +29,11 @@ GEMMA_REPOS = [
 ]
 
 GEMMA_MODULE_COMPILATION = {
-    'TimmWrapperModel': {
-        'mode': 'reduce-overhead',
-        'dynamic': True,
-        'fullgraph': True,
-    },
-    'Gemma3nTextModel': {
+    'Gemma3nModel': {
         'mode': 'default',
         'dynamic': True,
         'fullgraph': True,
     },
-    'Gemma3nMultimodalEmbedder': {
-        'mode': 'default',
-        'dynamic': True,
-        'fullgraph': True,
-    },
-    'Gemma3nAudioEncoder': {
-        'mode': 'reduce-overhead',
-        'fullgraph': True,
-        'dynamic': True,
-    }
 }
 
 QUANTIZATION_METHODS = [
@@ -85,7 +71,7 @@ class Gemma3nCaptioner(Captioner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self._torch_compile = kwargs.pop('_torch_compile', False)
+        self._torch_compile = kwargs.pop('_torch_compile', True)
 
         try:
             self._max_tokens = int(kwargs.pop('max_tokens', 8096))
@@ -200,8 +186,6 @@ class Gemma3nCaptioner(Captioner):
                 _logger.debug('Loaded torch compilation cache.')
         else:
             _logger.warning('Warning: torch compilation is enabled. No cached compilation results found. This will take a long time...')
-
-        torch.set_float32_matmul_precision('high')
 
         _logger.debug('Compiling modules...')
         self._compile_nn_module(self._model)
