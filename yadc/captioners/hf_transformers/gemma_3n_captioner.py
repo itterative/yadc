@@ -72,6 +72,8 @@ def _sha256(string: str):
 class Gemma3nCaptioner(Captioner):
     _processor: Optional['Gemma3nProcessor'] = None
     _model: Optional['Gemma3nForConditionalGeneration'] = None
+    _cache: StaticCache|None = None
+    _last_image: DatasetImage|None = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -83,7 +85,7 @@ class Gemma3nCaptioner(Captioner):
         except:
             raise ValueError(f'bad max_tokens value')
 
-        self._quantization: str = kwargs.pop('quantization', 'none')
+        self._quantization: str = kwargs.pop('quantization', 'quanto:int8')
 
         try:
             assert isinstance(self._quantization, str)
@@ -144,6 +146,7 @@ class Gemma3nCaptioner(Captioner):
         self._model = None
         self._model_repo = None
         self._processor = None
+        self._cache = None
 
         gc.collect()
 
@@ -207,12 +210,15 @@ class Gemma3nCaptioner(Captioner):
 
         model_cache_meta, model_cache_data, compile_kwargs = self._torch_compile_info()
 
-        if model_cache_meta.exists() and model_cache_meta.read_text() == compile_kwargs:
-            return
+        # if model_cache_meta.exists() and model_cache_meta.read_text() == compile_kwargs:
+        #     return
 
         torch_compile_artifacts = torch.compiler.save_cache_artifacts()
 
         if torch_compile_artifacts is None:
+            return
+        
+        if model_cache_data.exists() and model_cache_data.read_bytes() == torch_compile_artifacts[0]:
             return
 
         model_cache_data.parent.mkdir(mode=0o750, exist_ok=True)
@@ -241,6 +247,39 @@ class Gemma3nCaptioner(Captioner):
                 _logger.trace('Not compiling module: %s', c_module.__class__.__name__)
 
             self._compile_nn_module(c_module)
+
+    def _kv_cache(self, image: DatasetImage):
+        assert self._model
+
+        if self._cache is None:
+            self._cache = StaticCache(
+                config=self._model.config,
+                max_cache_len=self._max_tokens,
+                device=self._model.device,
+                dtype=self._model.dtype,
+            )
+
+        if self._last_image is image:
+            assert self._cache
+            return self._cache
+
+        if self._cache is not None:
+            self._cache = None
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        self._last_image = image
+        
+        self._cache = StaticCache(
+            config=self._model.config,
+            max_cache_len=self._max_tokens,
+            device=self._model.device,
+            dtype=self._model.dtype,
+        )
+
+        return self._cache
 
 
     def conversation(self, image: DatasetImage, **kwargs):
@@ -367,7 +406,7 @@ class Gemma3nCaptioner(Captioner):
                     do_sample=True,
                     streamer=streamer,
                     use_cache=True,
-                    cache_implementation="static",
+                    # past_key_values=self._kv_cache(image),
                     temperature=temperature,
                     top_k=top_k,
                     top_p=top_p,

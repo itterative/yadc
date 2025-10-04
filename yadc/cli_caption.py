@@ -152,7 +152,7 @@ def caption(dataset: TextIO, **kwargs):
             reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
             reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
-            quantization="quanto:int8",
+            # quantization="quanto:int8",
         )
 
         model.load_model(dataset_toml.api.model_name)
