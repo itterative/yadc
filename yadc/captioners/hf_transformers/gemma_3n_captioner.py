@@ -23,9 +23,12 @@ GEMMA_REPOS = [
     "google/gemma-3n-E4B-it",
 ]
 
-GEMMA_COMPILED_MODULES = [
-    'Gemma3nTextModel',
-]
+GEMMA_MODULE_COMPILATION = {
+    'Gemma3nTextModel': {
+        'mode': 'default',
+        'fullgraph': True,
+    }
+}
 
 QUANTIZATION_METHODS = [
     'none',
@@ -143,27 +146,40 @@ class Gemma3nCaptioner(Captioner):
         model_cache_data = model_cache_dir / 'data'
         model_cache_meta = model_cache_dir / 'meta'
 
-        return model_cache_meta, model_cache_data, dict(mode="reduce-overhead", fullgraph=True)
+        return model_cache_meta, model_cache_data, self._compile_nn_module_cache_info()
 
     def _load_torch_compile_cache(self):
         if not self._torch_compile:
+            _logger.debug('Not using torch.compile')
             return
         
         assert self._model
 
+        _logger.debug('Started model optimization.')
+
         model_cache_meta, model_cache_data, compile_kwargs = self._torch_compile_info()
 
         if model_cache_meta.exists() and model_cache_data.exists():
-            if model_cache_meta.read_text() != self._compile_nn_module_cache_info(*compile_kwargs):
+            if model_cache_meta.read_text() != compile_kwargs:
                 _logger.debug('Invalidated torch.compile cache: %s', self._model_repo)
             else:
+                _logger.debug('Loading torch compilation cache...')
                 torch.compiler.load_cache_artifacts(model_cache_data.read_bytes())
+                _logger.debug('Loaded torch compilation cache.')
 
         torch.set_float32_matmul_precision('high')
-        self._compile_nn_module(self._model, **compile_kwargs)
+
+        _logger.debug('Compiling modules...')
+        self._compile_nn_module(self._model)
+        _logger.debug('Compiled modules.')
+
+        _logger.debug('Finished model optimization.')
     
     def _save_torch_compile_cache(self):
         if not self._torch_compile:
+            return
+        
+        if getattr(self, '__torch_compile_artifacts_saved', False):
             return
 
         model_cache_meta, model_cache_data, compile_kwargs = self._torch_compile_info()
@@ -178,24 +194,28 @@ class Gemma3nCaptioner(Captioner):
 
         model_cache_data.parent.mkdir(mode=0o750, exist_ok=True)
 
-        model_cache_meta.write_text(self._compile_nn_module_cache_info(*compile_kwargs))
+        model_cache_meta.write_text(self._compile_nn_module_cache_info())
         model_cache_data.write_bytes(torch_compile_artifacts[0])
 
-    def _compile_nn_module_cache_info(self, **kwargs):
+        setattr(self, '__torch_compile_artifacts_saved', True)
+
+    def _compile_nn_module_cache_info(self):
         return toml.dumps({
             'version': '1',
             'model_repo': self._model_repo,
             'max_tokens': self._max_tokens,
             'quantization': self._quantization,
-            'compiled_modules': GEMMA_COMPILED_MODULES,
-            'torch_kwargs': kwargs,
+            'compiled_modules': GEMMA_MODULE_COMPILATION,
         })
 
-    def _compile_nn_module(self, module: torch.nn.Module, **kwargs):
+    def _compile_nn_module(self, module: torch.nn.Module):
         for name, c_module in module.named_children():
-            if c_module.__class__.__name__ in GEMMA_COMPILED_MODULES:
-                compiled_c_module = torch.compile(c_module, **kwargs)
+            if c_module.__class__.__name__ in GEMMA_MODULE_COMPILATION:
+                _logger.debug('Compiling module: %s', c_module.__class__.__name__)
+                compiled_c_module = torch.compile(c_module, **GEMMA_MODULE_COMPILATION[c_module.__class__.__name__])
                 setattr(module, name, compiled_c_module)
+            else:
+                _logger.debug('Not compiling module: %s', c_module.__class__.__name__)
 
             self._compile_nn_module(c_module)
 
@@ -282,7 +302,7 @@ class Gemma3nCaptioner(Captioner):
         try:
             last_message = conversation['messages'][-1]
             if last_message.get('is_prefill', False):
-                assistant_prefill = last_message['content']
+                assistant_prefill = last_message['content'][0]['text']
                 last_message.pop('is_prefill', None)
             else:
                 assistant_prefill = ''
