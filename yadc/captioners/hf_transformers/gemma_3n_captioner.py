@@ -1,5 +1,6 @@
 from typing import Optional, TYPE_CHECKING
 
+import os
 import gc
 import copy
 import queue
@@ -36,6 +37,11 @@ GEMMA_MODULE_COMPILATION = {
         'mode': 'default',
         'fullgraph': True,
     },
+    'Gemma3nAudioEncoder': {
+        'mode': 'reduce-overhead',
+        'fullgraph': True,
+        'dynamic': True,
+    }
 }
 
 QUANTIZATION_METHODS = [
@@ -318,9 +324,8 @@ class Gemma3nCaptioner(Captioner):
         assistant_prefill = ''
         try:
             last_message = conversation['messages'][-1]
-            if last_message.get('is_prefill', False):
+            if last_message.pop('is_prefill', False):
                 assistant_prefill = last_message['content'][0]['text']
-                last_message.pop('is_prefill', None)
             else:
                 assistant_prefill = ''
 
