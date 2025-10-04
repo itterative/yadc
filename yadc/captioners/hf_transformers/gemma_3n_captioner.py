@@ -4,6 +4,7 @@ import os
 import gc
 import copy
 import queue
+import functools
 from concurrent.futures import ThreadPoolExecutor
 
 import toml
@@ -12,6 +13,8 @@ import torch
 
 from transformers import AutoProcessor, Gemma3nForConditionalGeneration, Gemma3nProcessor
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
+from transformers import StaticCache, Cache
+from transformers import BatchFeature
 
 from yadc.core import logging
 from yadc.core import Captioner
@@ -27,14 +30,17 @@ GEMMA_REPOS = [
 GEMMA_MODULE_COMPILATION = {
     'TimmWrapperModel': {
         'mode': 'reduce-overhead',
+        'dynamic': True,
         'fullgraph': True,
     },
     'Gemma3nTextModel': {
         'mode': 'default',
+        'dynamic': True,
         'fullgraph': True,
     },
     'Gemma3nMultimodalEmbedder': {
         'mode': 'default',
+        'dynamic': True,
         'fullgraph': True,
     },
     'Gemma3nAudioEncoder': {
@@ -72,13 +78,14 @@ def _sha256(string: str):
 class Gemma3nCaptioner(Captioner):
     _processor: Optional['Gemma3nProcessor'] = None
     _model: Optional['Gemma3nForConditionalGeneration'] = None
-    _cache: StaticCache|None = None
+    _cache: Cache|None = None
+    _last_tokens: torch.Tensor|None = None
     _last_image: DatasetImage|None = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self._torch_compile = kwargs.pop('_torch_compile', True)
+        self._torch_compile = kwargs.pop('_torch_compile', False)
 
         try:
             self._max_tokens = int(kwargs.pop('max_tokens', 8096))
@@ -134,6 +141,7 @@ class Gemma3nCaptioner(Captioner):
             device_map="auto",
             dtype="auto",
             quantization_config=quantization_config,
+            local_files_only=True,
         ).eval()
 
         self._model.requires_grad_(False)
@@ -248,30 +256,74 @@ class Gemma3nCaptioner(Captioner):
 
             self._compile_nn_module(c_module)
 
-    def _kv_cache(self, image: DatasetImage):
+    @functools.lru_cache(maxsize=1)
+    def _system_prompt_kv_cache(self, conversation):
+        assert self._processor
         assert self._model
 
-        if self._cache is None:
-            self._cache = StaticCache(
-                config=self._model.config,
-                max_cache_len=self._max_tokens,
-                device=self._model.device,
-                dtype=self._model.dtype,
-            )
+        text_input = str(self._processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=False)) # type: ignore
+
+        cache = StaticCache(
+            config=self._model.config,
+            max_cache_len=self._max_tokens,
+            device=self._model.device,
+            dtype=self._model.dtype,
+        )
+
+        inputs = self._processor(text_input, pad_to_multiple_of=1024, padding_side='left', padding='longest', return_tensors='pt').to(self._model.device) # type: ignore
+        prompt_cache = self._model(**inputs, use_cache=True, past_key_values=cache).past_key_values
+
+        del cache
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return prompt_cache
+
+    def _kv_cache(self, image: DatasetImage, inputs: BatchFeature):
+        assert self._processor is not None
+        assert self._model is not None
+
+        tokens = inputs['input_ids']
+        assert isinstance(tokens, torch.Tensor)
+
+        _logger.trace('KV Cache: prompt tokens: %s', tokens.shape)
 
         if self._last_image is image:
-            assert self._cache
-            return self._cache
-
-        if self._cache is not None:
-            self._cache = None
-
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            assert self._cache is not None
+            return self._cache, torch.arange(tokens.shape[1], device=self._model.device)
 
         self._last_image = image
-        
+
+        if self._cache is not None:
+            assert self._last_tokens is not None
+
+            prune_index = 0
+            for prune_index in range(min(tokens.shape[1], self._last_tokens.shape[1])): # type: ignore
+                if tokens[prune_index] != self._last_tokens[prune_index]:
+                    break
+
+                # edge case: need to break at the pixels
+                if tokens[prune_index] == self._processor.image_token_id:
+                    break
+
+                continue
+
+            # # FIXME: https://huggingface.co/docs/transformers/v4.57.0/en/cache_explanation#cache-storage-implementation
+            # # need to prune differently
+            # self._cache.layers = self._cache.layers[:prune_index]
+
+            # gc.collect()
+            # if torch.cuda.is_available():
+            #     torch.cuda.empty_cache()
+
+            _logger.info('KV Cache: reusing %d tokens', prune_index)
+
+            return self._cache, torch.arange(prune_index, device=self._model.device)
+
+        self._last_tokens = tokens
+
         self._cache = StaticCache(
             config=self._model.config,
             max_cache_len=self._max_tokens,
@@ -279,7 +331,7 @@ class Gemma3nCaptioner(Captioner):
             dtype=self._model.dtype,
         )
 
-        return self._cache
+        return self._cache, None
 
 
     def conversation(self, image: DatasetImage, **kwargs):
@@ -391,10 +443,19 @@ class Gemma3nCaptioner(Captioner):
         top_k: float = kwargs.pop("top_p", None) or 64
         top_p: float = kwargs.pop("top_p", None) or 0.9
 
-        inputs = self._processor.apply_chat_template(conversation["messages"], add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt",) # type: ignore
+        processor_kwargs = dict(
+            add_generation_prompt=True, tokenize=True,
+            return_tensors="pt", return_dict=True,
+            pad_to_multiple_of=1024, padding_side='left', padding='longest',
+        )
+
+        inputs = self._processor.apply_chat_template(conversation["messages"], **processor_kwargs) # type: ignore
+        assert isinstance(inputs, BatchFeature), type(inputs)
+
+        past_key_values, cache_position = self._kv_cache(image, inputs)
 
         # inputs['pixel_values'] = inputs['pixel_values'].to(torch.bfloat16)
-        inputs = inputs.to(self._model.device)
+        inputs = inputs.to(self._model.device) # type: ignore
 
         def _inference(streamer: TextIteratorStreamer, cancel: StoppingCriteria):
             assert self._model
@@ -406,7 +467,8 @@ class Gemma3nCaptioner(Captioner):
                     do_sample=True,
                     streamer=streamer,
                     use_cache=True,
-                    # past_key_values=self._kv_cache(image),
+                    cache_position=cache_position,
+                    past_key_values=past_key_values,
                     temperature=temperature,
                     top_k=top_k,
                     top_p=top_p,
@@ -415,7 +477,7 @@ class Gemma3nCaptioner(Captioner):
                     ]),
                 )[0]
 
-                generation = generation[inputs['input_ids'].shape[1]:]
+                # generation = generation[inputs['input_ids'].shape[1]:]
 
         generation_criteria = _GenerationStoppingCriteria()
         streamer = TextIteratorStreamer(self._processor.tokenizer, skip_prompt=True, timeout=0.1, skip_special_tokens=True) # type: ignore
