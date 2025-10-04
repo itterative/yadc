@@ -294,36 +294,6 @@ class Gemma3nCaptioner(Captioner):
             assert self._cache is not None
             return self._cache, torch.arange(tokens.shape[1], device=self._model.device)
 
-        self._last_image = image
-
-        if self._cache is not None:
-            assert self._last_tokens is not None
-
-            prune_index = 0
-            for prune_index in range(min(tokens.shape[1], self._last_tokens.shape[1])): # type: ignore
-                if tokens[prune_index] != self._last_tokens[prune_index]:
-                    break
-
-                # edge case: need to break at the pixels
-                if tokens[prune_index] == self._processor.image_token_id:
-                    break
-
-                continue
-
-            # # FIXME: https://huggingface.co/docs/transformers/v4.57.0/en/cache_explanation#cache-storage-implementation
-            # # need to prune differently
-            # self._cache.layers = self._cache.layers[:prune_index]
-
-            # gc.collect()
-            # if torch.cuda.is_available():
-            #     torch.cuda.empty_cache()
-
-            _logger.info('KV Cache: reusing %d tokens', prune_index)
-
-            return self._cache, torch.arange(prune_index, device=self._model.device)
-
-        self._last_tokens = tokens
-
         self._cache = StaticCache(
             config=self._model.config,
             max_cache_len=self._max_tokens,
