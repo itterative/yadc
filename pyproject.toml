@@ -29,6 +29,17 @@ test = [
     "requests-mock>=1.12.1",
 ]
 
+rocm = [
+    "accelerate",
+    "optimum-quanto",
+    "pytorch-triton-rocm",
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "transformers>=4.56.0",
+    "timm==1.0.19",
+    "einops>=0.8.1"
+]
+
 [project.scripts]
 yadc = "yadc.cli:cli"
 
@@ -41,3 +52,25 @@ include = ["yadc*"]
 
 [tool.pytest.ini_options]
 timeout = 5
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-rocm", extra = "rocm" }
+]
+
+torchvision = [
+    { index = "pytorch-rocm", extra = "rocm" }
+]
+
+pytorch-triton-rocm = [
+    { index = "pytorch-rocm", extra = "rocm" }
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.3"
+explicit = true

@@ -11,6 +11,7 @@ from .core import utils
 from . import cli_common
 
 from yadc.core import logging
+from yadc.core import Captioner
 from yadc.core.config import Config, ConfigSettings
 from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
@@ -125,7 +126,22 @@ def caption(dataset: TextIO, **kwargs):
     _logger.info('Loading model...')
 
     try:
-        model = APICaptioner(
+        # model = APICaptioner(
+        #     api_url=dataset_toml.api.url,
+        #     api_token=dataset_toml.api.token,
+        #     prompt_template=dataset_toml.prompt.template,
+        #     store_conversation=dataset_toml.settings.store_conversation,
+        #     image_quality=dataset_toml.settings.image_quality,
+        #     reasoning=dataset_toml.reasoning.enable,
+        #     reasoning_effort=dataset_toml.reasoning.thinking_effort,
+        #     reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
+        #     reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
+        #     reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
+        # )
+
+        from yadc.captioners.hf_transformers import Gemma3nCaptioner
+
+        model = Gemma3nCaptioner(
             api_url=dataset_toml.api.url,
             api_token=dataset_toml.api.token,
             prompt_template=dataset_toml.prompt.template,
@@ -136,6 +152,7 @@ def caption(dataset: TextIO, **kwargs):
             reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
             reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
+            quantization="quanto:int8",
         )
 
         model.load_model(dataset_toml.api.model_name)
@@ -157,7 +174,9 @@ def caption(dataset: TextIO, **kwargs):
             rounds=rounds,
         )
 
-    model.log_usage()
+    if isinstance(model, APICaptioner):
+        model.log_usage()
+
     _logger.info('Done. (%.1f sec)', timer.elapsed)
 
     sys.exit(return_code)
@@ -283,7 +302,7 @@ def _load_dataset(
 
 def _caption(
     dataset: list[DatasetImage],
-    model: APICaptioner,
+    model: Captioner,
     settings: ConfigSettings,
     do_stream: bool,
     interactive: bool,
@@ -338,8 +357,9 @@ def _caption(
             _logger.info('------------')
             _logger.info('')
 
-    if settings.advanced.assistant_prefill and model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
-        _logger.warning("Warning: assistant prefill is set, but the API might not support it")
+    if isinstance(model, APICaptioner):
+        if settings.advanced.assistant_prefill and model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
+            _logger.warning("Warning: assistant prefill is set, but the API might not support it")
 
     conversation_overrides = settings.advanced.model_dump()
 

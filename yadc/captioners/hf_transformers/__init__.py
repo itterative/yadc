@@ -1,0 +1,1 @@
+from .gemma_3n_captioner import Gemma3nCaptioner

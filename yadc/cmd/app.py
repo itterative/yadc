@@ -5,6 +5,7 @@ NAME = 'yadc'
 
 CONFIG_PATH = platformdirs.user_config_path(NAME, ensure_exists=True)
 STATE_PATH = platformdirs.user_state_path(NAME, ensure_exists=True)
+CACHE_PATH = platformdirs.user_cache_path(NAME, ensure_exists=True)
 
 def load_config() -> dict:
     config_path = CONFIG_PATH / 'config.toml'
