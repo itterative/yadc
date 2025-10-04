@@ -39,6 +39,8 @@ GEMMA_MODULE_COMPILATION = {
 QUANTIZATION_METHODS = [
     'none',
     'quanto:int8',
+    'torch:int8',
+    'torch:int4',
 ]
 
 _logger = logging.get_logger(__name__)
@@ -112,6 +114,24 @@ class Gemma3nCaptioner(Captioner):
 
                 quantization_config = QuantoConfig(
                     weights="int8",
+                    modules_to_not_convert=["correction_coefs", "prediction_coefs", "lm_head", "embedding_projection"],
+                )
+
+            case 'torch:int8':
+                from transformers import TorchAoConfig
+                from torchao.quantization.quant_api import Int8WeightOnlyConfig
+
+                quantization_config = TorchAoConfig(
+                    quant_type=Int8WeightOnlyConfig(),
+                    modules_to_not_convert=["correction_coefs", "prediction_coefs", "lm_head", "embedding_projection"],
+                )
+
+            case 'torch:int4':
+                from transformers import TorchAoConfig
+                from torchao.quantization.quant_api import Int4WeightOnlyConfig
+
+                quantization_config = TorchAoConfig(
+                    quant_type=Int4WeightOnlyConfig(),
                     modules_to_not_convert=["correction_coefs", "prediction_coefs", "lm_head", "embedding_projection"],
                 )
 

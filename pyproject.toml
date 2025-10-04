@@ -37,7 +37,8 @@ rocm = [
     "torchvision==0.23.0",
     "transformers>=4.56.0",
     "timm==1.0.19",
-    "einops>=0.8.1"
+    "einops>=0.8.1",
+    "torchao>=0.13.0",
 ]
 
 [project.scripts]
