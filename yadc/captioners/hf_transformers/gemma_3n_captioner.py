@@ -24,10 +24,18 @@ GEMMA_REPOS = [
 ]
 
 GEMMA_MODULE_COMPILATION = {
+    'TimmWrapperModel': {
+        'mode': 'reduce-overhead',
+        'fullgraph': True,
+    },
     'Gemma3nTextModel': {
         'mode': 'default',
         'fullgraph': True,
-    }
+    },
+    'Gemma3nMultimodalEmbedder': {
+        'mode': 'default',
+        'fullgraph': True,
+    },
 }
 
 QUANTIZATION_METHODS = [
@@ -50,6 +58,10 @@ class _MaxNewTokensStoppingCriterian(StoppingCriteria):
     def __call__(self, *args, **kwargs): # type: ignore
         self.tokens_left -= 1
         return self.tokens_left <= 0
+
+def _sha256(string: str):
+    import hashlib
+    return hashlib.sha256(string.encode()).hexdigest()
 
 class Gemma3nCaptioner(Captioner):
     _processor: Optional['Gemma3nProcessor'] = None
@@ -143,10 +155,13 @@ class Gemma3nCaptioner(Captioner):
 
         model_repo = self._model_repo.replace('/', '--')
         model_cache_dir = yadc_app.CACHE_PATH / 'torch_compile' / model_repo
-        model_cache_data = model_cache_dir / 'data'
-        model_cache_meta = model_cache_dir / 'meta'
+        model_cache_info = self._compile_nn_module_cache_info()
+        model_cache_info_dir = _sha256(model_cache_info)
 
-        return model_cache_meta, model_cache_data, self._compile_nn_module_cache_info()
+        model_cache_data = model_cache_dir / model_cache_info_dir / 'data'
+        model_cache_meta = model_cache_dir / model_cache_info_dir / 'meta'
+
+        return model_cache_meta, model_cache_data, model_cache_info
 
     def _load_torch_compile_cache(self):
         if not self._torch_compile:
@@ -166,6 +181,8 @@ class Gemma3nCaptioner(Captioner):
                 _logger.debug('Loading torch compilation cache...')
                 torch.compiler.load_cache_artifacts(model_cache_data.read_bytes())
                 _logger.debug('Loaded torch compilation cache.')
+        else:
+            _logger.warning('Warning: torch compilation is enabled. No cached compilation results found. This will take a long time...')
 
         torch.set_float32_matmul_precision('high')
 
@@ -211,11 +228,11 @@ class Gemma3nCaptioner(Captioner):
     def _compile_nn_module(self, module: torch.nn.Module):
         for name, c_module in module.named_children():
             if c_module.__class__.__name__ in GEMMA_MODULE_COMPILATION:
-                _logger.debug('Compiling module: %s', c_module.__class__.__name__)
+                _logger.trace('Compiling module: %s', c_module.__class__.__name__)
                 compiled_c_module = torch.compile(c_module, **GEMMA_MODULE_COMPILATION[c_module.__class__.__name__])
                 setattr(module, name, compiled_c_module)
             else:
-                _logger.debug('Not compiling module: %s', c_module.__class__.__name__)
+                _logger.trace('Not compiling module: %s', c_module.__class__.__name__)
 
             self._compile_nn_module(c_module)
 
