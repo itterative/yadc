@@ -374,7 +374,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         if choice.finish_reason and choice.finish_reason != 'stop':
                             raise ValueError(self._normalize_error(line_response))
 
-                        if not is_prediction and (thought := choice.delta.reasoning):
+                        if not is_prediction and (thought := choice.delta.reasoning or choice.delta.reasoning_content):
                             if not is_thinking:
                                 yield self._reasoning_start_token
                                 is_thinking = True
@@ -459,7 +459,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 if choice.finish_reason and choice.finish_reason != 'stop':
                     raise ValueError(self._normalize_error(conversation_response))
 
-                thought_content = choice.message.reasoning
+                thought_content = choice.message.reasoning or choice.message.reasoning_content
                 if thought_content:
                     if not is_thinking:
                         thought_buffer += self._reasoning_start_token

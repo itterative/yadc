@@ -41,12 +41,14 @@ class _OpenAIChatCompletionChoiceMessage(pydantic.BaseModel):
     refusal: Optional[str] = None
     content: Optional[str] = None
     reasoning: Optional[str] = None
+    reasoning_content: Optional[str] = None
 
 class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
     role: str = 'assistant'
     refusal: Optional[str] = None
     content: Optional[str] = None
     reasoning: Optional[str] = None
+    reasoning_content: Optional[str] = None
 
 class OpenAIErrorResponse(pydantic.BaseModel):
     error: '_OpenAIError'
