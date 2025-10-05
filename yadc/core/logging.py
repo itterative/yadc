@@ -43,6 +43,7 @@ def get_logger(name: str):
     logger = _logger(logging.getLogger(name))
     logger.handlers.clear()
     logger.addHandler(_default_handler)
+    logger.setLevel(_default_level)
 
     _loggers[name] = logger
 
