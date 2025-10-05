@@ -1,4 +1,10 @@
 # Release History
+## 0.8.1 (release)
+* Fix --api-X flags not always overriding
+* Fix logger not using stderr
+* Warn when thinking is not finished
+* Improve errors when captioning
+
 ## 0.8.0 (release)
 * **(BREAKING)** Moved "yadc config" command to "yadc envs"
 * **(BREAKING)** Moved settings.prompt_template to prompt.template
