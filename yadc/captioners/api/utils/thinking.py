@@ -52,6 +52,12 @@ class ThinkingMixin:
                 buffer = ''
                 break
 
+        if is_thinking and not did_think:
+            thinking_buffer = buffer.removeprefix(self._reasoning_start_token)
+            _logger.info(_indent_thinking(thinking_buffer))
+            _logger.warning('Warning: Thinking was not finished.')
+            return
+
         if thinking_buffer:
             _logger.info(_indent_thinking(thinking_buffer))
 
@@ -96,7 +102,11 @@ class ThinkingMixin:
         try:
             i_thinking_end = content.rindex(self._reasoning_end_token)
         except ValueError:
-            return content
+            thinking_buffer = content.removeprefix(self._reasoning_start_token)
+            _logger.info('Thinking...')
+            _logger.info(_indent_thinking(thinking_buffer))
+            _logger.warning('Warning: Thinking was not finished.')
+            return ''
 
         # note: should be the same size as long as the edge cases don't change length
         thinking_buffer = content[len(self._reasoning_start_token):i_thinking_end]
