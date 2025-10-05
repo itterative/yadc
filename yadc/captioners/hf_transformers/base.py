@@ -146,6 +146,12 @@ class BaseTransformersCaptioner(Captioner):
             case _:
                 raise ValueError(f'quantization not supported: {self._quantization}')
 
+        import torch
+        from transformers import AutoProcessor
+
+        if quantization_config is not None:
+            torch.set_float32_matmul_precision('high')
+
         self._processor = AutoProcessor.from_pretrained(model_repo, use_fast=True)
         self._model = self._from_pretrained(
             model_repo,
@@ -157,6 +163,8 @@ class BaseTransformersCaptioner(Captioner):
         self._load_torch_compile_cache()
 
     def _from_pretrained(self, model_repo: str, **kwargs) -> Any:
+        from transformers import AutoModelForImageTextToText
+
         return AutoModelForImageTextToText.from_pretrained(
             model_repo,
             device_map="auto",
@@ -167,6 +175,8 @@ class BaseTransformersCaptioner(Captioner):
     def unload_model(self) -> None:
         if self._model is None:
             return
+
+        import torch
 
         self._model = None
         self._model_repo = None
@@ -231,6 +241,8 @@ class BaseTransformersCaptioner(Captioner):
         if getattr(self, '__torch_compile_artifacts_saved', False):
             return
 
+        import torch
+
         model_cache_meta, model_cache_data, compile_kwargs = self._torch_compile_info()
 
         # if model_cache_meta.exists() and model_cache_meta.read_text() == compile_kwargs:
@@ -260,7 +272,9 @@ class BaseTransformersCaptioner(Captioner):
             'compiled_modules': self._module_compilation,
         })
 
-    def _compile_nn_module(self, module: torch.nn.Module):
+    def _compile_nn_module(self, module: 'torch.nn.Module'):
+        import torch
+
         for name, c_module in module.named_children():
             if c_module.__class__.__name__ in self._module_compilation:
                 _logger.trace('Compiling module: %s', c_module.__class__.__name__)
@@ -271,34 +285,12 @@ class BaseTransformersCaptioner(Captioner):
 
             self._compile_nn_module(c_module)
 
-    @functools.lru_cache(maxsize=1)
-    def _system_prompt_kv_cache(self, conversation):
-        assert self._processor
-        assert self._model
-
-        text_input = str(self._processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=False)) # type: ignore
-
-        cache = StaticCache(
-            config=self._model.config,
-            max_cache_len=self._max_tokens,
-            device=self._model.device,
-            dtype=self._model.dtype,
-        )
-
-        inputs = self._processor(text_input, pad_to_multiple_of=1024, padding_side='left', padding='longest', return_tensors='pt').to(self._model.device) # type: ignore
-        prompt_cache = self._model(**inputs, use_cache=True, past_key_values=cache).past_key_values
-
-        del cache
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return prompt_cache
-
     def _kv_cache(self, image: DatasetImage, inputs: BatchFeature):
         assert self._processor is not None
         assert self._model is not None
+
+        import torch
+        from transformers import StaticCache
 
         tokens = inputs['input_ids']
         assert isinstance(tokens, torch.Tensor)
@@ -430,6 +422,9 @@ class BaseTransformersCaptioner(Captioner):
             assert self._model_repo is not None, "No model loaded"
         except AssertionError as e:
             raise ValueError(str(e))
+
+        from transformers import BatchFeature
+        from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 
         conversation = self.conversation(image, stream=False, **kwargs)
         assistant_prefill = self._extract_assistant_prefill(conversation)

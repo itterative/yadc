@@ -43,7 +43,7 @@ class Qwen3VLCaptioner(BaseTransformersCaptioner):
         config = AutoConfig.from_pretrained(model_repo)
 
         with init_empty_weights():
-            model = Qwen3VLMoeForConditionalGeneration._from_config(config)
+            model = Qwen3VLMoeForConditionalGeneration(config)
 
         device_map = infer_auto_device_map(
             model,
@@ -68,7 +68,7 @@ class Qwen3VLCaptioner(BaseTransformersCaptioner):
         model = load_checkpoint_and_dispatch(
             model,
             checkpoint=checkpoint_path,
-            offload_folder='.cache',
+            # offload_folder='.cache',
             device_map=device_map,
             no_split_module_classes=['Qwen3VLMoeVisionModel', 'Qwen3VLMoeTextDecoderLayer'],
         )
