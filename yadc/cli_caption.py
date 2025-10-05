@@ -400,8 +400,9 @@ def _caption(
                     pass
 
                 case 'edit':
+                    dataset_image_tmp_edited = None
                     while True:
-                        dataset_image_tmp_edited = click.edit(dataset_image_current.dump_toml(), extension='.toml', require_save=True)
+                        dataset_image_tmp_edited = click.edit(dataset_image_tmp_edited or dataset_image_current.dump_toml(), extension='.toml', require_save=True)
 
                         if dataset_image_tmp_edited is None:
                             _logger.info('Dataset image toml editing was cancelled.')
