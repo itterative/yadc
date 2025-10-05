@@ -20,6 +20,6 @@ class ClickHandler(logging.Handler):
         msg = self.format(record)
 
         if kwargs := self.styles.get(level, None):
-            click.secho(msg, **kwargs)
+            click.secho(msg, err=True, **kwargs)
         else:
-            click.echo(msg)
+            click.echo(msg, err=True)
