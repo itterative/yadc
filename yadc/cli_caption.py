@@ -139,9 +139,9 @@ def caption(dataset: TextIO, **kwargs):
         #     reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
         # )
 
-        from yadc.captioners.hf_transformers import Gemma3nCaptioner
+        from yadc.captioners.hf_transformers import Qwen3VLCaptioner
 
-        model = Gemma3nCaptioner(
+        model = Qwen3VLCaptioner(
             api_url=dataset_toml.api.url,
             api_token=dataset_toml.api.token,
             prompt_template=dataset_toml.prompt.template,
@@ -152,10 +152,12 @@ def caption(dataset: TextIO, **kwargs):
             reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
             reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
-            # quantization="quanto:int8",
+            # quantization="quanto:int4",
+            quantization="none",
         )
 
-        model.load_model(dataset_toml.api.model_name)
+        # model.load_model(dataset_toml.api.model_name)
+        model.load_model("Qwen/Qwen3-VL-30B-A3B-Thinking-FP8")
     except ValueError as e:
         _logger.error('Error: failed to load model: %s', e)
         sys.exit(cmd_status.STATUS_OK)
