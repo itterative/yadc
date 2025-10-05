@@ -137,7 +137,7 @@ class Captioner(abc.ABC):
             raise ValueError(f'bad jinja template: {template}')
 
 
-    def _prompts_from_image(self, dataset_image: DatasetImage, **kwargs):
+    def prompts_from_image(self, dataset_image: DatasetImage, **kwargs):
         """
         Generates system and user prompts for a given image using Jinja2 templating.
 
@@ -181,15 +181,6 @@ class Captioner(abc.ABC):
 
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
-
-        if kwargs.get('debug_prompt', True):
-            _logger.debug('')
-            _logger.debug('SYSTEM PROMPT ---------')
-            _logger.debug(system_prompt)
-            _logger.debug('USER PROMPT -----------')
-            _logger.debug(user_prompt)
-            _logger.debug('------------------------')
-            _logger.debug('')
 
         return system_prompt, user_prompt
 

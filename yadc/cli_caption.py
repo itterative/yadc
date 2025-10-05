@@ -375,7 +375,7 @@ def _caption(
                     c='continue',
                     r='retry',
                     e='edit',
-                    p='print',
+                    p='prompts',
                 ), default_action='c')
             except (KeyboardInterrupt, click.Abort):
                 click.echo('')
@@ -436,8 +436,14 @@ def _caption(
                     caption_rounds = []
                     continue
 
-                case 'print':
-                    print_dataset_image_meta(dataset_image_current)
+                case 'prompts':
+                    system_prompt, user_prompt = model.prompts_from_image(dataset_image_current)
+
+                    _logger.info('SYSTEM PROMPT')
+                    _logger.info(system_prompt)
+                    _logger.info('')
+                    _logger.info('USER PROMPT')
+                    _logger.info(user_prompt)
                     continue
 
                 case _:
@@ -503,7 +509,6 @@ def _caption(
                                         dataset_image_current,
                                         max_new_tokens=settings.max_tokens,
                                         use_cache=True,
-                                        debug_prompt=caption_rounds_debug,
                                         conversation_overrides=conversation_overrides,
                                         prefill=settings.advanced.assistant_prefill,
                                     ).strip()

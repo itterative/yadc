@@ -263,7 +263,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
 
     def conversation(self, image: DatasetImage, **kwargs):
-        system_prompt, user_prompt = self._prompts_from_image(image, **kwargs)
+        system_prompt, user_prompt = self.prompts_from_image(image, **kwargs)
 
         mime_type, encoded_image = self._encode_image(
             image,
