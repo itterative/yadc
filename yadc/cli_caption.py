@@ -52,9 +52,9 @@ def caption(dataset: TextIO, **kwargs):
             env=cli_option('env', None),
             user_config=cli_option('user_config', None),
             user_template=cli_option('user_template', default=None),
-            api_url = str(cli_option('api_url', default=None)),
-            api_token = str(cli_option('api_token', default=None)),
-            api_model_name = str(cli_option('api_model_name', default=None)),
+            api_url = cli_option('api_url', default=None),
+            api_token = cli_option('api_token', default=None),
+            api_model_name = cli_option('api_model_name', default=None),
         )
     except (AssertionError, ValueError) as e:
         _logger.error('Error loading dataset: %s', e)
