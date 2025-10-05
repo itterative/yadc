@@ -124,4 +124,4 @@ class ThinkingMixin:
         return content.strip()
 
 def _indent_thinking(buffer: str):
-    return '\n'.join(map(lambda s: '> ' + s, buffer.splitlines()))
+    return '\n'.join(map(lambda s: '> ' + s, buffer.strip().splitlines()))
