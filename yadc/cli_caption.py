@@ -218,6 +218,32 @@ def _load_dataset(
     except pydantic.ValidationError as e:
         raise ValueError(f'invalid configuration: {e}')
 
+    def _read_dataset_image(file_path: str):
+        try:
+            dataset_image = DatasetImage(path=file_path)
+            dataset_image.read_image()
+        except:
+            return None
+
+        if not dataset_image.toml_path.exists():
+            _logger.warning('Warning: path %s has no toml', file_path)
+            dataset_image_toml = {}
+        else:
+            try:
+                with open(dataset_image.toml_path, 'r') as f:
+                    dataset_image_toml = toml.load(f)
+            except:
+                _logger.warning('Warning: path %s contains an invalid toml', file_path)
+                return None
+
+        dataset_image_toml['path'] = str(dataset_image.absolute_path)
+        dataset_image_toml['caption_suffix'] = dataset_toml.caption_suffix
+
+        dataset_image = DatasetImage(**dataset_image_toml)
+        dataset_image.caption = dataset_image.read_caption()
+
+        return dataset_image
+
     for index, path in enumerate(dataset_toml.dataset.paths):
         assert isinstance(path, str), f'path at index {index} is not a string'
 
@@ -228,46 +254,35 @@ def _load_dataset(
             continue
 
         for file_path in path.iterdir():
-            try:
-                dataset_image = DatasetImage(path=str(file_path))
-                dataset_image.read_image()
-            except:
+            dataset_image = _read_dataset_image(str(file_path))
+
+            if dataset_image is None:
                 continue
-
-            if not dataset_image.toml_path.exists():
-                _logger.warning('Warning: path %s has no toml', file_path)
-                dataset_image_toml = {}
-            else:
-                try:
-                    with open(dataset_image.toml_path, 'r') as f:
-                        dataset_image_toml = toml.load(f)
-                except:
-                    _logger.warning('Warning: path %s contains an invalid toml', file_path)
-                    continue
-
-            dataset_image_toml['path'] = str(dataset_image.absolute_path)
-            dataset_image_toml['caption_suffix'] = dataset_toml.caption_suffix
-
-            dataset_image = DatasetImage(**dataset_image_toml)
-            dataset_image.caption = dataset_image.read_caption()
 
             dataset.append(dataset_image)
             i_dataset[dataset_image.absolute_path] = dataset_image
-
 
     for index, dataset_image in enumerate(dataset_toml.dataset.images):
         existing_dataset_image = i_dataset.get(dataset_image.absolute_path, None)
 
         if existing_dataset_image is None:
-            dataset.append(dataset_image)
-            i_dataset[dataset_image.absolute_path] = dataset_image
+            existing_dataset_image = _read_dataset_image(str(dataset_image.absolute_path))
 
+        if existing_dataset_image is not None:
+            i_dataset[existing_dataset_image.absolute_path] = existing_dataset_image
+            dataset.append(existing_dataset_image)
+        else:
+            i_dataset[dataset_image.absolute_path] = dataset_image
+            dataset.append(dataset_image)
             continue
 
-        # overwrites
-        assert existing_dataset_image.__pydantic_extra__
-        assert dataset_image.__pydantic_extra__
+        if existing_dataset_image.__pydantic_extra__ is None:
+            existing_dataset_image.__pydantic_extra__ = {}
 
+        if dataset_image.__pydantic_extra__ is None:
+            dataset_image.__pydantic_extra__ = {}
+
+        # overwrites
         for k, v in dataset_image.__pydantic_extra__.items():
             if not v:
                 continue
