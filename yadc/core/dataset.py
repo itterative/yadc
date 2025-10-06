@@ -5,6 +5,8 @@ from functools import cached_property
 from pydantic import BaseModel, ConfigDict
 from PIL import Image
 
+HISTORY_MARKER = '----------'
+
 class DatasetImage(BaseModel):
     """
     Represents an image in a dataset, managing its file path, caption, metadata, and associated history.
@@ -95,6 +97,28 @@ class DatasetImage(BaseModel):
         with open(self.history_path, 'a') as f:
             f.write(self._serialize_toml_history())
 
+    def read_history(self) -> list['DatasetImage']:
+        if not self.history_path.exists():
+            return []
+
+        history: list['DatasetImage'] = []
+        history_content = self.history_path.read_text().split(HISTORY_MARKER)
+
+        for history_entry in history_content:
+            history_entry = history_entry.strip()
+
+            if not history_entry:
+                continue
+
+            try:
+                history_data = toml.loads(history_entry)
+                history_data.setdefault('path', str(self.absolute_path))
+                history.append(DatasetImage(**history_data))
+            except Exception:
+                continue
+
+        return history
+
     def update_caption(self, caption: str):
         """
         Updates the caption by:
@@ -122,7 +146,7 @@ class DatasetImage(BaseModel):
 
     def _serialize_toml_history(self):
         buffer = self.dump_toml(with_caption=True).strip()
-        buffer += '\n----------\n'
+        buffer += f'\n{HISTORY_MARKER}\n'
         return buffer
 
     def dump_toml(self, with_caption: bool = False):
