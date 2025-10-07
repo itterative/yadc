@@ -55,6 +55,7 @@ class APICaptioner(BaseAPICaptioner):
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
                 - `session` (requests.Session, options): Override the session for the API calls
+                - `cache` (yadc.captioners.utils.cache.HTTPResponseCache, options): Sets the session cache
 
         Raises:
             ValueError: If `api_url` is not provided.
@@ -80,6 +81,10 @@ class APICaptioner(BaseAPICaptioner):
             case APITypes.GEMINI:
                 self.inner_captioner = GeminiCaptioner(**kwargs)
 
+        # rest are uncached
+        kwargs.pop('cache', None)
+
+        match self.api_type:
             case APITypes.LLAMACPP:
                 self.inner_captioner = LlamacppCaptioner(**kwargs)
 

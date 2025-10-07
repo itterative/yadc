@@ -194,7 +194,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
     def _load_model(self, model_repo: str, **kwargs) -> None:
         model_repo = model_repo.removeprefix('models/')
 
-        with self._session.get(f'models/{model_repo}') as model_resp:
+        with self._session.get(f'models/{model_repo}', cache_ttl=1800) as model_resp:
             if model_resp.ok:
                 model_resp_json = model_resp.json()
                 model = GeminiModel(**model_resp_json)
@@ -220,7 +220,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             else:
                 models_url_path = f'models'
 
-            with self._session.get(models_url_path) as models_resp:
+            with self._session.get(models_url_path, cache_ttl=1800) as models_resp:
                 models_resp.raise_for_status()
 
                 models_resp_json = models_resp.json()

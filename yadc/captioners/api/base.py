@@ -6,6 +6,7 @@ from yadc.core import logging
 from yadc.core import Captioner
 
 from .session import Session
+from .utils.cache import HTTPResponseCache
 
 _logger = logging.get_logger(__name__)
 
@@ -21,6 +22,7 @@ class BaseAPICaptioner(Captioner, abc.ABC):
             **kwargs: Optional keyword arguments:
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
                 - `session` (requests.Session, options): Override the session for the API calls
+                - `cache` (yadc.captioners.utils.cache.HTTPResponseCache, options): Sets the session cache
 
         Raises:
             ValueError: If `api_url` is not provided.
@@ -46,7 +48,10 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         session: requests.Session|None = kwargs.get('session', None)
         assert session is None or isinstance(session, requests.Session)
 
-        self._session = Session(self._api_url, headers=session_headers, session=session)
+        cache: HTTPResponseCache|None = kwargs.get('cache', None)
+        assert cache is None or isinstance(cache, HTTPResponseCache)
+
+        self._session = Session(self._api_url, headers=session_headers, session=session, cache=cache)
 
     @abc.abstractmethod
     def log_usage(self):

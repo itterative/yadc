@@ -155,7 +155,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         if self._current_model == model_repo:
             return
 
-        with self._session.get('models') as model_resp:
+        with self._session.get('models', cache_ttl=1800) as model_resp:
             model_resp.raise_for_status()
 
             model_resp_json = model_resp.json()

@@ -16,7 +16,9 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.captioner import CaptionerRound
 
 from yadc.captioners.api import APICaptioner, APITypes
+from yadc.captioners.api.utils.cache import HTTPResponseCache
 
+from yadc.cmd import app as yadc_app
 from yadc.cmd import status as cmd_status, envs as cmd_envs, configs as cmd_configs, templates as cmd_templates
 
 _logger = logging.get_logger(__name__)
@@ -35,6 +37,7 @@ _logger = logging.get_logger(__name__)
 @click.option('--stream/--no-stream', is_flag=True, default=None, help='Enable the streaming of captions')
 @click.option('--interactive/--non-interactive', 'interactive', is_flag=True, default=None, help='Enable interactive mode')
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
+@click.option('--cache/--no-cache', 'cache', is_flag=True, default=True, help='Cache API requests')
 @click.option('--rounds', type=click.IntRange(min=1, max_open=True), default=None, required=False, help='How many captioning rounds to do')
 @cli_common.log_level
 def caption(dataset: TextIO, **kwargs):
@@ -66,6 +69,7 @@ def caption(dataset: TextIO, **kwargs):
     interactive = bool(cli_option('interactive', default=dataset_toml.interactive))
     rounds = int(cli_option('rounds', default=dataset_toml.rounds))
     overwrite_captions = bool(cli_option('overwrite', default=dataset_toml.overwrite_captions))
+    cache_flag = bool(cli_option('cache', True))
 
 
     if not dataset_toml.prompt.template:
@@ -122,6 +126,10 @@ def caption(dataset: TextIO, **kwargs):
         _logger.info('Nothing to do.')
         sys.exit(cmd_status.STATUS_OK)
 
+    cache: HTTPResponseCache|None = None
+    if cache_flag:
+        cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / 'api_requests')
+
     _logger.info('Loading model...')
 
     try:
@@ -136,6 +144,7 @@ def caption(dataset: TextIO, **kwargs):
             reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
             reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
+            cache=cache,
         )
 
         model.load_model(dataset_toml.api.model_name)

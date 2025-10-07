@@ -11,6 +11,8 @@ from urllib.parse import urlparse, ParseResult
 
 from yadc.core import logging
 
+from .utils.cache import HTTPResponseCache
+
 _logger = logging.get_logger(__name__)
 
 
@@ -23,6 +25,7 @@ class Session:
         backoff_factor: float = 1.0,
         status_forcelist: tuple[int, ...] = (429, 502, 503, 504),
         session: requests.Session|None = None,
+        cache: HTTPResponseCache|None = None,
     ):
         self.base_url = urlparse(base_url.rstrip('/'))
         self.headers = headers or {}
@@ -33,6 +36,7 @@ class Session:
         self._setup_retries(max_retries, backoff_factor, status_forcelist)
 
         self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix='Thread-api-')
+        self._cache = cache
 
     @functools.cached_property
     def user_agent(self):
@@ -111,8 +115,23 @@ class Session:
         with response:
             yield response
 
-    def get(self, path: str, **kwargs):
-        return self.request('GET', path, **kwargs)
+    @contextmanager
+    def get(self, path: str, cache_ttl: float|None = None, **kwargs):
+        if self._cache is None or cache_ttl is None:
+            with self.request('GET', path, **kwargs) as response:
+                yield response
+                return
+
+        cached_response = self._cache.get(path)
+        if cached_response is not None:
+            yield cached_response
+            return
+
+        with self.request('GET', path, **kwargs) as response:
+            if response.ok:
+                self._cache.set(path, response, ttl=cache_ttl)
+            
+            yield response
 
     def post(self, path: str, **kwargs):
         return self.request('POST', path, **kwargs)
