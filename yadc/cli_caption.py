@@ -2,7 +2,6 @@ from typing import Optional, TextIO
 
 import sys
 import toml
-import pathlib
 import pydantic
 
 import click
@@ -11,8 +10,9 @@ from .core import utils
 from . import cli_common
 
 from yadc.core import logging
-from yadc.core.config import Config, ConfigSettings
+from yadc.core.config import ConfigSettings, parse_config
 from yadc.core.dataset import DatasetImage
+from yadc.core.dataset_resolver import resolve_dataset, reapply_dataset_extras
 from yadc.core.captioner import CaptionerRound
 
 from yadc.captioners.api import APICaptioner, APITypes
@@ -59,35 +59,6 @@ def _resolve_template(prompt_name: str, prompt_template: str) -> str:
         sys.exit(cmd_status.STATUS_ERROR)
 
 
-# --- Dataset image loading ---
-
-def _read_dataset_image(file_path: str, caption_suffix: str) -> Optional[DatasetImage]:
-    """Read and parse a single dataset image from disk."""
-    try:
-        dataset_image = DatasetImage(path=file_path)
-        dataset_image.read_image()
-    except Exception:
-        return None
-
-    if not dataset_image.toml_path.exists():
-        _logger.warning('Warning: path %s has no toml', file_path)
-        dataset_image_toml = {}
-    else:
-        try:
-            with open(dataset_image.toml_path, 'r') as f:
-                dataset_image_toml = toml.load(f)
-        except Exception:
-            _logger.warning('Warning: path %s contains an invalid toml', file_path)
-            return None
-
-    dataset_image_toml['path'] = str(dataset_image.absolute_path)
-    dataset_image_toml['caption_suffix'] = caption_suffix
-
-    image = DatasetImage(**dataset_image_toml)
-    image.caption = image.read_caption()
-    return image
-
-
 # --- Dataset loading ---
 
 def _load_dataset(
@@ -99,9 +70,6 @@ def _load_dataset(
     api_token: Optional[str],
     api_model_name: Optional[str],
 ):
-    dataset: list[DatasetImage] = []
-    i_dataset: dict[pathlib.Path, DatasetImage] = {}
-
     dataset_toml_raw = toml.load(dataset_stream)
 
     try:
@@ -139,59 +107,16 @@ def _load_dataset(
         dataset_toml_raw['prompt']['name'] = user_template
         dataset_toml_raw['prompt'].pop('template', None)
 
+    # parse config with v1/v2 duck-typing
     try:
-        dataset_toml = Config(**dataset_toml_raw)
+        dataset_toml = parse_config(dataset_toml_raw)
     except pydantic.ValidationError as e:
         raise ValueError(f'invalid configuration: {e}')
 
-    # scan path directories for images
-    for index, path in enumerate(dataset_toml.dataset.paths):
-        assert isinstance(path, str), f'path at index {index} is not a string'
-
-        path = pathlib.Path(path)
-
-        if not path.is_dir():
-            _logger.warning('Warning: path %s is not a directory', path)
-            continue
-
-        for file_path in path.iterdir():
-            dataset_image = _read_dataset_image(str(file_path), dataset_toml.caption_suffix)
-
-            if dataset_image is None:
-                continue
-
-            dataset.append(dataset_image)
-            i_dataset[dataset_image.absolute_path] = dataset_image
-
-    # merge inline images with scanned images
-    for dataset_image in dataset_toml.dataset.images:
-        existing = i_dataset.get(dataset_image.absolute_path)
-
-        if existing is None:
-            existing = _read_dataset_image(str(dataset_image.absolute_path), dataset_toml.caption_suffix)
-
-        if existing is not None:
-            i_dataset[existing.absolute_path] = existing
-            dataset.append(existing)
-        else:
-            i_dataset[dataset_image.absolute_path] = dataset_image
-            dataset.append(dataset_image)
-            continue
-
-        # merge extras from inline image onto existing
-        if existing.__pydantic_extra__ is None:
-            existing.__pydantic_extra__ = {}
-        if dataset_image.__pydantic_extra__ is None:
-            dataset_image.__pydantic_extra__ = {}
-
-        for k, v in dataset_image.__pydantic_extra__.items():
-            if v:
-                existing.__pydantic_extra__[k] = v
-
-        existing.caption = dataset_image.caption or existing.caption
-
-    dataset_toml.dataset.paths = []
-    dataset_toml.dataset.images = dataset
+    # resolve dataset entries into images
+    dataset_toml._resolved_images = resolve_dataset(  # type: ignore[attr-defined]
+        dataset_toml.dataset, dataset_toml.caption_suffix,
+    )
 
     return dataset_toml
 
@@ -457,6 +382,7 @@ def _caption(
                                 history_suffix=dataset_image_current.history_suffix,
                                 **dataset_image_toml,
                             )
+                            reapply_dataset_extras(dataset_image_current)
                         except Exception:
                             _logger.warning('Warning: toml is not valid')
                             if not _prompt_for_yes('Retry?', True, interactive):
@@ -575,17 +501,19 @@ def caption(dataset: TextIO, **kwargs):
     if dataset_toml.prompt.name:
         _logger.info('Using prompt template: %s', dataset_toml.prompt.name)
 
+    resolved_images: list[DatasetImage] = dataset_toml._resolved_images  # type: ignore[attr-defined]
+
     # filter out already-captioned images
     dataset_to_do: list[DatasetImage] = []
     skipped = 0
 
-    for dataset_image in dataset_toml.dataset.images:
+    for dataset_image in resolved_images:
         if not overwrite_captions and dataset_image.caption_path.exists():
             skipped += 1
         else:
             dataset_to_do.append(dataset_image)
 
-    _logger.info('Found %d images.', len(dataset_toml.dataset.images))
+    _logger.info('Found %d images.', len(resolved_images))
 
     if skipped:
         _logger.info('Skipped %d images.', skipped)

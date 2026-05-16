@@ -32,24 +32,23 @@ The following is an accurate description of the image. It might miss details abo
 {% endset %}
 """
 
-[dataset]
-paths = []
+[[dataset]]
 
-[[dataset.image]]
+[[dataset.images]]
 path = "image_hoshimi_miyabi"
 characters = "Hoshimi Miyabi and some unknown man"
 tags = "1boy, 1girl, :p, animal ear fluff, animal ears, aqua jacket, black hair, blush, bread, food, fox ears, id card, idiot sandwich (meme), jacket, meme, necktie, red eyes, shirt, signature, simple background, single ear down, solo focus, tongue, tongue out, white background, white shirt"
 content = "Miyabi's head is caught between two slices of bread."
 
-[[dataset.image]]
+[[dataset.images]]
 path = "image_raiden_shogun"
 artist = "natsukko"
 characters = "Raiden Shogun"
 tags = "1girl, alternate costume, belt, blush, braid, breasts, buckle, cake, cake slice, closed mouth, earrings, eating, flower, food, food in mouth, fork, hair flower, hair ornament, holding, holding fork, holding plate, jewelry, large breasts, long hair, long sleeves, looking at viewer, low-tied long hair, mole, mole under eye, nail polish, plate, purple eyes, purple hair, purple nails, purple shirt, ribbed shirt, shirt, shirt tucked in, sidelocks, simple background, single braid, skirt, solo, sparkle background, sparkling eyes, swept bangs, taut clothes, taut shirt, tented shirt, turtleneck, upper body, watch, white background, wide-eyed, wristwatch"
 
-[[dataset.image]]
+[[dataset.images]]
 path = "image_jane_doe"
 characters = "Jane Doe"
 
-[[dataset.image]]
+[[dataset.images]]
 path = "no_context"

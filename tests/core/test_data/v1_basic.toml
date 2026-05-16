@@ -1,0 +1,19 @@
+# V1 config (legacy format)
+[api]
+url = "http://localhost:5001/v1"
+token = ""
+model_name = "test-model"
+
+[prompt]
+template = """
+{% set user_prompt %}
+Test prompt
+{% endset %}
+"""
+
+[dataset]
+paths = ["/tmp/dataset_1", "/tmp/dataset_2"]
+
+[[dataset.images]]
+path = "inline_image.png"
+foo = "bar"

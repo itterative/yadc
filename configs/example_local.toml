@@ -6,8 +6,11 @@ url = "http://localhost:5001/v1"
 token = "your_auth_token_here"
 model_name = "gemma-5-27b"
 
-[dataset]
-paths = [ "path_1", "path_2" ]
+[[dataset]]
+path = "path_1"
+
+[[dataset]]
+path = "path_2"
 
 
 [settings.advanced]

@@ -21,8 +21,7 @@ Describe the image. Use the following additional context when describing the ima
 {% endset %}
 """
 
-[dataset]
-paths = []
+[[dataset]]
 
 [[dataset.images]]
 path = "test_pedro.jpg"

@@ -1,0 +1,3 @@
+# Invalid config — no api, no prompt, garbage dataset
+[dataset]
+not_a_real_field = true
