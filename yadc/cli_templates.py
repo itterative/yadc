@@ -34,38 +34,6 @@ def list():
         click.echo(template)
 
 @templates.command(
-    'add',
-    short_help='Add a new user template',
-    help='Add a new user template',
-)
-@click.argument('name', type=str)
-@cli_common.log_level
-def add(name: str):
-    try:
-        cmd_templates.load_user_template(name)
-
-        _logger.error('Error: template with name "%s" already exists. Use "templates edit" to edit it.', name)
-        sys.exit(cmd_status.STATUS_USER_ERROR)
-    except FileNotFoundError:
-        pass
-
-    default_template = '# Edit the template below\n\n' + cmd_templates.default_template()
-
-    user_template = click.edit(default_template, extension='.jinja', require_save=True)
-
-    if user_template is None:
-        _logger.info('Cancelled.')
-        return
-
-    try:
-        cmd_templates.save_user_template(name, user_template)
-    except PermissionError:
-        _logger.error('Error: failed to save user template: permissions error')
-        sys.exit(cmd_status.STATUS_ERROR)
-
-    _logger.info('Added new user template: %s', name)
-
-@templates.command(
     'delete',
     short_help='Delete a user template',
     help='Delete an existing user template',
@@ -80,17 +48,17 @@ def delete(name: str):
 @templates.command(
     'edit',
     short_help='Edit a user template',
-    help='Edit an existing user template',
+    help='Edit an existing user template, or create a new one if it does not exist',
 )
 @click.argument('name', type=str)
 @cli_common.log_level
 def edit(name: str):
+    is_new = False
     try:
         user_template = cmd_templates.load_user_template(name)
     except FileNotFoundError:
-        _logger.error('Error: template with name "%s" does not exit. Use "templates add" to add it.', name)
-        sys.exit(cmd_status.STATUS_USER_ERROR)
-
+        is_new = True
+        user_template = '# Edit the template below\n\n' + cmd_templates.default_template()
 
     user_template = click.edit(user_template, extension='.jinja', require_save=True)
 
@@ -104,4 +72,7 @@ def edit(name: str):
         _logger.error('Error: failed to save user template: permissions error')
         sys.exit(cmd_status.STATUS_ERROR)
 
-    _logger.info('Updated user template: %s', name)
+    if is_new:
+        _logger.info('Created new user template: %s', name)
+    else:
+        _logger.info('Updated user template: %s', name)
