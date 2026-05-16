@@ -1,6 +1,7 @@
 
 import copy
 import json
+from typing import Any
 import requests
 import pydantic
 
@@ -8,6 +9,7 @@ from enum import Enum
 
 from yadc.core import logging
 from yadc.core import DatasetImage
+from yadc.core.prediction import PredictionContext
 
 from .base import BaseAPICaptioner
 from .utils import ErrorNormalizationMixin, ThinkingMixin
@@ -220,6 +222,9 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
             assistant_prefill = conversation_overrides.pop('assistant_prefill', '')
             assert isinstance(assistant_prefill, str), f'bad value for conversation_overrides/advanced settings assistant_prefill; expected a str, got: {type(assistant_prefill)}'
+
+            extra_messages = kwargs.pop('extra_messages', None)
+            assert extra_messages is None or isinstance(extra_messages, list), f'bad value for extra_messages; expected a list, got: {type(extra_messages)}'
         except AssertionError as e:
             raise ValueError(e)
 
@@ -267,6 +272,32 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 "is_prefill": True,
             })
 
+        if extra_messages:
+            from yadc.core.captioner import ReplyRound, ROLE_USER, ROLE_ASSISTANT
+
+            for msg in extra_messages:
+                assert isinstance(msg, ReplyRound), f'extra_messages must be ReplyRound instances, got {type(msg)}'
+                assert msg.role in (ROLE_USER, ROLE_ASSISTANT), f'extra_messages role must be ROLE_USER or ROLE_ASSISTANT, got {msg.role!r}'
+
+                role = msg.role
+                if role == ROLE_ASSISTANT:
+                    role = assistant_role
+                elif role == ROLE_USER:
+                    role = user_role
+
+                message: dict[str, Any] = {
+                    "role": role,
+                    "content": msg.content,
+                }
+
+                if msg.reasoning:
+                    message["reasoning_content"] = msg.reasoning
+
+                if msg.reasoning_encrypted:
+                    message["reasoning_details"] = list(msg.reasoning_encrypted)
+
+                conversation['messages'].append(message)
+
         if stream:
             conversation['stream_options'] = {
                 'include_usage': True,
@@ -282,6 +313,41 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 conversation.pop(key)
 
         return conversation
+
+    @staticmethod
+    def _is_reasoning_redacted(text: str) -> bool:
+        return False
+
+    def _populate_reasoning_details(self, prediction_context: PredictionContext | None, details: list):
+        """Parse reasoning_details from the API response and populate the prediction context.
+
+        Expects either:
+        - One or more `reasoning.text` details (plain reasoning tokens), or
+        - `reasoning.summary` + `reasoning.encrypted` details (summary + opaque data)
+        Never both formats mixed.
+        """
+        if prediction_context is None:
+            return
+
+        from .types import _OpenAIReasoningDetailText, _OpenAIReasoningDetailSummary, _OpenAIReasoningDetailEncrypted
+
+        has_text = any(isinstance(d, _OpenAIReasoningDetailText) for d in details)
+        has_summary = any(isinstance(d, _OpenAIReasoningDetailSummary) for d in details)
+        has_encrypted = any(isinstance(d, _OpenAIReasoningDetailEncrypted) for d in details)
+
+        if has_text and (has_summary or has_encrypted):
+            raise ValueError('received mixed reasoning detail types: reasoning.text cannot appear with reasoning.summary or reasoning.encrypted')
+
+        for detail in details:
+            if isinstance(detail, _OpenAIReasoningDetailText):
+                if detail.text and not self._is_reasoning_redacted(detail.text):
+                    prediction_context.reasoning = (prediction_context.reasoning or '') + detail.text
+            elif isinstance(detail, _OpenAIReasoningDetailSummary):
+                prediction_context.reasoning_summary = (prediction_context.reasoning_summary or '') + detail.summary
+            elif isinstance(detail, _OpenAIReasoningDetailEncrypted):
+                if prediction_context.reasoning_encrypted is None:
+                    prediction_context.reasoning_encrypted = []
+                prediction_context.reasoning_encrypted.append(detail.model_dump())
 
     def _extract_assistant_prefill(self, conversation: dict):
         assistant_prefill = ''
@@ -301,7 +367,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         return assistant_prefill
 
 
-    def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -375,11 +441,16 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                             raise ValueError(self._normalize_error(line_response))
 
                         if not is_prediction and (thought := choice.delta.reasoning or choice.delta.reasoning_content):
+                            if prediction_context is not None and not self._is_reasoning_redacted(thought):
+                                prediction_context.reasoning = (prediction_context.reasoning or '') + thought
                             if not is_thinking:
                                 yield self._reasoning_start_token
                                 is_thinking = True
 
                             yield thought
+
+                        if choice.delta.reasoning_details:
+                            self._populate_reasoning_details(prediction_context, choice.delta.reasoning_details)
 
                         content = choice.delta.content or choice.delta.refusal
 
@@ -411,7 +482,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             raise ValueError(self._normalize_error(e))
 
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -461,11 +532,16 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 thought_content = choice.message.reasoning or choice.message.reasoning_content
                 if thought_content:
+                    if prediction_context is not None and not self._is_reasoning_redacted(thought_content):
+                        prediction_context.reasoning = thought_content
                     if not is_thinking:
                         thought_buffer += self._reasoning_start_token
                         is_thinking = True
 
                     thought_buffer += thought_content
+
+                if choice.message.reasoning_details:
+                    self._populate_reasoning_details(prediction_context, choice.message.reasoning_details)
 
                 if is_thinking:
                     thought_buffer += self._reasoning_end_token
@@ -489,10 +565,12 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
 
     def predict(self, image: DatasetImage, **kwargs):
+        self._before_predict(kwargs)
         try:
             return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
     def predict_stream(self, image: DatasetImage, **kwargs):
+        self._before_predict(kwargs)
         yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

@@ -28,6 +28,31 @@ class CaptionerRound(pydantic.BaseModel):
     iteration: int
     caption: str
 
+
+ROLE_USER = 'user'
+ROLE_ASSISTANT = 'assistant'
+
+
+class ReplyRound(pydantic.BaseModel):
+    """
+    Represents a single turn in a reply-based conversation for caption refinement.
+
+    Each round contains either an assistant response (with optional reasoning)
+    followed by a user reply, or just an assistant response as the latest turn.
+
+    Attributes:
+        role (str): The role of the message author (ROLE_USER or ROLE_ASSISTANT).
+        content (str): The text content of the message.
+        reasoning (str | None): Optional reasoning/thinking content from the assistant.
+        reasoning_encrypted (list[dict] | None): Optional encrypted reasoning data to pass back.
+    """
+
+    role: str
+    content: str
+    reasoning: str | None = None
+    reasoning_encrypted: list[dict] | None = None
+
+
 class Captioner(abc.ABC):
     """
     Abstract base class for image captioning models.

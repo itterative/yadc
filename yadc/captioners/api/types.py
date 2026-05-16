@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import pydantic
 
@@ -36,12 +36,30 @@ class _OpenAIChatCompletionChoice(pydantic.BaseModel):
     message: '_OpenAIChatCompletionChoiceMessage'
     finish_reason: Optional[str] = None
 
+class _OpenAIReasoningDetailText(pydantic.BaseModel):
+    type: Literal['reasoning.text']
+    text: str = ''
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra='allow')
+
+class _OpenAIReasoningDetailSummary(pydantic.BaseModel):
+    type: Literal['reasoning.summary']
+    summary: str = ''
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra='allow')
+
+class _OpenAIReasoningDetailEncrypted(pydantic.BaseModel):
+    type: Literal['reasoning.encrypted']
+    data: str = ''
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra='allow')
+
+_OpenAIReasoningDetail = _OpenAIReasoningDetailText | _OpenAIReasoningDetailSummary | _OpenAIReasoningDetailEncrypted
+
 class _OpenAIChatCompletionChoiceMessage(pydantic.BaseModel):
     role: str = 'assistant'
     refusal: Optional[str] = None
     content: Optional[str] = None
     reasoning: Optional[str] = None
     reasoning_content: Optional[str] = None
+    reasoning_details: Optional[list[_OpenAIReasoningDetail]] = None
 
 class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
     role: str = 'assistant'
@@ -49,6 +67,7 @@ class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
     content: Optional[str] = None
     reasoning: Optional[str] = None
     reasoning_content: Optional[str] = None
+    reasoning_details: Optional[list[_OpenAIReasoningDetail]] = None
 
 class OpenAIErrorResponse(pydantic.BaseModel):
     error: '_OpenAIError'
