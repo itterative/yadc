@@ -153,21 +153,37 @@ temperature = 1.0
 frequency_penalty = 0.0
 
 
-[dataset]
-# a list of paths where the captioner will search for images
-# the captioner will only look at the images within the paths given below, so if you have subfolders
-# that you also want to caption within any of the paths, you also need to add them to the list
-paths = [
-    "path_to_your_dataset_1",
-    "path_to_your_dataset_2",
-]
+# dataset entries (v2 format): each [[dataset]] is a separate dataset with its own path,
+# inline images, and extras that are passed as defaults to the prompt templates.
+# per-image extras (from TOML files or inline images) override the dataset-level extras.
 
+# a dataset loaded from a directory path
+# the captioner will look at images within the path (top-level only)
+# if you have subfolders, add them as separate [[dataset]] entries
+[[dataset]]
+path = "path_to_your_dataset_1"
+
+# dataset-level extras: these template variables are applied as defaults to every image
+[dataset.extras]
+character = "Default Character"
+style = "anime"
+
+# another dataset with different extras
+[[dataset]]
+path = "path_to_your_dataset_2"
+
+[dataset.extras]
+style = "photo"
+
+# a dataset entry with inline images instead of (or in addition to) a path
 # if you wish to override certain toml properties for each image, you can set them below
 # be careful when using this, as these properties will be merged with any existing ones
 # from the toml associated with the image
-# 
+#
 # recommendation: create a toml file for each image instead of setting them here, or
 #                 use interactive mode in order to create toml files during captioning
+[[dataset]]
+
 [[dataset.images]]
 # the path is necessary to know which image the properties are assigned to
 path = "path_to_your_image_1"

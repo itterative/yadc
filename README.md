@@ -33,17 +33,17 @@ Minimal example:
 url = "http://localhost:5001/v1"
 model_name = "gemma-3n-E4B-it-Q8_0"
 
-[dataset]
-paths = [ "path_to_your_images" ]
+[[dataset]]
+path = "path_to_your_images"
 ```
 
 *You can set certain config values, such as API settings, through `yadc config` command. This allows you to share API configuration across different configs.*
 
 ### Dataset
 
-In your config, you can either give certain paths or specificy images directory. When using them both at the same time, this allows you to override the toml settings for each image.
+In your config, you can specify a directory path to scan for images, inline image overrides, and dataset-level template variables (`extras`). Per-image extras override dataset-level extras.
 
-The toml files are optional, however they are recommended since you can improve the prompts sent to the model.
+The `.toml` files alongside your images are optional, however they are recommended since you can improve the prompts sent to the model.
 
 Example:
 
@@ -54,6 +54,12 @@ template = """
 Describe the image. Use the following additional context when describing the image: {{ context }}
 {% endset %}
 """
+
+[[dataset]]
+path = "path_to_your_images"
+
+[dataset.extras]
+context = "a default context"
 
 [[dataset.images]]
 path = "path_to_image"
@@ -66,7 +72,7 @@ You can use [Jinja](https://jinja.palletsprojects.com/en/stable/) templates for 
 
 If you wish to create your own template, you can either put them directly in the config, or use `yadc templates` command. The captioner will try to load from the templates created through the CLI and fallback to the ones in `yadc/templates/jinja` if it cannot find it.
 
-You can use variables as provided in your `.toml` files associated with your images, or as part of the overrides in the databset toml file.
+You can use variables from the `.toml` files alongside your images, inline `[[dataset.images]]` overrides, or dataset-level `[dataset.extras]`.
 
 The template should set the following variable (as seen in example below):
 * **system_prompt**: this sets the system prompt of the model

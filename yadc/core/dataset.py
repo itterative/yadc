@@ -2,7 +2,7 @@ import pathlib
 import toml
 
 from functools import cached_property
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 from PIL import Image
 
 HISTORY_MARKER = '----------'
@@ -36,6 +36,8 @@ class DatasetImage(BaseModel):
     caption_suffix: str = '.txt'
     toml_suffix: str = '.toml'
     history_suffix: str = '.history~'
+
+    _dataset_extras: dict[str, object] = PrivateAttr(default_factory=dict)
 
     model_config = ConfigDict(extra='allow')
 

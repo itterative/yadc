@@ -5,8 +5,11 @@ url = "https://api.openai.com/v1"
 token = "your_openai_token_here"
 model_name = "gpt-5-mini"
 
-[dataset]
-paths = [ "path_1", "path_2" ]
+[[dataset]]
+path = "path_1"
+
+[[dataset]]
+path = "path_2"
 
 
 [settings.advanced]

@@ -1,0 +1,23 @@
+# V2 config with extras and per-image overrides
+[api]
+url = "http://localhost:5001/v1"
+token = ""
+model_name = "test-model"
+
+[prompt]
+template = """
+{% set user_prompt %}
+{{ style }} {{ artist }}
+{% endset %}
+"""
+
+[[dataset]]
+path = "/tmp/art_dataset"
+
+[dataset.extras]
+style = "watercolor"
+artist = "unknown"
+
+[[dataset.images]]
+path = "override_artist.png"
+artist = "picasso"

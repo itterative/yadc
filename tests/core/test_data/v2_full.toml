@@ -1,0 +1,47 @@
+# V2 config with multiple datasets, extras, and inline images
+interactive = true
+rounds = 2
+caption_suffix = ".caption"
+overwrite_captions = true
+
+[api]
+url = "http://localhost:5001/v1"
+token = "tok"
+model_name = "my-model"
+
+[prompt]
+template = """
+{% set user_prompt %}
+Hello {{ name }}
+{% endset %}
+"""
+
+[settings]
+max_tokens = 1024
+
+# Dataset with path and extras
+[[dataset]]
+path = "/tmp/dataset_chars"
+
+[dataset.extras]
+style = "anime"
+universe = "genshin"
+
+# Dataset with path, different extras
+[[dataset]]
+path = "/tmp/dataset_scenery"
+
+[dataset.extras]
+style = "photo"
+
+# Dataset with only inline images
+[[dataset]]
+
+[[dataset.images]]
+path = "image_1.png"
+name = "alice"
+
+[[dataset.images]]
+path = "image_2.png"
+name = "bob"
+style = "sketch"

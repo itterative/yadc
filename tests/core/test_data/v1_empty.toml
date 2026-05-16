@@ -1,0 +1,15 @@
+# V1 config with empty dataset
+[api]
+url = "http://localhost:5001/v1"
+token = ""
+model_name = "test-model"
+
+[prompt]
+template = """
+{% set user_prompt %}
+Test prompt
+{% endset %}
+"""
+
+[dataset]
+paths = []

@@ -12,13 +12,12 @@ Describe the image. Use the following additional context when describing the ima
 {% endset %}
 """
 
-[dataset]
-paths = []
+[[dataset]]
 
-[[dataset.image]]
+[[dataset.images]]
 path = "image_of_nessie"
 context = "This is an image of my labrador Nessie."
 
-[[dataset.image]]
+[[dataset.images]]
 path = "image_of_coco"
 context = "This is an image of my poodle Coco."
