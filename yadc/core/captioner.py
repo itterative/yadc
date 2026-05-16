@@ -150,6 +150,7 @@ class Captioner(abc.ABC):
                 - `system_prompt_override` (str): Override for the system prompt.
                 - `user_prompt_override` (str): Override for the user prompt.
                 - `debug_prompt` (bool): If True, logs prompts to debug output.
+                - `drafts` (dict[str, str]): The drafts of the image.
 
         Returns:
             tuple[str, str]: A tuple containing (system_prompt, user_prompt).
@@ -165,19 +166,27 @@ class Captioner(abc.ABC):
         except Exception:
             raise ValueError("bad argument for caption_rounds")
 
-        system_prompt_override: str = kwargs.pop('system_prompt_override', '')
-        user_prompt_override: str = kwargs.pop('user_prompt_override', '')
+        drafts: dict[str, str] = kwargs.pop('drafts', None)
+
+        system_prompt_override = kwargs.pop('system_prompt_override', '')
+        user_prompt_override = kwargs.pop('user_prompt_override', '')
+
+        assert isinstance(system_prompt_override, str)
+        assert isinstance(user_prompt_override, str)
 
         template_context = dataset_image.model_dump()
 
-        system_prompt: str = system_prompt_override or self._jinja.get_template('__system_prompt__', globals=template_context).render()
+        if drafts:
+            template_context['drafts'] = drafts
+
+        system_prompt = system_prompt_override or self._jinja.get_template('__system_prompt__', globals=template_context).render()
 
         if caption_rounds:
             template_context['caption_rounds'] = caption_rounds
 
-            user_prompt: str = user_prompt_override or self._jinja.get_template('__user_prompt_multiple_rounds__', globals=template_context).render()
+            user_prompt= user_prompt_override or self._jinja.get_template('__user_prompt_multiple_rounds__', globals=template_context).render()
         else:
-            user_prompt: str = user_prompt_override or self._jinja.get_template('__user_prompt__', globals=template_context).render()
+            user_prompt= user_prompt_override or self._jinja.get_template('__user_prompt__', globals=template_context).render()
 
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
