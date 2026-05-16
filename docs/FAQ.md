@@ -58,13 +58,13 @@ A **user config** is a reusable TOML file that stores captioning settings such a
 
 ### How do I create a user config?
 
-Use the `configs add` command:
+Use the `configs edit` command:
 
 ```bash
-yadc configs add high_quality
+yadc configs edit high_quality
 ```
 
-This opens an editor where you can define your config.
+This opens an editor where you can define or modify your config.
 
 ### Can I use multiple configs?
 
@@ -130,10 +130,10 @@ A **user template** is a reusable prompt used during captioning (e.g., "Describe
 Run:
 
 ```bash
-yadc templates add detailed
+yadc templates edit detailed
 ```
 
-This opens an editor to write your prompt text.
+This opens an editor to write or modify your prompt text.
 
 ### How do I use a template?
 

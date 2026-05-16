@@ -69,13 +69,13 @@ User configs let you reuse settings (e.g., model parameters, prompt options) acr
 yadc configs list
 ```
 
-### Add a Config
+### Edit a Config
 
 ```bash
-yadc configs add my_config
+yadc configs edit my_config
 ```
 
-*Opens an editor to define the config in TOML format.*
+*Opens an editor to define or modify the config in TOML format. If the config does not exist, it will be created.*
 
 Example config:
 ```toml
@@ -85,12 +85,6 @@ temperature = 0.8
 [reasoning]
 enable = true
 thinking_effort = "high"
-```
-
-### Edit a Config
-
-```bash
-yadc configs edit my_config
 ```
 
 ### Delete a Config
@@ -165,25 +159,19 @@ Templates define reusable caption prompts.
 yadc templates list
 ```
 
-### Add a Template
+### Edit a Template
 
 ```bash
-yadc templates add detailed_description
+yadc templates edit detailed_description
 ```
 
-*Opens an editor to define the prompt template in Jinja format.*
+*Opens an editor to define or modify the prompt template in Jinja format. If the template does not exist, it will be created.*
 
 Example template content:
 ```jinja
 {% set user_prompt %}
 Describe this image in detail, focusing on objects, colors, and scene context.
 {% endset %}
-```
-
-### Edit a Template
-
-```bash
-yadc templates edit detailed_description
 ```
 
 ### Delete a Template

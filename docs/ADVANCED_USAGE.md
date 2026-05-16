@@ -14,7 +14,7 @@ Example:
 # $ yadc envs set api_url "https://api.openai.com/v1" --env openai
 # $ yadc envs set api_token "$OPENAI_TOKEN" --env openai
 
-# $ yadc configs add openai_gpt5_mini
+# $ yadc configs edit openai_gpt5_mini
 env = "openai"
 
 [api]
@@ -25,7 +25,7 @@ model_name = "gpt-5-mini"
 # $ yadc envs set api_url "https://openrouter.ai/api/v1" --env openrouter
 # $ yadc envs set api_token "$OPENROUTER_TOKEN" --env openrouter
 
-# $ yadc configs add openrouter_o5_mini
+# $ yadc configs edit openrouter_o5_mini
 env = "openrouter"
 
 [api]
