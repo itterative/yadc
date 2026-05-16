@@ -93,7 +93,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
-                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
+                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high').
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
                 - `session` (requests.Session, options): Override the session for the API calls
 
@@ -313,7 +313,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         with self._session.post('chat/completions', stream=True, json=conversation) as conversation_resp:
             try:
                 conversation_resp.raise_for_status()
-            except:
+            except Exception:
                 # NOTE: consume the stream so error can be parsed
                 conversation_error = '\n'.join(conversation_resp.iter_lines(decode_unicode=True))
                 conversation_error = conversation_error.strip()

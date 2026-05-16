@@ -32,7 +32,7 @@ class ErrorNormalizationMixin:
             try:
                 moderation_error = OpenRouterModerationError(**moderation)
                 return _ParsedError('moderation', 400, '; '.join(moderation_error.reasons))
-            except:
+            except Exception:
                 pass
 
             return None
@@ -43,7 +43,7 @@ class ErrorNormalizationMixin:
 
                 error_json = json.loads(error_text)
                 assert isinstance(error_json, dict)
-            except:
+            except Exception:
                 return None
 
             try:
@@ -56,7 +56,7 @@ class ErrorNormalizationMixin:
                     return error_parsed
 
                 return _ParsedError(error_source, error_code, error_message)
-            except:
+            except Exception:
                 pass
 
             try:
@@ -66,7 +66,7 @@ class ErrorNormalizationMixin:
                 error_message = error_response.message
 
                 return _ParsedError(error_source, error_code, f'({error_response.status}) {error_message}')
-            except:
+            except Exception:
                 pass
 
             return None

@@ -52,7 +52,7 @@ class APICaptioner(BaseAPICaptioner):
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
                 - `image_quality` (str): Quality setting for encoded images ('auto', 'low', 'high').
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
-                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high'). 
+                - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high').
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
                 - `session` (requests.Session, options): Override the session for the API calls
                 - `cache` (yadc.captioners.utils.cache.HTTPResponseCache, options): Sets the session cache
@@ -115,7 +115,7 @@ class APICaptioner(BaseAPICaptioner):
 
             if api_url.netloc.endswith(VORTEX_DOMAIN):
                 return APITypes.GEMINI
-        except:
+        except Exception:
             pass
 
         # infer based on models response initially
@@ -158,7 +158,7 @@ class APICaptioner(BaseAPICaptioner):
 
                 if 'llama.cpp' in server:
                     return APITypes.LLAMACPP
-        except:
+        except Exception:
             pass
 
         try:

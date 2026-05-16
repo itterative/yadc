@@ -162,7 +162,7 @@ class Captioner(abc.ABC):
             caption_rounds: list[CaptionerRound] = kwargs.pop('caption_rounds', [])
             assert isinstance(caption_rounds, list)
             assert all(map(lambda r: isinstance(r, CaptionerRound), caption_rounds))
-        except:
+        except Exception:
             raise ValueError("bad argument for caption_rounds")
 
         system_prompt_override: str = kwargs.pop('system_prompt_override', '')
