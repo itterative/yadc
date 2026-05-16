@@ -2,6 +2,7 @@
 
 * [Shared configuration](#shared-configuration)
 * [Thinking models](#thinking-models)
+* [Drafts](#drafts)
 
 ## Shared configuration
 If you have access to several APIs, it might be a good idea to set up different user environments for each, as well as different user configuration.
@@ -76,4 +77,73 @@ enable = true
 [reasoning.advanced]
 thinking_start = "◁think▷"
 thinking_end = "◁/think▷"
+```
+
+## Drafts
+
+Drafts let you generate intermediate captions with different models, then use those results in a final captioning round to produce a more refined output.
+
+Each draft is saved as a separate file alongside the image, using the naming convention `image_name.draft_name.draft~`. For example, generating a draft named `gemma` for `photo.png` creates `photo.gemma.draft~`. This keeps drafts separate from the final caption file and makes them easy to identify, copy, or clean up.
+
+### Generating drafts
+
+Use the `--draft` option to save the caption output as a named draft instead of writing the final caption:
+
+```bash
+# Generate a draft with Gemma
+yadc caption dataset.toml --draft gemma --api-model-name "gemma-3-27b-it"
+
+# Generate a draft with Qwen
+yadc caption dataset.toml --draft qwen --api-model-name "qwen2.5vl-32b"
+```
+
+Images that already have a draft with the given name are skipped. Use `--overwrite` to regenerate them.
+
+### Using drafts in the final caption
+
+When running `yadc caption` without `--draft`, all existing draft files for each image are read and made available as a `drafts` variable in the prompt template. This is a dictionary mapping draft names to their content. Note that `drafts` is only defined when at least one draft file exists, so your template should check for it.
+
+Example template:
+```jinja
+{% set user_prompt %}
+Provide a detailed description of the image within 1-2 paragraphs.
+{% if drafts is defined %}
+
+Use the following AI-generated drafts to refine your description:
+{% for name, text in drafts.items() %}
+Draft ({{ name }}):
+{{ text }}
+
+{% endfor %}
+{% endif %}
+{% endset %}
+```
+
+You can also reference individual drafts by name:
+```jinja
+{% set user_prompt %}
+Describe the image.
+{% if drafts is defined %}
+{% if drafts.gemma %}
+Gemma's description: {{ drafts.gemma }}
+{% endif %}
+{% if drafts.qwen %}
+Qwen's description: {{ drafts.qwen }}
+{% endif %}
+{% endif %}
+{% endset %}
+```
+
+Then run the final captioning:
+```bash
+yadc caption dataset.toml --user-template refined
+```
+
+### Cleaning up drafts
+
+Draft files use the `.draft~` suffix and can be easily cleaned up:
+
+```bash
+# Remove all drafts for a dataset
+rm path_to_images/*.draft~
 ```

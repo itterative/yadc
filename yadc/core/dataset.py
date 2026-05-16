@@ -61,6 +61,68 @@ class DatasetImage(BaseModel):
     def history_path(self):
         return self.absolute_path.with_suffix(self.history_suffix)
 
+    def draft_path(self, name: str):
+        """
+        Returns the path for a named draft file.
+
+        Draft files follow the naming convention: image_name.draft_name.draft~
+
+        Args:
+            name (str): The name of the draft (e.g., 'gemma', 'qwen').
+
+        Returns:
+            pathlib.Path: Path to the draft file.
+        """
+        return self.absolute_path.parent / (self.absolute_path.stem + '.' + name + '.draft~')
+
+    def read_draft(self, name: str):
+        """
+        Reads a named draft file.
+
+        Args:
+            name (str): The name of the draft to read.
+
+        Returns:
+            str: The draft content, stripped of whitespace. Empty string if not found.
+        """
+        path = self.draft_path(name)
+        if path.exists():
+            return path.read_text().strip()
+        return ''
+
+    def write_draft(self, name: str, content: str):
+        """
+        Writes content to a named draft file.
+
+        Args:
+            name (str): The name of the draft.
+            content (str): The content to write.
+        """
+        self.draft_path(name).write_text(content)
+
+    def read_all_drafts(self) -> dict[str, str]:
+        """
+        Reads all draft files associated with this image.
+
+        Scans for files matching the pattern: image_name.*.draft~
+
+        Returns:
+            dict[str, str]: A dictionary mapping draft names to their content.
+        """
+        drafts: dict[str, str] = {}
+        pattern = self.absolute_path.stem + '.*.draft~'
+
+        for path in self.absolute_path.parent.glob(pattern):
+            filename = path.name
+            prefix = self.absolute_path.stem + '.'
+            suffix = '.draft~'
+
+            if filename.startswith(prefix) and filename.endswith(suffix):
+                name = filename[len(prefix):-len(suffix)]
+                drafts[name] = path.read_text().strip()
+
+        return drafts
+
     def read_image(self):
         """
         Opens and returns the image in RGB format.

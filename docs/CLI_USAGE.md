@@ -49,6 +49,14 @@ Force overwrite of existing captions:
 yadc caption dataset.toml --overwrite
 ```
 
+Save captions as named drafts instead of the final caption:
+
+```bash
+yadc caption dataset.toml --draft gemma
+```
+
+See [Advanced usage](ADVANCED_USAGE.md#drafts) for more details on using drafts for multi-model captioning.
+
 ---
 
 ## Manage Configurations

@@ -1,4 +1,4 @@
-from typing import Optional, TextIO
+from typing import Any, Optional, TextIO
 
 import sys
 import toml
@@ -156,6 +156,9 @@ def _print_dataset_image_meta(dataset_image: DatasetImage):
     click.echo(f'Path: {dataset_image.path}')
     for key, value in (dataset_image.__pydantic_extra__ or {}).items():
         _logger.info('%s: %s', key.capitalize(), value)
+    if drafts := dataset_image.read_all_drafts():
+        for name, content in drafts.items():
+            _logger.info('Draft (%s): %s', name, content[:200] + '...' if len(content) > 200 else content)
     if caption := dataset_image.read_caption():
         _logger.info('Caption:')
         _logger.info(caption)
@@ -171,6 +174,7 @@ def _predict_caption_one_shot(
     settings: ConfigSettings,
     do_stream: bool,
     conversation_overrides: dict,
+    drafts: dict[str, str] | None = None,
 ) -> str:
     """Single-round caption prediction with streaming output."""
     caption_parts = []
@@ -183,12 +187,15 @@ def _predict_caption_one_shot(
                     max_new_tokens=settings.max_tokens,
                     conversation_overrides=conversation_overrides,
                     prefill=settings.advanced.assistant_prefill,
+                    drafts=drafts,
                 )
             else:
                 tokens = [model.predict(
                     dataset_image,
                     max_new_tokens=settings.max_tokens,
                     conversation_overrides=conversation_overrides,
+                    prefill=settings.advanced.assistant_prefill,
+                    drafts=drafts,
                 )]
 
             for token in tokens:
@@ -218,6 +225,7 @@ def _predict_caption_rounds(
     rounds: int,
     caption_rounds: list[CaptionerRound],
     interactive: bool,
+    drafts: dict[str, str] | None = None,
 ) -> str:
     """Multi-round caption prediction with intermediate acceptance prompts."""
     j = 0
@@ -239,6 +247,7 @@ def _predict_caption_rounds(
                         use_cache=True,
                         conversation_overrides=conversation_overrides,
                         prefill=settings.advanced.assistant_prefill,
+                        drafts=drafts,
                     ).strip()
 
                 if interactive:
@@ -259,21 +268,19 @@ def _predict_caption_rounds(
 
         _logger.info('')
 
+        predict_kwargs = dict(
+            caption_rounds=caption_rounds,
+            max_new_tokens=settings.max_tokens,
+            conversation_overrides=conversation_overrides,
+        )
+        if drafts:
+            predict_kwargs['drafts'] = drafts
+
         with utils.Timer() as timer_end_round:
             if do_stream:
-                tokens = model.predict_stream(
-                    fresh_image,
-                    caption_rounds=caption_rounds,
-                    max_new_tokens=settings.max_tokens,
-                    conversation_overrides=conversation_overrides,
-                )
+                tokens = model.predict_stream(fresh_image, **predict_kwargs)
             else:
-                tokens = [model.predict(
-                    fresh_image,
-                    caption_rounds=caption_rounds,
-                    max_new_tokens=settings.max_tokens,
-                    conversation_overrides=conversation_overrides,
-                )]
+                tokens = [model.predict(fresh_image, **predict_kwargs)]
 
             for token in tokens:
                 caption_parts.append(token)
@@ -300,6 +307,7 @@ def _caption(
     do_stream: bool,
     interactive: bool,
     rounds: int,
+    save_draft: str = '',
 ):
     do_quit = False
     do_print_separator = False
@@ -324,6 +332,7 @@ def _caption(
         _print_dataset_image_meta(dataset_image)
 
         dataset_image_current = DatasetImage(**dataset_image.model_dump())
+        drafts = dataset_image_current.read_all_drafts() or None
 
         caption = ''
         caption_rounds: list[CaptionerRound] = []
@@ -399,7 +408,7 @@ def _caption(
                     continue
 
                 case 'prompts':
-                    system_prompt, user_prompt = model.prompts_from_image(dataset_image_current)
+                    system_prompt, user_prompt = model.prompts_from_image(dataset_image_current, drafts=drafts)
                     _logger.info('SYSTEM PROMPT')
                     _logger.info(system_prompt)
                     _logger.info('')
@@ -416,12 +425,14 @@ def _caption(
             try:
                 if rounds <= 1:
                     caption = _predict_caption_one_shot(
-                        model, dataset_image_current, settings, do_stream, conversation_overrides,
+                        model, dataset_image_current, settings, do_stream,
+                        conversation_overrides, drafts=drafts,
                     )
                 else:
                     caption = _predict_caption_rounds(
                         model, dataset_image_current, settings, do_stream,
                         conversation_overrides, rounds, caption_rounds, interactive,
+                        drafts=drafts,
                     )
             except (KeyboardInterrupt, click.Abort):
                 if not interactive:
@@ -438,16 +449,21 @@ def _caption(
         if not caption:
             continue
 
-        # save current toml history if it hasn't been saved before
-        if dataset_image.caption:
-            dataset_image.save_history(when_not_exists=True)
+        if save_draft:
+            dataset_image.write_draft(save_draft, caption)
+            _logger.info('Draft saved as %s.', save_draft)
+            _logger.info('')
+        else:
+            # save current toml history if it hasn't been saved before
+            if dataset_image.caption:
+                dataset_image.save_history(when_not_exists=True)
 
-        dataset_image_current.update_caption(caption)
-        dataset_image_current.save_history(when_not_exists=False)
+            dataset_image_current.update_caption(caption)
+            dataset_image_current.save_history(when_not_exists=False)
+
+            _logger.info('')
 
         caption = ''
-
-        _logger.info('')
 
     return return_code
 
@@ -470,6 +486,7 @@ def _caption(
 @click.option('--overwrite/--no-overwrite', 'overwrite', is_flag=True, default=None, help='Overwrite existing caption')
 @click.option('--cache/--no-cache', 'cache', is_flag=True, default=True, help='Cache API requests')
 @click.option('--rounds', type=click.IntRange(min=1, max_open=True), default=None, required=False, help='How many captioning rounds to do')
+@click.option('--draft', type=str, default=None, required=False, help='Save caption as a named draft instead of the final caption')
 @cli_common.log_level
 def caption(dataset: TextIO, **kwargs):
     _logger.info('Using python %d.%d.%d.', sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
@@ -494,6 +511,7 @@ def caption(dataset: TextIO, **kwargs):
     rounds = kwargs.get('rounds') or dataset_toml.rounds
     overwrite_captions = kwargs.get('overwrite') or dataset_toml.overwrite_captions
     cache_flag = kwargs.get('cache', True)
+    save_draft = kwargs.get('draft') or ''
 
     # resolve prompt template
     dataset_toml.prompt.template = _resolve_template(dataset_toml.prompt.name, dataset_toml.prompt.template)
@@ -508,10 +526,15 @@ def caption(dataset: TextIO, **kwargs):
     skipped = 0
 
     for dataset_image in resolved_images:
-        if not overwrite_captions and dataset_image.caption_path.exists():
-            skipped += 1
+        if save_draft:
+            if not overwrite_captions and dataset_image.draft_path(save_draft).exists():
+                skipped += 1
+                continue
         else:
-            dataset_to_do.append(dataset_image)
+            if not overwrite_captions and dataset_image.caption_path.exists():
+                skipped += 1
+                continue
+        dataset_to_do.append(dataset_image)
 
     _logger.info('Found %d images.', len(resolved_images))
 
@@ -550,6 +573,9 @@ def caption(dataset: TextIO, **kwargs):
     _logger.info('')
     _logger.info('Captioning...')
 
+    if save_draft:
+        _logger.info('Saving captions as draft: %s', save_draft)
+
     with utils.Timer() as timer:
         return_code = _caption(
             dataset=dataset_to_do,
@@ -558,6 +584,7 @@ def caption(dataset: TextIO, **kwargs):
             do_stream=do_stream,
             interactive=interactive,
             rounds=rounds,
+            save_draft=save_draft,
         )
 
     model.log_usage()

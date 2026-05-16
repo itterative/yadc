@@ -104,6 +104,10 @@ Description #{{ round.iteration }}
 
 *When doing multiple round captioning, an extra variable `caption_rounds` is available. Use it to build your prompt.*
 
+### Drafts
+
+You can generate intermediate captions with different models using the `--draft` option, then reference them in your final captioning round. See [Advanced usage](docs/ADVANCED_USAGE.md#drafts) for details.
+
 ## Models
 If you plan on using paid APIs (e.g. OpenAI), you should not send any images that may contain illegal content, as they are [scanned upon submission](https://platform.openai.com/docs/guides/your-data#image-and-file-inputs).
 
