@@ -13,7 +13,8 @@ from yadc.core import logging
 from yadc.core.config import ConfigSettings, parse_config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset, reapply_dataset_extras
-from yadc.core.captioner import CaptionerRound
+from yadc.core.captioner import CaptionerRound, ROLE_USER, ROLE_ASSISTANT, ReplyRound
+from yadc.core.prediction import PredictionContext
 
 from yadc.captioners.api import APICaptioner, APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
@@ -175,6 +176,8 @@ def _predict_caption_one_shot(
     do_stream: bool,
     conversation_overrides: dict,
     drafts: dict[str, str] | None = None,
+    extra_messages: list[ReplyRound] | None = None,
+    prediction_context: PredictionContext | None = None,
 ) -> str:
     """Single-round caption prediction with streaming output."""
     caption_parts = []
@@ -188,6 +191,8 @@ def _predict_caption_one_shot(
                     conversation_overrides=conversation_overrides,
                     prefill=settings.advanced.assistant_prefill,
                     drafts=drafts,
+                    extra_messages=extra_messages,
+                    prediction_context=prediction_context,
                 )
             else:
                 tokens = [model.predict(
@@ -196,6 +201,8 @@ def _predict_caption_one_shot(
                     conversation_overrides=conversation_overrides,
                     prefill=settings.advanced.assistant_prefill,
                     drafts=drafts,
+                    extra_messages=extra_messages,
+                    prediction_context=prediction_context,
                 )]
 
             for token in tokens:
@@ -336,6 +343,8 @@ def _caption(
 
         caption = ''
         caption_rounds: list[CaptionerRound] = []
+        reply_history: list[ReplyRound] = []
+        last_prediction_context: PredictionContext | None = None
         do_prompt = True
 
         while do_prompt:
@@ -344,7 +353,7 @@ def _caption(
             try:
                 action = _prompt_for_action(
                     'Next action',
-                    dict(q='quit', s='skip', c='continue', r='retry', e='edit', p='prompts'),
+                    dict(q='quit', s='skip', c='continue', r='retry', e='edit', p='prompts', y='reply', x='clear replies'),
                     'c', interactive,
                 )
             except (KeyboardInterrupt, click.Abort):
@@ -367,6 +376,33 @@ def _caption(
                     do_prompt = not caption
 
                 case 'retry':
+                    pass
+
+                case 'clear replies':
+                    reply_history = []
+                    last_prediction_context = None
+
+                case 'reply':
+                    if not caption:
+                        _logger.info('No caption to reply to. Generate one first.')
+                        continue
+
+                    user_message = click.prompt('Reply', default='', show_default=False)
+                    if not user_message:
+                        continue
+
+                    reasoning = last_prediction_context.reasoning if last_prediction_context else None
+                    reasoning_encrypted = last_prediction_context.reasoning_encrypted if last_prediction_context else None
+                    reply_history.append(ReplyRound(
+                        role=ROLE_ASSISTANT,
+                        content=caption,
+                        reasoning=reasoning,
+                        reasoning_encrypted=reasoning_encrypted,
+                    ))
+                    reply_history.append(ReplyRound(
+                        role=ROLE_USER,
+                        content=user_message,
+                    ))
                     pass
 
                 case 'edit':
@@ -405,6 +441,8 @@ def _caption(
                         break
 
                     caption_rounds = []
+                    reply_history = []
+                    last_prediction_context = None
                     continue
 
                 case 'prompts':
@@ -423,10 +461,14 @@ def _caption(
                 break
 
             try:
+                prediction_context = PredictionContext()
+
                 if rounds <= 1:
                     caption = _predict_caption_one_shot(
                         model, dataset_image_current, settings, do_stream,
                         conversation_overrides, drafts=drafts,
+                        extra_messages=reply_history or None,
+                        prediction_context=prediction_context,
                     )
                 else:
                     caption = _predict_caption_rounds(
@@ -434,6 +476,8 @@ def _caption(
                         conversation_overrides, rounds, caption_rounds, interactive,
                         drafts=drafts,
                     )
+
+                last_prediction_context = prediction_context
             except (KeyboardInterrupt, click.Abort):
                 if not interactive:
                     caption = ''

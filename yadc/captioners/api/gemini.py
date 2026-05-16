@@ -9,6 +9,7 @@ from enum import Enum
 
 from yadc.core import logging
 from yadc.core import DatasetImage
+from yadc.core.prediction import PredictionContext
 
 from .base import BaseAPICaptioner
 from .session import Session
@@ -300,6 +301,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
             generation_config_overrides = conversation_overrides.get('generation_config', {})
             assert isinstance(generation_config_overrides, dict), f'bad value for conversation_overrides/advanced settings generation_config; expected a dict, got: {type(generation_config_overrides)}'
+
+            extra_messages = kwargs.pop('extra_messages', None)
+            assert extra_messages is None or isinstance(extra_messages, list), f'bad value for extra_messages; expected a list, got: {type(extra_messages)}'
         except AssertionError as e:
             raise ValueError(e)
 
@@ -340,6 +344,29 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 'is_prefill': True,
             })
 
+        if extra_messages:
+            from yadc.core.captioner import ReplyRound, ROLE_USER, ROLE_ASSISTANT
+
+            for msg in extra_messages:
+                assert isinstance(msg, ReplyRound), f'extra_messages must be ReplyRound instances, got {type(msg)}'
+                assert msg.role in (ROLE_USER, ROLE_ASSISTANT), f'extra_messages role must be ROLE_USER or ROLE_ASSISTANT, got {msg.role!r}'
+
+                role = msg.role
+                if role == ROLE_ASSISTANT:
+                    role = assistant_role
+                elif role == ROLE_USER:
+                    role = user_role
+
+                parts = []
+                if msg.reasoning:
+                    parts.append({ 'text': msg.reasoning, 'thought': True })
+                parts.append({ 'text': msg.content })
+
+                conversation['contents'].append({
+                    'role': role,
+                    'parts': parts,
+                })
+
         if self._is_thinking_model and self._reasoning:
             conversation['generationConfig']['thinkingConfig'] = {
                 'includeThoughts': not self._reasoning_exclude_output,
@@ -370,7 +397,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return assistant_prefill
 
-    def _generate_stream_prediction_inner(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
         assert self._current_model, "no model loaded"
 
         conversation = self.conversation(image, **kwargs)
@@ -450,6 +477,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                                     if is_prediction:
                                         continue
 
+                                    if prediction_context is not None:
+                                        prediction_context.reasoning = (prediction_context.reasoning or '') + text
+
                                     if not is_thinking:
                                         yield self._reasoning_start_token
                                         is_thinking = True
@@ -490,7 +520,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
-    def _generate_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -542,6 +572,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         if not part.thought:
                             continue
 
+                        if prediction_context is not None:
+                            prediction_context.reasoning = (prediction_context.reasoning or '') + text
+
                         if not is_thinking:
                             thought_buffer += self._reasoning_start_token
                             is_thinking = True
@@ -566,10 +599,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
 
     def predict(self, image: DatasetImage, **kwargs):
+        self._before_predict(kwargs)
         try:
             return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
     def predict_stream(self, image: DatasetImage, **kwargs):
+        self._before_predict(kwargs)
         yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

@@ -27,6 +27,10 @@ class OpenRouterCaptioner(OpenAICaptioner):
             except Exception:
                 _logger.warning('Warning: failed to retrieve current credits. Is you API token correct?')
 
+    @staticmethod
+    def _is_reasoning_redacted(text: str) -> bool:
+        return text == '[REDACTED]'
+
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         conversation = super().conversation(image, stream=stream, **kwargs)
 
