@@ -11,6 +11,7 @@ from urllib3.util.retry import Retry
 from yadc.core import logging
 
 from .utils.cache import HTTPResponseCache
+from .utils.response_logger import DebugStreamProxy, ResponseLogger
 
 _logger = logging.get_logger(__name__)
 
@@ -25,6 +26,7 @@ class Session:
         status_forcelist: tuple[int, ...] = (429, 502, 503, 504),
         session: requests.Session | None = None,
         cache: HTTPResponseCache | None = None,
+        response_logger: ResponseLogger | None = None,
     ):
         self.base_url = urlparse(base_url.rstrip("/"))
         self.headers = headers or {}
@@ -36,6 +38,8 @@ class Session:
 
         self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="Thread-api-")
         self._cache = cache
+        self._response_logger = response_logger
+        self._capture_active = False
 
     @functools.cached_property
     def user_agent(self):
@@ -77,6 +81,19 @@ class Session:
         return result.geturl()
 
     @contextmanager
+    def capture_response(self):
+        """Context manager that enables response logging for requests made within the block.
+
+        Without this context, no requests are logged even if a ``ResponseLogger`` is configured.
+        """
+        prev = self._capture_active
+        self._capture_active = True
+        try:
+            yield
+        finally:
+            self._capture_active = prev
+
+    @contextmanager
     def request(self, method: str, path: str, **kwargs):
         assert self._session
 
@@ -90,6 +107,11 @@ class Session:
         headers.update(self.headers)
 
         stream = kwargs.pop("stream", False)
+
+        should_log = self._capture_active and self._response_logger is not None
+
+        # capture request body before it is consumed
+        debug_body = kwargs.get("json") if should_log else None
 
         request = requests.Request(method, url=path, headers=headers, **kwargs)
         session = self._session
@@ -113,9 +135,40 @@ class Session:
         else:
             _logger.debug("HTTP Response Body: %s %s: (streamed)", method, path)
 
-        # ensure response is closed
-        with response:
-            yield response
+        # set up streaming accumulator for debug logging
+        stream_accumulator: list[bytes | str] | None = [] if (should_log and stream) else None
+
+        try:
+            if stream_accumulator is not None:
+                with response:
+                    yield DebugStreamProxy(response, stream_accumulator)
+            else:
+                # ensure response is closed
+                with response:
+                    yield response
+        finally:
+            if should_log:
+                assert self._response_logger is not None
+
+                body = ""
+                if stream and stream_accumulator is not None:
+                    body = "\n".join(line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line) for line in stream_accumulator)
+                else:
+                    try:
+                        body = response.text
+                    except Exception:
+                        body = "<failed to read response body>"
+
+                self._response_logger.log(
+                    method=method,
+                    url=path,
+                    request_headers=headers,
+                    request_body=debug_body,
+                    response_status=response.status_code,
+                    response_headers=response.headers,
+                    response_body=body,
+                    stream=stream,
+                )
 
     @contextmanager
     def get(self, path: str, cache_ttl: float | None = None, **kwargs):
@@ -131,6 +184,7 @@ class Session:
 
         with self.request("GET", path, **kwargs) as response:
             if response.ok:
+                assert isinstance(response, requests.Response)
                 self._cache.set(path, response, ttl=cache_ttl)
 
             yield response

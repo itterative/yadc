@@ -424,113 +424,114 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         conversation = self.conversation(image, **kwargs)
         assistant_prefill = self._extract_assistant_prefill(conversation)
 
-        with self._session.post(f"models/{self._current_model}:streamGenerateContent?alt=sse", stream=True, json=conversation) as conversation_resp:
-            try:
-                conversation_resp.raise_for_status()
-            except Exception:
-                # NOTE: consume the stream so error can be parsed
-                conversation_error = "\n".join(conversation_resp.iter_lines(decode_unicode=True))
-                conversation_error = conversation_error.strip()
-
-                raise ErrorNormalizationMixin.GenerationError(conversation_error)
-
-            if assistant_prefill:
-                yield assistant_prefill
-
-            conversation_error = ""  # in some scenarios, gemini api will just send the error directly instead of as a sse data line
-            conversation_stopped = False
-
-            is_thinking = False  # used to wrap the thoughts in <think>...</think>
-            is_prediction = False  # prevents the thoughts from being printed if the first thought is done
-
-            for line in conversation_resp.iter_lines():
-                # NOTE: decode_unicode option doesn't seem to work properly for some characters
-                assert isinstance(line, bytes)
-                line = line.decode()
-
-                if not line or conversation_stopped:
-                    continue
-
+        with self._session.capture_response():
+            with self._session.post(f"models/{self._current_model}:streamGenerateContent?alt=sse", stream=True, json=conversation) as conversation_resp:
                 try:
-                    # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
-                    if line.startswith(":"):
+                    conversation_resp.raise_for_status()
+                except Exception:
+                    # NOTE: consume the stream so error can be parsed
+                    conversation_error = "\n".join(conversation_resp.iter_lines(decode_unicode=True))
+                    conversation_error = conversation_error.strip()
+
+                    raise ErrorNormalizationMixin.GenerationError(conversation_error)
+
+                if assistant_prefill:
+                    yield assistant_prefill
+
+                conversation_error = ""  # in some scenarios, gemini api will just send the error directly instead of as a sse data line
+                conversation_stopped = False
+
+                is_thinking = False  # used to wrap the thoughts in <think>...</think>
+                is_prediction = False  # prevents the thoughts from being printed if the first thought is done
+
+                for line in conversation_resp.iter_lines():
+                    # NOTE: decode_unicode option doesn't seem to work properly for some characters
+                    assert isinstance(line, bytes)
+                    line = line.decode()
+
+                    if not line or conversation_stopped:
                         continue
 
-                    line = line.removeprefix("data:").strip()
+                    try:
+                        # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
+                        if line.startswith(":"):
+                            continue
 
-                    if line == "[DONE]":
-                        conversation_stopped = True
-                        continue
+                        line = line.removeprefix("data:").strip()
 
-                    line_json = json.loads(line)
-                except json.JSONDecodeError:
-                    if line.startswith("{"):
-                        # likely json, try parsing outside
-                        conversation_error = line + "\n"
-                        break
+                        if line == "[DONE]":
+                            conversation_stopped = True
+                            continue
 
-                    _logger.warning("Warning: failed to decode line: %s", line)
-                    continue
-
-                try:
-                    assert isinstance(line_json, dict), "not a dict"
-                    line_response = GeminiContentResponse.model_validate(line_json)
-
-                    if line_response.usageMetadata and line_response.responseId != "SKIPPED":
-                        self._api_usage[line_response.responseId] = APIUsage(
-                            response_tokens=line_response.usageMetadata.candidatesTokenCount,
-                            prompt_tokens=line_response.usageMetadata.promptTokenCount,
-                            total_tokens=line_response.usageMetadata.totalTokenCount,
-                            thoughts_tokens=line_response.usageMetadata.thoughtsTokenCount,
-                        )
-
-                    found_candidate = False
-                    for candidate in line_response.candidates:
-                        if found_candidate:
+                        line_json = json.loads(line)
+                    except json.JSONDecodeError:
+                        if line.startswith("{"):
+                            # likely json, try parsing outside
+                            conversation_error = line + "\n"
                             break
 
-                        if candidate.finishReason and candidate.finishReason != "STOP":
-                            raise ValueError(self._normalize_error(line_response))
+                        _logger.warning("Warning: failed to decode line: %s", line)
+                        continue
 
-                        for part in candidate.content.parts:
-                            if text := part.text:
-                                if part.thought:
-                                    if is_prediction:
+                    try:
+                        assert isinstance(line_json, dict), "not a dict"
+                        line_response = GeminiContentResponse.model_validate(line_json)
+
+                        if line_response.usageMetadata and line_response.responseId != "SKIPPED":
+                            self._api_usage[line_response.responseId] = APIUsage(
+                                response_tokens=line_response.usageMetadata.candidatesTokenCount,
+                                prompt_tokens=line_response.usageMetadata.promptTokenCount,
+                                total_tokens=line_response.usageMetadata.totalTokenCount,
+                                thoughts_tokens=line_response.usageMetadata.thoughtsTokenCount,
+                            )
+
+                        found_candidate = False
+                        for candidate in line_response.candidates:
+                            if found_candidate:
+                                break
+
+                            if candidate.finishReason and candidate.finishReason != "STOP":
+                                raise ValueError(self._normalize_error(line_response))
+
+                            for part in candidate.content.parts:
+                                if text := part.text:
+                                    if part.thought:
+                                        if is_prediction:
+                                            continue
+
+                                        if prediction_context is not None:
+                                            prediction_context.reasoning = (prediction_context.reasoning or "") + text
+
+                                        if not is_thinking:
+                                            yield self._reasoning_start_token
+                                            is_thinking = True
+
+                                        yield text
+
                                         continue
 
-                                    if prediction_context is not None:
-                                        prediction_context.reasoning = (prediction_context.reasoning or "") + text
+                                    if is_thinking:
+                                        yield self._reasoning_end_token
+                                        is_thinking = False
 
-                                    if not is_thinking:
-                                        yield self._reasoning_start_token
-                                        is_thinking = True
+                                    is_prediction = True
 
                                     yield text
 
-                                    continue
+                                    found_candidate = True
+                                    break
+                    except pydantic.ValidationError:
+                        _logger.error("Error: failed to process line: not a stream response: %s", line)
+                        break
+                    except AssertionError as e:
+                        _logger.error("Error: failed to process line: %s: %s", e, line)
+                        break
 
-                                if is_thinking:
-                                    yield self._reasoning_end_token
-                                    is_thinking = False
+                if conversation_error:
+                    conversation_error += "\n".join(conversation_resp.iter_lines(decode_unicode=True))
+                    conversation_error = conversation_error.strip()
 
-                                is_prediction = True
-
-                                yield text
-
-                                found_candidate = True
-                                break
-                except pydantic.ValidationError:
-                    _logger.error("Error: failed to process line: not a stream response: %s", line)
-                    break
-                except AssertionError as e:
-                    _logger.error("Error: failed to process line: %s: %s", e, line)
-                    break
-
-            if conversation_error:
-                conversation_error += "\n".join(conversation_resp.iter_lines(decode_unicode=True))
-                conversation_error = conversation_error.strip()
-
-                raise ErrorNormalizationMixin.GenerationError(conversation_error)
+                    raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
     def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
         try:
@@ -552,71 +553,72 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         is_thinking = False  # used to wrap the thoughts in <think>...</think>
 
-        with self._session.post(f"models/{self._current_model}:generateContent", stream=False, json=conversation) as conversation_resp:
-            conversation_resp.raise_for_status()
+        with self._session.capture_response():
+            with self._session.post(f"models/{self._current_model}:generateContent", stream=False, json=conversation) as conversation_resp:
+                conversation_resp.raise_for_status()
 
-            try:
-                conversation_json = json.loads(conversation_resp.text)
-                assert isinstance(conversation_json, dict), "api did not return valid json"
-            except AssertionError as e:
-                _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                raise ValueError(str(e))
-            except json.JSONDecodeError:
-                _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                raise ValueError("api did not return json")
+                try:
+                    conversation_json = json.loads(conversation_resp.text)
+                    assert isinstance(conversation_json, dict), "api did not return valid json"
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
+                    raise ValueError(str(e))
+                except json.JSONDecodeError:
+                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
+                    raise ValueError("api did not return json")
 
-            try:
-                conversation_response = GeminiContentResponse.model_validate(conversation_json)
-            except AssertionError as e:
-                _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                raise ValueError(str(e))
-            except pydantic.ValidationError:
-                _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                raise ValueError("api did not return a valid response")
+                try:
+                    conversation_response = GeminiContentResponse.model_validate(conversation_json)
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
+                    raise ValueError(str(e))
+                except pydantic.ValidationError:
+                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
+                    raise ValueError("api did not return a valid response")
 
-            if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
-                self._api_usage[conversation_response.responseId] = APIUsage(
-                    response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
-                    prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
-                    total_tokens=conversation_response.usageMetadata.totalTokenCount,
-                    thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
-                )
+                if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
+                    self._api_usage[conversation_response.responseId] = APIUsage(
+                        response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
+                        prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
+                        total_tokens=conversation_response.usageMetadata.totalTokenCount,
+                        thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
+                    )
 
-            thought_buffer = ""
+                thought_buffer = ""
 
-            for candidate in conversation_response.candidates:
-                if candidate.finishReason and candidate.finishReason != "STOP":
-                    raise ValueError(self._normalize_error(conversation_response))
+                for candidate in conversation_response.candidates:
+                    if candidate.finishReason and candidate.finishReason != "STOP":
+                        raise ValueError(self._normalize_error(conversation_response))
 
-                for part in candidate.content.parts:
-                    if text := part.text:
-                        if not part.thought:
-                            continue
+                    for part in candidate.content.parts:
+                        if text := part.text:
+                            if not part.thought:
+                                continue
 
-                        if prediction_context is not None:
-                            prediction_context.reasoning = (prediction_context.reasoning or "") + text
+                            if prediction_context is not None:
+                                prediction_context.reasoning = (prediction_context.reasoning or "") + text
 
-                        if not is_thinking:
-                            thought_buffer += self._reasoning_start_token
-                            is_thinking = True
+                            if not is_thinking:
+                                thought_buffer += self._reasoning_start_token
+                                is_thinking = True
 
-                        thought_buffer += text
+                            thought_buffer += text
 
-                if is_thinking:
-                    thought_buffer += self._reasoning_end_token
-                    is_thinking = False
+                    if is_thinking:
+                        thought_buffer += self._reasoning_end_token
+                        is_thinking = False
 
-                for part in candidate.content.parts:
-                    if text := part.text:
-                        if part.thought:
-                            continue
+                    for part in candidate.content.parts:
+                        if text := part.text:
+                            if part.thought:
+                                continue
 
-                        if assistant_prefill:
-                            text = assistant_prefill + text
+                            if assistant_prefill:
+                                text = assistant_prefill + text
 
-                        return thought_buffer + text
+                            return thought_buffer + text
 
-            raise ValueError("api did not return text")
+                raise ValueError("api did not return text")
 
     def predict(self, image: DatasetImage, **kwargs):
         self._before_predict(kwargs)

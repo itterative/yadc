@@ -1,4 +1,5 @@
 import abc
+from typing import Any
 
 import requests
 
@@ -7,6 +8,7 @@ from yadc.core.prediction import PredictionContext
 
 from .session import Session
 from .utils.cache import HTTPResponseCache
+from .utils.response_logger import ResponseLogger
 
 _logger = logging.get_logger(__name__)
 
@@ -52,10 +54,13 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         cache: HTTPResponseCache | None = kwargs.get("cache", None)
         assert cache is None or isinstance(cache, HTTPResponseCache)
 
-        self._session = Session(self._api_url, headers=session_headers, session=session, cache=cache)
+        response_logger: ResponseLogger | None = kwargs.get("response_logger", None)
+        assert response_logger is None or isinstance(response_logger, ResponseLogger)
+
+        self._session = Session(self._api_url, headers=session_headers, session=session, cache=cache, response_logger=response_logger)
 
     @staticmethod
-    def _before_predict(kwargs: dict):
+    def _before_predict(kwargs: dict[str, Any]):
         ctx = kwargs.get("prediction_context", None)
         if ctx is not None:
             assert isinstance(ctx, PredictionContext), f"prediction_context must be a PredictionContext, got {type(ctx)}"
