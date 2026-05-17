@@ -1,6 +1,7 @@
 import copy
 import json
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 import pydantic
@@ -391,8 +392,13 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         conversation = self.conversation(image, stream=True, **kwargs)
         assistant_prefill = self._extract_assistant_prefill(conversation)
 
-        with self._session.capture_response():
-            with self._session.post("chat/completions", stream=True, json=conversation) as conversation_resp:
+        with self._session.capture_response(image_name=Path(image.path).stem) as _ctx:
+            with self._session.post(
+                "chat/completions",
+                stream=True,
+                json=conversation,
+                capture_ctx=_ctx,
+            ) as conversation_resp:
                 try:
                     conversation_resp.raise_for_status()
                 except Exception:
@@ -510,8 +516,13 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         is_thinking = False  # used to wrap the thoughts in <think>...</think>
 
-        with self._session.capture_response():
-            with self._session.post("chat/completions", stream=False, json=conversation) as conversation_resp:
+        with self._session.capture_response(image_name=Path(image.path).stem) as _ctx:
+            with self._session.post(
+                "chat/completions",
+                stream=False,
+                json=conversation,
+                capture_ctx=_ctx,
+            ) as conversation_resp:
                 conversation_resp.raise_for_status()
 
                 try:

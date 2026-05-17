@@ -634,7 +634,7 @@ def caption(dataset: TextIO, **kwargs):
         cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / "api_requests")
 
     dataset_paths = [entry.path for entry in dataset_toml.dataset if entry.path]
-    response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths)
+    response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths, toml_path=dataset.name)
     if response_logger is not None:
         _logger.info("API response debug logging enabled: %s", response_logger._run_dir)
 

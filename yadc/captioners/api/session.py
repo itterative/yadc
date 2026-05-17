@@ -16,6 +16,19 @@ from .utils.response_logger import DebugStreamProxy, ResponseLogger
 _logger = logging.get_logger(__name__)
 
 
+class CaptureContext:
+    """Holds per-capture state for response logging.
+
+    Yielded by :meth:`Session.capture_response` so callers can inspect or extend
+    the context in future batching scenarios.
+    """
+
+    __slots__: tuple[str, ...] = ("image_name",)
+
+    def __init__(self, image_name: str):
+        self.image_name = image_name
+
+
 class Session:
     def __init__(
         self,
@@ -39,7 +52,6 @@ class Session:
         self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="Thread-api-")
         self._cache = cache
         self._response_logger = response_logger
-        self._capture_active = False
 
     @functools.cached_property
     def user_agent(self):
@@ -81,20 +93,24 @@ class Session:
         return result.geturl()
 
     @contextmanager
-    def capture_response(self):
-        """Context manager that enables response logging for requests made within the block.
+    def capture_response(self, *, image_name: str):
+        """Context manager that creates a capture context for response logging.
 
-        Without this context, no requests are logged even if a ``ResponseLogger`` is configured.
+        Yields a :class:`CaptureContext` that must be passed to :meth:`request` /
+        :meth:`post` via the ``capture_ctx`` kwarg. No implicit state is stored
+        on the session, so each request is explicitly bound to its context — safe
+        for future batching.
+
+        # TODO: consider merging capture_response and request into a single
+        # context manager to avoid the two-level nesting.
+
+        Args:
+            image_name: Optional image identifier to include in the log filename.
         """
-        prev = self._capture_active
-        self._capture_active = True
-        try:
-            yield
-        finally:
-            self._capture_active = prev
+        yield CaptureContext(image_name=image_name)
 
     @contextmanager
-    def request(self, method: str, path: str, **kwargs):
+    def request(self, method: str, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs):
         assert self._session
 
         headers = kwargs.pop("headers", {})
@@ -108,7 +124,7 @@ class Session:
 
         stream = kwargs.pop("stream", False)
 
-        should_log = self._capture_active and self._response_logger is not None
+        should_log = capture_ctx is not None and self._response_logger is not None
 
         # capture request body before it is consumed
         debug_body = kwargs.get("json") if should_log else None
@@ -149,6 +165,7 @@ class Session:
         finally:
             if should_log:
                 assert self._response_logger is not None
+                assert capture_ctx is not None
 
                 body = ""
                 if stream and stream_accumulator is not None:
@@ -168,6 +185,7 @@ class Session:
                     response_headers=response.headers,
                     response_body=body,
                     stream=stream,
+                    image_name=capture_ctx.image_name,
                 )
 
     @contextmanager
@@ -189,8 +207,8 @@ class Session:
 
             yield response
 
-    def post(self, path: str, **kwargs):
-        return self.request("POST", path, **kwargs)
+    def post(self, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs):
+        return self.request("POST", path, capture_ctx=capture_ctx, **kwargs)
 
 
 _units = ["B", "KiB", "MiB"]
