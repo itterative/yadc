@@ -1,6 +1,7 @@
 ## Table of Contents
 
 - [Caption a Dataset](#caption-a-dataset)
+- [Manage Drafts](#manage-drafts)
 - [Manage Configurations](#manage-configurations)
 - [Manage Environments](#manage-environments)
 - [Manage Templates](#manage-templates)
@@ -56,6 +57,44 @@ yadc caption dataset.toml --draft gemma
 ```
 
 See [Advanced usage](ADVANCED_USAGE.md#drafts) for more details on using drafts for multi-model captioning.
+
+---
+
+## Manage Drafts
+
+Draft commands let you save, inspect, and clean up named drafts for your dataset images. Drafts are stored as separate files alongside images using the naming convention `image_name.draft_name.draft~`.
+
+### Save Current Captions as Drafts
+
+```bash
+yadc draft save dataset.toml --name v1
+```
+
+Use `--overwrite` to replace existing drafts, and `--no-skip-missing` to warn about images without captions.
+
+### List Drafts
+
+Show all draft names found alongside dataset images:
+
+```bash
+yadc draft list dataset.toml
+```
+
+### Show Draft Contents
+
+Print the contents of a named draft for each image:
+
+```bash
+yadc draft show dataset.toml --name v1
+```
+
+### Remove Drafts
+
+Delete a named draft file for each image in the dataset:
+
+```bash
+yadc draft remove dataset.toml --name v1
+```
 
 ---
 

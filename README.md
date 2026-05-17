@@ -106,7 +106,7 @@ Description #{{ round.iteration }}
 
 ### Drafts
 
-You can generate intermediate captions with different models using the `--draft` option, then reference them in your final captioning round. See [Advanced usage](docs/ADVANCED_USAGE.md#drafts) for details.
+You can generate intermediate captions with different models using the `--draft` option, then reference them in your final captioning round. You can also use `yadc draft save` to back up existing captions as named drafts before re-captioning. See [Advanced usage](docs/ADVANCED_USAGE.md#drafts) for details.
 
 ## Models
 If you plan on using paid APIs (e.g. OpenAI), you should not send any images that may contain illegal content, as they are [scanned upon submission](https://platform.openai.com/docs/guides/your-data#image-and-file-inputs).
