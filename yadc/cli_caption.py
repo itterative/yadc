@@ -488,7 +488,7 @@ def _caption(
             try:
                 prediction_context = PredictionContext()
 
-                if rounds <= 1:
+                if rounds <= 1 or extra_messages:
                     caption = _predict_caption_one_shot(
                         model,
                         dataset_image_current,
