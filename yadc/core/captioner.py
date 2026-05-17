@@ -298,7 +298,7 @@ class Captioner(abc.ABC):
             captioner.load_model("nlpconnect/vit-gpt2-image-captioning", device="cuda")
         """
 
-        raise NotImplemented
+        raise NotImplementedError
 
     @abc.abstractmethod
     def unload_model(self) -> None:
@@ -309,7 +309,7 @@ class Captioner(abc.ABC):
         Called when switching models or shutting down.
         """
 
-        raise NotImplemented
+        raise NotImplementedError
 
     @abc.abstractmethod
     def offload_model(self) -> None:
@@ -319,7 +319,7 @@ class Captioner(abc.ABC):
         Useful when the model is not actively in use.
         """
 
-        raise NotImplemented
+        raise NotImplementedError
 
     @abc.abstractmethod
     def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str, None, None]':
@@ -345,7 +345,7 @@ class Captioner(abc.ABC):
         ```
         """
 
-        raise NotImplemented
+        raise NotImplementedError
 
     @abc.abstractmethod
     def predict(self, image: DatasetImage, **kwargs) -> str:
@@ -365,4 +365,4 @@ class Captioner(abc.ABC):
             str: The final generated caption.
         """
 
-        raise NotImplemented
+        raise NotImplementedError

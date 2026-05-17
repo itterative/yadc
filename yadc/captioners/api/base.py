@@ -14,7 +14,7 @@ _logger = logging.get_logger(__name__)
 class BaseAPICaptioner(Captioner, abc.ABC):
     def __init__(self, **kwargs):
         """
-        Initializes the BaseAPICaptioner 
+        Initializes the BaseAPICaptioner
 
         Args:
             api_url (str): Base URL for the API endpoint.
@@ -65,4 +65,4 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
     @abc.abstractmethod
     def log_usage(self):
-        raise NotImplemented
+        raise NotImplementedError
