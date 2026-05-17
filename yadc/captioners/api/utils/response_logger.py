@@ -18,18 +18,24 @@ class ResponseLogger:
 
     Created when ``env.DEBUG_API_RESPONSES`` is ``True``.
     Logging is only active inside a :meth:`Session.capture_response` block.
+    The run directory is built lazily on first log write.
     """
 
     _SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization", "x-goog-api-key"})
     _DATASET_PREFIXES_TO_STRIP: tuple[str, ...] = ("dataset_",)
 
-    _run_dir: Path
-    _counter: int
-
-    def __init__(self, run_dir: Path, *, log_body: bool = False):
-        self._run_dir = run_dir
+    def __init__(self, cache_path: Path, dataset_paths: list[str] | None, *, toml_path: str, log_body: bool = False):
+        self._cache_path = cache_path
+        self._dataset_paths = dataset_paths
+        self._toml_path = toml_path
         self._log_body = log_body
-        self._counter = self._resume_counter()
+        self._run_dir: Path | None = None
+        self._counter: int = 0
+
+    @property
+    def run_dir(self) -> Path | None:
+        """The resolved run directory, or None if no logs have been written yet."""
+        return self._run_dir
 
     @classmethod
     def from_env(
@@ -38,7 +44,6 @@ class ResponseLogger:
         dataset_paths: list[str] | None = None,
         *,
         toml_path: str,
-        dataset_index: int = 0,
     ) -> "ResponseLogger | None":
         """Create a ResponseLogger if debug logging is enabled, otherwise return None."""
         if not DEBUG_CAPTION_RESPONSES:
@@ -47,10 +52,16 @@ class ResponseLogger:
         if toml_path == "-":
             raise ValueError("when debugging api responses, dataset argument must be a file path, not stdin")
 
-        run_dir = cls._build_run_dir(cache_path, dataset_paths, toml_path=toml_path, dataset_index=dataset_index)
-        return cls(run_dir, log_body=DEBUG_CAPTION_REQUESTS_BODY)
+        return cls(cache_path, dataset_paths, toml_path=toml_path, log_body=DEBUG_CAPTION_REQUESTS_BODY)
 
     # ---- run directory naming ----
+
+    def _ensure_run_dir(self) -> Path:
+        """Lazily build the run dir and resume counter on first access."""
+        if self._run_dir is None:
+            self._run_dir = self._build_run_dir(self._cache_path, self._dataset_paths, toml_path=self._toml_path)
+            self._counter = self._resume_counter(self._run_dir)
+        return self._run_dir
 
     @classmethod
     def _build_run_dir(
@@ -59,12 +70,11 @@ class ResponseLogger:
         dataset_paths: list[str] | None,
         *,
         toml_path: str,
-        dataset_index: int = 0,
     ) -> Path:
         name = cls._derive_dataset_name(toml_path)
         path_hash = cls._hash_paths(dataset_paths, toml_path=toml_path)
         date_dir = datetime.now().strftime("%Y-%m-%d")
-        return cache_path / "api-debug" / date_dir / f"{name}_{dataset_index:03d}_{path_hash}"
+        return cache_path / "api-debug" / date_dir / f"{name}_{path_hash}"
 
     @classmethod
     def _derive_dataset_name(cls, toml_path: str) -> str:
@@ -84,24 +94,20 @@ class ResponseLogger:
 
     # ---- counter ----
 
-    def _resume_counter(self) -> int:
+    @staticmethod
+    def _resume_counter(run_dir: Path) -> int:
         """Find the next counter value by scanning existing files."""
-        if not self._run_dir.exists():
+        if not run_dir.exists():
             return 1
 
         max_n = 0
-        for f in self._run_dir.iterdir():
+        for f in run_dir.iterdir():
             if f.suffix == ".jsonl":
                 match = re.match(r"(\d+)", f.name)
                 if match:
                     max_n = max(max_n, int(match.group(1)))
 
         return max_n + 1 if max_n else 1
-
-    def _next_filename(self, image_name: str) -> str:
-        n = self._counter
-        self._counter += 1
-        return f"{n:06d}_{image_name}.jsonl"
 
     # ---- header sanitization ----
 
@@ -129,6 +135,8 @@ class ResponseLogger:
         stream: bool = False,
         image_name: str,
     ):
+        run_dir = self._ensure_run_dir()
+
         entry: dict[str, Any] = {
             "request": {
                 "method": method,
@@ -152,8 +160,9 @@ class ResponseLogger:
 
         entry["response"]["body"] = response_body
 
-        self._run_dir.mkdir(parents=True, exist_ok=True)
-        filepath = self._run_dir / self._next_filename(image_name)
+        n = self._counter
+        self._counter += 1
+        filepath = run_dir / f"{n:06d}_{image_name}.jsonl"
 
         tmp_path = filepath.with_suffix(".tmp")
         with open(tmp_path, "w") as f:

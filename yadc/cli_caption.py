@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 from typing import Optional, TextIO
 
 import click
@@ -646,7 +645,7 @@ def caption(dataset: TextIO, **kwargs):
         sys.exit(cmd_status.STATUS_USER_ERROR)
 
     if response_logger is not None:
-        _logger.info("API response debug logging enabled: %s", response_logger._run_dir)
+        _logger.info("API response debug logging enabled: %s", response_logger.run_dir)
 
     _logger.info("Loading model...")
 
