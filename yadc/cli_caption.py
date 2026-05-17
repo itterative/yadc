@@ -480,6 +480,8 @@ def _caption(
             if not do_prompt and caption:
                 break
 
+            previous_caption = caption
+
             try:
                 prediction_context = PredictionContext()
 
@@ -518,7 +520,7 @@ def _caption(
                     break
 
                 _logger.info("Cancelled captioning.")
-                caption = ""
+                caption = previous_caption
 
         if not caption:
             continue
