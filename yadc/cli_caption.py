@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from typing import Optional, TextIO
 
 import click
@@ -633,8 +634,17 @@ def caption(dataset: TextIO, **kwargs):
     if cache_flag:
         cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / "api_requests")
 
-    dataset_paths = [entry.path for entry in dataset_toml.dataset if entry.path]
-    response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths, toml_path=dataset.name)
+    # resolve debug logger
+    try:
+        dataset_paths = [entry.path for entry in dataset_toml.dataset if entry.path]
+        assert isinstance(dataset.name, str)
+        toml_path = dataset.name
+
+        response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths, toml_path=toml_path)
+    except ValueError as e:
+        _logger.error("Error: %s", e)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
+
     if response_logger is not None:
         _logger.info("API response debug logging enabled: %s", response_logger._run_dir)
 

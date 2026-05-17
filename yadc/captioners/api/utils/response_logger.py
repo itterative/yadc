@@ -37,12 +37,16 @@ class ResponseLogger:
         cache_path: Path,
         dataset_paths: list[str] | None = None,
         *,
-        toml_path: str | None = None,
+        toml_path: str,
         dataset_index: int = 0,
     ) -> "ResponseLogger | None":
         """Create a ResponseLogger if debug logging is enabled, otherwise return None."""
         if not DEBUG_CAPTION_RESPONSES:
             return None
+
+        if toml_path == "-":
+            raise ValueError("when debugging api responses, dataset argument must be a file path, not stdin")
+
         run_dir = cls._build_run_dir(cache_path, dataset_paths, toml_path=toml_path, dataset_index=dataset_index)
         return cls(run_dir, log_body=DEBUG_CAPTION_REQUESTS_BODY)
 
@@ -54,29 +58,25 @@ class ResponseLogger:
         cache_path: Path,
         dataset_paths: list[str] | None,
         *,
-        toml_path: str | None = None,
+        toml_path: str,
         dataset_index: int = 0,
     ) -> Path:
-        name = cls._derive_dataset_name(dataset_paths)
+        name = cls._derive_dataset_name(toml_path)
         path_hash = cls._hash_paths(dataset_paths, toml_path=toml_path)
         date_dir = datetime.now().strftime("%Y-%m-%d")
         return cache_path / "api-debug" / date_dir / f"{name}_{dataset_index:03d}_{path_hash}"
 
     @classmethod
-    def _derive_dataset_name(cls, dataset_paths: list[str] | None) -> str:
-        if not dataset_paths:
-            return "unknown"
-        raw = Path(dataset_paths[0]).name if dataset_paths[0] else ""
+    def _derive_dataset_name(cls, toml_path: str) -> str:
+        raw = Path(toml_path).stem
         for prefix in cls._DATASET_PREFIXES_TO_STRIP:
             if raw.startswith(prefix):
                 raw = raw[len(prefix) :]
         return raw or "unknown"
 
     @classmethod
-    def _hash_paths(cls, dataset_paths: list[str] | None, *, toml_path: str | None = None) -> str:
-        parts: list[str] = []
-        if toml_path:
-            parts.append(toml_path)
+    def _hash_paths(cls, dataset_paths: list[str] | None, *, toml_path: str) -> str:
+        parts: list[str] = [toml_path]
         if dataset_paths:
             parts.extend(dataset_paths)
         payload = "\0".join(parts)
