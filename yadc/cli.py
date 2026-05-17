@@ -1,6 +1,6 @@
 import click
 
-from . import cli_caption, cli_configs, cli_envs, cli_export, cli_logging, cli_templates
+from . import cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_templates
 
 
 @click.group(
@@ -14,6 +14,7 @@ def cli():
 
 
 cli.add_command(cli_caption.caption)
+cli.add_command(cli_draft.draft)
 cli.add_command(cli_export.export)
 cli.add_command(cli_envs.envs)
 cli.add_command(cli_configs.configs)
