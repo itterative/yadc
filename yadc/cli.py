@@ -1,6 +1,6 @@
 import click
 
-from . import cli_logging, cli_caption, cli_envs, cli_configs, cli_templates
+from . import cli_logging, cli_caption, cli_export, cli_envs, cli_configs, cli_templates
 
 @click.group(
     'yadc',
@@ -11,6 +11,7 @@ def cli():
     logging.set_handler(cli_logging.ClickHandler())
 
 cli.add_command(cli_caption.caption)
+cli.add_command(cli_export.export)
 cli.add_command(cli_envs.envs)
 cli.add_command(cli_configs.configs)
 cli.add_command(cli_templates.templates)
