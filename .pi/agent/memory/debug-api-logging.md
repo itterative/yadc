@@ -24,16 +24,19 @@ Logging is **opt-in per-request** via `Session.capture_response()` context manag
 
 ```
 ~/.cache/yadc/api-debug/
-  2026-05-17_14-30-00_my-animals_a1b2c3/
-    001.jsonl
-    002.jsonl
+  2026-05-17/
+    XYZ_000_a1b2c3/
+      000001_my_photo.jsonl
+      000002_another_image.jsonl
     ...
 ```
 
-- **Run directory**: `{date}_{dataset_name}_{path_hash[:8]}`
+- **Date directory**: `{YYYY-MM-DD}` — groups runs by date
+- **Run directory**: `{dataset_name}_{NNN}_{path_hash[:8]}`
   - `dataset_name`: first dataset entry path basename, with `dataset_` prefix stripped
-  - `path_hash`: SHA-256[:8] of all dataset paths (null-joined)
-- **Files**: `{NNN}.jsonl` — sequential counter, **resumed from existing files** on re-runs
+  - `NNN`: dataset entry index (3-digit zero-padded)
+  - `path_hash`: SHA-256[:8] of TOML file path + all dataset paths (null-joined)
+- **Files**: `{NNNNNN}_{image_name}.jsonl` — 6-digit sequential counter + image stem name, **resumed from existing files** on re-runs
 
 ## JSONL Envelope
 

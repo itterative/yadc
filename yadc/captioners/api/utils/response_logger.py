@@ -32,21 +32,35 @@ class ResponseLogger:
         self._counter = self._resume_counter()
 
     @classmethod
-    def from_env(cls, cache_path: Path, dataset_paths: list[str] | None = None) -> "ResponseLogger | None":
+    def from_env(
+        cls,
+        cache_path: Path,
+        dataset_paths: list[str] | None = None,
+        *,
+        toml_path: str | None = None,
+        dataset_index: int = 0,
+    ) -> "ResponseLogger | None":
         """Create a ResponseLogger if debug logging is enabled, otherwise return None."""
         if not DEBUG_CAPTION_RESPONSES:
             return None
-        run_dir = cls._build_run_dir(cache_path, dataset_paths)
+        run_dir = cls._build_run_dir(cache_path, dataset_paths, toml_path=toml_path, dataset_index=dataset_index)
         return cls(run_dir, log_body=DEBUG_CAPTION_REQUESTS_BODY)
 
     # ---- run directory naming ----
 
     @classmethod
-    def _build_run_dir(cls, cache_path: Path, dataset_paths: list[str] | None) -> Path:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    def _build_run_dir(
+        cls,
+        cache_path: Path,
+        dataset_paths: list[str] | None,
+        *,
+        toml_path: str | None = None,
+        dataset_index: int = 0,
+    ) -> Path:
         name = cls._derive_dataset_name(dataset_paths)
-        path_hash = cls._hash_paths(dataset_paths)
-        return cache_path / "api-debug" / f"{timestamp}_{name}_{path_hash}"
+        path_hash = cls._hash_paths(dataset_paths, toml_path=toml_path)
+        date_dir = datetime.now().strftime("%Y-%m-%d")
+        return cache_path / "api-debug" / date_dir / f"{name}_{dataset_index:03d}_{path_hash}"
 
     @classmethod
     def _derive_dataset_name(cls, dataset_paths: list[str] | None) -> str:
@@ -59,8 +73,13 @@ class ResponseLogger:
         return raw or "unknown"
 
     @classmethod
-    def _hash_paths(cls, dataset_paths: list[str] | None) -> str:
-        payload = "\0".join(dataset_paths) if dataset_paths else ""
+    def _hash_paths(cls, dataset_paths: list[str] | None, *, toml_path: str | None = None) -> str:
+        parts: list[str] = []
+        if toml_path:
+            parts.append(toml_path)
+        if dataset_paths:
+            parts.extend(dataset_paths)
+        payload = "\0".join(parts)
         return hashlib.sha256(payload.encode()).hexdigest()[:8]
 
     # ---- counter ----
@@ -79,10 +98,10 @@ class ResponseLogger:
 
         return max_n + 1 if max_n else 1
 
-    def _next_filename(self) -> str:
+    def _next_filename(self, image_name: str) -> str:
         n = self._counter
         self._counter += 1
-        return f"{n:03d}.jsonl"
+        return f"{n:06d}_{image_name}.jsonl"
 
     # ---- header sanitization ----
 
@@ -108,6 +127,7 @@ class ResponseLogger:
         response_headers: _ResponseHeaders,
         response_body: str,
         stream: bool = False,
+        image_name: str,
     ):
         entry: dict[str, Any] = {
             "request": {
@@ -133,7 +153,7 @@ class ResponseLogger:
         entry["response"]["body"] = response_body
 
         self._run_dir.mkdir(parents=True, exist_ok=True)
-        filepath = self._run_dir / self._next_filename()
+        filepath = self._run_dir / self._next_filename(image_name)
 
         tmp_path = filepath.with_suffix(".tmp")
         with open(tmp_path, "w") as f:
