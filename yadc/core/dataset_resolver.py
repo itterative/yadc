@@ -1,12 +1,12 @@
 """Dataset resolution: scanning paths, merging inline images, applying extras."""
 
 import pathlib
-import toml
-
 from typing import Callable, Optional
 
-from .dataset import DatasetImage
+import toml
+
 from .config import ConfigDatasetEntry
+from .dataset import DatasetImage
 
 # Type for a function that reads a DatasetImage from disk.
 # Returns None if the file is not a valid image.
@@ -36,13 +36,13 @@ def read_image_from_disk(file_path: str, caption_suffix: str) -> Optional[Datase
         dataset_image_toml = {}
     else:
         try:
-            with open(dataset_image.toml_path, 'r') as f:
+            with open(dataset_image.toml_path, "r") as f:
                 dataset_image_toml = toml.load(f)
         except Exception:
             return None
 
-    dataset_image_toml['path'] = str(dataset_image.absolute_path)
-    dataset_image_toml['caption_suffix'] = caption_suffix
+    dataset_image_toml["path"] = str(dataset_image.absolute_path)
+    dataset_image_toml["caption_suffix"] = caption_suffix
 
     image = DatasetImage(**dataset_image_toml)
     image.caption = image.read_caption()

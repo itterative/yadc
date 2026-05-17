@@ -1,26 +1,28 @@
+import json
 from typing import Any
 
-import json
 import requests
 
 from yadc.core import logging
 
 from ..types import (
-    OpenAIErrorResponse,
-    OpenAIChatCompletionResponse,
-    OpenAIChatCompletionChunkResponse,
-    OpenRouterModerationError,
-    GeminiErrorResponse,
     GeminiContentResponse,
+    GeminiErrorResponse,
+    OpenAIChatCompletionChunkResponse,
+    OpenAIChatCompletionResponse,
+    OpenAIErrorResponse,
+    OpenRouterModerationError,
 )
 
 _logger = logging.get_logger(__name__)
 
+
 class _ParsedError:
-    def __init__(self, error_source: str, error_code: int|str, error_message: str):
+    def __init__(self, error_source: str, error_code: int | str, error_message: str):
         self.source = error_source
         self.code = error_code
         self.message = error_message
+
 
 class ErrorNormalizationMixin:
     class GenerationError(Exception):
@@ -31,7 +33,7 @@ class ErrorNormalizationMixin:
         def _try_parse_moderation(moderation: dict):
             try:
                 moderation_error = OpenRouterModerationError(**moderation)
-                return _ParsedError('moderation', 400, '; '.join(moderation_error.reasons))
+                return _ParsedError("moderation", 400, "; ".join(moderation_error.reasons))
             except Exception:
                 pass
 
@@ -65,48 +67,48 @@ class ErrorNormalizationMixin:
                 error_code = error_response.code
                 error_message = error_response.message
 
-                return _ParsedError(error_source, error_code, f'({error_response.status}) {error_message}')
+                return _ParsedError(error_source, error_code, f"({error_response.status}) {error_message}")
             except Exception:
                 pass
 
             return None
 
-        error_source = 'app'
+        error_source = "app"
         error_code = -1
-        error_message = ''
+        error_message = ""
 
         if isinstance(error, requests.HTTPError):
             # FIXME: doesn't work for streaming content
 
-            _logger.debug('HTTP error %d: headers %s', error.response.status_code, error.response.headers)
-            _logger.debug('HTTP error %d: %s', error.response.status_code, error.response.text)
+            _logger.debug("HTTP error %d: headers %s", error.response.status_code, error.response.headers)
+            _logger.debug("HTTP error %d: %s", error.response.status_code, error.response.text)
 
-            error_source = 'http'
+            error_source = "http"
             error_code = error.response.status_code
-            error_message = ''
+            error_message = ""
 
             if error_parsed := _try_parse_error_json(error_source, error.response.text):
-                return f'api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}'
+                return f"api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}"
 
-            _logger.warning('Warning: failed to process http error: %d', error.response.status_code)
+            _logger.warning("Warning: failed to process http error: %d", error.response.status_code)
         elif isinstance(error, ErrorNormalizationMixin.GenerationError):
-            _logger.debug('Generation error: %s', error)
+            _logger.debug("Generation error: %s", error)
 
-            error_source = 'generation'
+            error_source = "generation"
             error_code = 500
 
             if error_parsed := _try_parse_error_json(error_source, str(error)):
-                return f'api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}'
+                return f"api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}"
 
-            _logger.warning('Warning: failed to process generation error')
+            _logger.warning("Warning: failed to process generation error")
         elif isinstance(error, OpenAIChatCompletionResponse):
             for choice in error.choices:
                 if not choice.finish_reason:
                     continue
 
-                return f'api stopped generating: reason: {choice.finish_reason}'
+                return f"api stopped generating: reason: {choice.finish_reason}"
 
-            _logger.warning('Warning: failed to process openai response')
+            _logger.warning("Warning: failed to process openai response")
         elif isinstance(error, OpenAIChatCompletionChunkResponse):
             error_response = error.error
 
@@ -118,36 +120,45 @@ class ErrorNormalizationMixin:
                 if not choice.finish_reason:
                     continue
 
-                return f'api stopped generating: reason: {choice.finish_reason}'
+                return f"api stopped generating: reason: {choice.finish_reason}"
 
-            _logger.warning('Warning: failed to process openai streaming response')
+            _logger.warning("Warning: failed to process openai streaming response")
         elif isinstance(error, GeminiContentResponse):
             if error.promptFeedback:
-                return f'api stopped generating: reason: {error.promptFeedback.blockReason}: {"; ".join(error.promptFeedback.safetyRatings)}'
+                return f"api stopped generating: reason: {error.promptFeedback.blockReason}: {'; '.join(error.promptFeedback.safetyRatings)}"
 
             for candidate in error.candidates:
                 if not candidate.finishReason:
                     continue
 
-                return f'api stopped generating: reason: {candidate.finishReason}'
+                return f"api stopped generating: reason: {candidate.finishReason}"
 
-            _logger.warning('Warning: failed to process gemini streaming response')
+            _logger.warning("Warning: failed to process gemini streaming response")
         else:
-            _logger.debug('Unhandled error %s: %s', type(error), error)
+            _logger.debug("Unhandled error %s: %s", type(error), error)
 
-            return f'unknown error: {type(error)}'
+            return f"unknown error: {type(error)}"
 
         # some defaults if response cannot be processed
         if not error_message:
             match (error_source, error_code):
-                case ('http', 400): error_message = 'request could not be completed'
-                case ('http', 401): error_message = 'authentication failure'
-                case ('http', 402): error_message = 'not enough api credits; payment needed'
-                case ('http', 404): error_message = 'model not found'
-                case ('http', 408): error_message = 'timeout'
-                case ('http', 429): error_message = 'overloaded'
-                case ('http', 502): error_message = 'unavailable'
-                case ('http', 503): error_message = 'unavailable'
-                case ('app', _): error_message = 'unknown error'
+                case ("http", 400):
+                    error_message = "request could not be completed"
+                case ("http", 401):
+                    error_message = "authentication failure"
+                case ("http", 402):
+                    error_message = "not enough api credits; payment needed"
+                case ("http", 404):
+                    error_message = "model not found"
+                case ("http", 408):
+                    error_message = "timeout"
+                case ("http", 429):
+                    error_message = "overloaded"
+                case ("http", 502):
+                    error_message = "unavailable"
+                case ("http", 503):
+                    error_message = "unavailable"
+                case ("app", _):
+                    error_message = "unknown error"
 
-        return f'api returned an error ({error_source} {error_code}): {error_message}'
+        return f"api returned an error ({error_source} {error_code}): {error_message}"

@@ -1,16 +1,15 @@
-from typing import Optional
-
 import base64
-import shutil
 import functools
+import shutil
+from typing import Optional
 
 import keyring
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from yadc.core import logging
 from yadc.cmd import app
+from yadc.core import logging
 
 KEYRING_SERVICE = f"{app.NAME}_keys"
 
@@ -20,6 +19,7 @@ PUBLIC_KEY_PATH = app.STATE_PATH / "public_key.pem"
 
 
 _logger = logging.get_logger(__name__)
+
 
 def _generate_key_pair():
     if PUBLIC_KEY_PATH.exists():
@@ -50,10 +50,11 @@ def _generate_key_pair():
     )
 
     PUBLIC_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(PUBLIC_KEY_PATH, 'wb') as f:
+    with open(PUBLIC_KEY_PATH, "wb") as f:
         f.write(public_pem)
 
     _logger.debug("Saved public key to disk.")
+
 
 @functools.cache
 def _get_private_key() -> Optional[rsa.RSAPrivateKey]:
@@ -75,12 +76,13 @@ def _get_private_key() -> Optional[rsa.RSAPrivateKey]:
         _logger.error("Error: Failed to load private key from keyring: %s", e)
         return None
 
+
 @functools.cache
 def _get_public_key() -> Optional[rsa.RSAPublicKey]:
     _generate_key_pair()
 
     try:
-        with open(PUBLIC_KEY_PATH, 'rb') as f:
+        with open(PUBLIC_KEY_PATH, "rb") as f:
             pem_data = f.read()
 
         key = serialization.load_pem_public_key(pem_data, backend=default_backend())
@@ -112,16 +114,10 @@ def encrypt_setting(value: str) -> str:
     if public_key is None:
         raise ValueError("Public key not available for encryption.")
 
-    encrypted = public_key.encrypt(
-        value.encode('utf-8'),
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
-        )
-    )
+    encrypted = public_key.encrypt(value.encode("utf-8"), padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
 
-    return base64.b64encode(encrypted).decode('utf-8')
+    return base64.b64encode(encrypted).decode("utf-8")
+
 
 def decrypt_setting(encrypted_token: str) -> Optional[str]:
     private_key = _get_private_key()
@@ -131,15 +127,8 @@ def decrypt_setting(encrypted_token: str) -> Optional[str]:
 
     try:
         encrypted_data = base64.b64decode(encrypted_token)
-        decrypted = private_key.decrypt(
-            encrypted_data,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        return decrypted.decode('utf-8')
+        decrypted = private_key.decrypt(encrypted_data, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+        return decrypted.decode("utf-8")
     except Exception as e:
         _logger.error("Error: Failed to decrypt setting: %s", e)
         return None

@@ -2,14 +2,14 @@ import abc
 
 import requests
 
-from yadc.core import logging
-from yadc.core import Captioner
+from yadc.core import Captioner, logging
 from yadc.core.prediction import PredictionContext
 
 from .session import Session
 from .utils.cache import HTTPResponseCache
 
 _logger = logging.get_logger(__name__)
+
 
 class BaseAPICaptioner(Captioner, abc.ABC):
     def __init__(self, **kwargs):
@@ -31,10 +31,10 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
         Captioner.__init__(self, **kwargs)
 
-        warnings: bool = kwargs.get('_warnings', True)
+        warnings: bool = kwargs.get("_warnings", True)
 
-        self._api_url: str = kwargs.get('api_url', '')
-        self._api_token: str = kwargs.get('api_token', '')
+        self._api_url: str = kwargs.get("api_url", "")
+        self._api_token: str = kwargs.get("api_token", "")
 
         if not self._api_url:
             raise ValueError("no api_url")
@@ -42,23 +42,23 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         session_headers = {}
 
         if self._api_token:
-            session_headers['Authorization'] = f'Bearer {self._api_token}'
+            session_headers["Authorization"] = f"Bearer {self._api_token}"
         elif warnings:
-            _logger.warning('Warning: no api_token is set, requests will fail if api uses authentication')
+            _logger.warning("Warning: no api_token is set, requests will fail if api uses authentication")
 
-        session: requests.Session|None = kwargs.get('session', None)
+        session: requests.Session | None = kwargs.get("session", None)
         assert session is None or isinstance(session, requests.Session)
 
-        cache: HTTPResponseCache|None = kwargs.get('cache', None)
+        cache: HTTPResponseCache | None = kwargs.get("cache", None)
         assert cache is None or isinstance(cache, HTTPResponseCache)
 
         self._session = Session(self._api_url, headers=session_headers, session=session, cache=cache)
 
     @staticmethod
     def _before_predict(kwargs: dict):
-        ctx = kwargs.get('prediction_context', None)
+        ctx = kwargs.get("prediction_context", None)
         if ctx is not None:
-            assert isinstance(ctx, PredictionContext), f'prediction_context must be a PredictionContext, got {type(ctx)}'
+            assert isinstance(ctx, PredictionContext), f"prediction_context must be a PredictionContext, got {type(ctx)}"
             ctx.reasoning = None
             ctx.reasoning_summary = None
             ctx.reasoning_encrypted = None

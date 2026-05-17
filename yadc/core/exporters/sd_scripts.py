@@ -21,12 +21,9 @@ from .utils import read_caption_source
 class Backend:
     """Describes the sd-scripts export backend."""
 
-    name: str = 'sd-scripts'
-    description: str = (
-        'sd-scripts metadata formats '
-        '(metadata.json, metadata.jsonl, per-image caption files)'
-    )
-    formats: tuple[str, ...] = ('json', 'jsonl', 'txt')
+    name: str = "sd-scripts"
+    description: str = "sd-scripts metadata formats (metadata.json, metadata.jsonl, per-image caption files)"
+    formats: tuple[str, ...] = ("json", "jsonl", "txt")
 
 
 BACKEND = Backend()
@@ -58,14 +55,14 @@ def run(
     Returns:
         Number of entries/files written.
     """
-    if fmt == 'json':
+    if fmt == "json":
         return _export_json(images, output, source, draft_name, append)
-    elif fmt == 'jsonl':
+    elif fmt == "jsonl":
         return _export_jsonl(images, output, source, draft_name, append)
-    elif fmt == 'txt':
+    elif fmt == "txt":
         return _export_txt(images, source, draft_name, output, caption_extension, append)
     else:
-        raise ValueError(f'Unknown format: {fmt}')
+        raise ValueError(f"Unknown format: {fmt}")
 
 
 # ---- internal helpers ----
@@ -79,12 +76,12 @@ def _export_json(
     append: bool,
 ) -> int:
     if output_path is None:
-        raise ValueError('output_path is required for json format')
+        raise ValueError("output_path is required for json format")
 
     existing: dict[str, dict[str, str]] = {}
     if append and output_path.exists():
         try:
-            with open(output_path, 'r') as f:
+            with open(output_path, "r") as f:
                 loaded: Any = json.load(f)
                 if isinstance(loaded, dict):
                     existing = loaded
@@ -100,12 +97,12 @@ def _export_json(
         if not text:
             continue
 
-        existing[image.absolute_path.name] = {'caption': text}
+        existing[image.absolute_path.name] = {"caption": text}
         count += 1
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
-        _ = f.write('\n')
+        _ = f.write("\n")
 
     return count
 
@@ -118,9 +115,9 @@ def _export_jsonl(
     append: bool,
 ) -> int:
     if output_path is None:
-        raise ValueError('output_path is required for jsonl format')
+        raise ValueError("output_path is required for jsonl format")
 
-    mode = 'a' if append else 'w'
+    mode = "a" if append else "w"
     count = 0
 
     with open(output_path, mode) as f:
@@ -132,8 +129,8 @@ def _export_jsonl(
             if not text:
                 continue
 
-            entry = {'image_path': image.absolute_path.name, 'caption': text}
-            _ = f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+            entry = {"image_path": image.absolute_path.name, "caption": text}
+            _ = f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             count += 1
 
     return count
@@ -161,11 +158,11 @@ def _export_txt(
         else:
             out_path = image.absolute_path.with_suffix(caption_extension)
 
-        mode = 'a' if append else 'w'
+        mode = "a" if append else "w"
         with open(out_path, mode) as f:
             f.write(text)
-            if not text.endswith('\n'):
-                f.write('\n')
+            if not text.endswith("\n"):
+                f.write("\n")
 
         count += 1
 

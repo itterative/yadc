@@ -1,5 +1,6 @@
 from time import time
 
+
 class Timer:
     def __init__(self):
         self.start_t: float = 0

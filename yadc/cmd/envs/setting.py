@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 class Setting:
     def __init__(self, value: Optional[str], encrypted: bool = False):
         self.value = value
@@ -7,9 +8,9 @@ class Setting:
 
     def __str__(self) -> str:
         if not self.value:
-            return ''
+            return ""
 
         if self.encrypted:
-            return '[REDACTED]'
+            return "[REDACTED]"
 
         return self.value

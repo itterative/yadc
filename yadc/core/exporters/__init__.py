@@ -9,12 +9,10 @@ To register a new backend, import its module and add it to ``_BACKENDS`` below.
 """
 
 import pathlib
-
 from dataclasses import dataclass
 from typing import Protocol
 
 from ..dataset import DatasetImage
-
 from . import sd_scripts as _sd_scripts
 
 
@@ -39,8 +37,9 @@ class _BackendDescriptor:
     description: str
     formats: tuple[str, ...]
 
+
 _BACKENDS: dict[str, _BackendDescriptor] = {
-    'sd-scripts': _BackendDescriptor(
+    "sd-scripts": _BackendDescriptor(
         run=_sd_scripts.run,
         name=_sd_scripts.BACKEND.name,
         description=_sd_scripts.BACKEND.description,
@@ -62,9 +61,7 @@ def get_backend(name: str) -> _BackendDescriptor:
     """
     backend = _BACKENDS.get(name)
     if backend is None:
-        raise ValueError(
-            f'Unknown backend: {name!r}. Available: {", ".join(_BACKENDS)}'
-        )
+        raise ValueError(f"Unknown backend: {name!r}. Available: {', '.join(_BACKENDS)}")
     return backend
 
 
@@ -82,9 +79,7 @@ def run_export(
     """Dispatch to the named backend's ``run()`` function."""
     descriptor = get_backend(backend_name)
     if fmt not in descriptor.formats:
-        raise ValueError(
-            f'Backend {backend_name!r} does not support format {fmt!r}. Available: {", ".join(descriptor.formats)}'
-        )
+        raise ValueError(f"Backend {backend_name!r} does not support format {fmt!r}. Available: {', '.join(descriptor.formats)}")
 
     return descriptor.run(
         images,

@@ -1,20 +1,18 @@
-from typing import Generator
-
-import io
 import abc
 import base64
-import pathlib
+import io
+from typing import Generator
 
 import jinja2
 import pydantic
-
 from PIL import Image
 
+from yadc import templates
 from yadc.core import logging
 from yadc.core.dataset import DatasetImage
-from yadc import templates
 
 _logger = logging.get_logger(__name__)
+
 
 class CaptionerRound(pydantic.BaseModel):
     """
@@ -29,8 +27,8 @@ class CaptionerRound(pydantic.BaseModel):
     caption: str
 
 
-ROLE_USER = 'user'
-ROLE_ASSISTANT = 'assistant'
+ROLE_USER = "user"
+ROLE_ASSISTANT = "assistant"
 
 
 class ReplyRound(pydantic.BaseModel):
@@ -95,7 +93,7 @@ class Captioner(abc.ABC):
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
         """
 
-        self._prompt_template: str = kwargs.pop('prompt_template', '').strip()
+        self._prompt_template: str = kwargs.pop("prompt_template", "").strip()
 
         self._jinja = jinja2.Environment(
             loader=jinja2.FunctionLoader(self._load_jinja_template),
@@ -106,7 +104,7 @@ class Captioner(abc.ABC):
 
     def _unindent_template(self, template: str):
         template = template.strip()
-        return '\n'.join([ line.lstrip() for line in template.splitlines() ])
+        return "\n".join([line.lstrip() for line in template.splitlines()])
 
     def _load_jinja_template(self, template: str):
         """
@@ -129,38 +127,37 @@ class Captioner(abc.ABC):
             ValueError: If an invalid template name is requested.
         """
 
-        if template == '__system_prompt__':
-            return self._unindent_template('''
+        if template == "__system_prompt__":
+            return self._unindent_template("""
                 {% import "__default_template__" as default_template %}
                 {% import "__user_template__" as user_template %}
                 {{ user_template.system_prompt|default(default_template.system_prompt, true) }}
-            ''')
+            """)
 
-        if template == '__user_prompt__':
-            return self._unindent_template('''
+        if template == "__user_prompt__":
+            return self._unindent_template("""
                 {% import "__default_template__" as default_template %}
                 {% import "__user_template__" as user_template %}
                 {{ user_template.user_prompt|default(default_template.user_prompt, true) }}
-            ''')
+            """)
 
-        if template == '__user_prompt_multiple_rounds__':
-            return self._unindent_template('''
+        if template == "__user_prompt_multiple_rounds__":
+            return self._unindent_template("""
                 {% import "__default_template__" as default_template %}
                 {% import "__user_template__" as user_template %}
                 {{ user_template.user_prompt_multiple_rounds|default(default_template.user_prompt_multiple_rounds, true) }}
-            ''')
+            """)
 
-        if template == '__default_template__':
+        if template == "__default_template__":
             return templates.default_template()
-        elif template == '__user_template__':
+        elif template == "__user_template__":
             # early exit if prompt template is given directly
             if self._prompt_template:
                 return self._prompt_template
 
             return templates.default_template()
         else:
-            raise ValueError(f'bad jinja template: {template}')
-
+            raise ValueError(f"bad jinja template: {template}")
 
     def prompts_from_image(self, dataset_image: DatasetImage, **kwargs):
         """
@@ -185,16 +182,16 @@ class Captioner(abc.ABC):
         """
 
         try:
-            caption_rounds: list[CaptionerRound] = kwargs.pop('caption_rounds', [])
+            caption_rounds: list[CaptionerRound] = kwargs.pop("caption_rounds", [])
             assert isinstance(caption_rounds, list)
             assert all(map(lambda r: isinstance(r, CaptionerRound), caption_rounds))
         except Exception:
             raise ValueError("bad argument for caption_rounds")
 
-        drafts: dict[str, str] = kwargs.pop('drafts', None)
+        drafts: dict[str, str] = kwargs.pop("drafts", None)
 
-        system_prompt_override = kwargs.pop('system_prompt_override', '')
-        user_prompt_override = kwargs.pop('user_prompt_override', '')
+        system_prompt_override = kwargs.pop("system_prompt_override", "")
+        user_prompt_override = kwargs.pop("user_prompt_override", "")
 
         assert isinstance(system_prompt_override, str)
         assert isinstance(user_prompt_override, str)
@@ -202,16 +199,16 @@ class Captioner(abc.ABC):
         template_context = dataset_image.model_dump()
 
         if drafts:
-            template_context['drafts'] = drafts
+            template_context["drafts"] = drafts
 
-        system_prompt = system_prompt_override or self._jinja.get_template('__system_prompt__', globals=template_context).render()
+        system_prompt = system_prompt_override or self._jinja.get_template("__system_prompt__", globals=template_context).render()
 
         if caption_rounds:
-            template_context['caption_rounds'] = caption_rounds
+            template_context["caption_rounds"] = caption_rounds
 
-            user_prompt= user_prompt_override or self._jinja.get_template('__user_prompt_multiple_rounds__', globals=template_context).render()
+            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt_multiple_rounds__", globals=template_context).render()
         else:
-            user_prompt= user_prompt_override or self._jinja.get_template('__user_prompt__', globals=template_context).render()
+            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt__", globals=template_context).render()
 
         system_prompt = system_prompt.strip()
         user_prompt = user_prompt.strip()
@@ -246,18 +243,18 @@ class Captioner(abc.ABC):
             AssertionError: On excessive recursion.
         """
 
-        call_depth = kwargs.pop('call_depth', 0)
+        call_depth = kwargs.pop("call_depth", 0)
         assert isinstance(call_depth, int), f"encode_image called with bad call_depth type: {type(call_depth)}"
-        assert call_depth < 5, f"encode_image reached maximum call depth"
+        assert call_depth < 5, "encode_image reached maximum call depth"
 
         try:
-            image_format = kwargs.pop('image_format', 'PNG')
+            image_format = kwargs.pop("image_format", "PNG")
             assert isinstance(image_format, str), f"encode_image called with bad image_format type: {type(image_format)}"
 
             image_format = image_format.upper()
-            assert image_format in ('JPEG', 'PNG'), f"encode_image called with bad image_format: only JPEG or PNG is allowed"
+            assert image_format in ("JPEG", "PNG"), "encode_image called with bad image_format: only JPEG or PNG is allowed"
 
-            image_quality = kwargs.pop('image_quality', None)
+            image_quality = kwargs.pop("image_quality", None)
             assert image_quality is None or isinstance(image_quality, int), f"encode_image called with bad image_quality type: {type(image_quality)}"
             assert image_quality is None or (image_quality > 10 and image_quality <= 100), f"encode_image called with bad image_quality: {image_quality}"
         except AssertionError as e:
@@ -269,21 +266,21 @@ class Captioner(abc.ABC):
         # resize image if too large
         image_obj.thumbnail(max_image_size, Image.Resampling.LANCZOS)
 
-        if image_format == 'JPEG' and image_obj.mode in ('RGBA', 'LA'):
-            image_composite = Image.new('RGB', image_obj.size, (255, 255, 255))
+        if image_format == "JPEG" and image_obj.mode in ("RGBA", "LA"):
+            image_composite = Image.new("RGB", image_obj.size, (255, 255, 255))
             image_composite.paste(image_obj, mask=image_obj.split()[-1])
             image_obj = image_composite
 
         image_obj.save(buffer, format=image_format)
-        encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        encoded_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
         if len(encoded_image) > max_image_encoded_size:
             # start at lossless, then degrade with each iteration
             image_quality = 100 if image_quality is None else image_quality - 10
 
-            return self._encode_image(image, image_format='JPEG', call_depth=call_depth+1, image_quality=image_quality, **kwargs)
+            return self._encode_image(image, image_format="JPEG", call_depth=call_depth + 1, image_quality=image_quality, **kwargs)
 
-        return f'image/{image_format.lower()}', base64.b64encode(buffer.getvalue()).decode('utf-8')
+        return f"image/{image_format.lower()}", base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     @abc.abstractmethod
     def load_model(self, model_repo: str, **kwargs) -> None:
@@ -322,7 +319,7 @@ class Captioner(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def predict_stream(self, image: DatasetImage, **kwargs) -> 'Generator[str, None, None]':
+    def predict_stream(self, image: DatasetImage, **kwargs) -> "Generator[str, None, None]":
         """
         Generates a caption incrementally and yields partial results.
 

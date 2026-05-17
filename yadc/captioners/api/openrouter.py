@@ -1,11 +1,10 @@
-from yadc.core import logging
-from yadc.core import DatasetImage
+from yadc.core import DatasetImage, logging
 
+from .openai import APITypes, OpenAICaptioner
 from .types import OpenRouterCreditsResponse
 
-from .openai import OpenAICaptioner, APITypes
-
 _logger = logging.get_logger(__name__)
+
 
 class OpenRouterCaptioner(OpenAICaptioner):
     def __init__(self, **kwargs):
@@ -15,7 +14,7 @@ class OpenRouterCaptioner(OpenAICaptioner):
         self._log_api_information()
 
     def _log_api_information(self):
-        with self._session.get('credits') as credits_resp:
+        with self._session.get("credits") as credits_resp:
             try:
                 credits_resp.raise_for_status()
 
@@ -23,31 +22,31 @@ class OpenRouterCaptioner(OpenAICaptioner):
                 assert isinstance(credits_resp_json, dict)
 
                 credits = OpenRouterCreditsResponse(**credits_resp_json).data
-                _logger.info('You have used %.2f out of %.2f credits with this api token.', credits.total_usage, credits.total_credits)
+                _logger.info("You have used %.2f out of %.2f credits with this api token.", credits.total_usage, credits.total_credits)
             except Exception:
-                _logger.warning('Warning: failed to retrieve current credits. Is you API token correct?')
+                _logger.warning("Warning: failed to retrieve current credits. Is you API token correct?")
 
     @staticmethod
     def _is_reasoning_redacted(text: str) -> bool:
-        return text == '[REDACTED]'
+        return text == "[REDACTED]"
 
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         conversation = super().conversation(image, stream=stream, **kwargs)
 
-        conversation.pop('reasoning_effort', None) # remove any existing openai reasoning config
+        conversation.pop("reasoning_effort", None)  # remove any existing openai reasoning config
 
         if self._reasoning:
-            conversation['reasoning'] = {
-                'enabled': True,
-                'effort': self._reasoning_effort,
-                'exclude': self._reasoning_exclude_output,
+            conversation["reasoning"] = {
+                "enabled": True,
+                "effort": self._reasoning_effort,
+                "exclude": self._reasoning_exclude_output,
             }
         else:
-            conversation['reasoning'] = { 'enabled': False }
+            conversation["reasoning"] = {"enabled": False}
 
-        conversation.pop('stream_options', None)
-        conversation['usage'] = { 'include': True }
+        conversation.pop("stream_options", None)
+        conversation["usage"] = {"include": True}
 
-        conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
+        conversation["max_tokens"] = conversation.pop("max_completion_tokens", 512)
 
         return conversation
