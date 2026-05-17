@@ -40,6 +40,13 @@ _EXPORT_MAP = {".json": "json", ".jsonl": "jsonl"}
     help="Export a named draft instead of the caption file.",
 )
 @click.option(
+    "--with-draft",
+    "with_drafts",
+    type=str,
+    multiple=True,
+    help="Append a named draft after the primary source. May be repeated.",
+)
+@click.option(
     "--format",
     "fmt",
     type=str,
@@ -71,6 +78,7 @@ def export(
     dataset: TextIO,
     backend: str,
     draft: str | None,
+    with_drafts: tuple[str, ...],
     fmt: str | None,
     output: str | None,
     append: bool,
@@ -79,8 +87,12 @@ def export(
     user_config: str | None,
 ) -> None:
     backend_name = backend
-    draft_name = draft or ""
-    source = "draft" if draft_name else "caption"
+    if draft is not None:
+        source = "draft"
+        drafts = (draft, *with_drafts)
+    else:
+        source = "caption"
+        drafts = with_drafts
 
     import toml
 
@@ -168,7 +180,7 @@ def export(
             resolved_images,
             fmt=fmt,
             source=source,
-            draft_name=draft_name,
+            drafts=drafts,
             output=output_path,
             append=append,
             caption_extension=caption_extension,

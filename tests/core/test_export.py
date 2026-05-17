@@ -49,6 +49,25 @@ def tmp_images(tmp_path):
     return tmp_path, images
 
 
+@pytest.fixture
+def tmp_images_multi_draft(tmp_path):
+    """Create images with two drafts each."""
+    images = []
+    for name, caption_text in [
+        ("img001.png", "1girl, hatsune miku, vocaloid"),
+        ("img002.png", "1girl, sakura, cherry blossoms"),
+    ]:
+        img_path = tmp_path / name
+        img_path.write_bytes(_make_png())
+        (tmp_path / (img_path.stem + ".txt")).write_text(caption_text)
+        (tmp_path / (img_path.stem + ".gemma.draft~")).write_text("gemma: anime girl")
+        (tmp_path / (img_path.stem + ".qwen.draft~")).write_text("qwen: colorful scene")
+
+        images.append(DatasetImage(path=str(img_path), caption_suffix=".txt"))
+
+    return tmp_path, images
+
+
 # ---- registry tests ----
 
 
@@ -81,7 +100,6 @@ class TestExportTxt:
             images,
             fmt="txt",
             source="caption",
-            draft_name="",
             output=out_dir,
             append=False,
             caption_extension=".caption",
@@ -92,7 +110,7 @@ class TestExportTxt:
         assert (out_dir / "img002.caption").read_text() == "1girl, sakura, cherry blossoms\n"
         assert not (out_dir / "img003.caption").exists()
 
-    def test_export_draft_source(self, tmp_images):
+    def test_export_single_draft(self, tmp_images):
         tmp_path, images = tmp_images
         out_dir = tmp_path / "output"
         out_dir.mkdir()
@@ -102,7 +120,7 @@ class TestExportTxt:
             images,
             fmt="txt",
             source="draft",
-            draft_name="test",
+            drafts=("test",),
             output=out_dir,
             append=False,
             caption_extension=".caption",
@@ -110,6 +128,64 @@ class TestExportTxt:
 
         assert count == 2
         assert (out_dir / "img001.caption").read_text() == "draft: miku on stage\n"
+
+    def test_export_caption_with_one_draft(self, tmp_images):
+        tmp_path, images = tmp_images
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="txt",
+            source="caption",
+            drafts=("test",),
+            output=out_dir,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        assert (out_dir / "img001.caption").read_text() == "1girl, hatsune miku, vocaloid\ndraft: miku on stage\n"
+        assert (out_dir / "img002.caption").read_text() == "1girl, sakura, cherry blossoms\ndraft: sakura in spring\n"
+
+    def test_export_caption_with_multiple_drafts(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="txt",
+            source="caption",
+            drafts=("gemma", "qwen"),
+            output=out_dir,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        assert (out_dir / "img001.caption").read_text() == "1girl, hatsune miku, vocaloid\ngemma: anime girl\nqwen: colorful scene\n"
+
+    def test_export_draft_with_draft(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="txt",
+            source="draft",
+            drafts=("gemma", "qwen"),
+            output=out_dir,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        assert (out_dir / "img001.caption").read_text() == "gemma: anime girl\nqwen: colorful scene\n"
 
     def test_export_txt_alongside_images(self, tmp_images):
         tmp_path, images = tmp_images
@@ -119,7 +195,6 @@ class TestExportTxt:
             images,
             fmt="txt",
             source="caption",
-            draft_name="",
             output=None,
             append=False,
             caption_extension=".caption",
@@ -139,7 +214,6 @@ class TestExportTxt:
             images[:1],
             fmt="txt",
             source="caption",
-            draft_name="",
             output=out_dir,
             append=False,
             caption_extension=".caption",
@@ -149,7 +223,6 @@ class TestExportTxt:
             images[1:2],
             fmt="txt",
             source="caption",
-            draft_name="",
             output=out_dir,
             append=True,
             caption_extension=".caption",
@@ -172,7 +245,6 @@ class TestExportJson:
             images,
             fmt="json",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -184,7 +256,7 @@ class TestExportJson:
         assert data["img002.png"]["caption"] == "1girl, sakura, cherry blossoms"
         assert "img003.png" not in data
 
-    def test_export_draft_source(self, tmp_images):
+    def test_export_single_draft(self, tmp_images):
         tmp_path, images = tmp_images
         output = tmp_path / "metadata.json"
 
@@ -193,7 +265,7 @@ class TestExportJson:
             images,
             fmt="json",
             source="draft",
-            draft_name="test",
+            drafts=("test",),
             output=output,
             append=False,
             caption_extension=".caption",
@@ -202,6 +274,64 @@ class TestExportJson:
         assert count == 2
         data = json.loads(output.read_text())
         assert data["img001.png"]["caption"] == "draft: miku on stage"
+
+    def test_export_caption_with_one_draft(self, tmp_images):
+        tmp_path, images = tmp_images
+        output = tmp_path / "metadata.json"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="json",
+            source="caption",
+            drafts=("test",),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        data = json.loads(output.read_text())
+        assert data["img001.png"]["caption"] == "1girl, hatsune miku, vocaloid\ndraft: miku on stage"
+        assert data["img002.png"]["caption"] == "1girl, sakura, cherry blossoms\ndraft: sakura in spring"
+
+    def test_export_caption_with_multiple_drafts(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        output = tmp_path / "metadata.json"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="json",
+            source="caption",
+            drafts=("gemma", "qwen"),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        data = json.loads(output.read_text())
+        assert data["img001.png"]["caption"] == "1girl, hatsune miku, vocaloid\ngemma: anime girl\nqwen: colorful scene"
+
+    def test_export_draft_with_draft(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        output = tmp_path / "metadata.json"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="json",
+            source="draft",
+            drafts=("gemma", "qwen"),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        data = json.loads(output.read_text())
+        assert data["img001.png"]["caption"] == "gemma: anime girl\nqwen: colorful scene"
 
     def test_export_json_append_merges(self, tmp_images):
         tmp_path, images = tmp_images
@@ -212,7 +342,6 @@ class TestExportJson:
             images[:1],
             fmt="json",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -222,7 +351,6 @@ class TestExportJson:
             images[1:2],
             fmt="json",
             source="caption",
-            draft_name="",
             output=output,
             append=True,
             caption_extension=".caption",
@@ -242,7 +370,6 @@ class TestExportJson:
             images[:1],
             fmt="json",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -252,7 +379,7 @@ class TestExportJson:
             images[:1],
             fmt="json",
             source="draft",
-            draft_name="test",
+            drafts=("test",),
             output=output,
             append=True,
             caption_extension=".caption",
@@ -275,7 +402,6 @@ class TestExportJsonl:
             images,
             fmt="jsonl",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -292,7 +418,7 @@ class TestExportJsonl:
         entry2 = json.loads(lines[1])
         assert entry2["image_path"] == "img002.png"
 
-    def test_export_draft_source(self, tmp_images):
+    def test_export_single_draft(self, tmp_images):
         tmp_path, images = tmp_images
         output = tmp_path / "metadata.jsonl"
 
@@ -301,7 +427,7 @@ class TestExportJsonl:
             images,
             fmt="jsonl",
             source="draft",
-            draft_name="test",
+            drafts=("test",),
             output=output,
             append=False,
             caption_extension=".caption",
@@ -310,6 +436,68 @@ class TestExportJsonl:
         assert count == 2
         lines = output.read_text().strip().split("\n")
         assert json.loads(lines[0])["caption"] == "draft: miku on stage"
+
+    def test_export_caption_with_one_draft(self, tmp_images):
+        tmp_path, images = tmp_images
+        output = tmp_path / "metadata.jsonl"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="jsonl",
+            source="caption",
+            drafts=("test",),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        lines = output.read_text().strip().split("\n")
+        entry1 = json.loads(lines[0])
+        assert entry1["caption"] == "1girl, hatsune miku, vocaloid\ndraft: miku on stage"
+        entry2 = json.loads(lines[1])
+        assert entry2["caption"] == "1girl, sakura, cherry blossoms\ndraft: sakura in spring"
+
+    def test_export_caption_with_multiple_drafts(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        output = tmp_path / "metadata.jsonl"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="jsonl",
+            source="caption",
+            drafts=("gemma", "qwen"),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        lines = output.read_text().strip().split("\n")
+        entry1 = json.loads(lines[0])
+        assert entry1["caption"] == "1girl, hatsune miku, vocaloid\ngemma: anime girl\nqwen: colorful scene"
+
+    def test_export_draft_with_draft(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        output = tmp_path / "metadata.jsonl"
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="jsonl",
+            source="draft",
+            drafts=("gemma", "qwen"),
+            output=output,
+            append=False,
+            caption_extension=".caption",
+        )
+
+        assert count == 2
+        lines = output.read_text().strip().split("\n")
+        entry1 = json.loads(lines[0])
+        assert entry1["caption"] == "gemma: anime girl\nqwen: colorful scene"
 
     def test_export_jsonl_append(self, tmp_images):
         tmp_path, images = tmp_images
@@ -320,7 +508,6 @@ class TestExportJsonl:
             images[:1],
             fmt="jsonl",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -330,7 +517,6 @@ class TestExportJsonl:
             images[1:2],
             fmt="jsonl",
             source="caption",
-            draft_name="",
             output=output,
             append=True,
             caption_extension=".caption",
@@ -349,7 +535,6 @@ class TestExportJsonl:
             images[:1],
             fmt="jsonl",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -359,7 +544,6 @@ class TestExportJsonl:
             images[1:2],
             fmt="jsonl",
             source="caption",
-            draft_name="",
             output=output,
             append=False,
             caption_extension=".caption",
@@ -377,16 +561,16 @@ class TestReadCaptionSource:
     def test_missing_draft_raises(self, tmp_images):
         tmp_path, images = tmp_images
         with pytest.raises(FileNotFoundError):
-            read_caption_source(images[0], source="draft", draft_name="nonexistent")
+            read_caption_source(images[0], source="draft", drafts=("nonexistent",))
 
     def test_missing_caption_raises(self, tmp_images):
         tmp_path, images = tmp_images
         with pytest.raises(FileNotFoundError):
             read_caption_source(images[2], source="caption")
 
-    def test_draft_without_name_raises(self, tmp_images):
+    def test_draft_without_drafts_raises(self, tmp_images):
         tmp_path, images = tmp_images
-        with pytest.raises(ValueError, match="draft_name is required"):
+        with pytest.raises(ValueError, match="drafts is required"):
             read_caption_source(images[0], source="draft")
 
     def test_invalid_format_for_backend(self, tmp_images):
@@ -398,8 +582,37 @@ class TestReadCaptionSource:
                 images,
                 fmt="xml",
                 source="caption",
-                draft_name="",
                 output=output,
                 append=False,
                 caption_extension=".caption",
             )
+
+    def test_caption_with_one_draft(self, tmp_images):
+        tmp_path, images = tmp_images
+        result = read_caption_source(images[0], source="caption", drafts=("test",))
+        assert result == "1girl, hatsune miku, vocaloid\ndraft: miku on stage"
+
+    def test_caption_with_multiple_drafts(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        result = read_caption_source(images[0], source="caption", drafts=("gemma", "qwen"))
+        assert result == "1girl, hatsune miku, vocaloid\ngemma: anime girl\nqwen: colorful scene"
+
+    def test_draft_with_multiple_drafts(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        result = read_caption_source(images[0], source="draft", drafts=("gemma", "qwen"))
+        assert result == "gemma: anime girl\nqwen: colorful scene"
+
+    def test_with_drafts_missing_draft_raises(self, tmp_images):
+        tmp_path, images = tmp_images
+        with pytest.raises(FileNotFoundError, match="Draft not found"):
+            read_caption_source(images[0], source="caption", drafts=("nonexistent",))
+
+    def test_with_drafts_missing_caption_raises(self, tmp_images):
+        tmp_path, images = tmp_images
+        with pytest.raises(FileNotFoundError, match="Caption not found"):
+            read_caption_source(images[2], source="caption", drafts=("test",))
+
+    def test_invalid_source_raises(self, tmp_images):
+        tmp_path, images = tmp_images
+        with pytest.raises(ValueError, match='source must be'):
+            read_caption_source(images[0], source="bogus")
