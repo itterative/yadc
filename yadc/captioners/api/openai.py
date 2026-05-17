@@ -391,103 +391,104 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         conversation = self.conversation(image, stream=True, **kwargs)
         assistant_prefill = self._extract_assistant_prefill(conversation)
 
-        with self._session.post("chat/completions", stream=True, json=conversation) as conversation_resp:
-            try:
-                conversation_resp.raise_for_status()
-            except Exception:
-                # NOTE: consume the stream so error can be parsed
-                conversation_error = "\n".join(conversation_resp.iter_lines(decode_unicode=True))
-                conversation_error = conversation_error.strip()
-
-                raise ErrorNormalizationMixin.GenerationError(conversation_error)
-
-            if assistant_prefill:
-                yield assistant_prefill
-
-            converation_stopped = False
-
-            is_thinking = False  # used to wrap the thoughts in <think>...</think>
-            is_prediction = False  # prevents the thoughts from being printed if the first thought is done
-
-            for line in conversation_resp.iter_lines():
-                # NOTE: decode_unicode option doesn't seem to work properly for some characters
-                assert isinstance(line, bytes)
-                line = line.decode()
-
-                if not line or converation_stopped:
-                    continue
-
+        with self._session.capture_response():
+            with self._session.post("chat/completions", stream=True, json=conversation) as conversation_resp:
                 try:
-                    # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
-                    if line.startswith(":"):
+                    conversation_resp.raise_for_status()
+                except Exception:
+                    # NOTE: consume the stream so error can be parsed
+                    conversation_error = "\n".join(conversation_resp.iter_lines(decode_unicode=True))
+                    conversation_error = conversation_error.strip()
+
+                    raise ErrorNormalizationMixin.GenerationError(conversation_error)
+
+                if assistant_prefill:
+                    yield assistant_prefill
+
+                converation_stopped = False
+
+                is_thinking = False  # used to wrap the thoughts in <think>...</think>
+                is_prediction = False  # prevents the thoughts from being printed if the first thought is done
+
+                for line in conversation_resp.iter_lines():
+                    # NOTE: decode_unicode option doesn't seem to work properly for some characters
+                    assert isinstance(line, bytes)
+                    line = line.decode()
+
+                    if not line or converation_stopped:
                         continue
 
-                    line = line.removeprefix("data:").strip()
-
-                    if line == "[DONE]":
-                        converation_stopped = True
-                        continue
-
-                    line_json = json.loads(line)
-                except json.JSONDecodeError:
-                    _logger.warning("Warning: failed to decode line: %s", line)
-                    continue
-
-                try:
-                    assert isinstance(line_json, dict), "not a dict"
-                    line_response = OpenAIChatCompletionChunkResponse.model_validate(line_json)
-
-                    if line_response.object != CHAT_COMPLETION_CHUNK_OBJECT:
-                        continue
-
-                    if line_response.usage and line_response.id != "SKIPPED":
-                        self._api_usage[line_response.id] = APIUsage(
-                            response_tokens=line_response.usage.completion_tokens,
-                            prompt_tokens=line_response.usage.prompt_tokens,
-                            total_tokens=line_response.usage.total_tokens,
-                            thoughts_tokens=0
-                            if not line_response.usage.completion_tokens_details
-                            else line_response.usage.completion_tokens_details.reasoning_tokens,
-                        )
-
-                    if line_response.error:
-                        raise ValueError(self._normalize_error(line_response))
-
-                    for choice in line_response.choices:
-                        if choice.finish_reason and choice.finish_reason != "stop":
-                            raise ValueError(self._normalize_error(line_response))
-
-                        if not is_prediction and (thought := choice.delta.reasoning or choice.delta.reasoning_content):
-                            if prediction_context is not None and not self._is_reasoning_redacted(thought):
-                                prediction_context.reasoning = (prediction_context.reasoning or "") + thought
-                            if not is_thinking:
-                                yield self._reasoning_start_token
-                                is_thinking = True
-
-                            yield thought
-
-                        if choice.delta.reasoning_details:
-                            self._populate_reasoning_details(prediction_context, choice.delta.reasoning_details)
-
-                        content = choice.delta.content or choice.delta.refusal
-
-                        if not content:
+                    try:
+                        # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
+                        if line.startswith(":"):
                             continue
 
-                        if is_thinking:
-                            yield self._reasoning_end_token
-                            is_thinking = False
+                        line = line.removeprefix("data:").strip()
 
-                        is_prediction = True
+                        if line == "[DONE]":
+                            converation_stopped = True
+                            continue
 
-                        yield content
-                        break  # only retrieve first choice
-                except pydantic.ValidationError:
-                    _logger.error("Error: failed to process line: not a stream response: %s", line)
-                    break
-                except AssertionError as e:
-                    _logger.error("Error: failed to process line: %s: %s", e, line)
-                    break
+                        line_json = json.loads(line)
+                    except json.JSONDecodeError:
+                        _logger.warning("Warning: failed to decode line: %s", line)
+                        continue
+
+                    try:
+                        assert isinstance(line_json, dict), "not a dict"
+                        line_response = OpenAIChatCompletionChunkResponse.model_validate(line_json)
+
+                        if line_response.object != CHAT_COMPLETION_CHUNK_OBJECT:
+                            continue
+
+                        if line_response.usage and line_response.id != "SKIPPED":
+                            self._api_usage[line_response.id] = APIUsage(
+                                response_tokens=line_response.usage.completion_tokens,
+                                prompt_tokens=line_response.usage.prompt_tokens,
+                                total_tokens=line_response.usage.total_tokens,
+                                thoughts_tokens=0
+                                if not line_response.usage.completion_tokens_details
+                                else line_response.usage.completion_tokens_details.reasoning_tokens,
+                            )
+
+                        if line_response.error:
+                            raise ValueError(self._normalize_error(line_response))
+
+                        for choice in line_response.choices:
+                            if choice.finish_reason and choice.finish_reason != "stop":
+                                raise ValueError(self._normalize_error(line_response))
+
+                            if not is_prediction and (thought := choice.delta.reasoning or choice.delta.reasoning_content):
+                                if prediction_context is not None and not self._is_reasoning_redacted(thought):
+                                    prediction_context.reasoning = (prediction_context.reasoning or "") + thought
+                                if not is_thinking:
+                                    yield self._reasoning_start_token
+                                    is_thinking = True
+
+                                yield thought
+
+                            if choice.delta.reasoning_details:
+                                self._populate_reasoning_details(prediction_context, choice.delta.reasoning_details)
+
+                            content = choice.delta.content or choice.delta.refusal
+
+                            if not content:
+                                continue
+
+                            if is_thinking:
+                                yield self._reasoning_end_token
+                                is_thinking = False
+
+                            is_prediction = True
+
+                            yield content
+                            break  # only retrieve first choice
+                    except pydantic.ValidationError:
+                        _logger.error("Error: failed to process line: not a stream response: %s", line)
+                        break
+                    except AssertionError as e:
+                        _logger.error("Error: failed to process line: %s: %s", e, line)
+                        break
 
     def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
         try:
@@ -509,77 +510,78 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         is_thinking = False  # used to wrap the thoughts in <think>...</think>
 
-        with self._session.post("chat/completions", stream=False, json=conversation) as conversation_resp:
-            conversation_resp.raise_for_status()
+        with self._session.capture_response():
+            with self._session.post("chat/completions", stream=False, json=conversation) as conversation_resp:
+                conversation_resp.raise_for_status()
 
-            try:
-                conversation_json = json.loads(conversation_resp.text)
-                assert isinstance(conversation_json, dict), "api did not return valid json"
-            except AssertionError as e:
-                _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                raise ValueError(str(e))
-            except json.JSONDecodeError:
-                _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                raise ValueError("api did not return json")
+                try:
+                    conversation_json = json.loads(conversation_resp.text)
+                    assert isinstance(conversation_json, dict), "api did not return valid json"
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
+                    raise ValueError(str(e))
+                except json.JSONDecodeError:
+                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
+                    raise ValueError("api did not return json")
 
-            try:
-                conversation_response = OpenAIChatCompletionResponse.model_validate(conversation_json)
-                assert conversation_response.object == CHAT_COMPLETION_OBJECT, "api did not return a chat completion response"
-            except AssertionError as e:
-                _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                raise ValueError(str(e))
-            except pydantic.ValidationError:
-                _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                raise ValueError("api did not return a valid response")
+                try:
+                    conversation_response = OpenAIChatCompletionResponse.model_validate(conversation_json)
+                    assert conversation_response.object == CHAT_COMPLETION_OBJECT, "api did not return a chat completion response"
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
+                    raise ValueError(str(e))
+                except pydantic.ValidationError:
+                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
+                    raise ValueError("api did not return a valid response")
 
-            if conversation_response.usage and conversation_response.id != "SKIPPED":
-                self._api_usage[conversation_response.id] = APIUsage(
-                    response_tokens=conversation_response.usage.completion_tokens,
-                    prompt_tokens=conversation_response.usage.prompt_tokens,
-                    total_tokens=conversation_response.usage.total_tokens,
-                    thoughts_tokens=0
-                    if not conversation_response.usage.completion_tokens_details
-                    else conversation_response.usage.completion_tokens_details.reasoning_tokens,
-                )
+                if conversation_response.usage and conversation_response.id != "SKIPPED":
+                    self._api_usage[conversation_response.id] = APIUsage(
+                        response_tokens=conversation_response.usage.completion_tokens,
+                        prompt_tokens=conversation_response.usage.prompt_tokens,
+                        total_tokens=conversation_response.usage.total_tokens,
+                        thoughts_tokens=0
+                        if not conversation_response.usage.completion_tokens_details
+                        else conversation_response.usage.completion_tokens_details.reasoning_tokens,
+                    )
 
-            thought_buffer = ""
+                thought_buffer = ""
 
-            for choice in conversation_response.choices:
-                if choice.finish_reason and choice.finish_reason != "stop":
-                    raise ValueError(self._normalize_error(conversation_response))
+                for choice in conversation_response.choices:
+                    if choice.finish_reason and choice.finish_reason != "stop":
+                        raise ValueError(self._normalize_error(conversation_response))
 
-                thought_content = choice.message.reasoning or choice.message.reasoning_content
-                if thought_content:
-                    if prediction_context is not None and not self._is_reasoning_redacted(thought_content):
-                        prediction_context.reasoning = thought_content
-                    if not is_thinking:
-                        thought_buffer += self._reasoning_start_token
-                        is_thinking = True
+                    thought_content = choice.message.reasoning or choice.message.reasoning_content
+                    if thought_content:
+                        if prediction_context is not None and not self._is_reasoning_redacted(thought_content):
+                            prediction_context.reasoning = thought_content
+                        if not is_thinking:
+                            thought_buffer += self._reasoning_start_token
+                            is_thinking = True
 
-                    thought_buffer += thought_content
+                        thought_buffer += thought_content
 
-                if choice.message.reasoning_details:
-                    self._populate_reasoning_details(prediction_context, choice.message.reasoning_details)
+                    if choice.message.reasoning_details:
+                        self._populate_reasoning_details(prediction_context, choice.message.reasoning_details)
 
-                if is_thinking:
-                    thought_buffer += self._reasoning_end_token
-                    is_thinking = False
+                    if is_thinking:
+                        thought_buffer += self._reasoning_end_token
+                        is_thinking = False
 
-                content = choice.message.content or choice.message.refusal
+                    content = choice.message.content or choice.message.refusal
 
-                if not content:
-                    continue
+                    if not content:
+                        continue
 
-                if is_thinking:
-                    thought_buffer += self._reasoning_end_token
-                    is_thinking = False
+                    if is_thinking:
+                        thought_buffer += self._reasoning_end_token
+                        is_thinking = False
 
-                if assistant_prefill:
-                    content = assistant_prefill + content
+                    if assistant_prefill:
+                        content = assistant_prefill + content
 
-                return thought_buffer + content
+                    return thought_buffer + content
 
-            raise ValueError("api did not return text")
+                raise ValueError("api did not return text")
 
     def predict(self, image: DatasetImage, **kwargs):
         self._before_predict(kwargs)

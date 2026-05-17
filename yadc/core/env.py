@@ -1,6 +1,4 @@
-import platformdirs
+import os
 
-APP_NAME = "yadc"
-
-CONFIG_PATH = platformdirs.user_config_path(APP_NAME, ensure_exists=True)
-STATE_PATH = platformdirs.user_state_path(APP_NAME, ensure_exists=True)
+DEBUG_CAPTION_RESPONSES: bool = os.environ.get("YADC_DEBUG_CAPTION_RESPONSES", "").strip() == "1"
+DEBUG_CAPTION_REQUESTS_BODY: bool = os.environ.get("YADC_DEBUG_CAPTION_REQUESTS_BODY", "1").strip() == "1"

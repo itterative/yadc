@@ -7,6 +7,7 @@ import toml
 
 from yadc.captioners.api import APICaptioner, APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
+from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import app as yadc_app
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import envs as cmd_envs
@@ -623,6 +624,11 @@ def caption(dataset: TextIO, **kwargs):
     if cache_flag:
         cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / "api_requests")
 
+    dataset_paths = [entry.path for entry in dataset_toml.dataset if entry.path]
+    response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths)
+    if response_logger is not None:
+        _logger.info("API response debug logging enabled: %s", response_logger._run_dir)
+
     _logger.info("Loading model...")
 
     try:
@@ -638,6 +644,7 @@ def caption(dataset: TextIO, **kwargs):
             reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
             cache=cache,
+            response_logger=response_logger,
         )
         model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
