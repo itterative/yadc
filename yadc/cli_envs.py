@@ -25,6 +25,16 @@ def envs():
 
 
 @envs.command(
+    "dir",
+    short_help="Show the storage directory",
+    help="Show the directory where user environments are stored",
+)
+@cli_common.log_level
+def envs_path():
+    click.echo(cmd_app.CONFIG_PATH)
+
+
+@envs.command(
     "get",
     short_help="Retrieve a setting",
     help="Retrieve a setting value from user environments",

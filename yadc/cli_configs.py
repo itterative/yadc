@@ -22,6 +22,16 @@ def configs():
 
 
 @configs.command(
+    "dir",
+    short_help="Show the storage directory",
+    help="Show the directory where user configs are stored",
+)
+@cli_common.log_level
+def path():
+    click.echo(cmd_configs.configs.CONFIG_PATH)
+
+
+@configs.command(
     "list",
     short_help="List available user configs",
     help="List available user configs",

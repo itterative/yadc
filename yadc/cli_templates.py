@@ -17,6 +17,16 @@ def templates():
 
 
 @templates.command(
+    "dir",
+    short_help="Show the storage directory",
+    help="Show the directory where user templates are stored",
+)
+@cli_common.log_level
+def path():
+    click.echo(cmd_templates.templates.TEMPLATE_PATH)
+
+
+@templates.command(
     "list",
     short_help="List available user templates",
     help="List available user templates",
