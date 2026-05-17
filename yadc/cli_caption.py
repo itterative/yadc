@@ -379,6 +379,9 @@ def _caption(
                     pass
 
                 case 'clear replies':
+                    if not reply_history:
+                        _logger.info('No reply history to clear.')
+                        continue
                     reply_history = []
                     last_prediction_context = None
 
