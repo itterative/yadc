@@ -32,10 +32,10 @@ Logging is **opt-in per-request** via `Session.capture_response()` context manag
 ```
 
 - **Date directory**: `{YYYY-MM-DD}` — groups runs by date
-- **Run directory**: `{dataset_name}_{NNN}_{path_hash[:8]}`
-  - `dataset_name`: first dataset entry path basename, with `dataset_` prefix stripped
-  - `NNN`: dataset entry index (3-digit zero-padded)
+- **Run directory**: `{dataset_name}_{path_hash[:8]}`
+  - `dataset_name`: TOML filename stem with `dataset_` prefix stripped
   - `path_hash`: SHA-256[:8] of TOML file path + all dataset paths (null-joined)
+  - Run dir is built lazily on first log write (not at construction)
 - **Files**: `{NNNNNN}_{image_name}.jsonl` — 6-digit sequential counter + image stem name, **resumed from existing files** on re-runs
 
 ## JSONL Envelope
