@@ -34,10 +34,10 @@ def run(
     *,
     fmt: str,
     source: str,
-    draft_name: str,
-    output: pathlib.Path | None,
-    append: bool,
-    caption_extension: str,
+    drafts: tuple[str, ...] = (),
+    output: pathlib.Path | None = None,
+    append: bool = False,
+    caption_extension: str = ".txt",
 ) -> int:
     """Run the sd-scripts export.
 
@@ -45,7 +45,9 @@ def run(
         images: Resolved dataset images.
         fmt: One of ``'json'``, ``'jsonl'``, ``'txt'``.
         source: ``'caption'`` or ``'draft'``.
-        draft_name: Draft name when source=``'draft'``.
+        drafts: Draft names. When source=``'draft'``, the first element is the
+                primary draft (required). All drafts are appended after the
+                primary source in order.
         output: Output file path (json/jsonl) or directory (txt).
                 ``None`` means use defaults (metadata file alongside images
                 or write caption files next to source images).
@@ -56,11 +58,11 @@ def run(
         Number of entries/files written.
     """
     if fmt == "json":
-        return _export_json(images, output, source, draft_name, append)
+        return _export_json(images, output, source, drafts, append)
     elif fmt == "jsonl":
-        return _export_jsonl(images, output, source, draft_name, append)
+        return _export_jsonl(images, output, source, drafts, append)
     elif fmt == "txt":
-        return _export_txt(images, source, draft_name, output, caption_extension, append)
+        return _export_txt(images, source, drafts, output, caption_extension, append)
     else:
         raise ValueError(f"Unknown format: {fmt}")
 
@@ -72,7 +74,7 @@ def _export_json(
     images: list[DatasetImage],
     output_path: pathlib.Path | None,
     source: str,
-    draft_name: str,
+    drafts: tuple[str, ...],
     append: bool,
 ) -> int:
     if output_path is None:
@@ -91,7 +93,7 @@ def _export_json(
     count = 0
     for image in images:
         try:
-            text = read_caption_source(image, source, draft_name)
+            text = read_caption_source(image, source, drafts)
         except FileNotFoundError:
             continue
         if not text:
@@ -111,7 +113,7 @@ def _export_jsonl(
     images: list[DatasetImage],
     output_path: pathlib.Path | None,
     source: str,
-    draft_name: str,
+    drafts: tuple[str, ...],
     append: bool,
 ) -> int:
     if output_path is None:
@@ -123,7 +125,7 @@ def _export_jsonl(
     with open(output_path, mode) as f:
         for image in images:
             try:
-                text = read_caption_source(image, source, draft_name)
+                text = read_caption_source(image, source, drafts)
             except FileNotFoundError:
                 continue
             if not text:
@@ -139,7 +141,7 @@ def _export_jsonl(
 def _export_txt(
     images: list[DatasetImage],
     source: str,
-    draft_name: str,
+    drafts: tuple[str, ...],
     output_dir: pathlib.Path | None,
     caption_extension: str,
     append: bool,
@@ -147,7 +149,7 @@ def _export_txt(
     count = 0
     for image in images:
         try:
-            text = read_caption_source(image, source, draft_name)
+            text = read_caption_source(image, source, drafts)
         except FileNotFoundError:
             continue
         if not text:

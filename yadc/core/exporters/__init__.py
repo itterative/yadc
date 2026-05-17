@@ -3,7 +3,7 @@
 Each backend is a module under ``yadc.core.exporters`` that exposes:
 
 - ``BACKEND`` — a dataclass (frozen) with ``name``, ``description``, ``formats``.
-- ``run(images, *, fmt, source, draft_name, output, append, caption_extension) -> int``
+- ``run(images, *, fmt, source, drafts, output, append, caption_extension) -> int``
 
 To register a new backend, import its module and add it to ``_BACKENDS`` below.
 """
@@ -23,7 +23,7 @@ class _RunFn(Protocol):
         *,
         fmt: str,
         source: str,
-        draft_name: str,
+        drafts: tuple[str, ...],
         output: pathlib.Path | None,
         append: bool,
         caption_extension: str,
@@ -71,10 +71,10 @@ def run_export(
     *,
     fmt: str,
     source: str,
-    draft_name: str,
-    output: pathlib.Path | None,
-    append: bool,
-    caption_extension: str,
+    drafts: tuple[str, ...] = (),
+    output: pathlib.Path | None = None,
+    append: bool = False,
+    caption_extension: str = ".txt",
 ) -> int:
     """Dispatch to the named backend's ``run()`` function."""
     descriptor = get_backend(backend_name)
@@ -85,7 +85,7 @@ def run_export(
         images,
         fmt=fmt,
         source=source,
-        draft_name=draft_name,
+        drafts=drafts,
         output=output,
         append=append,
         caption_extension=caption_extension,
