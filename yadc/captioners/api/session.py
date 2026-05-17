@@ -12,6 +12,7 @@ from yadc.core import logging
 
 from .utils.cache import HTTPResponseCache
 from .utils.response_logger import DebugStreamProxy, ResponseLogger
+from .utils.units import size_units
 
 _logger = logging.get_logger(__name__)
 
@@ -146,7 +147,7 @@ class Session:
         _logger.debug("HTTP Response: %s %s: %d", method, path, response.status_code)
         _logger.debug("HTTP Response headers: %s %s: %s", method, path, response.headers)
         if not stream:
-            _logger.debug("HTTP Response Body: %s %s: %s", method, path, _size_units(len(response.text)))
+            _logger.debug("HTTP Response Body: %s %s: %s", method, path, size_units(len(response.text)))
             _logger.trace("HTTP Response Body: %s %s: %s", method, path, response.text)
         else:
             _logger.debug("HTTP Response Body: %s %s: (streamed)", method, path)
@@ -211,18 +212,3 @@ class Session:
         return self.request("POST", path, capture_ctx=capture_ctx, **kwargs)
 
 
-_units = ["B", "KiB", "MiB"]
-
-
-def _size_units(size: int):
-    _size = float(size)
-
-    unit = _units[0]
-    for unit in _units:
-        if _size >= 1024:
-            _size /= 1024
-            continue
-
-        break
-
-    return f"{_size:.2f} {unit}"
