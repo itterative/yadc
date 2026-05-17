@@ -178,7 +178,7 @@ class DatasetImage(BaseModel):
             try:
                 history_data = toml.loads(history_entry)
                 history_data.setdefault("path", str(self.absolute_path))
-                history.append(DatasetImage(**history_data))
+                history.append(DatasetImage.model_validate(history_data))
             except Exception:
                 continue
 

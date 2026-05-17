@@ -274,8 +274,8 @@ def parse_config(raw: dict) -> Config:
     ``path``, ``images``, ``extras``).
     """
     try:
-        return ConfigV1(**raw).to_v2()
+        return ConfigV1.model_validate(raw).to_v2()
     except pydantic.ValidationError:
         pass
 
-    return Config(**raw)
+    return Config.model_validate(raw)

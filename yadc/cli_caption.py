@@ -348,7 +348,7 @@ def _caption(
 
         _print_dataset_image_meta(dataset_image)
 
-        dataset_image_current = DatasetImage(**dataset_image.model_dump())
+        dataset_image_current = DatasetImage.model_validate(dataset_image.model_dump())
         drafts = dataset_image_current.read_all_drafts() or None
 
         caption = ""

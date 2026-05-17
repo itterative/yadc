@@ -41,7 +41,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
             model_current_resp_json = model_current_resp.json()
             assert isinstance(model_current_resp_json, dict)
 
-            model_current = KoboldAdminCurrentModelResponse(**model_current_resp_json)
+            model_current = KoboldAdminCurrentModelResponse.model_validate(model_current_resp_json)
 
             if model_current.result == model_repo or model_current.result == model_koboldcpp:
                 self._current_model = model_current.result
@@ -77,7 +77,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
             model_reload_resp_json = model_reload_resp.json()
             assert isinstance(model_reload_resp_json, dict)
 
-            if not KoboldAdminReloadModelReponse(**model_reload_resp_json).success:
+            if not KoboldAdminReloadModelReponse.model_validate(model_reload_resp_json).success:
                 raise ValueError(f"failed to load model: {model_repo}")
 
         start_t = time.time()
@@ -93,7 +93,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
                     model_current_resp_json = model_current_resp.json()
                     assert isinstance(model_current_resp_json, dict)
 
-                    model_current = KoboldAdminCurrentModelResponse(**model_current_resp_json)
+                    model_current = KoboldAdminCurrentModelResponse.model_validate(model_current_resp_json)
 
                     if model_current.result == "inactive":
                         time.sleep(0.5)

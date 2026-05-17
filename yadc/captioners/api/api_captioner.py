@@ -135,7 +135,7 @@ class APICaptioner(BaseAPICaptioner):
                 models_json = models_resp.json()
                 assert isinstance(models_json, dict), f"bad models response type; expected dict, got {type(models_json)}"
 
-                models = OpenAIModelsResponse(**models_json)
+                models = OpenAIModelsResponse.model_validate(models_json)
 
                 for model in models.data:
                     if model.owned_by == "llamacpp":
@@ -173,7 +173,7 @@ class APICaptioner(BaseAPICaptioner):
                 koboldcpp_json = koboldcpp_resp.json()
                 assert isinstance(koboldcpp_json, dict)
 
-                koboldcpp_service_info = KoboldServiceInfoResponse(**koboldcpp_json)
+                koboldcpp_service_info = KoboldServiceInfoResponse.model_validate(koboldcpp_json)
 
                 assert koboldcpp_service_info.software.name.lower() == "koboldcpp"
 
