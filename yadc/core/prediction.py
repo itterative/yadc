@@ -12,7 +12,7 @@ class PredictionContext:
         reasoning_encrypted (list[dict] | None): Encrypted reasoning data to pass back in subsequent turns.
     """
 
-    __slots__ = ('reasoning', 'reasoning_summary', 'reasoning_encrypted')
+    __slots__ = ("reasoning", "reasoning_summary", "reasoning_encrypted")
 
     def __init__(self):
         self.reasoning: str | None = None

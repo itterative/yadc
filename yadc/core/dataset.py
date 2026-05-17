@@ -1,11 +1,12 @@
 import pathlib
-import toml
-
 from functools import cached_property
-from pydantic import BaseModel, ConfigDict, PrivateAttr
-from PIL import Image
 
-HISTORY_MARKER = '----------'
+import toml
+from PIL import Image
+from pydantic import BaseModel, ConfigDict, PrivateAttr
+
+HISTORY_MARKER = "----------"
+
 
 class DatasetImage(BaseModel):
     """
@@ -31,15 +32,15 @@ class DatasetImage(BaseModel):
     """
 
     path: str
-    caption: str = ''
+    caption: str = ""
 
-    caption_suffix: str = '.txt'
-    toml_suffix: str = '.toml'
-    history_suffix: str = '.history~'
+    caption_suffix: str = ".txt"
+    toml_suffix: str = ".toml"
+    history_suffix: str = ".history~"
 
     _dataset_extras: dict[str, object] = PrivateAttr(default_factory=dict)
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
     @cached_property
     def absolute_path(self):
@@ -55,7 +56,7 @@ class DatasetImage(BaseModel):
 
     @cached_property
     def toml_backup_path(self):
-        return self.absolute_path.with_suffix(self.toml_suffix + '~')
+        return self.absolute_path.with_suffix(self.toml_suffix + "~")
 
     @cached_property
     def history_path(self):
@@ -73,7 +74,7 @@ class DatasetImage(BaseModel):
         Returns:
             pathlib.Path: Path to the draft file.
         """
-        return self.absolute_path.parent / (self.absolute_path.stem + '.' + name + '.draft~')
+        return self.absolute_path.parent / (self.absolute_path.stem + "." + name + ".draft~")
 
     def read_draft(self, name: str):
         """
@@ -88,7 +89,7 @@ class DatasetImage(BaseModel):
         path = self.draft_path(name)
         if path.exists():
             return path.read_text().strip()
-        return ''
+        return ""
 
     def write_draft(self, name: str, content: str):
         """
@@ -110,15 +111,15 @@ class DatasetImage(BaseModel):
             dict[str, str]: A dictionary mapping draft names to their content.
         """
         drafts: dict[str, str] = {}
-        pattern = self.absolute_path.stem + '.*.draft~'
+        pattern = self.absolute_path.stem + ".*.draft~"
 
         for path in self.absolute_path.parent.glob(pattern):
             filename = path.name
-            prefix = self.absolute_path.stem + '.'
-            suffix = '.draft~'
+            prefix = self.absolute_path.stem + "."
+            suffix = ".draft~"
 
             if filename.startswith(prefix) and filename.endswith(suffix):
-                name = filename[len(prefix):-len(suffix)]
+                name = filename[len(prefix) : -len(suffix)]
                 drafts[name] = path.read_text().strip()
 
         return drafts
@@ -144,7 +145,7 @@ class DatasetImage(BaseModel):
         if not self.caption_path.exists():
             return self.caption
 
-        with open(self.caption_path, 'r') as f:
+        with open(self.caption_path, "r") as f:
             return f.read().strip()
 
     def save_history(self, when_not_exists: bool = False):
@@ -158,14 +159,14 @@ class DatasetImage(BaseModel):
         if self.history_path.exists() and when_not_exists:
             return
 
-        with open(self.history_path, 'a') as f:
+        with open(self.history_path, "a") as f:
             f.write(self._serialize_toml_history())
 
-    def read_history(self) -> list['DatasetImage']:
+    def read_history(self) -> list["DatasetImage"]:
         if not self.history_path.exists():
             return []
 
-        history: list['DatasetImage'] = []
+        history: list["DatasetImage"] = []
         history_content = self.history_path.read_text().split(HISTORY_MARKER)
 
         for history_entry in history_content:
@@ -176,7 +177,7 @@ class DatasetImage(BaseModel):
 
             try:
                 history_data = toml.loads(history_entry)
-                history_data.setdefault('path', str(self.absolute_path))
+                history_data.setdefault("path", str(self.absolute_path))
                 history.append(DatasetImage(**history_data))
             except Exception:
                 continue
@@ -197,20 +198,20 @@ class DatasetImage(BaseModel):
 
         import shutil
 
-        with open(self.caption_path, 'w') as f:
+        with open(self.caption_path, "w") as f:
             f.write(caption)
 
         if self.toml_path.exists():
             shutil.copy(str(self.toml_path), str(self.toml_backup_path))
 
-        with open(self.toml_path, 'w') as f:
+        with open(self.toml_path, "w") as f:
             f.write(self.dump_toml())
 
         self.caption = caption
 
     def _serialize_toml_history(self):
         buffer = self.dump_toml(with_caption=True).strip()
-        buffer += f'\n{HISTORY_MARKER}\n'
+        buffer += f"\n{HISTORY_MARKER}\n"
         return buffer
 
     def dump_toml(self, with_caption: bool = False):
@@ -227,7 +228,6 @@ class DatasetImage(BaseModel):
         toml_dict = self.__pydantic_extra__ or {}
 
         if with_caption:
-            toml_dict['caption'] = self.caption
+            toml_dict["caption"] = self.caption
 
         return toml.dumps(toml_dict)
-

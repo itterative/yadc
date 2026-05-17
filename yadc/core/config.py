@@ -2,6 +2,7 @@ import pydantic
 
 from .dataset import DatasetImage
 
+
 class Config(pydantic.BaseModel):
     """
     Main configuration model (v2) used for configuring the CLI.
@@ -18,28 +19,29 @@ class Config(pydantic.BaseModel):
         overwrite_captions: If True, existing caption files will be overwritten.
     """
 
-    api: 'ConfigApi' = pydantic.Field(default_factory=lambda: ConfigApi())
-    prompt: 'ConfigPrompt' = pydantic.Field(default_factory=lambda: ConfigPrompt())
-    settings: 'ConfigSettings' = pydantic.Field(default_factory=lambda: ConfigSettings())
-    reasoning: 'ConfigReasoning' = pydantic.Field(default_factory=lambda: ConfigReasoning())
-    dataset: list['ConfigDatasetEntry'] = pydantic.Field(default_factory=list)
+    api: "ConfigApi" = pydantic.Field(default_factory=lambda: ConfigApi())
+    prompt: "ConfigPrompt" = pydantic.Field(default_factory=lambda: ConfigPrompt())
+    settings: "ConfigSettings" = pydantic.Field(default_factory=lambda: ConfigSettings())
+    reasoning: "ConfigReasoning" = pydantic.Field(default_factory=lambda: ConfigReasoning())
+    dataset: list["ConfigDatasetEntry"] = pydantic.Field(default_factory=list)
 
-    env: str = ''
+    env: str = ""
     interactive: bool = False
     rounds: int = 1
-    caption_suffix: str = '.txt'
+    caption_suffix: str = ".txt"
     overwrite_captions: bool = False
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.caption_suffix.startswith('.'), f"invalid caption_suffix: {self.caption_suffix}"
+            assert self.caption_suffix.startswith("."), f"invalid caption_suffix: {self.caption_suffix}"
 
-            assert self.rounds > 0, 'rounds must be a positive number'
+            assert self.rounds > 0, "rounds must be a positive number"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
+
 
 class ConfigApi(pydantic.BaseModel):
     """
@@ -51,21 +53,22 @@ class ConfigApi(pydantic.BaseModel):
         model_name: Identifier of the model to use on the API server (e.g., 'gpt-5-mini', 'gemini-2.5-flash').
     """
 
-    url: str = ''
-    token: str = ''
-    model_name: str = ''
+    url: str = ""
+    token: str = ""
+    model_name: str = ""
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.url, 'api url must be provided'
-            assert self.url.startswith('http://') or self.url.startswith('https://'), 'api url must be an http link'
+            assert self.url, "api url must be provided"
+            assert self.url.startswith("http://") or self.url.startswith("https://"), "api url must be an http link"
 
-            assert self.model_name, 'api model_name must be provided'
+            assert self.model_name, "api model_name must be provided"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
+
 
 class ConfigPrompt(pydantic.BaseModel):
     """
@@ -76,17 +79,18 @@ class ConfigPrompt(pydantic.BaseModel):
         template: The prompt template itself
     """
 
-    name: str = ''
-    template: str = ''
+    name: str = ""
+    template: str = ""
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.name or self.template, 'either prompt name or prompt template must be provided in the config'
+            assert self.name or self.template, "either prompt name or prompt template must be provided in the config"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
+
 
 class ConfigSettings(pydantic.BaseModel):
     """
@@ -102,20 +106,21 @@ class ConfigSettings(pydantic.BaseModel):
     max_tokens: int = 512
 
     store_conversation: bool = False
-    image_quality: str = 'auto'
+    image_quality: str = "auto"
 
-    advanced: 'ConfigSettingsAdvanced' = pydantic.Field(default_factory=lambda: ConfigSettingsAdvanced())
+    advanced: "ConfigSettingsAdvanced" = pydantic.Field(default_factory=lambda: ConfigSettingsAdvanced())
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert 100 <= self.max_tokens <= 16384, 'config max_tokens must be between 100 and 16384'
+            assert 100 <= self.max_tokens <= 16384, "config max_tokens must be between 100 and 16384"
 
-            assert self.image_quality in ('auto', 'high', 'low'), 'config image_quality must be one of: auto, high, low'
+            assert self.image_quality in ("auto", "high", "low"), "config image_quality must be one of: auto, high, low"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
+
 
 class ConfigSettingsAdvanced(pydantic.BaseModel):
     """
@@ -131,44 +136,47 @@ class ConfigSettingsAdvanced(pydantic.BaseModel):
         Any additional fields will be passed in the requests to the API.
     """
 
-    system_role: str = 'system'
-    user_role: str = 'user'
-    assistant_role: str = ''
+    system_role: str = "system"
+    user_role: str = "user"
+    assistant_role: str = ""
 
-    assistant_prefill: str = ''
+    assistant_prefill: str = ""
 
-    model_config = pydantic.ConfigDict(extra='allow')
+    model_config = pydantic.ConfigDict(extra="allow")
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.system_role in ('system', 'developer'), 'advanced settings system role must be one of: developer, system'
-            assert self.user_role in ('user'), 'advanced settings user role must be one of: user'
-            assert self.assistant_role in ('', 'assistant', 'model'), 'advanced settings assistant role must be one of: (empty), assistant, model'
+            assert self.system_role in ("system", "developer"), "advanced settings system role must be one of: developer, system"
+            assert self.user_role in ("user"), "advanced settings user role must be one of: user"
+            assert self.assistant_role in ("", "assistant", "model"), "advanced settings assistant role must be one of: (empty), assistant, model"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
+
 
 class ConfigReasoning(pydantic.BaseModel):
     enable: bool = False
-    thinking_effort: str = 'low'
+    thinking_effort: str = "low"
     exclude_from_output: bool = True
 
-    advanced: 'ConfigReasoningAdvanced' = pydantic.Field(default_factory=lambda: ConfigReasoningAdvanced())
+    advanced: "ConfigReasoningAdvanced" = pydantic.Field(default_factory=lambda: ConfigReasoningAdvanced())
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.thinking_effort in ('high', 'medium', 'low'), 'reasoning thinking_effor must be one of: high, medium, low'
+            assert self.thinking_effort in ("high", "medium", "low"), "reasoning thinking_effor must be one of: high, medium, low"
         except AssertionError as e:
             raise ValueError(e)
 
         return self
 
+
 class ConfigReasoningAdvanced(pydantic.BaseModel):
-    thinking_start: str = '沥水'
-    thinking_end: str = '(util'
+    thinking_start: str = "沥水"
+    thinking_end: str = "(util"
+
 
 class ConfigDatasetEntry(pydantic.BaseModel):
     """
@@ -183,12 +191,13 @@ class ConfigDatasetEntry(pydantic.BaseModel):
                 as defaults — per-image extras (from TOML files or inline images) override these.
     """
 
-    path: str = ''
+    path: str = ""
     images: list[DatasetImage] = []
     extras: dict[str, object] = {}
 
 
 # --- v1 config (legacy, used for deserialization then converted) ---
+
 
 class ConfigDataset(pydantic.BaseModel):
     """
@@ -209,24 +218,24 @@ class ConfigDataset(pydantic.BaseModel):
 class ConfigV1(pydantic.BaseModel):
     """Legacy v1 config model. Deserialized then converted to v2 Config."""
 
-    api: 'ConfigApi' = pydantic.Field(default_factory=lambda: ConfigApi())
-    prompt: 'ConfigPrompt' = pydantic.Field(default_factory=lambda: ConfigPrompt())
-    settings: 'ConfigSettings' = pydantic.Field(default_factory=lambda: ConfigSettings())
-    reasoning: 'ConfigReasoning' = pydantic.Field(default_factory=lambda: ConfigReasoning())
-    dataset: 'ConfigDataset' = pydantic.Field(default_factory=lambda: ConfigDataset())
+    api: "ConfigApi" = pydantic.Field(default_factory=lambda: ConfigApi())
+    prompt: "ConfigPrompt" = pydantic.Field(default_factory=lambda: ConfigPrompt())
+    settings: "ConfigSettings" = pydantic.Field(default_factory=lambda: ConfigSettings())
+    reasoning: "ConfigReasoning" = pydantic.Field(default_factory=lambda: ConfigReasoning())
+    dataset: "ConfigDataset" = pydantic.Field(default_factory=lambda: ConfigDataset())
 
-    env: str = ''
+    env: str = ""
     interactive: bool = False
     rounds: int = 1
-    caption_suffix: str = '.txt'
+    caption_suffix: str = ".txt"
     overwrite_captions: bool = False
 
-    @pydantic.model_validator(mode='after')
+    @pydantic.model_validator(mode="after")
     def validate_(self):
         try:
-            assert self.caption_suffix.startswith('.'), f"invalid caption_suffix: {self.caption_suffix}"
+            assert self.caption_suffix.startswith("."), f"invalid caption_suffix: {self.caption_suffix}"
 
-            assert self.rounds > 0, 'rounds must be a positive number'
+            assert self.rounds > 0, "rounds must be a positive number"
         except AssertionError as e:
             raise ValueError(e)
 

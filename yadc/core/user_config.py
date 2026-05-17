@@ -1,11 +1,11 @@
-from typing import Optional
-
 import pydantic
 
+
 class UserConfig(pydantic.BaseModel):
-    api: 'UserConfigApi'
+    api: "UserConfigApi"
+
 
 class UserConfigApi(pydantic.BaseModel):
-    url: str = ''
-    token: str = ''
-    model_name: str = ''
+    url: str = ""
+    token: str = ""
+    model_name: str = ""

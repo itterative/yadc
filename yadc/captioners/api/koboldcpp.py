@@ -1,24 +1,23 @@
 import time
+
 import requests
 
-from yadc.core import logging
-from yadc.core import DatasetImage
+from yadc.core import DatasetImage, logging
 
+from .openai import APITypes, OpenAICaptioner
 from .types import (
-    KoboldAdminSettingsReponse,
-    KoboldAdminReloadModelReponse,
     KoboldAdminCurrentModelResponse,
+    KoboldAdminReloadModelReponse,
+    KoboldAdminSettingsReponse,
 )
 
-from .openai import OpenAICaptioner, APITypes
-
 _logger = logging.get_logger(__name__)
+
 
 class KoboldcppCaptioner(OpenAICaptioner):
     def __init__(self, **kwargs):
         self._api_type = APITypes.KOBOLDCPP
         super().__init__(**kwargs)
-
 
     def _load_model(self, model_repo: str, timeout: float = 60):
         if self._current_model == model_repo:
@@ -32,11 +31,11 @@ class KoboldcppCaptioner(OpenAICaptioner):
         #   2. if the kobold endpoint shows the model is already loaded, use that
         #   3. otherwise, unload the model, then wait for it to be loaded
 
-        model_koboldcpp = 'koboldcpp/' + model_repo
-        model_kcpss = model_repo + '.kcpps'
+        model_koboldcpp = "koboldcpp/" + model_repo
+        model_kcpss = model_repo + ".kcpps"
 
         # early exit if already loaded
-        with self._session.get('/api/v1/model') as model_current_resp:
+        with self._session.get("/api/v1/model") as model_current_resp:
             assert model_current_resp.ok
 
             model_current_resp_json = model_current_resp.json()
@@ -48,7 +47,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
                 self._current_model = model_current.result
                 return
 
-        with self._session.get('/api/admin/list_options') as model_options_resp:
+        with self._session.get("/api/admin/list_options") as model_options_resp:
             assert model_options_resp.ok
 
             model_options_resp_json = model_options_resp.json()
@@ -68,18 +67,18 @@ class KoboldcppCaptioner(OpenAICaptioner):
 
             if not self._current_model:
                 if available_models:
-                    raise ValueError(f'model not found: {model_repo}; available models: {", ".join(available_models)}')
+                    raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
 
-                raise ValueError(f'model not found: {model_repo}; no models available')
+                raise ValueError(f"model not found: {model_repo}; no models available")
 
-        with self._session.post('/api/admin/reload_config', json={"filename": self._current_model}) as model_reload_resp:
+        with self._session.post("/api/admin/reload_config", json={"filename": self._current_model}) as model_reload_resp:
             assert model_reload_resp.ok
 
             model_reload_resp_json = model_reload_resp.json()
             assert isinstance(model_reload_resp_json, dict)
 
             if not KoboldAdminReloadModelReponse(**model_reload_resp_json).success:
-                raise ValueError(f'failed to load model: {model_repo}')
+                raise ValueError(f"failed to load model: {model_repo}")
 
         start_t = time.time()
         end_t = start_t + timeout
@@ -88,7 +87,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
 
         while time.time() < end_t:
             try:
-                with self._session.get('/api/v1/model') as model_current_resp:
+                with self._session.get("/api/v1/model") as model_current_resp:
                     assert model_current_resp.ok
 
                     model_current_resp_json = model_current_resp.json()
@@ -106,22 +105,21 @@ class KoboldcppCaptioner(OpenAICaptioner):
                 time.sleep(0.5)
                 continue
         else:
-            raise TimeoutError(f'failed to load model in time: {model_repo}')
+            raise TimeoutError(f"failed to load model in time: {model_repo}")
 
     def unload_model(self):
         try:
-            with self._session.post('/api/admin/reload_config', json={"filename": "unload_model"}) as unload_model_resp:
+            with self._session.post("/api/admin/reload_config", json={"filename": "unload_model"}) as unload_model_resp:
                 assert unload_model_resp.ok
         except AssertionError as e:
             raise ValueError("failed to unload model") from e
-
 
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
         conversation = super().conversation(image, stream=stream, **kwargs)
 
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
-        conversation.setdefault('stop', ['<|im_end|>'])
+        conversation.setdefault("stop", ["<|im_end|>"])
 
-        conversation['max_tokens'] = conversation.pop('max_completion_tokens', 512)
+        conversation["max_tokens"] = conversation.pop("max_completion_tokens", 512)
 
         return conversation

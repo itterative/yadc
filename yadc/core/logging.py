@@ -1,12 +1,13 @@
 import logging
 
-_default_level = 'INFO'
+_default_level = "INFO"
 _default_handler: logging.Handler = logging.StreamHandler()
-_default_handler.setFormatter(logging.Formatter('%(message)s'))
+_default_handler.setFormatter(logging.Formatter("%(message)s"))
 
-_loggers: dict[str, '_logger'] = {}
+_loggers: dict[str, "_logger"] = {}
 
 TRACE_LEVEL = 5
+
 
 class _logger:
     def __init__(self, logger: logging.Logger):
@@ -49,20 +50,22 @@ def get_logger(name: str):
 
     return logger
 
+
 def set_level(level: str):
     global _default_level
 
     level = level.upper()
 
-    if level not in ('TRACE', 'INFO', 'WARNING', 'ERROR', 'DEBUG'):
-        raise ValueError(f'invalid logging level: {level}')
+    if level not in ("TRACE", "INFO", "WARNING", "ERROR", "DEBUG"):
+        raise ValueError(f"invalid logging level: {level}")
 
-    if level == 'TRACE':
-        logging.addLevelName(TRACE_LEVEL, 'TRACE')
+    if level == "TRACE":
+        logging.addLevelName(TRACE_LEVEL, "TRACE")
 
     _default_level = level
     for logger in _loggers.values():
         logger.setLevel(level)
+
 
 def set_handler(handler: logging.Handler):
     global _default_handler
