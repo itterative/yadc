@@ -141,9 +141,39 @@ yadc caption dataset.toml --user-template refined
 
 ### Cleaning up drafts
 
-Draft files use the `.draft~` suffix and can be easily cleaned up:
+Use the `yadc draft remove` command to delete a named draft across all images in a dataset:
 
 ```bash
-# Remove all drafts for a dataset
+# Remove all 'gemma' drafts
+yadc draft remove dataset.toml --name gemma
+
+# Remove all 'v1' drafts
+yadc draft remove dataset.toml --name v1
+```
+
+You can also list all drafts to see what's available:
+
+```bash
+yadc draft list dataset.toml
+```
+
+Or manually, since draft files use the `.draft~` suffix:
+
+```bash
 rm path_to_images/*.draft~
+```
+
+### Backing up captions as drafts
+
+You can save existing captions as drafts before re-captioning:
+
+```bash
+# Save current captions as 'before' draft
+yadc draft save dataset.toml --name before
+
+# Re-caption...
+yadc caption dataset.toml --overwrite
+
+# View the old captions anytime
+yadc draft show dataset.toml --name before
 ```
