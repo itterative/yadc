@@ -28,6 +28,9 @@ test = [
     "pytest-timeout>=2.4.0",
     "requests-mock>=1.12.1",
 ]
+dev = [
+    "basedpyright>=1.29.1",
+]
 
 [project.scripts]
 yadc = "yadc.cli:cli"
