@@ -356,6 +356,7 @@ def _caption(
         caption_rounds: list[CaptionerRound] = []
         reply_history: list[ReplyRound] = []
         last_prediction_context: PredictionContext | None = None
+        pending_reply: tuple[ReplyRound, ReplyRound] | None = None
         do_prompt = True
 
         while do_prompt:
@@ -406,21 +407,17 @@ def _caption(
                     if not user_message:
                         continue
 
-                    reasoning = last_prediction_context.reasoning if last_prediction_context else None
-                    reasoning_encrypted = last_prediction_context.reasoning_encrypted if last_prediction_context else None
-                    reply_history.append(
+                    pending_reply = (
                         ReplyRound(
                             role=ROLE_ASSISTANT,
                             content=caption,
-                            reasoning=reasoning,
-                            reasoning_encrypted=reasoning_encrypted,
-                        )
-                    )
-                    reply_history.append(
+                            reasoning=last_prediction_context.reasoning if last_prediction_context else None,
+                            reasoning_encrypted=last_prediction_context.reasoning_encrypted if last_prediction_context else None,
+                        ),
                         ReplyRound(
                             role=ROLE_USER,
                             content=user_message,
-                        )
+                        ),
                     )
                     pass
 
@@ -482,6 +479,12 @@ def _caption(
 
             previous_caption = caption
 
+            extra_messages: list[ReplyRound] = []
+            if reply_history:
+                extra_messages.extend(reply_history)
+            if pending_reply:
+                extra_messages.extend(pending_reply)
+
             try:
                 prediction_context = PredictionContext()
 
@@ -493,7 +496,7 @@ def _caption(
                         do_stream,
                         conversation_overrides,
                         drafts=drafts,
-                        extra_messages=reply_history or None,
+                        extra_messages=extra_messages,
                         prediction_context=prediction_context,
                     )
                 else:
@@ -510,6 +513,10 @@ def _caption(
                     )
 
                 last_prediction_context = prediction_context
+
+                if pending_reply is not None:
+                    reply_history.extend(pending_reply)
+                    pending_reply = None
             except (KeyboardInterrupt, click.Abort):
                 if not interactive:
                     caption = ""
