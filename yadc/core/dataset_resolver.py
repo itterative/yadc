@@ -44,7 +44,7 @@ def read_image_from_disk(file_path: str, caption_suffix: str) -> Optional[Datase
     dataset_image_toml["path"] = str(dataset_image.absolute_path)
     dataset_image_toml["caption_suffix"] = caption_suffix
 
-    image = DatasetImage(**dataset_image_toml)
+    image = DatasetImage.model_validate(dataset_image_toml)
     image.caption = image.read_caption()
     return image
 

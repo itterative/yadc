@@ -21,7 +21,7 @@ class OpenRouterCaptioner(OpenAICaptioner):
                 credits_resp_json = credits_resp.json()
                 assert isinstance(credits_resp_json, dict)
 
-                credits = OpenRouterCreditsResponse(**credits_resp_json).data
+                credits = OpenRouterCreditsResponse.model_validate(credits_resp_json).data
                 _logger.info("You have used %.2f out of %.2f credits with this api token.", credits.total_usage, credits.total_credits)
             except Exception:
                 _logger.warning("Warning: failed to retrieve current credits. Is you API token correct?")

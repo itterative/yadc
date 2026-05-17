@@ -208,7 +208,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         with self._session.get(f"models/{model_repo}", cache_ttl=1800) as model_resp:
             if model_resp.ok:
                 model_resp_json = model_resp.json()
-                model = GeminiModel(**model_resp_json)
+                model = GeminiModel.model_validate(model_resp_json)
 
                 if "generateContent" not in model.supportedGenerationMethods:
                     caps = ", ".join(model.supportedGenerationMethods)
@@ -238,7 +238,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 models_resp_json = models_resp.json()
                 assert isinstance(models_resp_json, dict), "bad model response"
 
-                models = GeminiModelsResponse(**models_resp_json)
+                models = GeminiModelsResponse.model_validate(models_resp_json)
 
                 for model in models.models:
                     if "generateContent" not in model.supportedGenerationMethods:
@@ -474,7 +474,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    line_response = GeminiContentResponse(**line_json)
+                    line_response = GeminiContentResponse.model_validate(line_json)
 
                     if line_response.usageMetadata and line_response.responseId != "SKIPPED":
                         self._api_usage[line_response.responseId] = APIUsage(
@@ -566,7 +566,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 raise ValueError("api did not return json")
 
             try:
-                conversation_response = GeminiContentResponse(**conversation_json)
+                conversation_response = GeminiContentResponse.model_validate(conversation_json)
             except AssertionError as e:
                 _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
                 raise ValueError(str(e))

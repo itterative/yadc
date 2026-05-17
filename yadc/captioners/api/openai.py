@@ -175,7 +175,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             assert isinstance(model_resp_json, dict)
 
             try:
-                models = OpenAIModelsResponse(**model_resp_json)
+                models = OpenAIModelsResponse.model_validate(model_resp_json)
                 available_models: list[str] = []
             except pydantic.ValidationError as e:
                 raise ValueError("failed to parse model list response") from e
@@ -435,7 +435,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 try:
                     assert isinstance(line_json, dict), "not a dict"
-                    line_response = OpenAIChatCompletionChunkResponse(**line_json)
+                    line_response = OpenAIChatCompletionChunkResponse.model_validate(line_json)
 
                     if line_response.object != CHAT_COMPLETION_CHUNK_OBJECT:
                         continue
@@ -523,7 +523,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 raise ValueError("api did not return json")
 
             try:
-                conversation_response = OpenAIChatCompletionResponse(**conversation_json)
+                conversation_response = OpenAIChatCompletionResponse.model_validate(conversation_json)
                 assert conversation_response.object == CHAT_COMPLETION_OBJECT, "api did not return a chat completion response"
             except AssertionError as e:
                 _logger.debug("Failed to decode response to object: %s", conversation_resp.text)

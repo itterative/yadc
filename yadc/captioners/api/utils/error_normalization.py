@@ -32,7 +32,7 @@ class ErrorNormalizationMixin:
     def _normalize_error(self, error: Any):
         def _try_parse_moderation(moderation: dict):
             try:
-                moderation_error = OpenRouterModerationError(**moderation)
+                moderation_error = OpenRouterModerationError.model_validate(moderation)
                 return _ParsedError("moderation", 400, "; ".join(moderation_error.reasons))
             except Exception:
                 pass
@@ -49,7 +49,7 @@ class ErrorNormalizationMixin:
                 return None
 
             try:
-                error_response = OpenAIErrorResponse(**error_json).error
+                error_response = OpenAIErrorResponse.model_validate(error_json).error
 
                 error_code = error_response.code
                 error_message = error_response.message
@@ -62,7 +62,7 @@ class ErrorNormalizationMixin:
                 pass
 
             try:
-                error_response = GeminiErrorResponse(**error_json).error
+                error_response = GeminiErrorResponse.model_validate(error_json).error
 
                 error_code = error_response.code
                 error_message = error_response.message
