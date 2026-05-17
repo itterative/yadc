@@ -18,6 +18,7 @@ from .core.exporters import list_backends, run_export
 _logger = logging.get_logger(__name__)
 
 _BACKEND_NAMES = list(list_backends().keys())
+_EXPORT_MAP = {".json": "json", ".jsonl": "jsonl"}
 
 
 @click.command(
@@ -113,8 +114,7 @@ def export(
     if fmt is None:
         if output is not None:
             ext = pathlib.Path(output).suffix.lower()
-            ext_map = {".json": "json", ".jsonl": "jsonl"}
-            fmt = ext_map.get(ext, "txt")
+            fmt = _EXPORT_MAP.get(ext, "txt")
         else:
             fmt = "jsonl"
 
