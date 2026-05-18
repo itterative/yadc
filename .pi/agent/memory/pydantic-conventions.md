@@ -20,3 +20,7 @@ Using `**` unpacking bypasses Pydantic's union resolution — it only passes key
 - `SomeCaptioner(**kwargs)` for passing through runtime configuration kwargs (not dicts from parsed data)
 - `DatasetImage(path=..., caption=..., **extras)` where extras are known keyword arguments, not a raw data dict
 - `SafetySettings(data=...)` or `KoboldAdminSettingsReponse(data=...)` where specific keyword args are being set explicitly
+
+## model_config placement
+
+When a Pydantic model uses `model_config`, declare it as a **class variable** annotated with `ClassVar[ConfigDict]` (e.g. `model_config: ClassVar[ConfigDict] = ConfigDict(...)`) and place it **at the end of the class body**, after all field definitions. This keeps fields visible at the top and configuration separate at the bottom.
