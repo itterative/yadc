@@ -16,7 +16,7 @@ _ResponseHeaders = Mapping[str, str]
 class ResponseLogger:
     """Logs API request/response pairs to JSONL files for debugging.
 
-    Created when ``env.DEBUG_API_RESPONSES`` is ``True``.
+    Created when ``env.DEBUG_CAPTION_RESPONSES`` is ``True``.
     Logging is only active inside a :meth:`Session.capture_response` block.
     The run directory is built lazily on first log write.
     """
@@ -36,6 +36,14 @@ class ResponseLogger:
     def run_dir(self) -> Path | None:
         """The resolved run directory, or None if no logs have been written yet."""
         return self._run_dir
+
+    @property
+    def log_dir(self) -> Path:
+        """The run directory, creating it eagerly if needed.
+
+        Unlike :attr:`run_dir`, this always returns a concrete path.
+        """
+        return self._ensure_run_dir()
 
     @classmethod
     def from_env(
