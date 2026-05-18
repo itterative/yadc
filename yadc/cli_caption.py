@@ -9,6 +9,7 @@ from yadc.captioners.api import APICaptioner, APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
 from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import app as yadc_app
+from yadc.cmd import cache as cmd_cache
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd import status as cmd_status
@@ -18,6 +19,7 @@ from yadc.core.captioner import ROLE_ASSISTANT, ROLE_USER, CaptionerRound, Reply
 from yadc.core.config import ConfigSettings, parse_config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import reapply_dataset_extras, resolve_dataset
+from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
 from yadc.core.prediction import PredictionContext
 
 from . import cli_common
@@ -634,17 +636,15 @@ def caption(dataset: TextIO, **kwargs):
         cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / "api_requests")
 
     # resolve debug logger
-    try:
-        dataset_paths = [entry.path for entry in dataset_toml.dataset if entry.path]
-        assert isinstance(dataset.name, str)
-        toml_path = dataset.name
+    response_logger: ResponseLogger | None = None
+    assert isinstance(dataset.name, str)
+    if DEBUG_CAPTION_RESPONSES:
+        if dataset.name == "-":
+            _logger.error("Error: when debugging api responses, dataset argument must be a file path, not stdin")
+            sys.exit(cmd_status.STATUS_USER_ERROR)
 
-        response_logger = ResponseLogger.from_env(yadc_app.CACHE_PATH, dataset_paths, toml_path=toml_path)
-    except ValueError as e:
-        _logger.error("Error: %s", e)
-        sys.exit(cmd_status.STATUS_USER_ERROR)
-
-    if response_logger is not None:
+        log_dir = cmd_cache.debug_log_dir(dataset.name)
+        response_logger = ResponseLogger(log_dir, log_body=DEBUG_CAPTION_REQUESTS_BODY)
         _logger.info("API response debug logging enabled: %s", response_logger.log_dir)
 
     _logger.info("Loading model...")
