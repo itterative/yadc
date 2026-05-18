@@ -29,7 +29,7 @@ def test_openrouter_gpt_5_mini(openrouter, load_test_data):
     captioner.load_model("openai/gpt-5-mini")
 
     expected = load_test_data("nonstreaming/openrouter_gpt_5_mini_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
@@ -39,7 +39,7 @@ def test_openrouter_gpt_5_mini_streaming(openrouter, load_test_data):
     captioner.load_model("openai/gpt-5-mini")
 
     expected = load_test_data("streaming/openrouter_gpt_5_mini_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
 
     assert got == expected, "bad prediction"
 
@@ -49,7 +49,7 @@ def test_openrouter_qwen3_vl(openrouter, load_test_data):
     captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
 
     expected = load_test_data("nonstreaming/openrouter_qwen3_vl_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
@@ -59,7 +59,7 @@ def test_openrouter_qwen3_vl_streaming(openrouter, load_test_data):
     captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
 
     expected = load_test_data("streaming/openrouter_qwen3_vl_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
 
     assert got == expected, "bad prediction"
 
