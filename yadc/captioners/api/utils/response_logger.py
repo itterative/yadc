@@ -1,13 +1,9 @@
-import hashlib
 import json
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
 import requests
-
-from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
 
 # Accept both dict and CaseInsensitiveDict
 _ResponseHeaders = Mapping[str, str]
@@ -16,90 +12,22 @@ _ResponseHeaders = Mapping[str, str]
 class ResponseLogger:
     """Logs API request/response pairs to JSONL files for debugging.
 
-    Created when ``env.DEBUG_CAPTION_RESPONSES`` is ``True``.
-    Logging is only active inside a :meth:`Session.capture_response` block.
-    The run directory is built lazily on first log write.
+    Accepts a resolved ``log_dir`` and writes one JSONL file per request/response
+    pair. The counter is initialized from existing files in the directory.
     """
 
     _SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization", "x-goog-api-key"})
-    _DATASET_PREFIXES_TO_STRIP: tuple[str, ...] = ("dataset_",)
 
-    def __init__(self, cache_path: Path, dataset_paths: list[str] | None, *, toml_path: str, log_body: bool = False):
-        self._cache_path = cache_path
-        self._dataset_paths = dataset_paths
-        self._toml_path = toml_path
+    def __init__(self, log_dir: Path, *, log_body: bool = False):
+        self._log_dir = log_dir
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._counter = self._resume_counter(log_dir)
         self._log_body = log_body
-        self._run_dir: Path | None = None
-        self._counter: int = 0
-
-    @property
-    def run_dir(self) -> Path | None:
-        """The resolved run directory, or None if no logs have been written yet."""
-        return self._run_dir
 
     @property
     def log_dir(self) -> Path:
-        """The run directory, creating it eagerly if needed.
-
-        Unlike :attr:`run_dir`, this always returns a concrete path.
-        """
-        return self._ensure_run_dir()
-
-    @classmethod
-    def from_env(
-        cls,
-        cache_path: Path,
-        dataset_paths: list[str] | None = None,
-        *,
-        toml_path: str,
-    ) -> "ResponseLogger | None":
-        """Create a ResponseLogger if debug logging is enabled, otherwise return None."""
-        if not DEBUG_CAPTION_RESPONSES:
-            return None
-
-        if toml_path == "-":
-            raise ValueError("when debugging api responses, dataset argument must be a file path, not stdin")
-
-        return cls(cache_path, dataset_paths, toml_path=toml_path, log_body=DEBUG_CAPTION_REQUESTS_BODY)
-
-    # ---- run directory naming ----
-
-    def _ensure_run_dir(self) -> Path:
-        """Lazily build the run dir and resume counter on first access."""
-        if self._run_dir is None:
-            self._run_dir = self._build_run_dir(self._cache_path, self._dataset_paths, toml_path=self._toml_path)
-            self._run_dir.mkdir(parents=True, exist_ok=True)
-            self._counter = self._resume_counter(self._run_dir)
-        return self._run_dir
-
-    @classmethod
-    def _build_run_dir(
-        cls,
-        cache_path: Path,
-        dataset_paths: list[str] | None,
-        *,
-        toml_path: str,
-    ) -> Path:
-        name = cls._derive_dataset_name(toml_path)
-        path_hash = cls._hash_paths(dataset_paths, toml_path=toml_path)
-        date_dir = datetime.now().strftime("%Y-%m-%d")
-        return cache_path / "api-debug" / date_dir / f"{name}_{path_hash}"
-
-    @classmethod
-    def _derive_dataset_name(cls, toml_path: str) -> str:
-        raw = Path(toml_path).stem
-        for prefix in cls._DATASET_PREFIXES_TO_STRIP:
-            if raw.startswith(prefix):
-                raw = raw[len(prefix) :]
-        return raw or "unknown"
-
-    @classmethod
-    def _hash_paths(cls, dataset_paths: list[str] | None, *, toml_path: str) -> str:
-        parts: list[str] = [toml_path]
-        if dataset_paths:
-            parts.extend(dataset_paths)
-        payload = "\0".join(parts)
-        return hashlib.sha256(payload.encode()).hexdigest()[:8]
+        """The run directory for debug log files."""
+        return self._log_dir
 
     # ---- counter ----
 
@@ -144,8 +72,6 @@ class ResponseLogger:
         stream: bool = False,
         image_name: str,
     ):
-        run_dir = self._ensure_run_dir()
-
         entry: dict[str, Any] = {
             "request": {
                 "method": method,
@@ -171,7 +97,7 @@ class ResponseLogger:
 
         n = self._counter
         self._counter += 1
-        filepath = run_dir / f"{n:06d}_{image_name}.jsonl"
+        filepath = self._log_dir / f"{n:06d}_{image_name}.jsonl"
 
         tmp_path = filepath.with_suffix(".tmp")
         with open(tmp_path, "w") as f:
