@@ -9,8 +9,7 @@ _logger = logging.get_logger(__name__)
 
 class LlamacppCaptioner(OpenAICaptioner):
     def __init__(self, **kwargs: Any):
-        kwargs["api_type"] = APITypes.LLAMACPP
-        super().__init__(**kwargs)
+        super().__init__(api_type=APITypes.LLAMACPP, **kwargs)
 
     @override
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:

@@ -10,8 +10,7 @@ _logger = logging.get_logger(__name__)
 
 class OpenRouterCaptioner(OpenAICaptioner):
     def __init__(self, **kwargs: Any):
-        kwargs["api_type"] = APITypes.OPENROUTER
-        super().__init__(**kwargs)
+        super().__init__(api_type=APITypes.OPENROUTER, **kwargs)
 
         self._log_api_information()
 
