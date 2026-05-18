@@ -60,6 +60,7 @@ class ResponseLogger:
         """Lazily build the run dir and resume counter on first access."""
         if self._run_dir is None:
             self._run_dir = self._build_run_dir(self._cache_path, self._dataset_paths, toml_path=self._toml_path)
+            self._run_dir.mkdir(parents=True, exist_ok=True)
             self._counter = self._resume_counter(self._run_dir)
         return self._run_dir
 
