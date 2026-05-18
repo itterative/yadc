@@ -18,6 +18,7 @@ dependencies = [
     "keyring>=25.6.0",
     "keyring-pass>=0.9.3",
     "click>=8.3.0",
+    "typing-extensions>=4.15.0",
 ]
 
 [project.optional-dependencies]

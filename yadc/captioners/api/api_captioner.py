@@ -1,10 +1,11 @@
 from collections.abc import Generator
 from enum import Enum
-from typing import Any, override
+from typing import Any
 from urllib.parse import urlparse
 
 import pydantic
 import requests
+from typing_extensions import override
 
 from yadc.core import DatasetImage
 

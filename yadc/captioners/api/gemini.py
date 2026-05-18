@@ -3,10 +3,11 @@ import json
 from collections.abc import Generator
 from enum import Enum
 from pathlib import Path
-from typing import Any, override
+from typing import Any
 
 import pydantic
 import requests
+from typing_extensions import override
 
 from yadc.core import DatasetImage, logging
 from yadc.core.prediction import PredictionContext
