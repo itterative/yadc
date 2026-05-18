@@ -9,6 +9,11 @@ def get_cache_dir() -> str:
     return str(app.CACHE_PATH)
 
 
+def api_requests_cache_dir() -> Path:
+    """Return the directory for cached API requests."""
+    return app.CACHE_PATH / "api_requests"
+
+
 def debug_log_dir(toml_path: str) -> Path:
     """Return the run directory for API debug logging."""
     name = _derive_dataset_name(toml_path)

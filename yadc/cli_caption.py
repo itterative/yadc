@@ -8,7 +8,6 @@ import toml
 from yadc.captioners.api import APICaptioner, APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
 from yadc.captioners.api.utils.response_logger import ResponseLogger
-from yadc.cmd import app as yadc_app
 from yadc.cmd import cache as cmd_cache
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import envs as cmd_envs
@@ -633,7 +632,7 @@ def caption(dataset: TextIO, **kwargs):
 
     cache: HTTPResponseCache | None = None
     if cache_flag:
-        cache = HTTPResponseCache(cache_dir=yadc_app.CACHE_PATH / "api_requests")
+        cache = HTTPResponseCache(cache_dir=cmd_cache.api_requests_cache_dir())
 
     # resolve debug logger
     response_logger: ResponseLogger | None = None
