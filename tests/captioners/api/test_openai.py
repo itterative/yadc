@@ -28,7 +28,7 @@ def test_openai_o4_mini(openai, load_test_data):
     captioner.load_model("o4-mini")
 
     expected = load_test_data("nonstreaming/openai_o4_mini_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
@@ -38,7 +38,7 @@ def test_openai_o4_mini_streaming(openai, load_test_data):
     captioner.load_model("o4-mini")
 
     expected = load_test_data("streaming/openai_o4_mini_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
 
     assert got == expected, "bad prediction"
 

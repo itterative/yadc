@@ -49,7 +49,7 @@ def test_koboldcpp(koboldcpp, load_test_data):
     captioner.load_model("koboldcpp/gemma-3-27b")
 
     expected = load_test_data("nonstreaming/koboldcpp_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
@@ -59,7 +59,7 @@ def test_koboldcpp_streaming(koboldcpp, load_test_data):
     captioner.load_model("koboldcpp/gemma-3-27b")
 
     expected = load_test_data("streaming/koboldcpp_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
 
     assert got == expected, "bad prediction"
 
@@ -69,7 +69,7 @@ def test_koboldcpp_should_load_model(koboldcpp, load_test_data):
     captioner.load_model("koboldcpp/gemma-3-27b")
 
     expected = load_test_data("nonstreaming/koboldcpp_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 

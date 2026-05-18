@@ -43,7 +43,7 @@ def test_gemini(gemini, load_test_data):
     captioner.load_model("gemini-2.5-flash")
 
     expected = load_test_data("nonstreaming/gemini_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage))
+    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
@@ -53,7 +53,7 @@ def test_gemini_streaming(gemini, load_test_data):
     captioner.load_model("gemini-2.5-flash")
 
     expected = load_test_data("streaming/gemini_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage)))
+    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
 
     assert got == expected, "bad prediction"
 
