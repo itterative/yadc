@@ -97,13 +97,14 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
     _current_model: str | None = None
 
-    def __init__(self, **kwargs: Any):
+    def __init__(self, *, api_type: APITypes = APITypes.OPENAI, **kwargs: Any):
         """
         Initializes the OpenAICaptioner with API and template configuration.
 
         Args:
             api_url (str): Base URL for the OpenAI API endpoint.
             api_token (str): OpenAI API key for authentication.
+            api_type (APITypes): The API type to use for this captioner.
 
             **kwargs: Optional keyword arguments:
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
@@ -117,7 +118,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             ValueError: If `api_url` is not provided.
         """
 
-        self._api_type: APITypes = kwargs.pop("api_type", APITypes.OPENAI)
+        self._api_type: APITypes = api_type
 
         BaseAPICaptioner.__init__(self, **kwargs)
         ThinkingMixin.__init__(self, **kwargs)

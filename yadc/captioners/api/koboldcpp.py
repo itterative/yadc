@@ -19,9 +19,8 @@ class KoboldcppCaptioner(OpenAICaptioner):
     _current_model: str | None
 
     def __init__(self, **kwargs: Any):
-        kwargs["api_type"] = APITypes.KOBOLDCPP
+        super().__init__(api_type=APITypes.KOBOLDCPP, **kwargs)
         self._current_model = None
-        super().__init__(**kwargs)
 
     @override
     def _load_model(self, model_repo: str, timeout: float = 60):
