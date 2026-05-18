@@ -1,3 +1,5 @@
+from typing import Any, ClassVar
+
 import pydantic
 
 from .dataset import DatasetImage
@@ -142,7 +144,7 @@ class ConfigSettingsAdvanced(pydantic.BaseModel):
 
     assistant_prefill: str = ""
 
-    model_config = pydantic.ConfigDict(extra="allow")
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="allow")
 
     @pydantic.model_validator(mode="after")
     def validate_(self):
@@ -265,7 +267,7 @@ class ConfigV1(pydantic.BaseModel):
         )
 
 
-def parse_config(raw: dict) -> Config:
+def parse_config(raw: dict[str, Any]) -> Config:
     """
     Parse a raw TOML dict into a Config.
 

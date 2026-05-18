@@ -1,8 +1,9 @@
 import copy
 import json
+from collections.abc import Generator
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pydantic
 import requests
@@ -32,6 +33,7 @@ class APITypes(str, Enum):
     VLLM = "vllm"
     OLLAMA = "ollama"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -57,6 +59,11 @@ class APITypes(str, Enum):
 
 
 class APIUsage:
+    prompt_tokens: int
+    response_tokens: int
+    total_tokens: int
+    thoughts_tokens: int
+
     def __init__(
         self,
         prompt_tokens: int,
@@ -90,7 +97,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
     _current_model: str | None = None
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         """
         Initializes the OpenAICaptioner with API and template configuration.
 
@@ -110,6 +117,8 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             ValueError: If `api_url` is not provided.
         """
 
+        self._api_type: APITypes = kwargs.pop("api_type", APITypes.OPENAI)
+
         BaseAPICaptioner.__init__(self, **kwargs)
         ThinkingMixin.__init__(self, **kwargs)
 
@@ -125,13 +134,11 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         if not self._api_url:
             raise ValueError("no api_url")
 
-        if not hasattr(self, "_api_type"):
-            self._api_type = APITypes.OPENAI
-
         _logger.info("API set to %s.", self._api_type)
 
         self._api_usage: dict[str, APIUsage] = {}
 
+    @override
     def log_usage(self):
         usage = APIUsage(prompt_tokens=0, response_tokens=0, total_tokens=0, thoughts_tokens=0)
 
@@ -155,7 +162,8 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 usage.thoughts_tokens,
             )
 
-    def load_model(self, model_repo: str, **kwargs) -> None:
+    @override
+    def load_model(self, model_repo: str, **kwargs: Any) -> None:
         try:
             self._load_model(model_repo)
         except requests.HTTPError as e:
@@ -196,13 +204,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 raise ValueError(f"model not found: {model_repo}; no models available")
 
+    @override
     def unload_model(self):
         pass
 
+    @override
     def offload_model(self):
         pass
 
-    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:
         system_prompt, user_prompt = self.prompts_from_image(image, **kwargs)
 
         mime_type, encoded_image = self._encode_image(
@@ -210,7 +220,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         )
 
         try:
-            conversation_overrides = kwargs.pop("conversation_overrides", {})
+            conversation_overrides: dict[str, Any] = kwargs.pop("conversation_overrides", {})
             assert isinstance(conversation_overrides, dict), (
                 f"bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}"
             )
@@ -238,15 +248,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 f"bad value for conversation_overrides/advanced settings assistant_prefill; expected a str, got: {type(assistant_prefill)}"
             )
 
-            extra_messages = kwargs.pop("extra_messages", None)
+            extra_messages: list[Any] | None = kwargs.pop("extra_messages", None)
             assert extra_messages is None or isinstance(extra_messages, list), f"bad value for extra_messages; expected a list, got: {type(extra_messages)}"
         except AssertionError as e:
             raise ValueError(e)
 
-        max_tokens = kwargs.pop("max_new_tokens", 512)
+        max_tokens: int = kwargs.pop("max_new_tokens", 512)
         assert isinstance(max_tokens, int), f"bad value for max_tokens; expected int, got: {type(max_tokens)}"
 
-        conversation = {
+        conversation: dict[str, Any] = {
             "model": self._current_model,
             "stream": stream,
             "store": self._store_conversation,
@@ -332,10 +342,10 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         return conversation
 
     @staticmethod
-    def _is_reasoning_redacted(text: str) -> bool:
+    def _is_reasoning_redacted(_text: str) -> bool:
         return False
 
-    def _populate_reasoning_details(self, prediction_context: PredictionContext | None, details: list):
+    def _populate_reasoning_details(self, prediction_context: PredictionContext | None, details: list[Any]) -> None:
         """Parse reasoning_details from the API response and populate the prediction context.
 
         Expects either:
@@ -366,7 +376,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                     prediction_context.reasoning_encrypted = []
                 prediction_context.reasoning_encrypted.append(detail.model_dump())
 
-    def _extract_assistant_prefill(self, conversation: dict):
+    def _extract_assistant_prefill(self, conversation: dict[str, Any]) -> str:
         assistant_prefill = ""
         try:
             last_message = conversation["messages"][-1]
@@ -383,7 +393,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return assistant_prefill
 
-    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -496,7 +506,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         _logger.error("Error: failed to process line: %s: %s", e, line)
                         break
 
-    def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
         try:
             yield from self._generate_stream_prediction_inner(image, **kwargs)
             return
@@ -505,7 +515,7 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
-    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
+    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -594,13 +604,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 raise ValueError("api did not return text")
 
-    def predict(self, image: DatasetImage, **kwargs):
+    @override
+    def predict(self, image: DatasetImage, **kwargs: Any):
         self._before_predict(kwargs)
         try:
             return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
-    def predict_stream(self, image: DatasetImage, **kwargs):
+    @override
+    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
         self._before_predict(kwargs)
         yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

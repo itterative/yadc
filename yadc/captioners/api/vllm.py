@@ -1,3 +1,5 @@
+from typing import Any, override
+
 from yadc.core import DatasetImage, logging
 
 from .openai import APITypes, OpenAICaptioner
@@ -6,11 +8,12 @@ _logger = logging.get_logger(__name__)
 
 
 class VllmCaptioner(OpenAICaptioner):
-    def __init__(self, **kwargs):
-        self._api_type = APITypes.VLLM
+    def __init__(self, **kwargs: Any):
+        kwargs["api_type"] = APITypes.VLLM
         super().__init__(**kwargs)
 
-    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
+    @override
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:
         conversation = super().conversation(image, stream=stream, **kwargs)
 
         conversation["max_tokens"] = conversation.pop("max_completion_tokens", 512)

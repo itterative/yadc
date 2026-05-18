@@ -1,7 +1,8 @@
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import requests
 
@@ -17,6 +18,10 @@ class ResponseLogger:
     """
 
     _SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization", "x-goog-api-key"})
+
+    _log_dir: Path
+    _counter: int
+    _log_body: bool
 
     def __init__(self, log_dir: Path, *, log_body: bool = False):
         self._log_dir = log_dir
@@ -48,7 +53,7 @@ class ResponseLogger:
 
     # ---- header sanitization ----
 
-    def _sanitize_headers(self, headers: dict[str, str]) -> dict[str, str]:
+    def _sanitize_headers(self, headers: dict[str, Any]) -> dict[str, str]:
         sanitized: dict[str, str] = {}
         for k, v in headers.items():
             if k.lower() in self._SENSITIVE_HEADERS:
@@ -64,8 +69,8 @@ class ResponseLogger:
         *,
         method: str,
         url: str,
-        request_headers: dict[str, str],
-        request_body: dict[str, Any] | list[Any] | str | None,
+        request_headers: dict[str, Any],
+        request_body: Any,
         response_status: int,
         response_headers: _ResponseHeaders,
         response_body: str,
@@ -80,7 +85,7 @@ class ResponseLogger:
             },
             "response": {
                 "status": response_status,
-                "headers": dict(response_headers) if response_headers is not None else {},
+                "headers": dict(response_headers),
             },
             "stream": stream,
         }
@@ -108,7 +113,8 @@ class ResponseLogger:
 class DebugStreamProxy:
     """Wraps a streaming response to accumulate raw lines for debug logging."""
 
-    __slots__: tuple[str, ...] = ("response", "accumulator")
+    response: requests.Response
+    accumulator: list[bytes | str]
 
     def __init__(self, response: requests.Response, accumulator: list[bytes | str]):
         self.response = response

@@ -1,7 +1,6 @@
 import base64
 import functools
 import shutil
-from typing import Optional
 
 import keyring
 from cryptography.hazmat.backends import default_backend
@@ -57,7 +56,7 @@ def _generate_key_pair():
 
 
 @functools.cache
-def _get_private_key() -> Optional[rsa.RSAPrivateKey]:
+def _get_private_key() -> rsa.RSAPrivateKey | None:
     try:
         pem_data_encoded = keyring.get_password(KEYRING_SERVICE, PRIVATE_KEY_KEYRING_KEY)
         if pem_data_encoded is None:
@@ -78,7 +77,7 @@ def _get_private_key() -> Optional[rsa.RSAPrivateKey]:
 
 
 @functools.cache
-def _get_public_key() -> Optional[rsa.RSAPublicKey]:
+def _get_public_key() -> rsa.RSAPublicKey | None:
     _generate_key_pair()
 
     try:
@@ -119,7 +118,7 @@ def encrypt_setting(value: str) -> str:
     return base64.b64encode(encrypted).decode("utf-8")
 
 
-def decrypt_setting(encrypted_token: str) -> Optional[str]:
+def decrypt_setting(encrypted_token: str) -> str | None:
     private_key = _get_private_key()
     if private_key is None:
         _logger.error("Error: Private key not found in keyring. Cannot decrypt setting.")

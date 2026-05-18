@@ -19,3 +19,8 @@ Run with: `uv run ruff check yadc tests` and `uv run ruff format yadc tests`.
 ## Basedpyright (type checker)
 
 Run with: `uv run basedpyright <path>`
+
+Config in `pyproject.toml` under `[tool.basedpyright]`.
+Excludes: `tests/`, `.venv/`.
+Several noisy strict-mode rules are disabled globally (unknown types, import cycles, private usage, etc.).
+Remaining real issues are fixed: `@override` decorators, `X | None` instead of `Optional`, `collections.abc.Generator`, `dict[str, Any]` for JSON payloads, match exhaustiveness.

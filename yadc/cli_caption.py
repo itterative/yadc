@@ -1,5 +1,5 @@
 import sys
-from typing import Optional, TextIO
+from typing import Any, TextIO, cast
 
 import click
 import pydantic
@@ -69,14 +69,14 @@ def _resolve_template(prompt_name: str, prompt_template: str) -> str:
 
 def _load_dataset(
     dataset_stream: TextIO,
-    env: Optional[str],
-    user_config: Optional[str],
-    user_template: Optional[str],
-    api_url: Optional[str],
-    api_token: Optional[str],
-    api_model_name: Optional[str],
+    env: str | None,
+    user_config: str | None,
+    user_template: str | None,
+    api_url: str | None,
+    api_token: str | None,
+    api_model_name: str | None,
 ):
-    dataset_toml_raw = toml.load(dataset_stream)
+    dataset_toml_raw: dict[str, Any] = toml.load(dataset_stream)
 
     try:
         if user_config is not None:
@@ -101,7 +101,7 @@ def _load_dataset(
     user_env = cmd_envs.load_env(env=env)
 
     dataset_toml_raw.setdefault("api", {})
-    dataset_toml_raw_api = dataset_toml_raw["api"]
+    dataset_toml_raw_api: dict[str, Any] = dataset_toml_raw["api"]
     assert isinstance(dataset_toml_raw_api, dict), "invalid dataset toml api section"
 
     dataset_toml_raw_api["url"] = api_url or user_env.api.url or dataset_toml_raw_api.get("url", "")
@@ -121,7 +121,7 @@ def _load_dataset(
         raise ValueError(f"invalid configuration: {e}")
 
     # resolve dataset entries into images
-    dataset_toml._resolved_images = resolve_dataset(  # type: ignore[attr-defined]
+    dataset_toml._resolved_images = resolve_dataset(  # pyright: ignore[reportAttributeAccessIssue]
         dataset_toml.dataset,
         dataset_toml.caption_suffix,
     )
@@ -184,13 +184,13 @@ def _predict_caption_one_shot(
     dataset_image: DatasetImage,
     settings: ConfigSettings,
     do_stream: bool,
-    conversation_overrides: dict,
+    conversation_overrides: dict[str, Any],
     drafts: dict[str, str] | None = None,
     extra_messages: list[ReplyRound] | None = None,
     prediction_context: PredictionContext | None = None,
 ) -> str:
     """Single-round caption prediction with streaming output."""
-    caption_parts = []
+    caption_parts: list[str] = []
 
     try:
         with utils.Timer() as timer:
@@ -240,7 +240,7 @@ def _predict_caption_rounds(
     dataset_image: DatasetImage,
     settings: ConfigSettings,
     do_stream: bool,
-    conversation_overrides: dict,
+    conversation_overrides: dict[str, Any],
     rounds: int,
     caption_rounds: list[CaptionerRound],
     interactive: bool,
@@ -283,11 +283,11 @@ def _predict_caption_rounds(
 
         # final round using accepted caption_rounds
         fresh_image = DatasetImage(path=dataset_image.path)
-        caption_parts = []
+        caption_parts: list[str] = []
 
         _logger.info("")
 
-        predict_kwargs = dict(
+        predict_kwargs: dict[str, Any] = dict(
             caption_rounds=caption_rounds,
             max_new_tokens=settings.max_tokens,
             conversation_overrides=conversation_overrides,
@@ -573,7 +573,7 @@ def _caption(
 @click.option("--rounds", type=click.IntRange(min=1, max_open=True), default=None, required=False, help="How many captioning rounds to do")
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
 @cli_common.log_level
-def caption(dataset: TextIO, **kwargs):
+def caption(dataset: TextIO, **kwargs: Any):
     _logger.info("Using python %d.%d.%d.", sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
@@ -604,7 +604,7 @@ def caption(dataset: TextIO, **kwargs):
     if dataset_toml.prompt.name:
         _logger.info("Using prompt template: %s", dataset_toml.prompt.name)
 
-    resolved_images: list[DatasetImage] = dataset_toml._resolved_images  # type: ignore[attr-defined]
+    resolved_images = cast("list[DatasetImage]", dataset_toml._resolved_images)  # pyright: ignore[reportAttributeAccessIssue]
 
     # filter out already-captioned images
     dataset_to_do: list[DatasetImage] = []

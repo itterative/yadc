@@ -14,7 +14,7 @@ _logger = logging.get_logger(__name__)
 
 
 class BaseAPICaptioner(Captioner, abc.ABC):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         """
         Initializes the BaseAPICaptioner
 
@@ -41,7 +41,7 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         if not self._api_url:
             raise ValueError("no api_url")
 
-        session_headers = {}
+        session_headers: dict[str, str] = {}
 
         if self._api_token:
             session_headers["Authorization"] = f"Bearer {self._api_token}"
@@ -57,7 +57,7 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         response_logger: ResponseLogger | None = kwargs.get("response_logger", None)
         assert response_logger is None or isinstance(response_logger, ResponseLogger)
 
-        self._session = Session(self._api_url, headers=session_headers, session=session, cache=cache, response_logger=response_logger)
+        self._session: Session = Session(self._api_url, headers=session_headers, session=session, cache=cache, response_logger=response_logger)
 
     @staticmethod
     def _before_predict(kwargs: dict[str, Any]):
@@ -69,5 +69,5 @@ class BaseAPICaptioner(Captioner, abc.ABC):
             ctx.reasoning_encrypted = None
 
     @abc.abstractmethod
-    def log_usage(self):
+    def log_usage(self) -> None:
         raise NotImplementedError

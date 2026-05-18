@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 _default_level = "INFO"
 _default_handler: logging.Handler = logging.StreamHandler()
@@ -10,29 +11,32 @@ TRACE_LEVEL = 5
 
 
 class _logger:
+    _logger: logging.Logger
+    handlers: list[logging.Handler]
+
     def __init__(self, logger: logging.Logger):
         self._logger = logger
         self.handlers = logger.handlers
 
-    def trace(self, msg, *args, **kwargs):
+    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._logger.log(TRACE_LEVEL, msg, *args, **kwargs)
 
-    def debug(self, msg, *args, **kwargs):
+    def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._logger.log(logging.DEBUG, msg, *args, **kwargs)
 
-    def info(self, msg, *args, **kwargs):
+    def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._logger.log(logging.INFO, msg, *args, **kwargs)
 
-    def warning(self, msg, *args, **kwargs):
+    def warning(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._logger.log(logging.WARNING, msg, *args, **kwargs)
 
-    def error(self, msg, *args, **kwargs):
+    def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._logger.log(logging.ERROR, msg, *args, **kwargs)
 
-    def addHandler(self, handler: logging.Handler):
+    def addHandler(self, handler: logging.Handler) -> None:
         self._logger.addHandler(handler)
 
-    def setLevel(self, level: str):
+    def setLevel(self, level: str) -> None:
         self._logger.setLevel(level)
 
 

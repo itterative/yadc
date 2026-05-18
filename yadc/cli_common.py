@@ -1,8 +1,11 @@
+from collections.abc import Callable
+from typing import Any
+
 import click
 
 
-def log_level(f):
-    def set_log_level(ctx, param, level: str):
+def log_level(f: Callable[..., Any]) -> Callable[..., Any]:
+    def set_log_level(_ctx: Any, _param: Any, level: str) -> None:
         from yadc.core import logging
 
         logging.set_level(level)
@@ -17,7 +20,7 @@ def log_level(f):
     )(f)
 
 
-def env(f):
+def env(f: Callable[..., Any]) -> Callable[..., Any]:
     return click.option(
         "--env",
         type=str,

@@ -1,4 +1,5 @@
 import copy
+from typing import Any
 
 import toml
 
@@ -7,9 +8,9 @@ from yadc.cmd import app
 CONFIG_PATH = app.STATE_PATH / "configs"
 
 
-def merge_user_config(name: str, config: dict) -> dict:
-    def _deep_merge(config_part, config_part_overrides):
-        if isinstance(config_part, dict) and isinstance(config_part_overrides, dict):
+def merge_user_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
+    def _deep_merge(config_part: dict[str, Any], config_part_overrides: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(config_part, dict) and isinstance(config_part_overrides, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
             # override the values from config_path with config_part_overrides
             for key, value in config_part_overrides.items():
                 if key in config_part:

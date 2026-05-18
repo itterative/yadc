@@ -11,7 +11,7 @@ https://github.com/itterative/sd-scripts/blob/docs/dataset_metadata_guide.md
 import json
 import pathlib
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..dataset import DatasetImage
 from .utils import read_caption_source
@@ -86,7 +86,7 @@ def _export_json(
             with open(output_path, "r") as f:
                 loaded: Any = json.load(f)
                 if isinstance(loaded, dict):
-                    existing = loaded
+                    existing = cast(dict[str, Any], loaded)
         except (json.JSONDecodeError, ValueError):
             pass
 

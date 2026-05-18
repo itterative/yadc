@@ -1,5 +1,4 @@
 import sys
-from typing import Optional
 
 import click
 import pydantic
@@ -81,7 +80,7 @@ def envs_get(key: str, env: str = "default"):
 @click.option("--force", is_flag=True, help="Recreates the user environment if invalid")
 @cli_common.log_level
 @cli_common.env
-def envs_set(key: str, value: Optional[str], env: str = "default", force: bool = False):
+def envs_set(key: str, value: str | None, env: str = "default", force: bool = False):
     if key not in cmd_envs.ENV_KEYS:
         _logger.error("Error: invalid setting: %s", key)
         sys.exit(cmd_status.STATUS_USER_ERROR)

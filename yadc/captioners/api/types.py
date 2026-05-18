@@ -1,4 +1,4 @@
-from typing import ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal
 
 import pydantic
 
@@ -16,32 +16,32 @@ class OpenAIModel(pydantic.BaseModel):
 class OpenAIChatCompletionChunkResponse(pydantic.BaseModel):
     id: str = "SKIPPED"
     object: str = "chat.completion.cunk"
-    error: Optional["_OpenAIChatCompletionError"] = None
+    error: "_OpenAIChatCompletionError | None" = None
     choices: list["_OpenAIChatCompletionChunkChoice"] = []
-    usage: Optional["_OpenAIUsage"] = None
+    usage: "_OpenAIUsage | None" = None
 
 
 class OpenAIChatCompletionResponse(pydantic.BaseModel):
     id: str = "SKIPPED"
     object: str = "chat.completion"
     choices: list["_OpenAIChatCompletionChoice"] = []
-    usage: Optional["_OpenAIUsage"] = None
+    usage: "_OpenAIUsage | None" = None
 
 
 class _OpenAIChatCompletionError(pydantic.BaseModel):
     code: str
     message: str
-    metadata: Optional[dict] = None
+    metadata: dict[str, Any] | None = None
 
 
 class _OpenAIChatCompletionChunkChoice(pydantic.BaseModel):
     delta: "_OpenAIChatCompletionChunkChoiceDelta"
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 class _OpenAIChatCompletionChoice(pydantic.BaseModel):
     message: "_OpenAIChatCompletionChoiceMessage"
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 class _OpenAIReasoningDetailText(pydantic.BaseModel):
@@ -67,20 +67,20 @@ _OpenAIReasoningDetail = _OpenAIReasoningDetailText | _OpenAIReasoningDetailSumm
 
 class _OpenAIChatCompletionChoiceMessage(pydantic.BaseModel):
     role: str = "assistant"
-    refusal: Optional[str] = None
-    content: Optional[str] = None
-    reasoning: Optional[str] = None
-    reasoning_content: Optional[str] = None
-    reasoning_details: Optional[list[_OpenAIReasoningDetail]] = None
+    refusal: str | None = None
+    content: str | None = None
+    reasoning: str | None = None
+    reasoning_content: str | None = None
+    reasoning_details: list[_OpenAIReasoningDetail] | None = None
 
 
 class _OpenAIChatCompletionChunkChoiceDelta(pydantic.BaseModel):
     role: str = "assistant"
-    refusal: Optional[str] = None
-    content: Optional[str] = None
-    reasoning: Optional[str] = None
-    reasoning_content: Optional[str] = None
-    reasoning_details: Optional[list[_OpenAIReasoningDetail]] = None
+    refusal: str | None = None
+    content: str | None = None
+    reasoning: str | None = None
+    reasoning_content: str | None = None
+    reasoning_details: list[_OpenAIReasoningDetail] | None = None
 
 
 class OpenAIErrorResponse(pydantic.BaseModel):
@@ -90,14 +90,14 @@ class OpenAIErrorResponse(pydantic.BaseModel):
 class _OpenAIError(pydantic.BaseModel):
     code: int | str
     message: str
-    metadata: Optional[dict] = None
+    metadata: dict[str, Any] | None = None
 
 
 class _OpenAIUsage(pydantic.BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
-    completion_tokens_details: Optional["_OpenAIUsageCompletionDetails"] = None
+    completion_tokens_details: "_OpenAIUsageCompletionDetails | None" = None
 
 
 class _OpenAIUsageCompletionDetails(pydantic.BaseModel):
@@ -106,7 +106,7 @@ class _OpenAIUsageCompletionDetails(pydantic.BaseModel):
 
 class GeminiModelsResponse(pydantic.BaseModel):
     models: list["GeminiModel"]
-    nextPageToken: Optional[str] = None
+    nextPageToken: str | None = None
 
 
 class GeminiModel(pydantic.BaseModel):
@@ -130,13 +130,13 @@ class _GeminiError(pydantic.BaseModel):
 class GeminiContentResponse(pydantic.BaseModel):
     responseId: str = "SKIPPED"
     candidates: list["_GeminiContentCandidate"]
-    promptFeedback: Optional["_GeminiContentPromptFeedback"] = None
-    usageMetadata: Optional["_GeminiContentUsageMetadata"] = None
+    promptFeedback: "_GeminiContentPromptFeedback | None" = None
+    usageMetadata: "_GeminiContentUsageMetadata | None" = None
 
 
 class _GeminiContentCandidate(pydantic.BaseModel):
     content: "_GeminiContentCandidateContent"
-    finishReason: Optional[str] = None
+    finishReason: str | None = None
 
 
 class _GeminiContentCandidateContent(pydantic.BaseModel):

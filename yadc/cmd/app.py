@@ -1,3 +1,5 @@
+from typing import Any
+
 import platformdirs
 import toml
 
@@ -8,7 +10,7 @@ STATE_PATH = platformdirs.user_state_path(NAME, ensure_exists=True)
 CACHE_PATH = platformdirs.user_cache_path(NAME, ensure_exists=True)
 
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     config_path = CONFIG_PATH / "config.toml"
 
     try:

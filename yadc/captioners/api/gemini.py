@@ -1,8 +1,9 @@
 import copy
 import json
+from collections.abc import Generator
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, override
 
 import pydantic
 import requests
@@ -24,6 +25,7 @@ _logger = logging.get_logger(__name__)
 class APITypes(str, Enum):
     BASE = "base"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -50,11 +52,11 @@ class APITypes(str, Enum):
 
 
 class SafetySettings(pydantic.BaseModel):
-    data: Optional[list["SafetySetting"]] = None
+    data: list["SafetySetting"] | None = None
 
     @pydantic.model_validator(mode="after")
     def validate_(self):
-        existing_categories = set()
+        existing_categories: set[str] = set()
 
         if self.data is None:
             return self
@@ -96,6 +98,11 @@ class SafetySetting(pydantic.BaseModel):
 
 
 class APIUsage:
+    prompt_tokens: int
+    response_tokens: int
+    total_tokens: int
+    thoughts_tokens: int
+
     def __init__(
         self,
         prompt_tokens: int,
@@ -130,7 +137,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
     _current_model: str | None = None
     _is_thinking_model: bool = False
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         """
         Initializes the GeminiCaptioner with API and template configuration.
 
@@ -170,6 +177,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         self._session.headers = {"x-goog-api-key": self._api_token}
         self._api_usage: dict[str, APIUsage] = {}
 
+    @override
     def log_usage(self):
         usage = APIUsage(prompt_tokens=0, response_tokens=0, total_tokens=0, thoughts_tokens=0)
 
@@ -193,7 +201,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 usage.thoughts_tokens,
             )
 
-    def load_model(self, model_repo: str, **kwargs) -> None:
+    @override
+    def load_model(self, model_repo: str, **kwargs: Any) -> None:
         try:
             self._load_model(model_repo, **kwargs)
         except requests.HTTPError as e:
@@ -203,7 +212,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         except AssertionError as e:
             raise ValueError(str(e))
 
-    def _load_model(self, model_repo: str, **kwargs) -> None:
+    def _load_model(self, model_repo: str, **_kwargs: Any) -> None:
         model_repo = model_repo.removeprefix("models/")
 
         with self._session.get(f"models/{model_repo}", cache_ttl=1800) as model_resp:
@@ -268,13 +277,15 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         if self._is_thinking_model and self._reasoning:
             _logger.warning("Warning: selected a model without reasoning capabilities, but reasoning is enabled.")
 
+    @override
     def unload_model(self) -> None:
         pass
 
+    @override
     def offload_model(self) -> None:
         pass
 
-    def conversation(self, image: DatasetImage, **kwargs):
+    def conversation(self, image: DatasetImage, **kwargs: Any) -> dict[str, Any]:
         system_prompt, user_prompt = self.prompts_from_image(image, **kwargs)
 
         mime_type, encoded_image = self._encode_image(
@@ -282,7 +293,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         )
 
         try:
-            conversation_overrides = kwargs.pop("conversation_overrides", {})
+            conversation_overrides: dict[str, Any] = kwargs.pop("conversation_overrides", {})
             assert isinstance(conversation_overrides, dict), (
                 f"bad value for conversation_overrides/advanced settings; expected a dict, got: {type(conversation_overrides)}"
             )
@@ -313,19 +324,19 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             except pydantic.ValidationError as e:
                 raise AssertionError(f"bad value for conversation_overrides/advanced settings safety settings: {e}")
 
-            generation_config_overrides = conversation_overrides.get("generation_config", {})
+            generation_config_overrides: dict[str, Any] = conversation_overrides.get("generation_config", {})
             assert isinstance(generation_config_overrides, dict), (
                 f"bad value for conversation_overrides/advanced settings generation_config; expected a dict, got: {type(generation_config_overrides)}"
             )
 
-            extra_messages = kwargs.pop("extra_messages", None)
+            extra_messages: list[Any] | None = kwargs.pop("extra_messages", None)
             assert extra_messages is None or isinstance(extra_messages, list), f"bad value for extra_messages; expected a list, got: {type(extra_messages)}"
         except AssertionError as e:
             raise ValueError(e)
 
-        max_tokens = kwargs.pop("max_new_tokens", 512)
+        max_tokens: int = kwargs.pop("max_new_tokens", 512)
 
-        generation_config = {
+        generation_config: dict[str, Any] = {
             "maxOutputTokens": max_tokens,
             "responseModalities": ["TEXT"],
         }
@@ -337,7 +348,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         elif self._image_quality == "high":
             generation_config["mediaResolution"] = "MEDIA_RESOLUTION_HIGH"
 
-        conversation = {
+        conversation: dict[str, Any] = {
             "system_instruction": {
                 "parts": [
                     {"text": system_prompt},
@@ -377,7 +388,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 elif role == ROLE_USER:
                     role = user_role
 
-                parts = []
+                parts: list[dict[str, Any]] = []
                 if msg.reasoning:
                     parts.append({"text": msg.reasoning, "thought": True})
                 parts.append({"text": msg.content})
@@ -403,7 +414,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return conversation
 
-    def _extract_assistant_prefill(self, conversation: dict):
+    def _extract_assistant_prefill(self, conversation: dict[str, Any]) -> str:
         try:
             last_message = conversation["contents"][-1]
             if last_message.get("is_prefill", False):
@@ -419,7 +430,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return assistant_prefill
 
-    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
+    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
         assert self._current_model, "no model loaded"
 
         conversation = self.conversation(image, **kwargs)
@@ -539,7 +550,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                     raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
-    def _generate_stream_prediction(self, image: DatasetImage, **kwargs):
+    def _generate_stream_prediction(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
         try:
             yield from self._generate_stream_prediction_inner(image, **kwargs)
             return
@@ -548,7 +559,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
-    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs):
+    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
         assert self._current_model, "model not loaded"
 
         # make sure stream is not set in kwargs
@@ -631,13 +642,15 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
                 raise ValueError("api did not return text")
 
-    def predict(self, image: DatasetImage, **kwargs):
+    @override
+    def predict(self, image: DatasetImage, **kwargs: Any):
         self._before_predict(kwargs)
         try:
             return self._handle_thinking(self._generate_prediction(image, **kwargs))
         except requests.HTTPError as e:
             raise ValueError(self._normalize_error(e))
 
-    def predict_stream(self, image: DatasetImage, **kwargs):
+    @override
+    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
         self._before_predict(kwargs)
         yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))

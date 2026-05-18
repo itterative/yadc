@@ -83,8 +83,8 @@ def export(
     output: str | None,
     append: bool,
     caption_extension: str,
-    env: str | None,
-    user_config: str | None,
+    env: str | None,  # pyright: ignore[reportUnusedParameter]
+    user_config: str | None,  # pyright: ignore[reportUnusedParameter]
 ) -> None:
     backend_name = backend
     if draft is not None:

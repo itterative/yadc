@@ -1,6 +1,7 @@
 import hashlib
 import pathlib
 import time
+from typing import Any, cast
 
 import requests
 import requests.structures
@@ -59,7 +60,7 @@ class HTTPResponseCache:
 
             return response
 
-        return None
+        return None  # pyright: ignore[reportUnreachable]
 
     def set(self, key: str, response: requests.Response, ttl: float | None = None):
         cache_file = self.cache_dir / self._key(key)
@@ -91,7 +92,7 @@ class _ResponseCacheEntry:
         import time
 
         try:
-            response = json.loads(contents)
+            response: dict[str, Any] = json.loads(contents)
 
             assert isinstance(response, dict)
 
@@ -105,6 +106,7 @@ class _ResponseCacheEntry:
             assert isinstance(response_expiry, float)
             assert isinstance(response_status_code, int)
             assert isinstance(response_headers, dict)
+            response_headers = cast(dict[str, Any], response_headers)
             assert isinstance(response_content, str)
 
             response_content_raw = base64.b64decode(response_content)

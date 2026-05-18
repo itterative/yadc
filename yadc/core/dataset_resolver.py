@@ -1,7 +1,7 @@
 """Dataset resolution: scanning paths, merging inline images, applying extras."""
 
 import pathlib
-from typing import Callable, Optional
+from typing import Callable
 
 import toml
 
@@ -10,10 +10,10 @@ from .dataset import DatasetImage
 
 # Type for a function that reads a DatasetImage from disk.
 # Returns None if the file is not a valid image.
-ReadImageFn = Callable[[str, str], Optional[DatasetImage]]
+ReadImageFn = Callable[[str, str], DatasetImage | None]
 
 
-def read_image_from_disk(file_path: str, caption_suffix: str) -> Optional[DatasetImage]:
+def read_image_from_disk(file_path: str, caption_suffix: str) -> DatasetImage | None:
     """Read and parse a single dataset image from disk.
 
     Opens the image to validate it, loads any associated TOML metadata,

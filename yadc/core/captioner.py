@@ -1,17 +1,19 @@
 import abc
 import base64
 import io
-from typing import Generator
+from collections.abc import Generator
+from typing import Any
 
 import jinja2
 import pydantic
 from PIL import Image
 
-from yadc import templates
-from yadc.core import logging
-from yadc.core.dataset import DatasetImage
+from yadc.templates import default_template
 
-_logger = logging.get_logger(__name__)
+from .dataset import DatasetImage
+from .logging import get_logger
+
+_logger = get_logger(__name__)
 
 
 class CaptionerRound(pydantic.BaseModel):
@@ -42,13 +44,13 @@ class ReplyRound(pydantic.BaseModel):
         role (str): The role of the message author (ROLE_USER or ROLE_ASSISTANT).
         content (str): The text content of the message.
         reasoning (str | None): Optional reasoning/thinking content from the assistant.
-        reasoning_encrypted (list[dict] | None): Optional encrypted reasoning data to pass back.
+        reasoning_encrypted (list[dict[str, Any]] | None): Optional encrypted reasoning data to pass back.
     """
 
     role: str
     content: str
     reasoning: str | None = None
-    reasoning_encrypted: list[dict] | None = None
+    reasoning_encrypted: list[dict[str, Any]] | None = None
 
 
 class Captioner(abc.ABC):
@@ -84,7 +86,7 @@ class Captioner(abc.ABC):
     ```
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         """
         Initializes the Captioner with optional template configuration.
 
@@ -95,7 +97,7 @@ class Captioner(abc.ABC):
 
         self._prompt_template: str = kwargs.pop("prompt_template", "").strip()
 
-        self._jinja = jinja2.Environment(
+        self._jinja: jinja2.Environment = jinja2.Environment(
             loader=jinja2.FunctionLoader(self._load_jinja_template),
             lstrip_blocks=True,
             trim_blocks=True,
@@ -149,17 +151,17 @@ class Captioner(abc.ABC):
             """)
 
         if template == "__default_template__":
-            return templates.default_template()
+            return default_template()
         elif template == "__user_template__":
             # early exit if prompt template is given directly
             if self._prompt_template:
                 return self._prompt_template
 
-            return templates.default_template()
+            return default_template()
         else:
             raise ValueError(f"bad jinja template: {template}")
 
-    def prompts_from_image(self, dataset_image: DatasetImage, **kwargs):
+    def prompts_from_image(self, dataset_image: DatasetImage, **kwargs: Any) -> tuple[str, str]:
         """
         Generates system and user prompts for a given image using Jinja2 templating.
 
@@ -215,7 +217,7 @@ class Captioner(abc.ABC):
 
         return system_prompt, user_prompt
 
-    def _encode_image(self, image: DatasetImage, max_image_size: tuple[int, int], max_image_encoded_size: int, **kwargs):
+    def _encode_image(self, image: DatasetImage, max_image_size: tuple[int, int], max_image_encoded_size: int, **kwargs: Any) -> tuple[str, str]:
         """
         Encodes an image as a base64 string suitable for API transmission.
 
@@ -283,7 +285,7 @@ class Captioner(abc.ABC):
         return f"image/{image_format.lower()}", base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     @abc.abstractmethod
-    def load_model(self, model_repo: str, **kwargs) -> None:
+    def load_model(self, model_repo: str, **kwargs: Any) -> None:
         """
         Loads the captioning model through the API or from a repository or local path.
 
@@ -319,7 +321,7 @@ class Captioner(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def predict_stream(self, image: DatasetImage, **kwargs) -> "Generator[str, None, None]":
+    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> "Generator[str, None, None]":
         """
         Generates a caption incrementally and yields partial results.
 
@@ -345,7 +347,7 @@ class Captioner(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def predict(self, image: DatasetImage, **kwargs) -> str:
+    def predict(self, image: DatasetImage, **kwargs: Any) -> str:
         """
         Generates a complete caption for the given image.
 

@@ -1,4 +1,5 @@
 from time import time
+from typing import Any
 
 
 class Timer:
@@ -10,7 +11,7 @@ class Timer:
         self.start_t = time()
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.end_t = time()
 
     @property

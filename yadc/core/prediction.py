@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class PredictionContext:
     """
     Mutable container for prediction metadata, passed into predict/predict_stream calls.
@@ -12,9 +15,7 @@ class PredictionContext:
         reasoning_encrypted (list[dict] | None): Encrypted reasoning data to pass back in subsequent turns.
     """
 
-    __slots__ = ("reasoning", "reasoning_summary", "reasoning_encrypted")
-
     def __init__(self):
         self.reasoning: str | None = None
         self.reasoning_summary: str | None = None
-        self.reasoning_encrypted: list[dict] | None = None
+        self.reasoning_encrypted: list[dict[str, Any]] | None = None
