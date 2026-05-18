@@ -1,7 +1,8 @@
 import logging
-from typing import Any, override
+from typing import Any
 
 import click
+from typing_extensions import override
 
 
 class ClickHandler(logging.Handler):

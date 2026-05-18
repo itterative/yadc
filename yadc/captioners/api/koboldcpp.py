@@ -1,7 +1,8 @@
 import time
-from typing import Any, override
+from typing import Any
 
 import requests
+from typing_extensions import override
 
 from yadc.core import DatasetImage, logging
 
