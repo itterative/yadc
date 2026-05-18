@@ -1,5 +1,6 @@
+from collections.abc import Generator
 from enum import Enum
-from typing import Generator
+from typing import Any, override
 from urllib.parse import urlparse
 
 import pydantic
@@ -32,6 +33,7 @@ class APITypes(str, Enum):
     VLLM = "vllm"
     OLLAMA = "ollama"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -40,7 +42,7 @@ class APICaptioner(BaseAPICaptioner):
     api_type: APITypes
     inner_captioner: BaseAPICaptioner
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         """
         Initializes the APICaptioner with API and template configuration.
 
@@ -83,6 +85,9 @@ class APICaptioner(BaseAPICaptioner):
             case APITypes.GEMINI:
                 self.inner_captioner = GeminiCaptioner(**kwargs)
 
+            case _:
+                pass
+
         # rest are uncached
         kwargs.pop("cache", None)
 
@@ -98,6 +103,9 @@ class APICaptioner(BaseAPICaptioner):
 
             case APITypes.OLLAMA:
                 self.inner_captioner = OllamaCaptioner(**kwargs)
+
+            case _:
+                pass
 
         assert hasattr(self, "inner_captioner")
 
@@ -246,20 +254,26 @@ class APICaptioner(BaseAPICaptioner):
 
         return APITypes.OPENAI
 
+    @override
     def log_usage(self):
         self.inner_captioner.log_usage()
 
-    def load_model(self, model_repo: str, **kwargs) -> None:
+    @override
+    def load_model(self, model_repo: str, **kwargs: Any) -> None:
         return self.inner_captioner.load_model(model_repo, **kwargs)
 
+    @override
     def unload_model(self) -> None:
         self.inner_captioner.unload_model()
 
+    @override
     def offload_model(self) -> None:
         self.inner_captioner.offload_model()
 
-    def predict_stream(self, image: DatasetImage, **kwargs) -> "Generator[str, None, None]":
+    @override
+    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> "Generator[str, None, None]":
         return self.inner_captioner.predict_stream(image, **kwargs)
 
-    def predict(self, image: DatasetImage, **kwargs) -> str:
+    @override
+    def predict(self, image: DatasetImage, **kwargs: Any) -> str:
         return self.inner_captioner.predict(image, **kwargs)

@@ -1,4 +1,5 @@
 import time
+from typing import Any, override
 
 import requests
 
@@ -15,10 +16,14 @@ _logger = logging.get_logger(__name__)
 
 
 class KoboldcppCaptioner(OpenAICaptioner):
-    def __init__(self, **kwargs):
-        self._api_type = APITypes.KOBOLDCPP
+    _current_model: str | None
+
+    def __init__(self, **kwargs: Any):
+        kwargs["api_type"] = APITypes.KOBOLDCPP
+        self._current_model = None
         super().__init__(**kwargs)
 
+    @override
     def _load_model(self, model_repo: str, timeout: float = 60):
         if self._current_model == model_repo:
             return
@@ -53,7 +58,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
             model_options_resp_json = model_options_resp.json()
             assert isinstance(model_options_resp_json, list)
 
-            models = KoboldAdminSettingsReponse(data=model_options_resp_json)
+            models = KoboldAdminSettingsReponse.model_validate({"data": model_options_resp_json})
             available_models: list[str] = []
 
             for model in models.data:
@@ -107,6 +112,7 @@ class KoboldcppCaptioner(OpenAICaptioner):
         else:
             raise TimeoutError(f"failed to load model in time: {model_repo}")
 
+    @override
     def unload_model(self):
         try:
             with self._session.post("/api/admin/reload_config", json={"filename": "unload_model"}) as unload_model_resp:
@@ -114,8 +120,9 @@ class KoboldcppCaptioner(OpenAICaptioner):
         except AssertionError as e:
             raise ValueError("failed to unload model") from e
 
-    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
-        conversation = super().conversation(image, stream=stream, **kwargs)
+    @override
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:
+        conversation: dict[str, Any] = super().conversation(image, stream=stream, **kwargs)
 
         # reference: https://github.com/LostRuins/koboldcpp/blob/575eb4095095939b016dc2e1957643ffb2dbf086/tools/server/bench/script.js#L98
         conversation.setdefault("stop", ["<|im_end|>"])

@@ -18,6 +18,10 @@ _logger = logging.get_logger(__name__)
 
 
 class _ParsedError:
+    source: str
+    code: int | str
+    message: str
+
     def __init__(self, error_source: str, error_code: int | str, error_message: str):
         self.source = error_source
         self.code = error_code
@@ -30,7 +34,7 @@ class ErrorNormalizationMixin:
             super().__init__(error)
 
     def _normalize_error(self, error: Any):
-        def _try_parse_moderation(moderation: dict):
+        def _try_parse_moderation(moderation: dict[str, Any]) -> _ParsedError | None:
             try:
                 moderation_error = OpenRouterModerationError.model_validate(moderation)
                 return _ParsedError("moderation", 400, "; ".join(moderation_error.reasons))
@@ -159,6 +163,8 @@ class ErrorNormalizationMixin:
                 case ("http", 503):
                     error_message = "unavailable"
                 case ("app", _):
+                    error_message = "unknown error"
+                case _:
                     error_message = "unknown error"
 
         return f"api returned an error ({error_source} {error_code}): {error_message}"

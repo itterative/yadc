@@ -1,11 +1,15 @@
-from typing import Optional
+from typing import override
 
 
 class Setting:
-    def __init__(self, value: Optional[str], encrypted: bool = False):
+    value: str | None
+    encrypted: bool
+
+    def __init__(self, value: str | None, encrypted: bool = False):
         self.value = value
         self.encrypted = encrypted
 
+    @override
     def __str__(self) -> str:
         if not self.value:
             return ""

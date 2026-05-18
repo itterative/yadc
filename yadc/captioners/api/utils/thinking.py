@@ -1,4 +1,5 @@
-from typing import Generator
+from collections.abc import Generator
+from typing import Any
 
 from yadc.core import logging
 from yadc.core.utils import Timer
@@ -9,11 +10,11 @@ FLAG_STRIP_CAPTION = True
 
 
 class ThinkingMixin:
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         self._reasoning_start_token: str = kwargs.pop("reasoning_start_token", "<think>")
         self._reasoning_end_token: str = kwargs.pop("reasoning_end_token", "</think>")
 
-    def _handle_thinking_streaming(self, stream: Generator[str, None, None]):
+    def _handle_thinking_streaming(self, stream: Generator[str, None, None]) -> Generator[str, None, None]:
         is_thinking = False
         did_think = False
 

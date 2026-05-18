@@ -1,3 +1,5 @@
+from typing import Any, override
+
 from yadc.core import DatasetImage, logging
 
 from .openai import APITypes, OpenAICaptioner
@@ -7,8 +9,8 @@ _logger = logging.get_logger(__name__)
 
 
 class OpenRouterCaptioner(OpenAICaptioner):
-    def __init__(self, **kwargs):
-        self._api_type = APITypes.OPENROUTER
+    def __init__(self, **kwargs: Any):
+        kwargs["api_type"] = APITypes.OPENROUTER
         super().__init__(**kwargs)
 
         self._log_api_information()
@@ -26,12 +28,14 @@ class OpenRouterCaptioner(OpenAICaptioner):
             except Exception:
                 _logger.warning("Warning: failed to retrieve current credits. Is you API token correct?")
 
+    @override
     @staticmethod
     def _is_reasoning_redacted(text: str) -> bool:
         return text == "[REDACTED]"
 
-    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs):
-        conversation = super().conversation(image, stream=stream, **kwargs)
+    @override
+    def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:
+        conversation: dict[str, Any] = super().conversation(image, stream=stream, **kwargs)
 
         conversation.pop("reasoning_effort", None)  # remove any existing openai reasoning config
 

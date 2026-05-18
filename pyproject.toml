@@ -49,6 +49,17 @@ line-length = 160
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
+[tool.basedpyright]
+exclude = ["tests", ".venv"]
+reportAny = "none"
+reportExplicitAny = "none"
+reportUnusedCallResult = "none"
+reportPrivateUsage = "none"
+reportUnsafeMultipleInheritance = "none"
+reportImplicitStringConcatenation = "none"
+reportMissingSuperCall = "none"
+reportMissingTypeArgument = "none"
+
 [tool.pytest.ini_options]
 timeout = 5
 

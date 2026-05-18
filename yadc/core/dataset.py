@@ -1,5 +1,7 @@
 import pathlib
 from functools import cached_property
+from pathlib import Path
+from typing import ClassVar
 
 import toml
 from PIL import Image
@@ -40,29 +42,29 @@ class DatasetImage(BaseModel):
 
     _dataset_extras: dict[str, object] = PrivateAttr(default_factory=dict)
 
-    model_config = ConfigDict(extra="allow")
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
 
     @cached_property
-    def absolute_path(self):
+    def absolute_path(self) -> Path:
         return pathlib.Path(self.path).absolute()
 
     @cached_property
-    def caption_path(self):
+    def caption_path(self) -> Path:
         return self.absolute_path.with_suffix(self.caption_suffix)
 
     @cached_property
-    def toml_path(self):
+    def toml_path(self) -> Path:
         return self.absolute_path.with_suffix(self.toml_suffix)
 
     @cached_property
-    def toml_backup_path(self):
+    def toml_backup_path(self) -> Path:
         return self.absolute_path.with_suffix(self.toml_suffix + "~")
 
     @cached_property
-    def history_path(self):
+    def history_path(self) -> Path:
         return self.absolute_path.with_suffix(self.history_suffix)
 
-    def draft_path(self, name: str):
+    def draft_path(self, name: str) -> Path:
         """
         Returns the path for a named draft file.
 

@@ -2,6 +2,7 @@ import functools
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from typing import Any
 from urllib.parse import ParseResult, urlparse
 
 import requests
@@ -24,7 +25,7 @@ class CaptureContext:
     the context in future batching scenarios.
     """
 
-    __slots__: tuple[str, ...] = ("image_name",)
+    image_name: str
 
     def __init__(self, image_name: str):
         self.image_name = image_name
@@ -42,17 +43,17 @@ class Session:
         cache: HTTPResponseCache | None = None,
         response_logger: ResponseLogger | None = None,
     ):
-        self.base_url = urlparse(base_url.rstrip("/"))
-        self.headers = headers or {}
+        self.base_url: ParseResult = urlparse(base_url.rstrip("/"))
+        self.headers: dict[str, str] = headers or {}
 
         self.headers["User-Agent"] = self.user_agent
 
-        self._session = session or requests.Session()
+        self._session: requests.Session = session or requests.Session()
         self._setup_retries(max_retries, backoff_factor, status_forcelist)
 
-        self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="Thread-api-")
-        self._cache = cache
-        self._response_logger = response_logger
+        self._pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="Thread-api-")
+        self._cache: HTTPResponseCache | None = cache
+        self._response_logger: ResponseLogger | None = response_logger
 
     @functools.cached_property
     def user_agent(self):
@@ -111,10 +112,10 @@ class Session:
         yield CaptureContext(image_name=image_name)
 
     @contextmanager
-    def request(self, method: str, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs):
+    def request(self, method: str, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs: Any):
         assert self._session
 
-        headers = kwargs.pop("headers", {})
+        headers: dict[str, Any] = kwargs.pop("headers", {})
         assert isinstance(headers, dict)
 
         path = self._create_url(path)
@@ -123,12 +124,12 @@ class Session:
 
         headers.update(self.headers)
 
-        stream = kwargs.pop("stream", False)
+        stream: Any = kwargs.pop("stream", False)
 
         should_log = capture_ctx is not None and self._response_logger is not None
 
         # capture request body before it is consumed
-        debug_body = kwargs.get("json") if should_log else None
+        debug_body: Any = kwargs.get("json") if should_log else None
 
         request = requests.Request(method, url=path, headers=headers, **kwargs)
         session = self._session
@@ -190,7 +191,7 @@ class Session:
                 )
 
     @contextmanager
-    def get(self, path: str, cache_ttl: float | None = None, **kwargs):
+    def get(self, path: str, cache_ttl: float | None = None, **kwargs: Any):
         if self._cache is None or cache_ttl is None:
             with self.request("GET", path, **kwargs) as response:
                 yield response
@@ -208,7 +209,7 @@ class Session:
 
             yield response
 
-    def post(self, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs):
+    def post(self, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs: Any):
         return self.request("POST", path, capture_ctx=capture_ctx, **kwargs)
 
 
