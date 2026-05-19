@@ -9,7 +9,8 @@ exclude_from_output = false
 [settings]
 max_tokens = 1536
 
-prompt_template = """
+[prompt]
+template = """
 {% set system_prompt %}
 You are a useful assistant. You help the user caption the images they are sending. You shall provide only the caption, without any other additions.
 
