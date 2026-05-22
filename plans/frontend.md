@@ -1,8 +1,8 @@
 # yadc Frontend Plan
 
-## Reference Architecture (qwen-reranker-test)
+## Reference Implementation
 
-The qwen-reranker-test project uses a **Flask + SvelteKit** split architecture:
+`~/Repos/qwen-reranker-test/` — a **Flask + SvelteKit** split architecture:
 
 - **Backend** (`backend/`): Flask app served via **waitress**, with two Flask blueprints:
   - `ApiBlueprint` (`/api/*`) — JSON REST endpoints + SSE event stream
@@ -11,14 +11,7 @@ The qwen-reranker-test project uses a **Flask + SvelteKit** split architecture:
 - **DI**: `injector` library wires Configuration → controllers → services
 - **Frontend serves from Flask**: Svelte builds to `frontend/build/`, Flask serves it directly — no separate dev server in production
 
-### Adapted Layout for yadc
-
-For yadc, the same architecture is placed inside the yadc package:
-- **API** (`yadc/api/`) — Flask backend (was `backend/` in reference)
-- **Frontend** (`yadc/webui/`) — SvelteKit frontend (was `frontend/` in reference)
-- **CLI entry** (`yadc/cli_webui.py`) — `yadc webui` command to launch the server
-
-### Key Backend Patterns
+### Key Backend Patterns (reference)
 - `application.py` — creates Flask app, Injector, registers blueprints and controllers
 - `controllers/` — each file is a function decorated with `@inject`, receives dependencies via injector
 - `controllers/app_frontend.py` — serves `index.html`, `robots.txt`, and `/_app/*` from the static build
@@ -26,7 +19,7 @@ For yadc, the same architecture is placed inside the yadc package:
 - SSE events for real-time updates (ingestion status, new documents)
 - CORS middleware for dev mode
 
-### Key Frontend Patterns
+### Key Frontend Patterns (reference)
 - `$env/dynamic/public` for `PUBLIC_BACKEND_URL` (empty in prod, `http://localhost:5001` in dev)
 - Svelte stores (`writable`) for state, custom `storable()` wrapper for localStorage persistence
 - Zod schemas for SSE event validation
@@ -35,9 +28,7 @@ For yadc, the same architecture is placed inside the yadc package:
 
 ---
 
-## Plan for yadc Frontend
-
-### What yadc's frontend needs to do
+## What yadc's frontend needs to do
 
 yadc is a **dataset captioning tool** — the frontend should let users:
 
@@ -48,239 +39,195 @@ yadc is a **dataset captioning tool** — the frontend should let users:
 5. **Manage configs** — view/edit dataset configs, environments, templates
 6. **Export** — trigger exports to training formats
 
-### Architecture Decisions
+---
 
-Replicate the same Flask + SvelteKit pattern:
+## Architecture Decisions
+
+Replicate the same Flask + SvelteKit pattern, adapted for yadc's package structure:
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
 | Web server | **Flask + waitress** | Matches reference project; yadc already uses Python |
-| DI | **injector** | Matches reference pattern; clean separation of concerns |
+| DI | **injector** (Phase 2+) | Matches reference pattern; clean separation of concerns |
 | Frontend framework | **SvelteKit (adapter-static)** | Same as reference — SPA that Flask serves |
 | CSS | **Tailwind CSS v4** | Same as reference |
 | Type validation | **Zod** | Same as reference — validates SSE/API payloads |
 | Language | **TypeScript** | Same as reference |
 
-### Directory Structure (New Files)
+### Adapted Layout
 
+- **API** (`yadc/api/`) — Flask backend (was `backend/` in reference)
+- **Frontend** (`yadc/webui/`) — SvelteKit frontend (was `frontend/` in reference)
+- **CLI entry** (`yadc/cli_webui.py`) — `yadc webui` command to launch the server
+
+---
+
+## Implementation Phases
+
+### Phase 1: Skeleton ✅ DONE
+
+All files created and verified. Flask serves the SvelteKit build, API stubs respond.
+
+#### What was implemented
+
+**Python dependencies added** (`pyproject.toml`):
+- `flask>=3.1.0`, `waitress>=3.0.0`, `injector>=0.22.0`
+
+**Backend** (`yadc/api/`):
 ```
-yadc/                           # Python package root
-  cli_webui.py                  # NEW — `yadc webui` CLI command (click)
-  api/                          # NEW — Flask backend
+yadc/api/
+  __init__.py
+  application.py          — Flask app factory, registers blueprints + CORS, runs via waitress
+  configuration.py        — @dataclass config (http, cors, yadc paths from platformdirs)
+  controllers/
     __init__.py
-    application.py              # Flask app, Injector, blueprint registration
-    configuration.py            # @dataclass config (http, cors, paths)
-    controllers/
-      __init__.py
-      blueprints.py             # ApiBlueprint, AppBlueprint singletons
-      app_frontend.py           # Serve SvelteKit build
-      api_cors.py               # CORS middleware
-      api_datasets.py           # Dataset listing, image browsing
-      api_captioning.py         # Start/stop captioning, progress SSE
-      api_configs.py            # Config/env/template management
-      api_export.py             # Export triggers
-    modules/
-      __init__.py
-      service.py                # Base Service class
-      event_dispatcher.py       # SSE event broadcasting
-
-  webui/                        # NEW — SvelteKit frontend
-    package.json
-    svelte.config.js
-    vite.config.ts
-    tsconfig.json
-    .env                        # PUBLIC_BACKEND_URL=""
-    .env.development            # PUBLIC_BACKEND_URL="http://localhost:5001"
-    .npmrc
-    .prettierrc
-    .prettierignore
-    .gitignore
-    eslint.config.js
-    src/
-      app.html
-      app.d.ts
-      lib/
-        index.ts
-        events.ts               # TypedEventSource with Zod validation
-        async.ts                # deferred, synchronized, sleep helpers
-        storable.js             # localStorage-backed writable store
-        stores/
-          settings.ts           # UI settings (storable)
-          captioning.ts         # Captioning progress state
-        components/
-          Dialog.svelte
-          Checkbox.svelte
-          IntersectionObserverElement.svelte
-        icons/
-          SvgSpinner.svelte
-          SvgBurgerMenu.svelte
-          SvgClose.svelte
-          SvgPlus.svelte
-      routes/
-        layout.css              # Tailwind imports + theme
-        +layout.svelte          # Shell with nav
-        +layout.ts              # prerender=true, ssr=false
-        +page.svelte            # Main dashboard
-        +page.ts                # Load initial data
-        DatasetBrowser.svelte   # Image grid with masonry layout
-        ImageDetail.svelte      # Focused image view with caption/edit
-        CaptionSettings.svelte  # Captioning config form
-        SettingsDialog.svelte   # App settings
-    static/
-      robots.txt
+    blueprints.py         — ApiBlueprint (/api/*), AppBlueprint (/*) singletons
+    app_frontend.py       — Serves SvelteKit build, SPA fallback, helpful message if not built
+    api_cors.py           — CORS headers for development (registered via application.py)
+    api_datasets.py       — Stub: GET /api/datasets, GET /api/datasets/<name>/images
+    api_captioning.py     — Stub: POST/DELETE /api/datasets/<name>/caption, GET .../status (SSE)
+    api_events.py         — Stub: GET /api/events (global SSE)
+  modules/
+    __init__.py
 ```
 
-### CLI Entry (`yadc/cli_webui.py`)
+**CLI** (`yadc/cli_webui.py`):
+- `yadc webui serve` command with `--host`, `--port`, `--threads`, `--cors` options
+- Registered as `webui` group in `yadc/cli.py`
 
-Follows the existing `cli_*.py` pattern. Registers as `yadc webui`:
-
-```python
-import click
-from yadc.api.application import Application, Configuration
-
-@click.group()
-def webui():
-    """Launch the yadc web UI."""
-    pass
-
-@webui.command()
-@click.option("--host", default="127.0.0.1", help="Bind host")
-@click.option("--port", default=7860, help="Bind port")
-@click.option("--debug/--no-debug", default=False)
-def serve(host, port, debug):
-    """Start the web UI server."""
-    configuration = Configuration(http_host=host, http_port=port)
-    application = Application(configuration)
-    application.run()
+**Frontend** (`yadc/webui/`):
+```
+yadc/webui/
+  package.json            — SvelteKit + Svelte 5 + Tailwind CSS v4 + Zod
+  svelte.config.js        — adapter-static with SPA fallback
+  vite.config.ts          — tailwindcss + sveltekit plugins
+  tsconfig.json
+  .npmrc
+  .env                    — API_BASE="" (production: same-origin)
+  .env.development        — API_BASE="http://localhost:7860" (dev: separate servers)
+  .gitignore
+  src/
+    app.html
+    app.d.ts
+    lib/
+      index.ts
+      api.ts              — API_BASE export (replaces $env/dynamic/public approach)
+      events.ts           — TypedEventSource with Zod validation
+      async.ts            — deferred, sleep helpers
+      storable.js         — localStorage-backed writable store
+      stores/
+        settings.ts       — UI settings (storable)
+        captioning.ts     — Captioning progress state
+      components/
+        Dialog.svelte
+        Checkbox.svelte
+    routes/
+      layout.css          — Tailwind imports + dark theme (Tokyo Night palette)
+      +layout.ts          — prerender=true, ssr=false
+      +layout.svelte      — Shell with nav bar
+      +page.svelte        — Main dashboard (fetches /api/datasets)
+  static/
+    robots.txt
 ```
 
-Registered in `yadc/cli.py`:
-```python
-from . import cli_webui
-cli.add_command(cli_webui.webui)
+#### Deviations from original plan
+
+| Planned | Actual | Reason |
+|---------|--------|--------|
+| `$env/dynamic/public` for backend URL | `$lib/api.ts` with `API_BASE` constant | SvelteKit's `adapter-static` doesn't expose dynamic env vars at build time without more setup |
+| `injector` DI in Phase 1 | Simple module-level wiring | DI will be added when controllers need real dependencies (Phase 2+) |
+| `@inject` decorator on controllers | Functions registered directly in `application.py` | Simpler for stubs; will migrate to `@inject` pattern with real services |
+| Full CORS with origin reflection | Simple `Access-Control-Allow-Origin: *` | Sufficient for development; can match reference's origin-based CORS later |
+| `app_frontend.py` serves `/_app/*` only | Serves all paths with SPA fallback | Reference uses `send_file` for index + `send_from_directory` for `/_app/*`; our version handles arbitrary routes |
+| `.prettierrc`, `.prettierignore`, `eslint.config.js` | Not added yet | Will add when formatting/linting is needed |
+| Icon components (`SvgSpinner`, etc.) | Not added yet | Will add when needed in Phase 2+ |
+
+#### How to run
+
+```bash
+# Frontend dev (hot reload on :5173)
+cd yadc/webui && npm run dev
+
+# Backend dev (Flask on :7860)
+uv run yadc webui serve
+
+# Production build + serve
+cd yadc/webui && npm run build
+uv run yadc webui serve   # serves everything on :7860
 ```
 
-### Backend API Endpoints
+#### Reference files to copy from (Phase 2+)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/datasets` | List available datasets (scan for .toml configs) |
-| GET | `/api/datasets/{name}/images` | List images with captions/drafts (paginated) |
-| GET | `/api/datasets/{name}/images/{id}/media` | Serve image file |
-| GET | `/api/datasets/{name}/images/{id}/thumbnail` | Serve/generated thumbnail |
-| GET | `/api/datasets/{name}/images/{id}/caption` | Get caption text + TOML extras |
-| PUT | `/api/datasets/{name}/images/{id}/caption` | Update caption/extras |
-| POST | `/api/datasets/{name}/caption` | Start captioning run |
-| GET | `/api/datasets/{name}/caption/status` | SSE stream for captioning progress |
-| DELETE | `/api/datasets/{name}/caption` | Stop captioning run |
-| GET | `/api/configs` | List user configs |
-| GET | `/api/envs` | List environments |
-| GET | `/api/templates` | List prompt templates |
-| GET | `/api/templates/{name}` | Get template content |
-| PUT | `/api/templates/{name}` | Update template |
-| POST | `/api/export` | Trigger export |
-| GET | `/api/events` | Global SSE event stream |
+| Reference file (`~/Repos/qwen-reranker-test/`) | yadc target | Notes |
+|------|-------------|-------|
+| `backend/controllers/blueprints.py` | `yadc/api/controllers/blueprints.py` | Done — simplified version (no injector) |
+| `backend/controllers/app_frontend.py` | `yadc/api/controllers/app_frontend.py` | Done — adapted for yadc paths |
+| `backend/controllers/api_cors.py` | `yadc/api/controllers/api_cors.py` | Done — simplified CORS; reference has origin-based CORS |
+| `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Phase 3 — SSE event broadcasting |
+| `backend/modules/service.py` | `yadc/api/modules/service.py` | Phase 2+ — base service class |
+| `backend/application.py` | `yadc/api/application.py` | Done — will need injector when adding services |
+| `backend/configuration.py` | `yadc/api/configuration.py` | Done — yadc-specific fields |
+| `frontend/src/lib/events.ts` | `yadc/webui/src/lib/events.ts` | Done |
+| `frontend/src/lib/async.ts` | `yadc/webui/src/lib/async.ts` | Done |
+| `frontend/src/lib/storable.js` | `yadc/webui/src/lib/storable.js` | Done |
+| `frontend/src/lib/components/Dialog.svelte` | `yadc/webui/src/lib/components/Dialog.svelte` | Done — adapted for Svelte 5 props API |
+| `frontend/src/lib/components/Checkbox.svelte` | `yadc/webui/src/lib/components/Checkbox.svelte` | Done — adapted for Svelte 5 |
+| `frontend/src/lib/components/IntersectionObserverElement.svelte` | `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` | Phase 2 — for lazy-loaded image grid |
+| `frontend/src/lib/icons/*.svelte` | `yadc/webui/src/lib/icons/*.svelte` | Phase 2+ |
+| `frontend/src/routes/layout.css` | `yadc/webui/src/routes/layout.css` | Done — yadc dark theme |
 
-### Frontend Pages & Components
+---
 
-#### Main Page (`+page.svelte`)
-- Dashboard with dataset selector
-- Image browser (masonry grid, same pattern as GalleryContainer.svelte)
-- Search/filter bar
-- Settings gear icon → SettingsDialog
+### Phase 2: Dataset Browsing API + UI
 
-#### Image Detail (Dialog or Route)
-- Full-size image preview
-- Current caption text (editable)
-- TOML metadata viewer/editor
-- Draft management (view, compare, apply)
-- Trigger re-caption button
+1. **Wire up injector** — add `injector`-based DI to `application.py` so controllers receive services
+2. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
+3. `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` — copy from reference
+4. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
+5. Frontend: `ImageDetail.svelte` — focused view with caption display
+6. Wire up pagination with next_token pattern
 
-#### Caption Settings Panel
-- Model selection
-- Template selection
-- Rounds configuration
-- Reasoning settings
-- Start/stop controls
-- Progress bar with SSE updates
+### Phase 3: Captioning Integration
 
-#### Settings Dialog
-- Environment management (api_url, model_name)
-- Template management
-- Cache controls
+1. `yadc/api/modules/event_dispatcher.py` — SSE event broadcasting (adapt from reference)
+2. `yadc/api/controllers/api_captioning.py` — start/stop captioning in background thread, SSE progress
+3. `CaptionSettings.svelte` — config form for captioning options
+4. Wire SSE events for real-time progress (images done, tokens, errors)
+5. Caption display updates as images are processed
 
-### Implementation Phases
+### Phase 4: Config & Export Management
 
-#### Phase 1: Skeleton
-1. Create `yadc/api/` with Flask app skeleton (`application.py`, `configuration.py`, `blueprints.py`, `app_frontend.py`, `api_cors.py`)
-2. Create `yadc/webui/` with SvelteKit project (copy config files from reference)
-3. Wire Flask to serve SvelteKit build
-4. Create `yadc/cli_webui.py` with `yadc webui serve` command
-5. Register `webui` group in `yadc/cli.py`
-6. Verify Flask serves the frontend and API endpoints respond
-
-#### Phase 2: Dataset Browsing API + UI
-1. `yadc/api/controllers/api_datasets.py` — scan for dataset configs, list images, serve media/thumbnails
-2. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
-3. Frontend: `ImageDetail.svelte` — focused view with caption display
-4. Wire up pagination with next_token pattern
-
-#### Phase 3: Captioning Integration
-1. `yadc/api/controllers/api_captioning.py` — start/stop captioning in background thread, SSE progress
-2. `CaptionSettings.svelte` — config form for captioning options
-3. Wire SSE events for real-time progress (images done, tokens, errors)
-4. Caption display updates as images are processed
-
-#### Phase 4: Config & Export Management
 1. `yadc/api/controllers/api_configs.py` — CRUD for environments, templates, user configs
 2. `yadc/api/controllers/api_export.py` — trigger exports
 3. `SettingsDialog.svelte` — full settings UI
 4. Export form with backend/format selection
 
-### Configuration Integration
+---
 
-The backend `configuration.py` should reuse yadc's existing platformdirs paths:
+## Backend API Endpoints (planned)
 
-```python
-@dataclass
-class Configuration:
-    # HTTP
-    http_host: str = "127.0.0.1"
-    http_port: int = 7860
-    http_threads: int = 4
-    
-    # Frontend
-    app_frontend_build_path: str = "../webui/build"
-    app_frontend_cache_control: str = "public, max-age=31536000, immutable"
-    
-    # CORS (dev mode)
-    api_cors_enable: bool = True
-    
-    # yadc paths (from cmd/app.py)
-    config_path: str = ""   # auto-resolved via platformdirs
-    state_path: str = ""    # auto-resolved via platformdirs
-    cache_path: str = ""    # auto-resolved via platformdirs
-```
+| Method | Path | Description | Phase |
+|--------|------|-------------|-------|
+| GET | `/api/datasets` | List available datasets | 2 |
+| GET | `/api/datasets/{name}/images` | List images with captions/drafts (paginated) | 2 |
+| GET | `/api/datasets/{name}/images/{id}/media` | Serve image file | 2 |
+| GET | `/api/datasets/{name}/images/{id}/thumbnail` | Serve/generated thumbnail | 2 |
+| GET | `/api/datasets/{name}/images/{id}/caption` | Get caption text + TOML extras | 2 |
+| PUT | `/api/datasets/{name}/images/{id}/caption` | Update caption/extras | 2 |
+| POST | `/api/datasets/{name}/caption` | Start captioning run | 3 |
+| GET | `/api/datasets/{name}/caption/status` | SSE stream for captioning progress | 3 |
+| DELETE | `/api/datasets/{name}/caption` | Stop captioning run | 3 |
+| GET | `/api/configs` | List user configs | 4 |
+| GET | `/api/envs` | List environments | 4 |
+| GET | `/api/templates` | List prompt templates | 4 |
+| GET | `/api/templates/{name}` | Get template content | 4 |
+| PUT | `/api/templates/{name}` | Update template | 4 |
+| POST | `/api/export` | Trigger export | 4 |
+| GET | `/api/events` | Global SSE event stream | 3 |
 
-### Dev Workflow
+---
 
-**Frontend dev** (hot reload):
-```bash
-cd yadc/webui && npm run dev  # Vite dev server on :5173, proxies API to Flask
-```
-
-**Backend dev**:
-```bash
-uv run yadc webui serve  # Flask on :7860
-```
-
-**Production build**:
-```bash
-cd yadc/webui && npm run build   # outputs to yadc/webui/build/
-uv run yadc webui serve          # Flask serves everything on :7860
-```
-
-### Key Differences from Reference
+## Key Differences from Reference
 
 | Aspect | qwen-reranker-test | yadc |
 |--------|-------------------|------|
@@ -290,33 +237,5 @@ uv run yadc webui serve          # Flask serves everything on :7860
 | Data model | Items in SQLite | Images on disk with .txt/.toml sidecars |
 | Heavy computation | Model inference on search | API-based captioning (no local model) |
 | Config | In-code dataclass defaults | TOML files + user configs + envs |
-
-### Files to Copy (with Adaptation)
-
-From the reference project, these can be largely copied and adapted:
-
-| Reference file | yadc target | Adaptation needed |
-|------|-------------|------------------|
-| `backend/controllers/blueprints.py` | `yadc/api/controllers/blueprints.py` | None — identical |
-| `backend/controllers/app_frontend.py` | `yadc/api/controllers/app_frontend.py` | Update build path to `webui/build` |
-| `backend/controllers/api_cors.py` | `yadc/api/controllers/api_cors.py` | None — identical |
-| `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Minor — event types will differ |
-| `backend/application.py` | `yadc/api/application.py` | Update imports to `yadc.api.*` |
-| `backend/configuration.py` | `yadc/api/configuration.py` | Update `app_frontend_build_path` default |
-| `frontend/package.json` | `yadc/webui/package.json` | Change name to "yadc-webui" |
-| `frontend/svelte.config.js` | `yadc/webui/svelte.config.js` | None — identical |
-| `frontend/vite.config.ts` | `yadc/webui/vite.config.ts` | None — identical |
-| `frontend/tsconfig.json` | `yadc/webui/tsconfig.json` | None — identical |
-| `frontend/.env*` | `yadc/webui/.env*` | Keep same pattern |
-| `frontend/.npmrc` | `yadc/webui/.npmrc` | None — identical |
-| `frontend/.prettierrc` | `yadc/webui/.prettierrc` | Update tailwindStylesheet path if needed |
-| `frontend/.gitignore` | `yadc/webui/.gitignore` | None — identical |
-| `frontend/eslint.config.js` | `yadc/webui/eslint.config.js` | None — identical |
-| `frontend/src/app.html` | `yadc/webui/src/app.html` | None — identical |
-| `frontend/src/app.d.ts` | `yadc/webui/src/app.d.ts` | None — identical |
-| `frontend/src/lib/events.ts` | `yadc/webui/src/lib/events.ts` | None — identical |
-| `frontend/src/lib/async.ts` | `yadc/webui/src/lib/async.ts` | None — identical |
-| `frontend/src/lib/storable.js` | `yadc/webui/src/lib/storable.js` | None — identical |
-| `frontend/src/lib/components/*.svelte` | `yadc/webui/src/lib/components/*.svelte` | None — identical (Dialog, Checkbox, IntersectionObserver) |
-| `frontend/src/routes/layout.css` | `yadc/webui/src/routes/layout.css` | Update theme colors for yadc branding |
-| _(new)_ | `yadc/cli_webui.py` | New file — click command group with `serve` subcommand |
+| DI usage | Full injector from the start | Lightweight initially, adding injector in Phase 2 |
+| Env vars | `$env/dynamic/public` | `$lib/api.ts` constant (simpler for static builds) |
