@@ -28,24 +28,28 @@ yadc/
   cli_templates.py    # template management CLI
   cli_webui.py        # web UI CLI (yadc webui serve)
 
-  api/                # web UI backend (Flask + injector DI)
+  api/                # web UI backend (Flask + injector DI with auto-discovery)
     __init__.py
-    application.py      # Application(Module) — DI container, wires services + controllers
+    application.py      # Application(Module) — DI container, auto-discovers services + controllers
     configuration.py    # @dataclass config (http, cors, sse, yadc paths)
+    discovery.py        # discover_services() / discover_controllers() — package scanning
     events.py           # Event base class + PingEvent, CaptioningStatusEvent
     controllers/
+      __init__.py          # @controller decorator (auto-discovery marker + @inject)
       blueprints.py     # ApiBlueprint, AppBlueprint (@singleton injector classes)
-      app_frontend.py   # @inject — serves SvelteKit build
-      api_cors.py       # @inject — CORS headers
-      api_datasets.py   # @inject — dataset/image endpoints (stubs)
-      api_captioning.py # @inject — captioning start/stop/status (stubs)
-      api_events.py     # @inject — SSE event stream
+      app_frontend.py   # @controller — serves SvelteKit build
+      api_datasets.py   # @controller — dataset/image endpoints (stubs)
+      api_captioning.py # @controller — captioning start/stop/status (stubs)
+      api_events.py     # @controller — SSE event stream
     modules/
-      service.py            # base Service class
-      logging_factory.py    # LoggingFactory — @singleton, get_logger()
+      service.py            # base Service class (marker for DI auto-discovery)
+      cors_middleware.py    # CORSMiddleware — origin-based CORS, registered on ApiBlueprint
+      logging_factory.py    # LoggingFactory — get_logger()
       event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
-      job_scheduler.py       # JobScheduler — @singleton Service, daemon threads for periodic jobs
+      job_scheduler.py       # JobScheduler — daemon threads for periodic jobs
       sse_events.py         # SSEEvents — Condition-based SSE queue with ping
+      db_migrations.py      # Step-based SQLite migration runner
+      db_connection_factory.py # SQLite WAL, foreign keys, background init
 
   webui/             # SvelteKit frontend (Phase 1 skeleton)
     ...
@@ -104,4 +108,4 @@ yadc/
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
-- **Web UI DI**: `Application` extends `injector.Module`, binds `Configuration`/`Flask`/Blueprints. Controllers are `@inject` functions resolved via `get_bindings()`. Services (`LoggingFactory`, `EventDispatcher`, `JobScheduler`, `SSEEvents`) are `@singleton` classes instantiated by the injector.
+- **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
