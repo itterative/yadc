@@ -1,48 +1,116 @@
 from __future__ import annotations
 
-import os
+import sys
+import time
+from threading import Thread
+from typing import Callable, override
 
 from flask import Flask
+from injector import Binder, Injector, Module, get_bindings  # pyright: ignore[reportUnknownVariableType]
 
 from .configuration import Configuration
+from .controllers.api_captioning import api_captioning
+from .controllers.api_cors import api_cors
+from .controllers.api_datasets import api_datasets
+from .controllers.api_events import api_events
+from .controllers.app_frontend import app_frontend
+from .controllers.blueprints import ApiBlueprint, AppBlueprint
+from .modules.event_dispatcher import EventDispatcher
+from .modules.job_scheduler import JobScheduler
+from .modules.logging_factory import LoggingFactory
+from .modules.service import Service
+from .modules.sse_events import SSEEvents
 
 
-def _register_controllers(app: Flask, config: Configuration) -> None:
-    """Import and register all controller modules (Flask Blueprint pattern)."""
-    os.environ["YADC_FRONTEND_BUILD_PATH"] = config.app_frontend_build_path
+class Application(Module):
+    """Creates the Flask app, wires DI, and starts the server."""
 
-    # Import controllers to trigger @Blueprint.route decorations
-    from .controllers import api_captioning, api_datasets, api_events, app_frontend  # noqa: F401
-    from .controllers.blueprints import ApiBlueprint, AppBlueprint
+    def __init__(self, configuration: Configuration):
+        self.configuration: Configuration = configuration
+        self.app: Flask = Flask(__name__, static_folder=None)
 
-    app.register_blueprint(ApiBlueprint)
-    app.register_blueprint(AppBlueprint)
+        self.injector: Injector = Injector(self)
+        self.services: list[Service] = []
 
-    from .controllers.api_cors import apply_cors
+    @override
+    def configure(self, binder: Binder):
+        binder.bind(Configuration, to=self.configuration)
+        binder.bind(Flask, to=self.app)
 
-    apply_cors(app, config)
+        binder.bind(
+            ApiBlueprint,
+            to=ApiBlueprint(
+                name="api",
+                import_name=__name__,
+                url_prefix="/api",
+            ),
+        )
 
+        binder.bind(
+            AppBlueprint,
+            to=AppBlueprint(
+                name="app",
+                import_name=__name__,
+            ),
+        )
 
-class Application:
-    """Creates the Flask app and wires everything together."""
+    def configure_services(self):
+        services: list[type[Service]] = [
+            LoggingFactory,
+            EventDispatcher,
+            JobScheduler,
+            SSEEvents,
+        ]
 
-    def __init__(self, configuration: Configuration | None = None):
-        self._config: Configuration = configuration or Configuration()
-        self._app: Flask = Flask(__name__, static_folder=None)
-        _register_controllers(self._app, self._config)
+        for service_cls in services:
+            self.services.append(self.injector.get(service_cls))
 
-    @property
-    def flask_app(self) -> Flask:
-        return self._app
+    def configure_controllers(self):
+        controllers: list[Callable[..., None]] = [
+            api_cors,
+            app_frontend,
+            api_datasets,
+            api_captioning,
+            api_events,
+        ]
+
+        for controller in controllers:
+            controller_deps = {arg: self.injector.get(klass) for arg, klass in get_bindings(controller).items()}  # pyright: ignore[reportUnknownVariableType]
+
+            controller(**controller_deps)
+
+    def configure_app(self):
+        app = self.injector.get(Flask)
+        app.register_blueprint(self.injector.get(ApiBlueprint))
+        app.register_blueprint(self.injector.get(AppBlueprint))
 
     def run(self) -> None:
-        """Start the server using waitress (production) or Flask dev server (debug)."""
-        import waitress
+        """Configure everything and start the server via waitress."""
+        self.configure_services()
+        self.configure_controllers()
+        self.configure_app()
 
-        print(f"yadc web UI starting on http://{self._config.http_host}:{self._config.http_port}")
-        waitress.serve(
-            self._app,
-            host=self._config.http_host,
-            port=self._config.http_port,
-            threads=self._config.http_threads,
-        )
+        def _run():
+            import waitress
+
+            print(f"yadc web UI starting on http://{self.configuration.http_host}:{self.configuration.http_port}")
+            waitress.serve(
+                self.app,
+                host=self.configuration.http_host,
+                port=self.configuration.http_port,
+                threads=self.configuration.http_threads,
+            )
+
+        t = Thread(target=_run, daemon=False)
+        t.start()
+
+        time.sleep(1)
+
+        # If waitress failed (e.g. port in use), exit cleanly
+        if not t.is_alive():
+            sys.exit(1)
+
+        try:
+            t.join()
+        except KeyboardInterrupt:
+            pass

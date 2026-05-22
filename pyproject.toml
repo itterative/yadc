@@ -7,7 +7,7 @@ name = "yadc"
 version = "0.8.1"
 description = "Yet Another Dataset Captioner"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "requests==2.32.5",
     "pillow==11.3.0",
@@ -47,14 +47,14 @@ where = ["."]
 include = ["yadc*"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 160
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
 [tool.basedpyright]
-exclude = ["tests", ".venv"]
+exclude = ["tests", ".venv", "**/node_modules"]
 reportAny = "none"
 reportExplicitAny = "none"
 reportUnusedCallResult = "none"

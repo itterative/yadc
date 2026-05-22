@@ -135,12 +135,12 @@ yadc/webui/
 | Planned | Actual | Reason |
 |---------|--------|--------|
 | `$env/dynamic/public` for backend URL | `$lib/api.ts` with `API_BASE` constant | SvelteKit's `adapter-static` doesn't expose dynamic env vars at build time without more setup |
-| `injector` DI in Phase 1 | Simple module-level wiring | DI will be added when controllers need real dependencies (Phase 2+) |
-| `@inject` decorator on controllers | Functions registered directly in `application.py` | Simpler for stubs; will migrate to `@inject` pattern with real services |
-| Full CORS with origin reflection | Simple `Access-Control-Allow-Origin: *` | Sufficient for development; can match reference's origin-based CORS later |
-| `app_frontend.py` serves `/_app/*` only | Serves all paths with SPA fallback | Reference uses `send_file` for index + `send_from_directory` for `/_app/*`; our version handles arbitrary routes |
-| `.prettierrc`, `.prettierignore`, `eslint.config.js` | Not added yet | Will add when formatting/linting is needed |
-| Icon components (`SvgSpinner`, etc.) | Not added yet | Will add when needed in Phase 2+ |
+| `injector` DI in Phase 1 | ~~Simple module-level wiring~~ Full injector DI | Done — `Application(Module)` with `configure_services()`, `configure_controllers()`, `get_bindings()` |
+| `@inject` decorator on controllers | ~~Functions registered directly~~ `@inject` functions with DI | Done — all controllers use `@inject` and receive deps from injector |
+| Full CORS with origin reflection | ~~Simple `Access-Control-Allow-Origin: *`~~ Origin-based CORS | Done — matches reference pattern with per-origin reflection |
+| `app_frontend.py` serves `/_app/*` only | Serves `/_app/*` + SPA fallback via 404 handler | Matches reference more closely now |
+| `.prettierrc`, `.prettierignore`, `eslint.config.js` | ✅ Added | Done — matches reference |
+| Icon components (`SvgSpinner`, etc.) | ✅ Added (SvgSpinner, SvgClose, SvgImage, SvgLogout) | Done |
 
 #### How to run
 
@@ -180,7 +180,7 @@ uv run yadc webui serve   # serves everything on :7860
 
 ### Phase 2: Dataset Browsing API + UI
 
-1. **Wire up injector** — add `injector`-based DI to `application.py` so controllers receive services
+1. ~~**Wire up injector**~~ ✅ — `injector`-based DI is now in `application.py`; controllers receive services via `@inject` + `get_bindings()`
 2. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
 3. `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` — copy from reference
 4. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading

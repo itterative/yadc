@@ -26,6 +26,29 @@ yadc/
   cli_export.py       # export captions to training formats
   cli_logging.py      # ClickHandler — routes logs through click.secho
   cli_templates.py    # template management CLI
+  cli_webui.py        # web UI CLI (yadc webui serve)
+
+  api/                # web UI backend (Flask + injector DI)
+    __init__.py
+    application.py      # Application(Module) — DI container, wires services + controllers
+    configuration.py    # @dataclass config (http, cors, sse, yadc paths)
+    events.py           # Event base class + PingEvent, CaptioningStatusEvent
+    controllers/
+      blueprints.py     # ApiBlueprint, AppBlueprint (@singleton injector classes)
+      app_frontend.py   # @inject — serves SvelteKit build
+      api_cors.py       # @inject — CORS headers
+      api_datasets.py   # @inject — dataset/image endpoints (stubs)
+      api_captioning.py # @inject — captioning start/stop/status (stubs)
+      api_events.py     # @inject — SSE event stream
+    modules/
+      service.py            # base Service class
+      logging_factory.py    # LoggingFactory — @singleton, get_logger()
+      event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
+      mixin_job_scheduler.py # JobSchedulerMixin — daemon threads for periodic jobs
+      sse_events.py         # SSEEvents — Condition-based SSE queue with ping
+
+  webui/             # SvelteKit frontend (Phase 1 skeleton)
+    ...
 
   cmd/                # pure logic (no click imports)
     app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()
@@ -81,3 +104,4 @@ yadc/
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
+- **Web UI DI**: `Application` extends `injector.Module`, binds `Configuration`/`Flask`/Blueprints. Controllers are `@inject` functions resolved via `get_bindings()`. Services (`LoggingFactory`, `EventDispatcher`, `SSEEvents`) are `@singleton` classes instantiated by the injector.

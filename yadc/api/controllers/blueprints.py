@@ -1,5 +1,12 @@
 from flask import Blueprint
+from injector import singleton
 
-# Singletons — shared across all controllers
-ApiBlueprint = Blueprint("api", __name__, url_prefix="/api")
-AppBlueprint = Blueprint("app", __name__)
+
+@singleton
+class ApiBlueprint(Blueprint):
+    pass
+
+
+@singleton
+class AppBlueprint(Blueprint):
+    pass

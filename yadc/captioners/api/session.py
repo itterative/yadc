@@ -211,5 +211,3 @@ class Session:
 
     def post(self, path: str, *, capture_ctx: CaptureContext | None = None, **kwargs: Any):
         return self.request("POST", path, capture_ctx=capture_ctx, **kwargs)
-
-

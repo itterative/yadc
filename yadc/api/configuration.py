@@ -16,6 +16,18 @@ class Configuration:
 
     # CORS (dev mode)
     api_cors_enable: bool = True
+    api_cors_allow_credentials: bool = True
+    api_cors_allow_methods: str = "GET, POST, OPTIONS, PUT, PATCH, DELETE"
+    api_cors_allow_headers: list[str] = field(default_factory=lambda: ["Content-Type"])
+    api_cors_allow_any_origin: bool = True
+
+    # Logging
+    logging_default_level: int = 20  # logging.INFO
+
+    # SSE
+    sse_listeners_warning: int = 25
+    sse_listeners_max: int = 100
+    sse_listener_max_events: int = 100
 
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))

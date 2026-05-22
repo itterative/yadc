@@ -130,10 +130,7 @@ def save(
 @draft.command(
     "list",
     short_help="List drafts for dataset images",
-    help=(
-        "List all named drafts found alongside dataset images. "
-        "Shows each image with its available draft names."
-    ),
+    help=("List all named drafts found alongside dataset images. Shows each image with its available draft names."),
 )
 @click.argument("dataset", type=click.File("r"))
 @cli_common.log_level
@@ -166,9 +163,7 @@ def list_(
 
 @draft.command(
     short_help="Show draft contents",
-    help=(
-        "Print the contents of a named draft for each image in the dataset."
-    ),
+    help=("Print the contents of a named draft for each image in the dataset."),
 )
 @click.argument("dataset", type=click.File("r"))
 @click.option(
@@ -208,9 +203,7 @@ def show(
 
 @draft.command(
     short_help="Remove named drafts",
-    help=(
-        "Delete a named draft file for each image in the dataset."
-    ),
+    help=("Delete a named draft file for each image in the dataset."),
 )
 @click.argument("dataset", type=click.File("r"))
 @click.option(
