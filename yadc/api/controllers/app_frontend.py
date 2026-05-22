@@ -1,12 +1,12 @@
 from flask import Response, send_file, send_from_directory
-from injector import inject
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from . import controller
 from .blueprints import AppBlueprint
 
 
-@inject
+@controller
 def app_frontend(configuration: Configuration, app: AppBlueprint, logging: LoggingFactory):
     _logger = logging.get_logger(__name__)
 

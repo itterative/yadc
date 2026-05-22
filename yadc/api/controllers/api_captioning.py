@@ -1,12 +1,12 @@
 from flask import Response, jsonify
-from injector import inject
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from . import controller
 from .blueprints import ApiBlueprint
 
 
-@inject
+@controller
 def api_captioning(configuration: Configuration, app: ApiBlueprint, logging: LoggingFactory):  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
     _logger = logging.get_logger(__name__)
 

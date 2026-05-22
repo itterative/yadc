@@ -3,8 +3,6 @@ from logging import Logger
 from threading import Lock
 from typing import Any, Callable, Concatenate, ParamSpec, TypeVar, cast
 
-from injector import inject, singleton
-
 from ..events import Event
 from .logging_factory import LoggingFactory
 from .service import Service
@@ -64,9 +62,7 @@ def event_handler(
     return decorator
 
 
-@singleton
 class EventDispatcher(Service):
-    @inject
     def __init__(
         self,
         logging: LoggingFactory,

@@ -3,15 +3,15 @@ import json
 from typing import Any, override
 
 from flask import Response, stream_with_context
-from injector import inject
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from ..modules.sse_events import SSEEvents
+from . import controller
 from .blueprints import ApiBlueprint
 
 
-@inject
+@controller
 def api_events(configuration: Configuration, app: ApiBlueprint, logging: LoggingFactory, sse_events: SSEEvents):  # noqa: ARG001  # pyright: ignore[reportUnusedParameter]
     _logger = logging.get_logger(__name__)
 

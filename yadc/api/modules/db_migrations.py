@@ -4,15 +4,11 @@ import logging
 import sqlite3
 import sys
 
-from injector import inject, singleton
-
 from .logging_factory import LoggingFactory
 from .service import Service
 
 
-@singleton
 class DBMigrations(Service):
-    @inject
     def __init__(self, logging: LoggingFactory) -> None:
         self.current_migration: int = -1
         self._logger: logging.Logger = logging.get_logger(__name__)

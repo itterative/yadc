@@ -2,15 +2,11 @@ from logging import Logger
 from threading import Lock, Thread
 from typing import Callable
 
-from injector import inject, singleton
-
 from .logging_factory import LoggingFactory
 from .service import Service
 
 
-@singleton
 class JobScheduler(Service):
-    @inject
     def __init__(self, logging: LoggingFactory):
         self._logger: Logger = logging.get_logger(__name__)
         self._jobs: list[Thread] = []

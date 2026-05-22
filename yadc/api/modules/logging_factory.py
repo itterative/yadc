@@ -1,14 +1,10 @@
 import logging
 
-from injector import inject, singleton
-
 from ..configuration import Configuration
 from .service import Service
 
 
-@singleton
 class LoggingFactory(Service):
-    @inject
     def __init__(self, configuration: Configuration) -> None:
         self.log_level: int = configuration.logging_default_level
         self._loggers: dict[str, logging.Logger] = {}

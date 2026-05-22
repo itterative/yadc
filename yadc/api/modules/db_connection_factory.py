@@ -5,17 +5,13 @@ import sqlite3
 import uuid
 from threading import Thread
 
-from injector import inject, singleton
-
 from ..configuration import Configuration
 from .db_migrations import DBMigrations
 from .logging_factory import LoggingFactory
 from .service import Service
 
 
-@singleton
 class DBConnectionFactory(Service):
-    @inject
     def __init__(self, configuration: Configuration, logging: LoggingFactory, migrations: DBMigrations) -> None:
         self.path: str = configuration.db_path
         self._logger: logging.Logger = logging.get_logger(__name__)

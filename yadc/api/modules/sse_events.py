@@ -3,8 +3,6 @@ from logging import Logger
 from threading import Condition
 from typing import Any
 
-from injector import inject, singleton
-
 from ..configuration import Configuration
 from ..events import CaptioningStatusEvent, Event, PingEvent
 from .event_dispatcher import EventDispatcher, event_handler
@@ -15,9 +13,7 @@ from .service import Service
 SSE_EVENT_PING = "ping"
 
 
-@singleton
 class SSEEvents(Service):
-    @inject
     def __init__(
         self,
         configuration: Configuration,

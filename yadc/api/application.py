@@ -3,25 +3,18 @@ from __future__ import annotations
 import sys
 import time
 from threading import Thread
-from typing import Callable, override
+from typing import override
 
 from flask import Flask
-from injector import Binder, Injector, Module, get_bindings  # pyright: ignore[reportUnknownVariableType]
+from injector import Binder, Injector, Module, get_bindings, inject, singleton  # pyright: ignore[reportUnknownVariableType]
 
+from . import controllers as controllers_pkg
+from . import modules as modules_pkg
 from .configuration import Configuration
-from .controllers.api_captioning import api_captioning
-from .controllers.api_cors import api_cors
-from .controllers.api_datasets import api_datasets
-from .controllers.api_events import api_events
-from .controllers.app_frontend import app_frontend
 from .controllers.blueprints import ApiBlueprint, AppBlueprint
-from .modules.db_connection_factory import DBConnectionFactory
-from .modules.db_migrations import DBMigrations
-from .modules.event_dispatcher import EventDispatcher
-from .modules.job_scheduler import JobScheduler
-from .modules.logging_factory import LoggingFactory
+from .discovery import discover_controllers, discover_services
+from .modules.cors_middleware import CORSMiddleware
 from .modules.service import Service
-from .modules.sse_events import SSEEvents
 
 
 class Application(Module):
@@ -31,6 +24,7 @@ class Application(Module):
         self.configuration: Configuration = configuration
         self.app: Flask = Flask(__name__, static_folder=None)
 
+        self._discovered_services: list[type[Service]] = []
         self.injector: Injector = Injector(self)
         self.services: list[Service] = []
 
@@ -56,32 +50,26 @@ class Application(Module):
             ),
         )
 
-    def configure_services(self):
-        services: list[type[Service]] = [
-            LoggingFactory,
-            DBMigrations,
-            DBConnectionFactory,
-            EventDispatcher,
-            JobScheduler,
-            SSEEvents,
-        ]
+        # Auto-discover services and bind them (inject + singleton scope)
+        self._discovered_services = discover_services(modules_pkg)
+        for service_cls in self._discovered_services:
+            binder.bind(service_cls, to=inject(service_cls), scope=singleton)
 
-        for service_cls in services:
-            self.services.append(self.injector.get(service_cls))
+    def configure_services(self):
+        """Retrieve all discovered services (triggers instantiation with deps fully resolved)."""
+        for service_cls in self._discovered_services:
+            service = self.injector.get(service_cls)
+            self.services.append(service)
+
+        # Register CORS middleware on the API blueprint
+        cors = self.injector.get(CORSMiddleware)
+        cors.register(self.injector.get(ApiBlueprint))
 
     def configure_controllers(self):
-        controllers: list[Callable[..., None]] = [
-            api_cors,
-            app_frontend,
-            api_datasets,
-            api_captioning,
-            api_events,
-        ]
-
-        for controller in controllers:
-            controller_deps = {arg: self.injector.get(klass) for arg, klass in get_bindings(controller).items()}  # pyright: ignore[reportUnknownVariableType]
-
-            controller(**controller_deps)
+        """Auto-discover and invoke all @controller functions."""
+        for ctrl in discover_controllers(controllers_pkg):
+            controller_deps = {arg: self.injector.get(klass) for arg, klass in get_bindings(ctrl).items()}  # pyright: ignore[reportUnknownVariableType]
+            ctrl(**controller_deps)
 
     def configure_app(self):
         app = self.injector.get(Flask)

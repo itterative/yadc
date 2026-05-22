@@ -1,3 +1,4 @@
+from .cors_middleware import CORSMiddleware
 from .db_connection_factory import DBConnectionFactory
 from .db_migrations import DBMigrations
 from .event_dispatcher import EventDispatcher
@@ -7,6 +8,7 @@ from .service import Service
 from .sse_events import SSEEvents
 
 __all__ = [
+    "CORSMiddleware",
     "DBConnectionFactory",
     "DBMigrations",
     "EventDispatcher",
