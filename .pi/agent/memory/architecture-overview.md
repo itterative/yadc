@@ -44,7 +44,7 @@ yadc/
       service.py            # base Service class
       logging_factory.py    # LoggingFactory — @singleton, get_logger()
       event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
-      mixin_job_scheduler.py # JobSchedulerMixin — daemon threads for periodic jobs
+      job_scheduler.py       # JobScheduler — @singleton Service, daemon threads for periodic jobs
       sse_events.py         # SSEEvents — Condition-based SSE queue with ping
 
   webui/             # SvelteKit frontend (Phase 1 skeleton)
@@ -104,4 +104,4 @@ yadc/
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
-- **Web UI DI**: `Application` extends `injector.Module`, binds `Configuration`/`Flask`/Blueprints. Controllers are `@inject` functions resolved via `get_bindings()`. Services (`LoggingFactory`, `EventDispatcher`, `SSEEvents`) are `@singleton` classes instantiated by the injector.
+- **Web UI DI**: `Application` extends `injector.Module`, binds `Configuration`/`Flask`/Blueprints. Controllers are `@inject` functions resolved via `get_bindings()`. Services (`LoggingFactory`, `EventDispatcher`, `JobScheduler`, `SSEEvents`) are `@singleton` classes instantiated by the injector.
