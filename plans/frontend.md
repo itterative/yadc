@@ -77,24 +77,27 @@ All files created and verified. Flask serves the SvelteKit build, API stubs resp
 ```
 yadc/api/
   __init__.py
-  application.py          — Flask app factory, registers blueprints + CORS, runs via waitress
+  application.py          — Flask app factory, auto-discovers services/controllers, wires DI, runs via waitress
   configuration.py        — @dataclass config (http, cors, yadc paths from platformdirs)
+  discovery.py            — Auto-discovery of Service subclasses and @controller functions via package scanning
   controllers/
-    __init__.py
+    __init__.py            — @controller decorator (marks functions for auto-discovery + applies @inject)
     blueprints.py         — ApiBlueprint (/api/*), AppBlueprint (/*) singletons
     app_frontend.py       — Serves SvelteKit build, SPA fallback, helpful message if not built
-    api_cors.py           — CORS headers for development (registered via application.py)
     api_datasets.py       — Stub: GET /api/datasets, GET /api/datasets/<name>/images
     api_captioning.py     — Stub: POST/DELETE /api/datasets/<name>/caption, GET .../status (SSE)
     api_events.py         — Stub: GET /api/events (global SSE)
   events.py                — Event base class + dataclass events (PingEvent, CaptioningStatusEvent)
   modules/
     __init__.py
-    service.py             — Base Service class (marker for DI)
-    logging_factory.py     — @singleton Logger factory, per-module named loggers
-    event_dispatcher.py    — @singleton EventDispatcher, subscribe/dispatch pattern, @event_handler decorator
-    job_scheduler.py       — @singleton JobScheduler, manages daemon threads + periodic cleanup
-    sse_events.py          — @singleton SSEEvents, SSE push/receive with condition var, auto-ping
+    service.py             — Base Service class (marker for DI auto-discovery)
+    cors_middleware.py     — CORSMiddleware service (origin-based CORS, registered on ApiBlueprint)
+    logging_factory.py     — Logger factory, per-module named loggers
+    event_dispatcher.py    — EventDispatcher, subscribe/dispatch pattern, @event_handler decorator
+    job_scheduler.py       — JobScheduler, manages daemon threads + periodic cleanup
+    sse_events.py          — SSEEvents, SSE push/receive with condition var, auto-ping
+    db_migrations.py       — Step-based SQLite migration runner
+    db_connection_factory.py — SQLite WAL, foreign keys, background init
 ```
 
 **CLI** (`yadc/cli_webui.py`):
@@ -142,8 +145,11 @@ yadc/webui/
 |---------|--------|--------|
 | `$env/dynamic/public` for backend URL | `$lib/api.ts` with `API_BASE` constant | SvelteKit's `adapter-static` doesn't expose dynamic env vars at build time without more setup |
 | `injector` DI in Phase 1 | ~~Simple module-level wiring~~ Full injector DI | Done — `Application(Module)` with `configure_services()`, `configure_controllers()`, `get_bindings()` |
-| `@inject` decorator on controllers | ~~Functions registered directly~~ `@inject` functions with DI | Done — all controllers use `@inject` and receive deps from injector |
-| Full CORS with origin reflection | ~~Simple `Access-Control-Allow-Origin: *`~~ Origin-based CORS | Done — matches reference pattern with per-origin reflection |
+| `@inject` decorator on controllers | ~~Functions registered directly~~ `@controller` decorator | Done — controllers use `@controller` (in `controllers/__init__.py`) for auto-discovery + DI |
+| Full CORS with origin reflection | ~~Simple `Access-Control-Allow-Origin: *`~~ Origin-based CORS | Done — `CORSMiddleware` service, registered on `ApiBlueprint` |
+| Manual service/controller lists in `application.py` | ~~Hardcoded lists~~ Auto-discovery | Done — `discover_services()` / `discover_controllers()` scan packages; `application.py` has no hardcoded lists |
+| `@inject` / `@singleton` on Service classes | ~~Per-class decorators~~ Programmatic binding | Done — `Application.configure()` binds all services with `inject(cls)` + `scope=singleton`; Service classes are plain |
+| `api_cors.py` controller | ~~Controller with endpoints~~ `CORSMiddleware` service | CORS is infrastructure, not a controller — moved to `modules/cors_middleware.py` |
 | `app_frontend.py` serves `/_app/*` only | Serves `/_app/*` + SPA fallback via 404 handler | Matches reference more closely now |
 | `.prettierrc`, `.prettierignore`, `eslint.config.js` | ✅ Added | Done — matches reference |
 | Icon components (`SvgSpinner`, etc.) | ✅ Added (SvgSpinner, SvgClose, SvgImage, SvgLogout) | Done |
@@ -168,7 +174,7 @@ uv run yadc webui serve   # serves everything on :7860
 |------|-------------|-------|
 | `backend/controllers/blueprints.py` | `yadc/api/controllers/blueprints.py` | Done — simplified version (no injector) |
 | `backend/controllers/app_frontend.py` | `yadc/api/controllers/app_frontend.py` | Done — adapted for yadc paths |
-| `backend/controllers/api_cors.py` | `yadc/api/controllers/api_cors.py` | Done — simplified CORS; reference has origin-based CORS |
+| `backend/controllers/api_cors.py` | `yadc/api/modules/cors_middleware.py` | Done — CORS as a Service (infrastructure, not a controller) |
 | `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Done — subscribe/dispatch, @event_handler decorator |
 | `backend/modules/service.py` | `yadc/api/modules/service.py` | Done — base Service class |
 | `backend/modules/db_migrations.py` | `yadc/api/modules/db_migrations.py` | Done — migration runner with settings + datasets tables |
@@ -188,7 +194,7 @@ uv run yadc webui serve   # serves everything on :7860
 
 ### Phase 2: Dataset Browsing API + UI
 
-1. ~~**Wire up injector**~~ ✅ — `injector`-based DI is now in `application.py`; controllers receive services via `@inject` + `get_bindings()`
+1. ~~**Wire up injector**~~ ✅ — `injector`-based DI with auto-discovery; services bound programmatically (no `@inject`/`@singleton` decorators), controllers use `@controller` decorator
 2. ~~**Database layer**~~ ✅ — `DBMigrations` (step-based SQLite migrations) + `DBConnectionFactory` (WAL, foreign keys, background init); tables: `properties`, `settings`, `datasets`, `dataset_images`
 3. `yadc/api/services/` — dataset & settings service/repos (filesystem scanning + DB indexing)
 4. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
@@ -247,5 +253,5 @@ uv run yadc webui serve   # serves everything on :7860
 | Data model | Items in SQLite | Images on disk with .txt/.toml sidecars |
 | Heavy computation | Model inference on search | API-based captioning (no local model) |
 | Config | In-code dataclass defaults | TOML files + user configs + envs |
-| DI usage | Full injector from the start | Full injector from the start |
+| DI usage | Full injector from the start | Full injector + auto-discovery (`discover_services`/`discover_controllers`) |
 | Env vars | `$env/dynamic/public` | `$lib/api.ts` constant (simpler for static builds) |
