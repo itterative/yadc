@@ -80,13 +80,14 @@ yadc/api/
   application.py          — Flask app factory, auto-discovers services/controllers, wires DI, runs via waitress
   configuration.py        — @dataclass config (http, cors, yadc paths from platformdirs)
   discovery.py            — Auto-discovery of Service subclasses and @controller functions via package scanning
+  json_utils.py            — DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
   controllers/
     __init__.py            — @controller decorator (marks functions for auto-discovery + applies @inject)
     blueprints.py         — ApiBlueprint (/api/*), AppBlueprint (/*) singletons
     app_frontend.py       — Serves SvelteKit build, SPA fallback, helpful message if not built
-    api_datasets.py       — Stub: GET /api/datasets, GET /api/datasets/<name>/images
+    api_datasets.py       — Dataset/image CRUD endpoints (wired to DatasetService)
     api_captioning.py     — Stub: POST/DELETE /api/datasets/<name>/caption, GET .../status (SSE)
-    api_events.py         — Stub: GET /api/events (global SSE)
+    api_events.py         — GET /api/events (global SSE, uses DataclassJSONEncoder)
   events.py                — Event base class + dataclass events (PingEvent, CaptioningStatusEvent)
   modules/
     __init__.py
@@ -197,7 +198,7 @@ uv run yadc webui serve   # serves everything on :7860
 1. ~~**Wire up injector**~~ ✅ — `injector`-based DI with auto-discovery; services bound programmatically (no `@inject`/`@singleton` decorators), controllers use `@controller` decorator
 2. ~~**Database layer**~~ ✅ — `DBMigrations` (step-based SQLite migrations) + `DBConnectionFactory` (WAL, foreign keys, background init); tables: `properties`, `settings`, `datasets`, `dataset_images`
 3. ~~`yadc/api/services/` — dataset & settings service/repos~~ ✅ — `DatasetService` (filesystem scanning + DB indexing + paginated queries + caption read/write) and `SettingsService` (KV store over `settings` table). Services live in `yadc/api/services/` package, auto-discovered alongside `modules/`.
-4. `yadc/api/controllers/api_datasets.py` — wire up controller stubs to use `DatasetService` for dataset scanning, image listing, media/thumbnail serving
+4. ~~`yadc/api/controllers/api_datasets.py` — wire up controller stubs to use `DatasetService`~~ ✅ — Full implementation: `GET /datasets`, `GET /datasets/<name>/images` (paginated), `GET .../media`, `GET .../thumbnail` (cached in `<cache_path>/thumbnails/` as WebP), `GET .../caption`, `PUT .../caption`. Extracted shared `DataclassJSONEncoder` + `jsonify_dataclass` into `yadc/api/json_utils.py` (also used by `api_events.py`).
 5. ~~`yadc/webui/src/lib/components/IntersectionObserverElement.svelte`~~ ✅ — copied from reference
 6. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
 7. Frontend: `ImageDetail.svelte` — focused view with caption display
