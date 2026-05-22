@@ -19,6 +19,9 @@ dependencies = [
     "keyring-pass>=0.9.3",
     "click>=8.3.0",
     "typing-extensions>=4.15.0",
+    "flask>=3.1.0",
+    "waitress>=3.0.0",
+    "injector>=0.22.0",
 ]
 
 [project.optional-dependencies]

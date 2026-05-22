@@ -1,6 +1,11 @@
 configs/*
 !configs/example*
 
+# Frontend build output
+yadc/webui/node_modules/
+yadc/webui/.svelte-kit/
+yadc/webui/build/
+
 templates/*
 !templates/example*
 

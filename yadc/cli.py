@@ -1,6 +1,6 @@
 import click
 
-from . import cli_cache, cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_templates
+from . import cli_cache, cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_templates, cli_webui
 
 
 @click.group(
@@ -20,6 +20,7 @@ cli.add_command(cli_export.export)
 cli.add_command(cli_envs.envs)
 cli.add_command(cli_configs.configs)
 cli.add_command(cli_templates.templates)
+cli.add_command(cli_webui.webui)
 
 
 @cli.command(
