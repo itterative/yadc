@@ -15,6 +15,8 @@ from .controllers.api_datasets import api_datasets
 from .controllers.api_events import api_events
 from .controllers.app_frontend import app_frontend
 from .controllers.blueprints import ApiBlueprint, AppBlueprint
+from .modules.db_connection_factory import DBConnectionFactory
+from .modules.db_migrations import DBMigrations
 from .modules.event_dispatcher import EventDispatcher
 from .modules.job_scheduler import JobScheduler
 from .modules.logging_factory import LoggingFactory
@@ -57,6 +59,8 @@ class Application(Module):
     def configure_services(self):
         services: list[type[Service]] = [
             LoggingFactory,
+            DBMigrations,
+            DBConnectionFactory,
             EventDispatcher,
             JobScheduler,
             SSEEvents,

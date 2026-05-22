@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import logging
+import sqlite3
+import sys
+
+from injector import inject, singleton
+
+from .logging_factory import LoggingFactory
+from .service import Service
+
+
+@singleton
+class DBMigrations(Service):
+    @inject
+    def __init__(self, logging: LoggingFactory) -> None:
+        self.current_migration: int = -1
+        self._logger: logging.Logger = logging.get_logger(__name__)
+
+    def _run_migration(self, cursor: sqlite3.Cursor, step: int, script: str):
+        if self.current_migration >= step:
+            return
+
+        try:
+            self._logger.debug("Running DB migration step %d", step)
+
+            cursor.executescript(script)
+
+            self.current_migration = step
+            cursor.execute("INSERT OR REPLACE INTO properties VALUES (?, ?)", ("migration_step", str(self.current_migration)))
+
+            self._logger.debug("Finished DB migration step %d", step)
+        except Exception as e:
+            raise Exception(f"failed migration #{step}: {e}") from e
+
+    def run_migrations(self, conn: sqlite3.Connection):
+        cursor = conn.cursor()
+
+        try:
+            cursor.executescript("""
+                CREATE TABLE IF NOT EXISTS properties (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+            """)
+
+            cursor = cursor.execute("SELECT value FROM properties WHERE key = ?", ("migration_step",))
+            row = cursor.fetchone()
+
+            if row is not None:
+                self.current_migration = int(row[0])
+
+            self._logger.debug("Current DB migration step is %d", self.current_migration)
+
+            self._run_migration(cursor, step=1, script=self._migration_initial)
+            self._run_migration(cursor, step=2, script=self._migration_settings)
+            self._run_migration(cursor, step=3, script=self._migration_datasets)
+            # When adding new migrations, add them here with incrementing step numbers.
+        except Exception as e:
+            conn.rollback()
+
+            self._logger.exception("Caught an exception while running database migrations: %s", e)
+
+            sys.exit(1)
+        finally:
+            cursor.close()
+
+    # --- Migration scripts ---
+
+    _migration_initial: str = """
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE IF NOT EXISTS properties (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        COMMIT;
+    """
+
+    _migration_settings: str = """
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_t REAL NOT NULL DEFAULT (unixepoch())
+        );
+
+        COMMIT;
+    """
+
+    _migration_datasets: str = """
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE IF NOT EXISTS datasets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL UNIQUE,
+            config_path TEXT,
+            last_scanned_t REAL,
+            image_count INTEGER DEFAULT 0,
+            created_t REAL NOT NULL DEFAULT (unixepoch()),
+            updated_t REAL NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_datasets_name ON datasets (name);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_datasets_path ON datasets (path);
+
+        CREATE TABLE IF NOT EXISTS dataset_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dataset_id INTEGER NOT NULL,
+            path TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            has_caption INTEGER NOT NULL DEFAULT 0,
+            has_toml INTEGER NOT NULL DEFAULT 0,
+            draft_names TEXT NOT NULL DEFAULT '',
+            last_modified_t REAL,
+            FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dataset_images_path ON dataset_images (path);
+        CREATE INDEX IF NOT EXISTS idx_dataset_images_dataset_id ON dataset_images (dataset_id);
+
+        COMMIT;
+    """

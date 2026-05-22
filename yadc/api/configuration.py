@@ -33,3 +33,6 @@ class Configuration:
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))
     cache_path: str = field(default_factory=lambda: str(CACHE_PATH))
+
+    # Database
+    db_path: str = field(default_factory=lambda: str(STATE_PATH / "webui.db"))
