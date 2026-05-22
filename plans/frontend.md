@@ -172,8 +172,8 @@ uv run yadc webui serve   # serves everything on :7860
 | `frontend/src/lib/storable.js` | `yadc/webui/src/lib/storable.js` | Done |
 | `frontend/src/lib/components/Dialog.svelte` | `yadc/webui/src/lib/components/Dialog.svelte` | Done — adapted for Svelte 5 props API |
 | `frontend/src/lib/components/Checkbox.svelte` | `yadc/webui/src/lib/components/Checkbox.svelte` | Done — adapted for Svelte 5 |
-| `frontend/src/lib/components/IntersectionObserverElement.svelte` | `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` | Phase 2 — for lazy-loaded image grid |
-| `frontend/src/lib/icons/*.svelte` | `yadc/webui/src/lib/icons/*.svelte` | Phase 2+ |
+| `frontend/src/lib/components/IntersectionObserverElement.svelte` | `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` | Done — copied from reference |
+| `frontend/src/lib/icons/*.svelte` | `yadc/webui/src/lib/icons/*.svelte` | Partial — SvgSpinner, SvgClose, SvgImage, SvgLogout done |
 | `frontend/src/routes/layout.css` | `yadc/webui/src/routes/layout.css` | Done — yadc dark theme |
 
 ---

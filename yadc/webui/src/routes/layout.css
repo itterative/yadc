@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 :root {
   --color-bg: #0f1117;
@@ -30,4 +31,8 @@ a {
 
 a:hover {
   color: var(--color-accent-hover);
+}
+
+body.noscroll {
+  overflow: hidden;
 }

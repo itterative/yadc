@@ -1,28 +1,87 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { browser } from "$app/environment";
+  import { TypedEventSource } from "$lib/events";
+  import {
+    captioningStatus,
+    CaptioningStatusZ,
+    PingEventZ,
+  } from "$lib/stores/captioning";
   import { API_BASE } from "$lib/api";
 
   interface Dataset {
     name: string;
     path: string;
+    image_count?: number;
   }
 
   let datasets: Dataset[] = $state([]);
   let loading = $state(true);
   let error = $state("");
 
-  const backendUrl = API_BASE;
+  let eventSource: TypedEventSource | null = null;
 
-  onMount(async () => {
-    try {
-      const res = await fetch(`${backendUrl}/api/datasets`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      datasets = await res.json();
-    } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load datasets";
-    } finally {
-      loading = false;
+  onMount(() => {
+    if (!browser) {
+      return;
     }
+
+    // Connect SSE event stream with auto-reconnect
+    function connect() {
+      if (eventSource !== null && eventSource.readyState !== EventSource.CLOSED) {
+        return;
+      }
+
+      try {
+        eventSource = new TypedEventSource(`${API_BASE}/api/events`);
+      } catch (e) {
+        console.warn("Failed to connect to event stream", { error: e });
+        return;
+      }
+
+      eventSource.listen("captioning_status", CaptioningStatusZ, (data) => {
+        captioningStatus.set(data);
+      });
+
+      eventSource.listen("ping", PingEventZ, () => {
+        // keepalive
+      });
+
+      eventSource.onerror = function () {
+        eventSource?.close();
+      };
+    }
+
+    connect();
+    let reconnecting = false;
+
+    const interval = window.setInterval(() => {
+      if (eventSource === null) {
+        connect();
+      } else if (!reconnecting && eventSource.readyState === EventSource.CLOSED) {
+        reconnecting = true;
+        connect();
+        reconnecting = false;
+      }
+    }, 5000);
+
+    // Fetch datasets
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/datasets`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        datasets = await res.json();
+      } catch (e) {
+        error = e instanceof Error ? e.message : "Failed to load datasets";
+      } finally {
+        loading = false;
+      }
+    })();
+
+    return () => {
+      window.clearInterval(interval);
+      eventSource?.close();
+    };
   });
 </script>
 
@@ -45,6 +104,9 @@
       <div class="dataset-card">
         <h3>{dataset.name}</h3>
         <p class="text-dim">{dataset.path}</p>
+        {#if dataset.image_count !== undefined}
+          <p class="text-dim">{dataset.image_count} images</p>
+        {/if}
       </div>
     {/each}
   </div>
