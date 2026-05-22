@@ -34,11 +34,12 @@ yadc/
     configuration.py    # @dataclass config (http, cors, sse, yadc paths)
     discovery.py        # discover_services() / discover_controllers() — package scanning
     events.py           # Event base class + PingEvent, CaptioningStatusEvent
+    json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
       __init__.py          # @controller decorator (auto-discovery marker + @inject)
       blueprints.py     # ApiBlueprint, AppBlueprint (@singleton injector classes)
       app_frontend.py   # @controller — serves SvelteKit build
-      api_datasets.py   # @controller — dataset/image endpoints (stubs)
+      api_datasets.py   # @controller — dataset/image endpoints (wired to DatasetService)
       api_captioning.py # @controller — captioning start/stop/status (stubs)
       api_events.py     # @controller — SSE event stream
     modules/
