@@ -50,6 +50,10 @@ yadc/
       sse_events.py         # SSEEvents — Condition-based SSE queue with ping
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init
+    services/
+      __init__.py           # re-exports DatasetService, SettingsService
+      datasets.py           # DatasetService — filesystem scanning, SQLite indexing, paginated image queries, caption read/write
+      settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 
   webui/             # SvelteKit frontend (Phase 1 skeleton)
     ...
@@ -108,4 +112,4 @@ yadc/
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
-- **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
+- **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.

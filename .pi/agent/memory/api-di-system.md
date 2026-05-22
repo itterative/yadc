@@ -11,16 +11,16 @@ The web UI backend (`yadc/api/`) uses the `injector` library with automatic pack
 
 ## Two Discovery Targets
 
-| Kind | Base/Marker | Package scanned | Discovery method |
-|------|------------|-----------------|-----------------|
-| **Service** | `Service` base class (`modules/service.py`) | `yadc.api.modules` | `issubclass(obj, Service) and obj is not Service` |
+| Kind | Base/Marker | Packages scanned | Discovery method |
+|------|------------|------------------|-----------------|
+| **Service** | `Service` base class (`modules/service.py`) | `yadc.api.modules` **+ `yadc.api.services`** | `issubclass(obj, Service) and obj is not Service` |
 | **Controller** | `_is_controller` attribute (set by `@controller`) | `yadc.api.controllers` | `getattr(obj, "_is_controller", False)` |
 
 ## Binding Lifecycle
 
 1. **`Application.configure(binder)`** — called by `Injector.__init__`:
    - Binds `Configuration`, `Flask`, `ApiBlueprint`, `AppBlueprint` explicitly
-   - Calls `discover_services(modules_pkg)` to find all `Service` subclasses
+   - Calls `discover_services(modules_pkg) + discover_services(services_pkg)` to find all `Service` subclasses in both packages
    - Binds each with `binder.bind(cls, to=inject(cls), scope=singleton)` — no per-class `@inject`/`@singleton` decorators needed
 
 2. **`Application.configure_services()`** — called in `run()`:
@@ -37,20 +37,25 @@ The web UI backend (`yadc/api/`) uses the `injector` library with automatic pack
 
 ## How to Add a New Service
 
-1. Create a class extending `Service` in `yadc/api/modules/`
+1. Create a class extending `Service` in `yadc/api/modules/` or `yadc/api/services/`
 2. Constructor parameters are auto-injected by type — no decorators needed
-3. Update `modules/__init__.py` re-exports
+3. Update the package's `__init__.py` re-exports
 4. That's it — discovery finds it, binder registers it, injector resolves deps
 
 ```python
-# yadc/api/modules/my_service.py
-from .logging_factory import LoggingFactory
-from .service import Service
+# yadc/api/services/my_service.py
+from ..modules.db_connection_factory import DBConnectionFactory
+from ..modules.logging_factory import LoggingFactory
+from ..modules.service import Service
+from logging import Logger
 
 class MyService(Service):
-    def __init__(self, logging: LoggingFactory):
-        self._logger = logging.get_logger(__name__)
+    def __init__(self, db: DBConnectionFactory, logging: LoggingFactory):
+        self._db: DBConnectionFactory = db
+        self._logger: Logger = logging.get_logger(__name__)
 ```
+
+**Note**: Use `from logging import Logger` (not `import logging` + `logging.Logger`) when the parameter is also named `logging` to avoid type expression errors in basedpyright.
 
 ## How to Add a New Controller
 
@@ -81,6 +86,20 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `yadc/api/modules/service.py` | `Service` — empty base class, marker for discovery |
 | `yadc/api/application.py` | `Application(Module)` — wires everything together |
 | `yadc/api/configuration.py` | `@dataclass` config bound into the injector |
+
+## Existing Services
+
+| Service | Package | Purpose |
+|---------|---------|--------|
+| `LoggingFactory` | `modules/` | Per-module named loggers |
+| `DBMigrations` | `modules/` | Step-based SQLite migration runner |
+| `DBConnectionFactory` | `modules/` | SQLite WAL connections, background init |
+| `CORSMiddleware` | `modules/` | Origin-based CORS on ApiBlueprint |
+| `EventDispatcher` | `modules/` | Subscribe/dispatch events, `@event_handler` |
+| `JobScheduler` | `modules/` | Daemon threads for periodic jobs |
+| `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping |
+| `SettingsService` | `services/` | KV store over `settings` table (JSON values) |
+| `DatasetService` | `services/` | Filesystem scanning, SQLite indexing, paginated image queries, caption read/write |
 
 ## CORS
 
