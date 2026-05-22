@@ -10,6 +10,7 @@ from injector import Binder, Injector, Module, get_bindings, inject, singleton  
 
 from . import controllers as controllers_pkg
 from . import modules as modules_pkg
+from . import services as services_pkg
 from .configuration import Configuration
 from .controllers.blueprints import ApiBlueprint, AppBlueprint
 from .discovery import discover_controllers, discover_services
@@ -51,7 +52,7 @@ class Application(Module):
         )
 
         # Auto-discover services and bind them (inject + singleton scope)
-        self._discovered_services = discover_services(modules_pkg)
+        self._discovered_services = discover_services(modules_pkg) + discover_services(services_pkg)
         for service_cls in self._discovered_services:
             binder.bind(service_cls, to=inject(service_cls), scope=singleton)
 
