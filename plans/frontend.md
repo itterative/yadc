@@ -87,8 +87,14 @@ yadc/api/
     api_datasets.py       — Stub: GET /api/datasets, GET /api/datasets/<name>/images
     api_captioning.py     — Stub: POST/DELETE /api/datasets/<name>/caption, GET .../status (SSE)
     api_events.py         — Stub: GET /api/events (global SSE)
+  events.py                — Event base class + dataclass events (PingEvent, CaptioningStatusEvent)
   modules/
     __init__.py
+    service.py             — Base Service class (marker for DI)
+    logging_factory.py     — @singleton Logger factory, per-module named loggers
+    event_dispatcher.py    — @singleton EventDispatcher, subscribe/dispatch pattern, @event_handler decorator
+    job_scheduler.py       — @singleton JobScheduler, manages daemon threads + periodic cleanup
+    sse_events.py          — @singleton SSEEvents, SSE push/receive with condition var, auto-ping
 ```
 
 **CLI** (`yadc/cli_webui.py`):
@@ -163,9 +169,9 @@ uv run yadc webui serve   # serves everything on :7860
 | `backend/controllers/blueprints.py` | `yadc/api/controllers/blueprints.py` | Done — simplified version (no injector) |
 | `backend/controllers/app_frontend.py` | `yadc/api/controllers/app_frontend.py` | Done — adapted for yadc paths |
 | `backend/controllers/api_cors.py` | `yadc/api/controllers/api_cors.py` | Done — simplified CORS; reference has origin-based CORS |
-| `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Phase 3 — SSE event broadcasting |
-| `backend/modules/service.py` | `yadc/api/modules/service.py` | Phase 2+ — base service class |
-| `backend/application.py` | `yadc/api/application.py` | Done — will need injector when adding services |
+| `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Done — subscribe/dispatch, @event_handler decorator |
+| `backend/modules/service.py` | `yadc/api/modules/service.py` | Done — base Service class |
+| `backend/application.py` | `yadc/api/application.py` | Done — injector DI wired up |
 | `backend/configuration.py` | `yadc/api/configuration.py` | Done — yadc-specific fields |
 | `frontend/src/lib/events.ts` | `yadc/webui/src/lib/events.ts` | Done |
 | `frontend/src/lib/async.ts` | `yadc/webui/src/lib/async.ts` | Done |
@@ -189,7 +195,7 @@ uv run yadc webui serve   # serves everything on :7860
 
 ### Phase 3: Captioning Integration
 
-1. `yadc/api/modules/event_dispatcher.py` — SSE event broadcasting (adapt from reference)
+1. ~~`yadc/api/modules/event_dispatcher.py`~~ ✅ — Done (subscribe/dispatch, @event_handler decorator)
 2. `yadc/api/controllers/api_captioning.py` — start/stop captioning in background thread, SSE progress
 3. `CaptionSettings.svelte` — config form for captioning options
 4. Wire SSE events for real-time progress (images done, tokens, errors)
@@ -237,5 +243,5 @@ uv run yadc webui serve   # serves everything on :7860
 | Data model | Items in SQLite | Images on disk with .txt/.toml sidecars |
 | Heavy computation | Model inference on search | API-based captioning (no local model) |
 | Config | In-code dataclass defaults | TOML files + user configs + envs |
-| DI usage | Full injector from the start | Lightweight initially, adding injector in Phase 2 |
+| DI usage | Full injector from the start | Full injector from the start |
 | Env vars | `$env/dynamic/public` | `$lib/api.ts` constant (simpler for static builds) |
