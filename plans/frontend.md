@@ -196,9 +196,9 @@ uv run yadc webui serve   # serves everything on :7860
 
 1. ~~**Wire up injector**~~ ✅ — `injector`-based DI with auto-discovery; services bound programmatically (no `@inject`/`@singleton` decorators), controllers use `@controller` decorator
 2. ~~**Database layer**~~ ✅ — `DBMigrations` (step-based SQLite migrations) + `DBConnectionFactory` (WAL, foreign keys, background init); tables: `properties`, `settings`, `datasets`, `dataset_images`
-3. `yadc/api/services/` — dataset & settings service/repos (filesystem scanning + DB indexing)
-4. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
-5. `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` — copy from reference
+3. ~~`yadc/api/services/` — dataset & settings service/repos~~ ✅ — `DatasetService` (filesystem scanning + DB indexing + paginated queries + caption read/write) and `SettingsService` (KV store over `settings` table). Services live in `yadc/api/services/` package, auto-discovered alongside `modules/`.
+4. `yadc/api/controllers/api_datasets.py` — wire up controller stubs to use `DatasetService` for dataset scanning, image listing, media/thumbnail serving
+5. ~~`yadc/webui/src/lib/components/IntersectionObserverElement.svelte`~~ ✅ — copied from reference
 6. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
 7. Frontend: `ImageDetail.svelte` — focused view with caption display
 8. Wire up pagination with next_token pattern
