@@ -171,6 +171,8 @@ uv run yadc webui serve   # serves everything on :7860
 | `backend/controllers/api_cors.py` | `yadc/api/controllers/api_cors.py` | Done — simplified CORS; reference has origin-based CORS |
 | `backend/modules/event_dispatcher.py` | `yadc/api/modules/event_dispatcher.py` | Done — subscribe/dispatch, @event_handler decorator |
 | `backend/modules/service.py` | `yadc/api/modules/service.py` | Done — base Service class |
+| `backend/modules/db_migrations.py` | `yadc/api/modules/db_migrations.py` | Done — migration runner with settings + datasets tables |
+| `backend/modules/db_connection_factory.py` | `yadc/api/modules/db_connection_factory.py` | Done — SQLite WAL, foreign keys, background init |
 | `backend/application.py` | `yadc/api/application.py` | Done — injector DI wired up |
 | `backend/configuration.py` | `yadc/api/configuration.py` | Done — yadc-specific fields |
 | `frontend/src/lib/events.ts` | `yadc/webui/src/lib/events.ts` | Done |
@@ -187,11 +189,13 @@ uv run yadc webui serve   # serves everything on :7860
 ### Phase 2: Dataset Browsing API + UI
 
 1. ~~**Wire up injector**~~ ✅ — `injector`-based DI is now in `application.py`; controllers receive services via `@inject` + `get_bindings()`
-2. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
-3. `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` — copy from reference
-4. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
-5. Frontend: `ImageDetail.svelte` — focused view with caption display
-6. Wire up pagination with next_token pattern
+2. ~~**Database layer**~~ ✅ — `DBMigrations` (step-based SQLite migrations) + `DBConnectionFactory` (WAL, foreign keys, background init); tables: `properties`, `settings`, `datasets`, `dataset_images`
+3. `yadc/api/services/` — dataset & settings service/repos (filesystem scanning + DB indexing)
+4. `yadc/api/controllers/api_datasets.py` — implement dataset scanning, image listing, media/thumbnail serving
+5. `yadc/webui/src/lib/components/IntersectionObserverElement.svelte` — copy from reference
+6. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
+7. Frontend: `ImageDetail.svelte` — focused view with caption display
+8. Wire up pagination with next_token pattern
 
 ### Phase 3: Captioning Integration
 
