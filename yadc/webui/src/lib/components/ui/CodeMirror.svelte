@@ -185,11 +185,4 @@
 	}
 </script>
 
-<div class="codemirror-wrapper {klazz}" bind:this={dom}></div>
-
-<style>
-	.codemirror-wrapper {
-		height: 100%;
-		overflow: hidden;
-	}
-</style>
+<div class="h-full overflow-hidden {klazz}" bind:this={dom}></div>

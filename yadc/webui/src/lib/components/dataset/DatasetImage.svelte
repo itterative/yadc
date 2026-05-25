@@ -52,15 +52,24 @@
 	/>
 
 	{#if item.has_caption}
-		<span class="caption-badge" title="Has caption">✓</span>
+		<span
+			class="badge-sm absolute top-1 right-1 bg-success text-black pointer-events-none"
+			title="Has caption"
+		>✓</span>
 	{/if}
 
 	{#if item.has_toml}
-		<span class="toml-badge" title="Has TOML extras">T</span>
+		<span
+			class="badge-sm absolute top-1 right-6 bg-accent text-black pointer-events-none"
+			title="Has TOML extras"
+		>T</span>
 	{/if}
 
 	{#if item.draft_names.length > 0}
-		<span class="draft-badge" title="{item.draft_names.length} draft(s)">D</span>
+		<span
+			class="badge-sm absolute top-1 left-1 bg-error text-white pointer-events-none"
+			title="{item.draft_names.length} draft(s)"
+		>D</span>
 	{/if}
 </button>
 
@@ -72,34 +81,4 @@
 		outline-offset: -2px;
 	}
 
-	.caption-badge,
-	.toml-badge,
-	.draft-badge {
-		position: absolute;
-		top: 0.25rem;
-		font-size: 0.625rem;
-		font-weight: 700;
-		padding: 0.125rem 0.25rem;
-		border-radius: 0.25rem;
-		line-height: 1;
-		pointer-events: none;
-	}
-
-	.caption-badge {
-		right: 0.25rem;
-		background: var(--color-success);
-		color: #000;
-	}
-
-	.toml-badge {
-		right: 1.5rem;
-		background: var(--color-accent);
-		color: #000;
-	}
-
-	.draft-badge {
-		left: 0.25rem;
-		background: var(--color-error);
-		color: #fff;
-	}
 </style>

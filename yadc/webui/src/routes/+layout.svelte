@@ -83,16 +83,16 @@
 </script>
 
 <div class="app-shell">
-	<nav class="app-nav">
+	<nav class="app-nav max-sm:gap-3 max-sm:px-4">
 		<div class="nav-brand">
 			<a href="#/">yadc</a>
 		</div>
-		<div class="nav-links">
+		<div class="nav-links min-w-0 overflow-hidden max-sm:gap-3">
 			<a href="#/" class:active={isDatasetPage}>Datasets</a>
 			<a href="#/templates" class:active={isTemplatesPage}>Templates</a>
 			{#if isDatasetPage && datasetName}
 				<span class="nav-separator">/</span>
-				<span class="nav-current">{datasetName}</span>
+				<span class="nav-current truncate min-w-0">{datasetName}</span>
 			{/if}
 		</div>
 		<div class="nav-actions">
@@ -143,8 +143,6 @@
 		align-items: center;
 		gap: 1.25rem;
 		flex: 1;
-		min-width: 0;
-		overflow: hidden;
 	}
 
 	.nav-links a {
@@ -169,10 +167,6 @@
 	.nav-current {
 		color: var(--color-fg);
 		font-size: 0.875rem;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		min-width: 0;
 	}
 
 	.nav-actions {
@@ -209,14 +203,4 @@
 		overflow-y: auto;
 	}
 
-	@media (max-width: 640px) {
-		.app-nav {
-			gap: 0.75rem;
-			padding: 0.75rem 1rem;
-		}
-
-		.nav-links {
-			gap: 0.75rem;
-		}
-	}
 </style>

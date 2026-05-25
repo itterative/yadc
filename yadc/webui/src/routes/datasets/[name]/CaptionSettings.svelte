@@ -735,13 +735,4 @@
 	</div>
 </div>
 
-<style>
-	.diff-dot {
-		display: inline-block;
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background-color: var(--color-accent);
-		flex-shrink: 0;
-	}
-</style>
+
