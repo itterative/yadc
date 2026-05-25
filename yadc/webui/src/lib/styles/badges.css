@@ -4,7 +4,7 @@
 	}
 
 	.badge-sm {
-		@apply rounded px-0.5 py-px text-[0.625rem] font-bold leading-none;
+		@apply rounded px-0.5 py-px text-[0.625rem] leading-none font-bold;
 	}
 
 	.badge-accent {

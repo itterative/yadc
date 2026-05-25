@@ -107,6 +107,11 @@ export function clearResumptionFailed(): void {
 	_resumptionFailed.set(false);
 }
 
+/** Explicitly set the captioning status (e.g. from an initial HTTP poll). */
+export function setCaptioningStatus(status: CaptioningStatus): void {
+	_captioningStatus.set(status);
+}
+
 // --- Self-connecting SSE lifecycle ---
 
 let _eventSource: TypedEventSource | null = null;

@@ -212,6 +212,15 @@ export async function startCaptioning(
 	return res.json();
 }
 
+/** Fetch the current captioning status for a dataset. */
+export async function fetchCaptioningStatus(datasetName: string): Promise<CaptioningJobInfo> {
+	const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`);
+	if (!res.ok) {
+		throw new Error(await apiErrorMessage(res));
+	}
+	return res.json();
+}
+
 /** Stop a running captioning job. */
 export async function stopCaptioning(datasetName: string): Promise<boolean> {
 	const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {

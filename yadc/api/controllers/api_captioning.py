@@ -45,6 +45,12 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             return jsonify({"error": "No running captioning job for this dataset"}), 404
         return jsonify({"status": "stopping"})
 
+    @app.get("/datasets/<name>/caption")
+    def get_captioning_status(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Get the current captioning status for a dataset."""
+        info = captioning.get_status(name)
+        return jsonify_dataclass(info), 200
+
     @app.post("/datasets/<name>/images/<int:image_id>/caption")
     def caption_single_image(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Caption a single image synchronously.

@@ -53,23 +53,23 @@
 
 	{#if item.has_caption}
 		<span
-			class="badge-sm absolute top-1 right-1 bg-success text-black pointer-events-none"
-			title="Has caption"
-		>✓</span>
+			class="badge-sm pointer-events-none absolute top-1 right-1 bg-success text-black"
+			title="Has caption">✓</span
+		>
 	{/if}
 
 	{#if item.has_toml}
 		<span
-			class="badge-sm absolute top-1 right-6 bg-accent text-black pointer-events-none"
-			title="Has TOML extras"
-		>T</span>
+			class="badge-sm pointer-events-none absolute top-1 right-6 bg-accent text-black"
+			title="Has TOML extras">T</span
+		>
 	{/if}
 
 	{#if item.draft_names.length > 0}
 		<span
-			class="badge-sm absolute top-1 left-1 bg-error text-white pointer-events-none"
-			title="{item.draft_names.length} draft(s)"
-		>D</span>
+			class="badge-sm pointer-events-none absolute top-1 left-1 bg-error text-white"
+			title="{item.draft_names.length} draft(s)">D</span
+		>
 	{/if}
 </button>
 
@@ -80,5 +80,4 @@
 		outline: 2px solid var(--color-accent);
 		outline-offset: -2px;
 	}
-
 </style>

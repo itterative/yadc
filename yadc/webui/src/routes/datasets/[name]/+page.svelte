@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { get } from 'svelte/store';
 	import DatasetBrowser from '$lib/components/dataset/DatasetBrowser.svelte';
 	import SidePanel from './SidePanel.svelte';
 	import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
@@ -13,13 +14,15 @@
 		clearPendingDatasetChange,
 		registerJobId,
 		resumptionFailed,
-		clearResumptionFailed
+		clearResumptionFailed,
+		setCaptioningStatus
 	} from '$lib/stores/events';
 	import { toast } from '$lib/stores/toasts';
 	import { API_BASE, friendlyErrorMessage } from '$lib/api';
 	import {
 		fetchDatasets,
 		fetchImages,
+		fetchCaptioningStatus,
 		startCaptioning,
 		captionSingleImage,
 		type DatasetInfo,
@@ -176,6 +179,23 @@
 			return;
 		}
 		loadInitial(name);
+		// Poll current captioning status to handle mid-captioning page loads.
+		// Only seed the store if it is idle for this dataset so we do not
+		// clobber a more recent SSE event.
+		(async () => {
+			try {
+				const status = await fetchCaptioningStatus(name);
+				const current = get(captioningStatus);
+				if (
+					status.dataset_name === name &&
+					(current.status === 'idle' || current.dataset_name !== name)
+				) {
+					setCaptioningStatus(status);
+				}
+			} catch {
+				/* ignore — SSE will eventually provide status */
+			}
+		})();
 	});
 
 	// Find the dataset info from the list

@@ -92,7 +92,7 @@
 			<a href="#/templates" class:active={isTemplatesPage}>Templates</a>
 			{#if isDatasetPage && datasetName}
 				<span class="nav-separator">/</span>
-				<span class="nav-current truncate min-w-0">{datasetName}</span>
+				<span class="nav-current min-w-0 truncate">{datasetName}</span>
 			{/if}
 		</div>
 		<div class="nav-actions">
@@ -202,5 +202,4 @@
 		min-height: 0;
 		overflow-y: auto;
 	}
-
 </style>
