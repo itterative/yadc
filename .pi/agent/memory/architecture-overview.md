@@ -133,3 +133,4 @@ yadc/
 - **WebUI frontend**: See `frontend-architecture` memory for full directory structure, stores, components, and frontend-specific patterns.
 - **Config validation is strict by default, relaxable**: `parse_config(raw)` enforces CLI-level checks (api url/model_name must exist, prompt must be specified). `parse_config(raw, strict=False)` skips those checks (used by webui, which provides these at caption time). Uses Pydantic validation context to thread the flag — no fields on the model. The `ConfigV1.to_v2()` uses `model_construct()` to avoid re-running validators on already-validated data.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.
+- **WebUI CLI**: `yadc webui serve` — defaults to host `127.0.0.1`, port `7860`. Run in tmux for background dev: `tmux new-session -d -s yadc-webui "uv run yadc webui serve --host 127.0.0.1"`
