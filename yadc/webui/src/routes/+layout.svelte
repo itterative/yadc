@@ -143,6 +143,8 @@
 		align-items: center;
 		gap: 1.25rem;
 		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 	}
 
 	.nav-links a {
@@ -167,6 +169,10 @@
 	.nav-current {
 		color: var(--color-fg);
 		font-size: 0.875rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
 	}
 
 	.nav-actions {
@@ -201,5 +207,16 @@
 		padding: 1.5rem;
 		min-height: 0;
 		overflow-y: auto;
+	}
+
+	@media (max-width: 640px) {
+		.app-nav {
+			gap: 0.75rem;
+			padding: 0.75rem 1rem;
+		}
+
+		.nav-links {
+			gap: 0.75rem;
+		}
 	}
 </style>

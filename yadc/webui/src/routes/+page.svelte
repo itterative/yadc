@@ -134,7 +134,7 @@
 
 				<!-- Action buttons (top-right corner) -->
 				<div
-					class="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+					class="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-100"
 				>
 					<button
 						class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 hover:bg-black/80 hover:text-white"
