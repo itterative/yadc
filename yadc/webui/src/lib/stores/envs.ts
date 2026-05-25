@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/api';
+import { API_BASE, apiErrorMessage } from '$lib/api';
 import { writable, readonly, type Readable } from 'svelte/store';
 
 // --- Types matching the backend API ---
@@ -39,7 +39,7 @@ export async function refreshEnvs(): Promise<string[]> {
 export async function fetchEnvs(): Promise<string[]> {
 	const res = await fetch(`${API_BASE}/api/envs`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -47,7 +47,7 @@ export async function fetchEnvs(): Promise<string[]> {
 export async function fetchEnv(name: string): Promise<EnvInfo> {
 	const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -62,8 +62,7 @@ export async function saveEnv(
 		body: JSON.stringify(data)
 	});
 	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -73,8 +72,7 @@ export async function deleteEnv(name: string): Promise<void> {
 		method: 'DELETE'
 	});
 	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 }
 
@@ -83,8 +81,7 @@ export async function fetchModels(name: string): Promise<EnvListResult> {
 		method: 'POST'
 	});
 	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }

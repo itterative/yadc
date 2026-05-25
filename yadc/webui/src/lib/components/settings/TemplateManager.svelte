@@ -4,6 +4,7 @@
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import SvgDelete from '$lib/icons/SvgDelete.svelte';
 	import SvgPlus from '$lib/icons/SvgPlus.svelte';
+	import { friendlyErrorMessage } from '$lib/api';
 	import {
 		templates,
 		refreshTemplates,
@@ -44,7 +45,7 @@
 		try {
 			await refreshTemplates();
 		} catch (e) {
-			templateError = e instanceof Error ? e.message : 'Failed to load templates';
+			templateError = friendlyErrorMessage(e, 'Failed to load templates');
 		}
 	}
 
@@ -60,7 +61,7 @@
 			templateContent = info.content;
 			templateSource = info.source;
 		} catch (e) {
-			templateError = e instanceof Error ? e.message : 'Failed to load template';
+			templateError = friendlyErrorMessage(e, 'Failed to load template');
 			templateContent = '';
 			templateSource = '';
 		} finally {
@@ -90,7 +91,7 @@
 			templateDirty = false;
 			await refreshTemplates();
 		} catch (e) {
-			templateError = e instanceof Error ? e.message : 'Failed to save template';
+			templateError = friendlyErrorMessage(e, 'Failed to save template');
 		} finally {
 			isSavingTemplate = false;
 		}
@@ -107,7 +108,7 @@
 			}
 			await refreshTemplates();
 		} catch (e) {
-			templateError = e instanceof Error ? e.message : 'Failed to delete template';
+			templateError = friendlyErrorMessage(e, 'Failed to delete template');
 		}
 	}
 
@@ -158,7 +159,7 @@
 						{/if}
 						{#if t.source === 'user'}
 							<button
-								class="cursor-pointer p-0.5 text-gray-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-error"
+								class="cursor-pointer p-0.5 text-gray-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-error max-lg:opacity-100"
 								title="Delete template"
 								onclick={(e) => {
 									e.stopPropagation();

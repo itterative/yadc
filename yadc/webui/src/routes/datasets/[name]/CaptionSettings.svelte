@@ -12,6 +12,7 @@
 	import { promptNotificationsOnce } from '$lib/notifications';
 	import { fetchConfig } from '$lib/stores/configs';
 	import { get } from 'svelte/store';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	// --- Props ---
 
@@ -405,7 +406,7 @@
 			templateDirty = false;
 			await loadTemplateList();
 		} catch (e) {
-			templateSaveError = e instanceof Error ? e.message : 'Failed to save template';
+			templateSaveError = friendlyErrorMessage(e, 'Failed to save template');
 		} finally {
 			isSavingTemplate = false;
 		}
@@ -734,5 +735,3 @@
 		<button class="btn-primary w-full" onclick={handleStart}> Start Captioning </button>
 	</div>
 </div>
-
-

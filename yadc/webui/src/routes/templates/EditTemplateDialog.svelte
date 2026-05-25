@@ -4,6 +4,7 @@
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
 	import { fetchTemplate, saveTemplate } from '$lib/stores/templates';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		open: boolean;
@@ -57,7 +58,7 @@
 				if (cancelled) {
 					return;
 				}
-				error = e instanceof Error ? e.message : 'Failed to load template';
+				error = friendlyErrorMessage(e, 'Failed to load template');
 			} finally {
 				if (!cancelled) {
 					isLoading = false;
@@ -83,7 +84,7 @@
 			const info = await saveTemplate(name, content);
 			onsaved(info.name);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to save template';
+			error = friendlyErrorMessage(e, 'Failed to save template');
 		} finally {
 			isSaving = false;
 		}

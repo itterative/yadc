@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/api';
+import { API_BASE, apiErrorMessage } from '$lib/api';
 import { writable, readonly, type Readable } from 'svelte/store';
 
 // --- Types matching the backend API ---
@@ -39,7 +39,7 @@ export async function refreshTemplates(): Promise<TemplateListItem[]> {
 export async function fetchTemplates(): Promise<TemplateListItem[]> {
 	const res = await fetch(`${API_BASE}/api/templates`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -47,7 +47,7 @@ export async function fetchTemplates(): Promise<TemplateListItem[]> {
 export async function fetchTemplate(name: string): Promise<TemplateInfo> {
 	const res = await fetch(`${API_BASE}/api/templates/${encodeURIComponent(name)}`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -59,8 +59,7 @@ export async function saveTemplate(name: string, content: string): Promise<Templ
 		body: JSON.stringify({ content })
 	});
 	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -70,8 +69,7 @@ export async function deleteTemplate(name: string): Promise<void> {
 		method: 'DELETE'
 	});
 	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 }
 

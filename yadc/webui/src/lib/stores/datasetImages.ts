@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/api';
+import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
 import { writable } from 'svelte/store';
 
 // --- Types matching the backend API dataclasses ---
@@ -42,7 +42,7 @@ export interface CaptionData {
 export async function fetchDatasets(): Promise<DatasetInfo[]> {
 	const res = await fetch(`${API_BASE}/api/datasets`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -55,16 +55,7 @@ export async function importDataset(name: string, tomlPath: string): Promise<Dat
 		body: JSON.stringify({ name, toml_path: tomlPath })
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -77,16 +68,7 @@ export async function createDataset(name: string, imagePaths: string[]): Promise
 		body: JSON.stringify({ name, image_paths: imagePaths })
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -97,16 +79,7 @@ export async function deleteDataset(name: string): Promise<void> {
 		method: 'DELETE'
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 }
 
@@ -126,7 +99,7 @@ export async function fetchImages(
 		`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images?${params}`
 	);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -136,7 +109,7 @@ export async function fetchCaption(datasetName: string, imageId: number): Promis
 		`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`
 	);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -155,7 +128,7 @@ export async function updateCaption(
 		}
 	);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 }
 
@@ -173,16 +146,7 @@ export async function updateExtras(
 		}
 	);
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 }
 
@@ -211,16 +175,7 @@ export async function fetchPromptPreview(
 		}
 	);
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore JSON parse failure */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -252,21 +207,7 @@ export async function startCaptioning(
 		body: JSON.stringify(options)
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				if (typeof body.error === 'string') {
-					message = body.error;
-				} else if (Array.isArray(body.error)) {
-					// Pydantic validation errors
-					message = body.error.map((e: { msg: string }) => e.msg).join(', ');
-				}
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -297,20 +238,7 @@ export async function captionSingleImage(
 		}
 	);
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				if (typeof body.error === 'string') {
-					message = body.error;
-				} else if (Array.isArray(body.error)) {
-					message = body.error.map((e: { msg: string }) => e.msg).join(', ');
-				}
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -358,7 +286,7 @@ export function createDatasetBrowserStore(datasetName: string, pageSize = 50) {
 			update((s) => ({
 				...s,
 				isLoading: false,
-				error: e instanceof Error ? e.message : 'Failed to load images'
+				error: friendlyErrorMessage(e, 'Failed to load images')
 			}));
 		}
 	}
@@ -391,7 +319,7 @@ export function createDatasetBrowserStore(datasetName: string, pageSize = 50) {
 			update((s) => ({
 				...s,
 				isLoadingMore: false,
-				error: e instanceof Error ? e.message : 'Failed to load more images'
+				error: friendlyErrorMessage(e, 'Failed to load more images')
 			}));
 		}
 	}

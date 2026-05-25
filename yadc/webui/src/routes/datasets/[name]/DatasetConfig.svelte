@@ -6,6 +6,7 @@
 	import { fetchConfig, patchConfig, previewConfig } from '$lib/stores/configs';
 	import { templates, refreshTemplates } from '$lib/stores/templates';
 	import { toast } from '$lib/stores/toasts';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	// --- Props ---
 
@@ -184,7 +185,7 @@
 				(reasoning.exclude_from_output as boolean) ?? true;
 			envName = loadedEnvName = (p.env as string) ?? '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load config';
+			error = friendlyErrorMessage(e, 'Failed to load config');
 		} finally {
 			isLoading = false;
 		}
@@ -238,7 +239,7 @@
 			toast.success('Config saved');
 			onsaved?.();
 		} catch (e) {
-			saveError = e instanceof Error ? e.message : 'Failed to save config';
+			saveError = friendlyErrorMessage(e, 'Failed to save config');
 		} finally {
 			isSaving = false;
 		}

@@ -11,6 +11,7 @@
 		type ImageInfo
 	} from '$lib/stores/datasetImages';
 	import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		datasetName: string;
@@ -67,7 +68,7 @@
 				if (cancelled) {
 					return;
 				}
-				captionError = e instanceof Error ? e.message : 'Failed to load caption';
+				captionError = friendlyErrorMessage(e, 'Failed to load caption');
 			} finally {
 				if (!cancelled) {
 					isLoadingCaption = false;
@@ -93,7 +94,7 @@
 			isEditing = false;
 			oncaptionupdated?.(item.id, editCaption);
 		} catch (e) {
-			captionError = e instanceof Error ? e.message : 'Failed to save caption';
+			captionError = friendlyErrorMessage(e, 'Failed to save caption');
 		} finally {
 			isSaving = false;
 		}
@@ -117,7 +118,7 @@
 				oncaptionupdated?.(item.id, caption);
 			}
 		} catch (e) {
-			captioningError = e instanceof Error ? e.message : 'Failed to caption image';
+			captioningError = friendlyErrorMessage(e, 'Failed to caption image');
 		} finally {
 			isCaptioning = false;
 		}
@@ -135,7 +136,7 @@
 			captionData = { ...captionData!, extras_raw: editExtrasRaw };
 			isEditingExtras = false;
 		} catch (e) {
-			captionError = e instanceof Error ? e.message : 'Failed to save extras';
+			captionError = friendlyErrorMessage(e, 'Failed to save extras');
 		} finally {
 			isSavingExtras = false;
 		}

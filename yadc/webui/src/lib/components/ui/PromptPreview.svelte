@@ -5,6 +5,7 @@
 		type PromptPreview as PromptPreviewData
 	} from '$lib/stores/datasetImages';
 	import { templates, refreshTemplates } from '$lib/stores/templates';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		datasetName: string;
@@ -49,7 +50,7 @@
 				if (!$templates.loaded) {
 					/* store stays empty */
 				}
-				previewError = e instanceof Error ? e.message : 'Failed to preview prompt';
+				previewError = friendlyErrorMessage(e, 'Failed to preview prompt');
 			}
 		})();
 
@@ -71,7 +72,7 @@
 			const opts = previewTemplateName ? { template_name: previewTemplateName } : {};
 			promptPreview = await fetchPromptPreview(datasetName, imageId, opts);
 		} catch (e) {
-			previewError = e instanceof Error ? e.message : 'Failed to preview prompt';
+			previewError = friendlyErrorMessage(e, 'Failed to preview prompt');
 		} finally {
 			isLoadingPreview = false;
 		}

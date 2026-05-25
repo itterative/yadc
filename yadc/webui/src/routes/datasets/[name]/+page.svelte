@@ -16,7 +16,7 @@
 		clearResumptionFailed
 	} from '$lib/stores/events';
 	import { toast } from '$lib/stores/toasts';
-	import { API_BASE } from '$lib/api';
+	import { API_BASE, friendlyErrorMessage } from '$lib/api';
 	import {
 		fetchDatasets,
 		fetchImages,
@@ -77,8 +77,8 @@
 				{ method: 'DELETE' }
 			);
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				toast.error(`Failed to stop captioning: ${body.error || res.status}`);
+				const { apiErrorMessage } = await import('$lib/api');
+				toast.error(`Failed to stop captioning: ${await apiErrorMessage(res)}`);
 			}
 		} catch {
 			toast.error('Failed to stop captioning: request failed');
@@ -138,7 +138,7 @@
 			nextToken = page.next_token;
 			hasMore = page.next_token !== null;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load images';
+			error = friendlyErrorMessage(e, 'Failed to load images');
 			toast.error(`Failed to load images: ${error}`);
 		} finally {
 			isLoading = false;
@@ -163,7 +163,7 @@
 			nextToken = page.next_token;
 			hasMore = page.next_token !== null;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load more images';
+			error = friendlyErrorMessage(e, 'Failed to load more images');
 		} finally {
 			isLoadingMore = false;
 		}
@@ -243,7 +243,7 @@
 			const info = await startCaptioning(datasetName, options as Record<string, unknown>);
 			registerJobId(info.job_id);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'Failed to start captioning');
+			toast.error(friendlyErrorMessage(e, 'Failed to start captioning'));
 		}
 	}
 
@@ -374,26 +374,26 @@
 		{#if error}
 			<p class="text-error">Error: {error}</p>
 		{:else}
-    		<!-- Image grid (full width on mobile, flex-1 on desktop) -->
-    		<div class="min-w-0 flex-1 overflow-y-auto">
-    			<DatasetBrowser
-    				class="mx-auto"
-    				{datasetName}
-    				items={images}
-    				{isLoading}
-    				{isLoadingMore}
-    				selectedId={focusedItem?.id ?? null}
-    				onclick={handleItemClick}
-    				onendreached={loadMore}
-    			/>
+			<!-- Image grid (full width on mobile, flex-1 on desktop) -->
+			<div class="min-w-0 flex-1 overflow-y-auto">
+				<DatasetBrowser
+					class="mx-auto"
+					{datasetName}
+					items={images}
+					{isLoading}
+					{isLoadingMore}
+					selectedId={focusedItem?.id ?? null}
+					onclick={handleItemClick}
+					onendreached={loadMore}
+				/>
 
-    			{#if !isLoading && images.length === 0}
-    				<div class="empty-state">
-    					<p class="text-lg">No images found</p>
-    					<p class="mt-1 text-sm">This dataset may be empty or not yet scanned.</p>
-    				</div>
-    			{/if}
-    		</div>
+				{#if !isLoading && images.length === 0}
+					<div class="empty-state">
+						<p class="text-lg">No images found</p>
+						<p class="mt-1 text-sm">This dataset may be empty or not yet scanned.</p>
+					</div>
+				{/if}
+			</div>
 		{/if}
 
 		<SidePanel

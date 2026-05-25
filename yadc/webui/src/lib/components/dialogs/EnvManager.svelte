@@ -8,6 +8,7 @@
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import { deleteEnv, fetchEnv, refreshEnvs, saveEnv, type EnvInfo } from '$lib/stores/envs';
 	import { envs } from '$lib/stores/envs';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		open: boolean;
@@ -46,7 +47,7 @@
 		try {
 			await refreshEnvs();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load environments';
+			error = friendlyErrorMessage(e, 'Failed to load environments');
 		} finally {
 			isLoading = false;
 		}
@@ -73,7 +74,7 @@
 			editToken = ''; // Don't pre-fill token (it's masked as [REDACTED])
 			editModelName = info.api_model_name || '';
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load environment';
+			error = friendlyErrorMessage(e, 'Failed to load environment');
 		}
 	}
 
@@ -106,7 +107,7 @@
 			isNew = false;
 			await loadEnvs();
 		} catch (e) {
-			saveError = e instanceof Error ? e.message : 'Failed to save environment';
+			saveError = friendlyErrorMessage(e, 'Failed to save environment');
 		} finally {
 			isSaving = false;
 		}
@@ -118,7 +119,7 @@
 			confirmDelete = null;
 			await loadEnvs();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete environment';
+			error = friendlyErrorMessage(e, 'Failed to delete environment');
 		}
 	}
 
@@ -163,7 +164,7 @@
 								<span class="text-sm font-medium text-white">{name}</span>
 							</div>
 							<div
-								class="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+								class="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-100"
 							>
 								<button
 									class="cursor-pointer rounded p-1.5 text-gray-400 transition-colors hover:text-accent"

@@ -11,6 +11,7 @@
 		type ExportResult
 	} from '$lib/stores/configs';
 	import { fetchDatasets, type DatasetInfo } from '$lib/stores/datasetImages';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		open: boolean;
@@ -88,7 +89,7 @@
 			datasets = ds;
 			backends = be;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load export options';
+			error = friendlyErrorMessage(e, 'Failed to load export options');
 		} finally {
 			isLoading = false;
 		}
@@ -157,7 +158,7 @@
 			result = res;
 			onexported?.(res);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Export failed';
+			error = friendlyErrorMessage(e, 'Export failed');
 		} finally {
 			isExporting = false;
 		}

@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/api';
+import { API_BASE, apiErrorMessage } from '$lib/api';
 
 // --- Types matching the backend API ---
 
@@ -35,7 +35,7 @@ export interface DatasetConfigDetail {
 export async function fetchExportBackends(): Promise<ExportBackend[]> {
 	const res = await fetch(`${API_BASE}/api/export/backends`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -57,16 +57,7 @@ export async function runExport(options: {
 		body: JSON.stringify(options)
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -76,7 +67,7 @@ export async function runExport(options: {
 export async function fetchDatasetDrafts(datasetName: string): Promise<string[]> {
 	const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/drafts`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -86,7 +77,7 @@ export async function fetchDatasetDrafts(datasetName: string): Promise<string[]>
 export async function fetchConfigs(): Promise<DatasetConfig[]> {
 	const res = await fetch(`${API_BASE}/api/configs`);
 	if (!res.ok) {
-		throw new Error(`HTTP ${res.status}`);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -94,16 +85,7 @@ export async function fetchConfigs(): Promise<DatasetConfig[]> {
 export async function fetchConfig(name: string): Promise<DatasetConfigDetail> {
 	const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`);
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -115,16 +97,7 @@ export async function updateConfig(name: string, content: string): Promise<Datas
 		body: JSON.stringify({ content })
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -139,16 +112,7 @@ export async function patchConfig(
 		body: JSON.stringify(patch)
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -163,16 +127,7 @@ export async function previewConfig(
 		body: JSON.stringify(patch)
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 	return res.json();
 }
@@ -182,15 +137,6 @@ export async function deleteConfig(name: string): Promise<void> {
 		method: 'DELETE'
 	});
 	if (!res.ok) {
-		let message = `HTTP ${res.status}`;
-		try {
-			const body = await res.json();
-			if (body.error) {
-				message = body.error;
-			}
-		} catch {
-			/* ignore */
-		}
-		throw new Error(message);
+		throw new Error(await apiErrorMessage(res));
 	}
 }

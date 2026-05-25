@@ -15,6 +15,7 @@
 	import SvgEdit from '$lib/icons/SvgEdit.svelte';
 	import SvgPhoto from '$lib/icons/SvgPhoto.svelte';
 	import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	let datasets: DatasetInfo[] = $state([]);
 	let loading = $state(true);
@@ -47,7 +48,7 @@
 		try {
 			datasets = await fetchDatasets();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load datasets';
+			error = friendlyErrorMessage(e, 'Failed to load datasets');
 		} finally {
 			loading = false;
 		}
@@ -65,7 +66,7 @@
 			await deleteDataset(deletingDataset.name);
 			datasets = datasets.filter((d) => d.name !== deletingDataset!.name);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete dataset';
+			error = friendlyErrorMessage(e, 'Failed to delete dataset');
 		} finally {
 			deletingDataset = null;
 		}

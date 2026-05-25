@@ -4,6 +4,7 @@
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import { createDataset, importDataset, type DatasetInfo } from '$lib/stores/datasetImages';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		open: boolean;
@@ -65,7 +66,7 @@
 			oncreated(dataset);
 			onclose();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to import dataset';
+			error = friendlyErrorMessage(e, 'Failed to import dataset');
 		} finally {
 			isSubmitting = false;
 		}
@@ -95,7 +96,7 @@
 			oncreated(dataset);
 			onclose();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to create dataset';
+			error = friendlyErrorMessage(e, 'Failed to create dataset');
 		} finally {
 			isSubmitting = false;
 		}

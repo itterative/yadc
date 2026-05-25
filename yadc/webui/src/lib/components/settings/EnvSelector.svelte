@@ -2,6 +2,7 @@
 	import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
 	import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
 	import { envs, refreshEnvs, fetchEnv, fetchModels, type EnvInfo } from '$lib/stores/envs';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		/** Increment to trigger env list reload. */
@@ -43,7 +44,7 @@
 		try {
 			await refreshEnvs();
 		} catch (e) {
-			envsError = e instanceof Error ? e.message : 'Failed to load environments';
+			envsError = friendlyErrorMessage(e, 'Failed to load environments');
 		} finally {
 			isLoadingEnvs = false;
 		}
@@ -107,7 +108,7 @@
 			models = result.models;
 			modelFetchDone = true;
 		} catch (e) {
-			modelsError = e instanceof Error ? e.message : 'Failed to fetch models';
+			modelsError = friendlyErrorMessage(e, 'Failed to fetch models');
 		} finally {
 			isLoadingModels = false;
 		}

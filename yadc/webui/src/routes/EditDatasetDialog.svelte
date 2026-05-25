@@ -4,6 +4,7 @@
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
 	import { fetchConfig, updateConfig } from '$lib/stores/configs';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
 		open: boolean;
@@ -39,7 +40,7 @@
 				if (cancelled) {
 					return;
 				}
-				error = e instanceof Error ? e.message : 'Failed to load config';
+				error = friendlyErrorMessage(e, 'Failed to load config');
 			} finally {
 				if (!cancelled) {
 					isLoading = false;
@@ -60,7 +61,7 @@
 			onsaved();
 			onclose();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to save config';
+			error = friendlyErrorMessage(e, 'Failed to save config');
 		} finally {
 			isSaving = false;
 		}

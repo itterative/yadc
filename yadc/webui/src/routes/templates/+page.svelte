@@ -13,6 +13,7 @@
 	import SvgEdit from '$lib/icons/SvgEdit.svelte';
 	import SvgFile from '$lib/icons/SvgFile.svelte';
 	import SvgPlus from '$lib/icons/SvgPlus.svelte';
+	import { friendlyErrorMessage } from '$lib/api';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -34,7 +35,7 @@
 		try {
 			await refreshTemplates();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load templates';
+			error = friendlyErrorMessage(e, 'Failed to load templates');
 		} finally {
 			loading = false;
 		}
@@ -48,7 +49,7 @@
 			await deleteTemplate(deletingTemplate.name);
 			await refreshTemplates();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete template';
+			error = friendlyErrorMessage(e, 'Failed to delete template');
 		} finally {
 			deletingTemplate = null;
 		}
