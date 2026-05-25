@@ -138,4 +138,5 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 * errors when starting captions show up in both the toast and at the top (latter needs removal)
 * error toasts have no details (just says HTTP 502)
 * need to enable prettier
-* need to fix the navbar at the top on mobile (it cuts off, export/settings not visible when selecting a dataset)
+* ~~need to fix the navbar at the top on mobile (it cuts off, export/settings not visible when selecting a dataset)~~
+* ~~on mobile, cannot edit datasets or templates (hover-only action buttons)~~

@@ -97,3 +97,9 @@ Imports Tailwind v4 base, registers the `@tailwindcss/typography` plugin, import
 ```ts
 plugins: [tailwindcss(), sveltekit()],
 ```
+
+## Development Workflow
+
+- The webui is served by Flask as static files from the built `yadc/webui/build/` directory.
+- After running `npm run build` in `yadc/webui/`, the new static assets are written to `build/`.
+- **No webui server restart is needed** — Flask serves the built files directly on each request, so a fresh build is picked up immediately.
