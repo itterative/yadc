@@ -121,3 +121,43 @@ yadc/webui/
   - `z-50`: Global overlays — dialogs (`Dialog.svelte`) and toast stack (`ToastContainer.svelte`)
   - When adding new fixed/absolute layers, use the appropriate slot and avoid values outside this scale.
 - **Browser notifications**: `notifications.ts` is the single gatekeeper. `sendNotification()` checks support, settings preference (`notifications === "enabled"`), browser permission, and tab visibility — callers just call it with no pre-checks. `promptNotificationsOnce()` shows a one-time toast with "Enable" action on first captioning start (session-guarded, only when `notifications === "unset"`). Settings dialog General tab has a checkbox that toggles between `"enabled"`/`"disabled"`. Global notification dispatching lives in `+layout.svelte` so it works even when the user navigates away from the dataset page.
+
+## Styling Patterns
+
+Three-tier approach for mixing Tailwind utilities, reusable component classes, and scoped Svelte styles:
+
+### 1. `@layer components` in CSS files (`src/lib/styles/`)
+
+For **reusable UI abstractions** that appear across multiple components. Use `@apply` to compose Tailwind utilities into named classes.
+
+- `buttons.css` — `.btn`, `.btn-primary`, `.btn-secondary`
+- `forms.css` — `.input`, `.label`
+- `badges.css` — `.badge`, `.badge-sm`, `.badge-accent`
+- `utilities.css` — `.diff-dot`, `.card`, `.section-heading`
+
+**Rules**:
+- Extract appearance only (colors, typography, border-radius, padding). **Do not include positioning** (absolute, fixed, margins for layout) — that stays inline in the consuming component.
+- Keep semantic names that describe what the thing *is*, not where it sits.
+
+### 2. Inline Tailwind utilities in HTML
+
+For **one-off structural and layout styles** that are specific to a single element and not worth naming.
+
+Examples:
+- `class="h-full overflow-hidden"` on a CodeMirror wrapper
+- `class="min-w-0 overflow-hidden"` on a flex child that needs to shrink
+- `class="max-sm:gap-3 max-sm:px-4"` for responsive tweaks
+- `class="absolute top-1 right-1"` for positioning a badge inside a card
+
+### 3. Svelte `<style>` scoped blocks
+
+For styles that genuinely can't be utilities:
+
+- **State classes** applied via `class:selected` or similar — e.g. `.selected { outline: 2px solid var(--color-accent); }`
+- **JS-driven CSS variables** — e.g. `.grid-cols-auto { grid-template-columns: repeat(var(--x-grid-cols), minmax(0, 1fr)); }` where `--x-grid-cols` is set via inline style from JS
+- **Complex structural layout** that's easier to read as CSS — e.g. the navbar layout in `+layout.svelte`
+
+**Anti-patterns to avoid**:
+- Using `@apply` inside Svelte `<style>` blocks — it adds indirection without benefit. Either extract to `src/lib/styles/` (if reusable) or inline utilities (if one-off).
+- Creating component classes that include positioning (e.g. `.badge-corner` with `absolute`). Positioning is context-specific and should be inline.
+- Writing raw CSS for styles that map directly to existing utilities (e.g. `display: flex; align-items: center;` instead of `class="flex items-center"`).
