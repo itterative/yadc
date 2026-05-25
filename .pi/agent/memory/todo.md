@@ -96,7 +96,7 @@ The current implementation (never clearing) is being reverted. The job_id infras
 
 ### Remaining edge cases
 
-- **Mid-captioning page load**: If a user opens the dataset page while captioning is already running, they won't see any progress until the next SSE event arrives. Could be solved with a periodic status re-broadcast or a `GET /datasets/<name>/caption/status` endpoint.
+- ~~**Mid-captioning page load**: If a user opens the dataset page while captioning is already running, they won't see any progress until the next SSE event arrives.~~ **DONE** — Added `GET /datasets/<name>/caption` endpoint and a one-time fetch in the dataset page's `$effect` (guarded to only seed when the store is idle, so it never clobbers live SSE events).
 - **WSGI thread exhaustion**: Each SSE connection still blocks a thread. The async migration (see top-level TODO) is the proper fix.
 
 ## Caption settings: dataset defaults integration
