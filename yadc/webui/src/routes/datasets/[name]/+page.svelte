@@ -56,6 +56,7 @@
 	// need to emit per-image events (e.g. CaptionedImageEvent with image_id).
 
 	let captionDoneFired = $state(false);
+	let sawCaptioningActive = $state(false);
 
 	// Derive captioning state from the global SSE store
 	let isCaptioning = $derived(
@@ -102,12 +103,13 @@
 
 	// Detect when captioning finishes (transition from active → terminal)
 	$effect(() => {
-		if (!isCaptioning && !captionDoneFired) {
+		if (isCaptioning) {
+			sawCaptioningActive = true;
+			captionDoneFired = false;
+		}
+		if (!isCaptioning && sawCaptioningActive && !captionDoneFired) {
 			captionDoneFired = true;
 			handleCaptioningDone();
-		}
-		if (isCaptioning) {
-			captionDoneFired = false;
 		}
 	});
 
@@ -277,6 +279,19 @@
 					/* ignore */
 				}
 			})();
+		}
+
+		const status = get(captioningStatus);
+		if (status.dataset_name !== datasetName) {
+			return;
+		}
+
+		if (status.status === 'error') {
+			toast.error(`Captioning failed: ${status.error ?? 'Unknown error'}`);
+		} else if (status.errors > 0) {
+			toast.warning(
+				`Captioning finished with ${status.errors} error${status.errors === 1 ? '' : 's'} (${status.processed}/${status.total} processed)`
+			);
 		}
 	}
 
