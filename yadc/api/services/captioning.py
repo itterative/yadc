@@ -97,10 +97,7 @@ class CaptionJobOptions(pydantic.BaseModel):
 def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict[str, Any]:
     """Merge env/config overrides from *opts* into the raw TOML dict."""
     env_name = opts.env or raw.get("env", "default")
-    try:
-        user_env = cmd_envs.load_env(env_name)
-    except Exception:
-        user_env = cmd_envs.load_env("default")
+    user_env = cmd_envs.load_env(env_name)
 
     raw.setdefault("api", {})
     api: dict[str, Any] = raw["api"]

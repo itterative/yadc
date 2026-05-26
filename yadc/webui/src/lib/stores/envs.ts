@@ -8,6 +8,7 @@ export interface EnvInfo {
 	api_url: string | null;
 	api_token: string | null; // masked as [REDACTED]
 	api_model_name: string | null;
+	has_token: boolean;
 }
 
 export interface EnvListResult {

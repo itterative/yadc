@@ -1,9 +1,12 @@
 """Environment CRUD endpoints — backed by the ``cmd.envs`` module."""
 
+from typing import cast
+
 from flask import jsonify, request
 
 # cmd.envs is a heavy import (keyring, cryptography) — keep it at module level
 # so it's loaded once, not on every request.
+from yadc.cmd import app as cmd_app
 from yadc.cmd import envs as cmd_envs
 
 from ..modules.logging_factory import LoggingFactory
@@ -37,6 +40,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
                 "api_url": api_url.value if api_url else None,
                 "api_token": str(api_token) if api_token else None,  # Setting.__str__ masks encrypted values
                 "api_model_name": api_model_name.value if api_model_name else None,
+                "has_token": bool(api_token.value) if api_token else False,
             }
         )
 
@@ -51,13 +55,14 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
         """
         body = request.get_json(silent=True) or {}
 
-        # Build env config dict — only include keys that are present
-        env_config: dict[str, str] = {}
+        config_toml = cmd_app.load_config()
+
         for key in cmd_envs.ENV_KEYS:
             if key in body:
-                env_config[key] = body[key]
+                cmd_envs.update_env(key, body[key], env=name, config_toml=config_toml)
 
-        cmd_envs.save_env(env_config, env=name)
+        env_config = cast(dict[str, str], config_toml.setdefault("env", {}).get(name, {}))
+        cmd_envs.save_env(env_config, env=name, config_toml=config_toml)
         _logger.info("Environment '%s' saved.", name)
 
         return get_env(name)

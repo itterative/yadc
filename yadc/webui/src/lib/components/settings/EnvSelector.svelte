@@ -168,7 +168,7 @@
 		<div>
 			<label class="label" for="caption-token">
 				API Token
-				{#if envInfo?.api_token}
+				{#if envInfo?.has_token}
 					<span class="ml-1 text-gray-500">(leave blank to use saved)</span>
 				{/if}
 			</label>
@@ -177,9 +177,18 @@
 				type="password"
 				bind:value={envToken}
 				class="input"
-				placeholder={envInfo?.api_token ? '•••••••• (saved)' : 'sk-…'}
+				placeholder={envInfo?.has_token ? '•••••••• (saved)' : 'sk-…'}
 			/>
 		</div>
+
+		{#if envInfo?.has_token}
+			<div class="rounded-lg border border-yellow-700/50 bg-yellow-900/50 px-3 py-2">
+				<p class="text-xs text-yellow-200">
+					This environment has a saved API token. If your keyring is locked, captioning will fail
+					with an authentication error.
+				</p>
+			</div>
+		{/if}
 
 		<!-- Model -->
 		<div>

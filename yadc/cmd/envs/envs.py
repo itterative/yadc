@@ -20,6 +20,11 @@ ENV_KEYS = [
 ]
 ENCRYPTED_KEYS = ["api_token"]
 
+
+class EnvDecryptionError(ValueError):
+    """Raised when an environment setting cannot be decrypted."""
+
+
 _logger = logging.get_logger(__name__)
 
 
@@ -52,13 +57,24 @@ def load_env(env: str = "default") -> UserConfig:
             if key.endswith("_encrypted"):
                 # old encrypted setting handling
                 key = key.removesuffix("_encrypted")
-                setting = Setting(value=decrypt_setting(setting.value), encrypted=False)
+                decrypted = decrypt_setting(setting.value)
+                if decrypted is None:
+                    raise EnvDecryptionError(
+                        f"Failed to decrypt '{key}' for environment '{env}'. "
+                        "Ensure your keyring is unlocked (e.g., gpg-agent is running with a working pinentry)."
+                    )
+                setting = Setting(value=decrypted, encrypted=False)
             elif setting.encrypted:
                 key = key.removesuffix("_encrypted")
-                setting = Setting(value=decrypt_setting(setting.value), encrypted=False)
+                decrypted = decrypt_setting(setting.value)
+                if decrypted is None:
+                    raise EnvDecryptionError(
+                        f"Failed to decrypt '{key}' for environment '{env}'. "
+                        "Ensure your keyring is unlocked (e.g., gpg-agent is running with a working pinentry)."
+                    )
+                setting = Setting(value=decrypted, encrypted=False)
 
-            if setting.encrypted and setting.value is None:
-                _logger.warning("Warning: Could not decrypt %s for env '%s'", key, env)
+            if setting.value is None:
                 continue
 
             config[key] = setting.value
@@ -70,6 +86,8 @@ def load_env(env: str = "default") -> UserConfig:
                 model_name=cast(str, config.get("api_model_name", "")),
             ),
         )
+    except EnvDecryptionError:
+        raise
     except (pydantic.ValidationError, ValueError):
         _logger.warning("Warning: user config is invalid")
     except PermissionError:

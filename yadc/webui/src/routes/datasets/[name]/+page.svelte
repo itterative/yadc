@@ -55,8 +55,22 @@
 	// (see handleCaptioningDone). For live per-tile updates, the backend would
 	// need to emit per-image events (e.g. CaptionedImageEvent with image_id).
 
-	let captionDoneFired = $state(false);
-	let sawCaptioningActive = $state(false);
+	// KNOWN ISSUE: Hot Module Replacement (HMR) can break captioning state
+	// tracking. If a reload happens, state of runningJobId survives, and
+	// the captioning status also has the same job id, regardless of how many
+	// the captioning is triggered, page never updates
+	//
+	// Possible causes:
+	// - The activeJobs ring buffer in stores/events.ts may evict the job_id,
+	//   causing dataset_changed suppression to fail (harmless but noisy).
+	//
+	// Workaround: hard-refresh the page (Ctrl+Shift+R) if the progress bar
+	// gets stuck.
+
+	/** Job ID of the captioning operation started from this page view.
+	 *  NOTE: This is lost on hot reload, so a toast may be missed or
+	 *  duplicated until the page is fully refreshed. */
+	let runningJobId = $state('');
 
 	// Derive captioning state from the global SSE store
 	let isCaptioning = $derived(
@@ -101,16 +115,24 @@
 		}
 	});
 
-	// Detect when captioning finishes (transition from active → terminal)
+	// Fire a toast when the captioning job we started reaches a terminal state.
+	// Tracking by job_id avoids race conditions between SSE events and the
+	// HTTP response, and prevents toasting for stale jobs on page load.
 	$effect(() => {
-		if (isCaptioning) {
-			sawCaptioningActive = true;
-			captionDoneFired = false;
+		const s = $captioningStatus;
+		if (s?.dataset_name !== datasetName) {
+			return;
 		}
-		if (!isCaptioning && sawCaptioningActive && !captionDoneFired) {
-			captionDoneFired = true;
-			handleCaptioningDone();
+		if (s.status !== 'error' && s.status !== 'done') {
+			return;
 		}
+		if (s.job_id !== runningJobId) {
+			return;
+		}
+		// Reset so navigating back to this page with a stale status
+		// does not re-trigger the toast.
+		runningJobId = '';
+		handleCaptioningDone();
 	});
 
 	// Live caption options from CaptionSettings (updated reactively as settings change)
@@ -262,15 +284,41 @@
 		panelOpen = false;
 		try {
 			const info = await startCaptioning(datasetName, options as Record<string, unknown>);
+			runningJobId = info.job_id;
 			registerJobId(info.job_id);
+
+			// Exit early if events from the jobs already arrived
+			const current = get(captioningStatus);
+			if (current.job_id === info.job_id) {
+				return;
+			}
+
+			// Seed the store with "running" so the progress bar appears immediately.
+			setCaptioningStatus({
+				status: info.status,
+				dataset_name: info.dataset_name,
+				processed: info.processed,
+				total: info.total,
+				errors: info.errors,
+				job_id: info.job_id,
+				error: info.error
+			});
 		} catch (e) {
 			toast.error(friendlyErrorMessage(e, 'Failed to start captioning'));
 		}
 	}
 
 	function handleCaptioningDone() {
-		// Refresh everything — caption counts and image states may have changed
-		if (browser && datasetName) {
+		const status = get(captioningStatus);
+		if (status.dataset_name !== datasetName) {
+			return;
+		}
+
+		// Only refresh the grid if images were actually modified.
+		// Fast failures (e.g. env decryption error with 0 processed)
+		// leave the dataset untouched, so reloading is pointless.
+		const hadProgress = status.processed > 0 || status.errors > 0;
+		if (browser && datasetName && hadProgress) {
 			loadInitial(datasetName);
 			(async () => {
 				try {
@@ -279,11 +327,6 @@
 					/* ignore */
 				}
 			})();
-		}
-
-		const status = get(captioningStatus);
-		if (status.dataset_name !== datasetName) {
-			return;
 		}
 
 		if (status.status === 'error') {
