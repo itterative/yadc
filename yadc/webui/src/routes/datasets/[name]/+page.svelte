@@ -419,7 +419,7 @@
 		<SidePanel
 			{datasetName}
 			{focusedItem}
-			bind:panelTab
+			bind:activeTab={panelTab}
 			bind:open={panelOpen}
 			bind:captionOptions
 			onstartcaptioning={handleStartCaptioning}

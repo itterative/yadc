@@ -2,6 +2,8 @@
 	import CaptionSettings from './CaptionSettings.svelte';
 	import DatasetConfig from './DatasetConfig.svelte';
 	import ImageDetail from '$lib/components/dataset/ImageDetail.svelte';
+	import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
+	import Tab from '$lib/components/ui/tabs/Tab.svelte';
 	import type { CaptionOptions } from '$lib/stores/captionOptions';
 	import type { ImageInfo } from '$lib/stores/datasetImages';
 	import SvgClose from '$lib/icons/SvgClose.svelte';
@@ -12,7 +14,7 @@
 	interface Props {
 		datasetName: string;
 		focusedItem: ImageInfo | null;
-		panelTab?: PanelTab;
+		activeTab?: PanelTab;
 		open?: boolean;
 		captionOptions?: CaptionOptions;
 		onstartcaptioning?: (options: CaptionOptions) => void;
@@ -25,7 +27,7 @@
 	let {
 		datasetName,
 		focusedItem,
-		panelTab = $bindable('caption'),
+		activeTab: panelTab = $bindable('caption'),
 		open = $bindable(false),
 		captionOptions = $bindable(),
 		onstartcaptioning,
@@ -59,52 +61,21 @@
 	<div
 		class="flex h-full flex-col overflow-hidden border-l border-border bg-surface lg:rounded-xl lg:border"
 	>
-		<!-- Tab bar -->
-		<div class="flex flex-shrink-0 items-center border-b border-border">
-			<button
-				class="cursor-pointer border-b-2 px-4 py-2.5 text-sm font-medium transition-colors {panelTab ===
-				'caption'
-					? 'border-accent text-white'
-					: 'border-transparent text-gray-400 hover:text-gray-200'}"
-				onclick={() => (panelTab = 'caption')}
-			>
-				Caption
-			</button>
-			<button
-				class="cursor-pointer border-b-2 px-4 py-2.5 text-sm font-medium transition-colors {panelTab ===
-				'details'
-					? 'border-accent text-white'
-					: 'border-transparent text-gray-400 hover:text-gray-200'}"
-				onclick={() => (panelTab = 'details')}
-			>
-				Details
-			</button>
-			<button
-				class="cursor-pointer border-b-2 px-4 py-2.5 text-sm font-medium transition-colors {panelTab ===
-				'config'
-					? 'border-accent text-white'
-					: 'border-transparent text-gray-400 hover:text-gray-200'}"
-				onclick={() => (panelTab = 'config')}
-			>
-				Config
-			</button>
-
-			<button
-				class="mr-2 ml-auto cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"
-				onclick={() => {
-					open = false;
-					onpanelclose?.();
-				}}
-				title="Close panel"
-				aria-label="Close panel"
-			>
-				<SvgClose class="h-5 w-5" />
-			</button>
-		</div>
-
-		<!-- Tab content: always render both to preserve component state across tab switches -->
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div class={panelTab === 'caption' ? '' : 'hidden'}>
+		<PillTabs bind:value={panelTab} class="h-full flex-1">
+			{#snippet end()}
+				<button
+					class="cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"
+					onclick={() => {
+						open = false;
+						onpanelclose?.();
+					}}
+					title="Close panel"
+					aria-label="Close panel"
+				>
+					<SvgClose class="h-5 w-5" />
+				</button>
+			{/snippet}
+			<Tab id="caption" label="Caption" class="h-full overflow-y-auto">
 				<CaptionSettings
 					{datasetName}
 					bind:currentOptions={captionOptions}
@@ -113,20 +84,20 @@
 						open = false;
 					}}
 				/>
-			</div>
-			<div class={panelTab === 'details' ? '' : 'hidden'}>
+			</Tab>
+			<Tab id="details" label="Details" class="h-full overflow-y-auto">
 				{#if focusedItem !== null}
 					<ImageDetail {datasetName} item={focusedItem} {oncaptionupdated} {oncaptionimage} />
 				{:else}
-					<div class="flex h-full items-center justify-center text-sm text-gray-500 py-4">
+					<div class="flex h-full items-center justify-center py-4 text-sm text-gray-500">
 						Select an image to view details
 					</div>
 				{/if}
-			</div>
-			<div class={panelTab === 'config' ? '' : 'hidden'}>
+			</Tab>
+			<Tab id="config" label="Config" class="h-full overflow-y-auto">
 				<DatasetConfig {datasetName} onsaved={onconfigsaved} />
-			</div>
-		</div>
+			</Tab>
+		</PillTabs>
 	</div>
 </div>
 

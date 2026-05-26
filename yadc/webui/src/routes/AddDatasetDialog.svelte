@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import SvgClose from '$lib/icons/SvgClose.svelte';
-	import TabBar from '$lib/components/ui/TabBar.svelte';
+	import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
+	import Tab from '$lib/components/ui/tabs/Tab.svelte';
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import { createDataset, importDataset, type DatasetInfo } from '$lib/stores/datasetImages';
 	import { friendlyErrorMessage } from '$lib/api';
@@ -14,8 +15,7 @@
 
 	let { open, onclose, oncreated }: Props = $props();
 
-	type Mode = 'import' | 'create';
-	let mode: Mode = $state('import');
+	let mode: 'import' | 'create' = $state('import');
 
 	// Import state
 	let importName = $state('');
@@ -39,11 +39,6 @@
 			createPaths = '';
 		}
 	});
-
-	function switchMode(m: Mode) {
-		mode = m;
-		error = null;
-	}
 
 	async function handleImport() {
 		const name = importName.trim();
@@ -113,89 +108,78 @@
 			</button>
 		</div>
 
-		<!-- Mode tabs -->
-		<TabBar
-			class="mb-4"
-			tabs={[
-				{ value: 'import', label: 'Import TOML' },
-				{ value: 'create', label: 'Create New' }
-			]}
-			selected={mode}
-			onchange={(v) => switchMode(v as Mode)}
-		/>
-
 		{#if error}
 			<div class="alert-error mb-4">{error}</div>
 		{/if}
 
-		<!-- Import mode -->
-		{#if mode === 'import'}
-			<div class="space-y-4">
-				<div>
-					<label class="label" for="import-name">Dataset Name</label>
-					<input
-						id="import-name"
-						type="text"
-						bind:value={importName}
-						class="input"
-						placeholder="my-dataset"
-					/>
-				</div>
+		<PillTabs bind:value={mode}>
+			<Tab id="import" label="Import TOML">
+				<div class="space-y-4">
+					<div>
+						<label class="label" for="import-name">Dataset Name</label>
+						<input
+							id="import-name"
+							type="text"
+							bind:value={importName}
+							class="input"
+							placeholder="my-dataset"
+						/>
+					</div>
 
-				<div>
-					<label class="label" for="import-toml">TOML Config Path</label>
-					<input
-						id="import-toml"
-						type="text"
-						bind:value={importTomlPath}
-						class="input"
-						placeholder="/path/to/dataset.toml"
-					/>
-					<p class="help-text">Absolute path to an existing yadc dataset config TOML file.</p>
-				</div>
+					<div>
+						<label class="label" for="import-toml">TOML Config Path</label>
+						<input
+							id="import-toml"
+							type="text"
+							bind:value={importTomlPath}
+							class="input"
+							placeholder="/path/to/dataset.toml"
+						/>
+						<p class="help-text">Absolute path to an existing yadc dataset config TOML file.</p>
+					</div>
 
-				<div class="btn-bar">
-					<button class="btn-primary" onclick={handleImport} disabled={isSubmitting}>
-						{isSubmitting ? 'Importing…' : 'Import'}
-					</button>
+					<div class="btn-bar">
+						<button class="btn-primary" onclick={handleImport} disabled={isSubmitting}>
+							{isSubmitting ? 'Importing…' : 'Import'}
+						</button>
+					</div>
 				</div>
-			</div>
+			</Tab>
+			<Tab id="create" label="Create New">
+				<div class="space-y-4">
+					<div>
+						<label class="label" for="create-name">Dataset Name</label>
+						<input
+							id="create-name"
+							type="text"
+							bind:value={createName}
+							class="input"
+							placeholder="my-dataset"
+						/>
+					</div>
 
-			<!-- Create mode -->
-		{:else if mode === 'create'}
-			<div class="space-y-4">
-				<div>
-					<label class="label" for="create-name">Dataset Name</label>
-					<input
-						id="create-name"
-						type="text"
-						bind:value={createName}
-						class="input"
-						placeholder="my-dataset"
-					/>
-				</div>
+					<div>
+						<label class="label" for="create-paths">Image Directories</label>
+						<textarea
+							id="create-paths"
+							bind:value={createPaths}
+							rows={4}
+							class="input resize-y"
+							placeholder="/path/to/images&#10;/another/image/dir"
+						></textarea>
+						<p class="help-text">
+							One directory path per line. Each directory will be scanned for images.
+						</p>
+					</div>
 
-				<div>
-					<label class="label" for="create-paths">Image Directories</label>
-					<textarea
-						id="create-paths"
-						bind:value={createPaths}
-						rows={4}
-						class="input resize-y"
-						placeholder="/path/to/images&#10;/another/image/dir"
-					></textarea>
-					<p class="help-text">
-						One directory path per line. Each directory will be scanned for images.
-					</p>
+					<div class="btn-bar">
+						<button class="btn-primary" onclick={handleCreate} disabled={isSubmitting}>
+							{isSubmitting ? 'Creating…' : 'Create'}
+						</button>
+					</div>
 				</div>
-
-				<div class="btn-bar">
-					<button class="btn-primary" onclick={handleCreate} disabled={isSubmitting}>
-						{isSubmitting ? 'Creating…' : 'Create'}
-					</button>
-				</div>
-			</div>
-		{/if}
+			</Tab>
+		</PillTabs>
 
 		{#if isSubmitting}
 			<SpinnerBlock class="py-4" size="h-5 w-5" />
