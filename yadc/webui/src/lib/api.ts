@@ -29,6 +29,13 @@ export async function apiErrorMessage(res: Response, context?: string): Promise<
 				errorFromBody = body.error.map((e: { msg: string }) => e.msg).join(', ');
 			}
 		}
+		if (!errorFromBody && body.details && Array.isArray(body.details)) {
+			errorFromBody = body.details
+				.map((d: { loc?: string[]; msg: string }) =>
+					d.loc ? `${d.loc.join('.')}: ${d.msg}` : d.msg
+				)
+				.join('; ');
+		}
 	} catch {
 		/* not JSON */
 	}

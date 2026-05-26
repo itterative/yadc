@@ -56,6 +56,7 @@ See **dataset-config-settings-plan** for full details. Mostly done:
 - [x] Frontend fetches config defaults + pre-fills fields
 - [x] Diff indicators (dots) + collapsible overrides section with reset
 - [x] Removed `ConfigEditor.svelte` from Settings dialog
+- [x] Phase 4: type-safe Config API (Pydantic validation on GET/PATCH, typed TS interfaces)
 - [ ] TOML multiline string serialization for templates
 - [x] "Save as dataset default" action (Config tab in side panel, PATCH via `DatasetConfig.svelte`)
 
@@ -106,7 +107,7 @@ See **dataset-config-settings-plan** for full details. Phase 1 + 2 mostly done.
 Remaining:
 - "Save as dataset default" action — writes current settings back to TOML via `PATCH /configs/<name>`
 - Preset profiles, config diff banner (Phase 3 nice-to-haves)
-- Phase 4: type-safe config API (Pydantic validation on GET/PATCH)
+- ~~Phase 4: type-safe config API (Pydantic validation on GET/PATCH)~~ **DONE** — see `dataset-config-settings-plan`
 
 ## Incremental filesystem index updates
 

@@ -212,23 +212,17 @@
 	async function loadDatasetDefaults() {
 		try {
 			const config = await fetchConfig(_datasetName);
-			const p = config.parsed as Record<string, unknown>;
-			const settings = (p.settings as Record<string, unknown>) ?? {};
-			const reasoning = (p.reasoning as Record<string, unknown>) ?? {};
-			const prompt = (p.prompt as Record<string, unknown>) ?? {};
+			const p = config.parsed;
 
 			datasetDefaults = {
-				maxTokens: (settings.max_tokens as number) ?? HARDCODED_DEFAULTS.maxTokens,
-				imageQuality:
-					(settings.image_quality as 'auto' | 'high' | 'low') ?? HARDCODED_DEFAULTS.imageQuality,
-				draftName: (p.draft as string) ?? HARDCODED_DEFAULTS.draftName,
-				overwrite: (p.overwrite_captions as boolean) ?? HARDCODED_DEFAULTS.overwrite,
-				rounds: (p.rounds as number) ?? HARDCODED_DEFAULTS.rounds,
-				reasoningEnabled: (reasoning.enable as boolean) ?? HARDCODED_DEFAULTS.reasoningEnabled,
-				reasoningEffort:
-					(reasoning.thinking_effort as 'low' | 'medium' | 'high') ??
-					HARDCODED_DEFAULTS.reasoningEffort,
-				selectedTemplate: (prompt.name as string) ?? HARDCODED_DEFAULTS.selectedTemplate
+				maxTokens: p.settings?.max_tokens ?? HARDCODED_DEFAULTS.maxTokens,
+				imageQuality: p.settings?.image_quality ?? HARDCODED_DEFAULTS.imageQuality,
+				draftName: HARDCODED_DEFAULTS.draftName,
+				overwrite: p.overwrite_captions ?? HARDCODED_DEFAULTS.overwrite,
+				rounds: p.rounds ?? HARDCODED_DEFAULTS.rounds,
+				reasoningEnabled: p.reasoning?.enable ?? HARDCODED_DEFAULTS.reasoningEnabled,
+				reasoningEffort: p.reasoning?.thinking_effort ?? HARDCODED_DEFAULTS.reasoningEffort,
+				selectedTemplate: p.prompt?.name ?? HARDCODED_DEFAULTS.selectedTemplate
 			};
 
 			// Pre-fill fields that have no localStorage override with dataset defaults.

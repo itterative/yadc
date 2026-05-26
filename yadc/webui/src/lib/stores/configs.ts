@@ -23,11 +23,79 @@ export interface DatasetConfig {
 	config_path: string;
 }
 
+/** Mirrors the Pydantic Config model in yadc/core/config.py. Keep in sync. */
+export interface Config {
+	api?: ConfigApi;
+	prompt?: ConfigPrompt;
+	settings?: ConfigSettings;
+	reasoning?: ConfigReasoning;
+	dataset?: ConfigDatasetEntry[];
+	env?: string;
+	interactive?: boolean;
+	rounds?: number;
+	caption_suffix?: string;
+	overwrite_captions?: boolean;
+}
+
+export interface ConfigApi {
+	url?: string;
+	token?: string;
+	model_name?: string;
+}
+
+export interface ConfigPrompt {
+	name?: string;
+	template?: string;
+}
+
+export interface ConfigSettings {
+	max_tokens?: number;
+	store_conversation?: boolean;
+	image_quality?: 'auto' | 'high' | 'low';
+	advanced?: ConfigSettingsAdvanced;
+}
+
+export interface ConfigSettingsAdvanced {
+	system_role?: string;
+	user_role?: string;
+	assistant_role?: string;
+	assistant_prefill?: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	[key: string]: any;
+}
+
+export interface ConfigReasoning {
+	enable?: boolean;
+	thinking_effort?: 'low' | 'medium' | 'high';
+	exclude_from_output?: boolean;
+	advanced?: ConfigReasoningAdvanced;
+}
+
+export interface ConfigReasoningAdvanced {
+	thinking_start?: string;
+	thinking_end?: string;
+}
+
+export interface ConfigDatasetEntry {
+	path?: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	images?: any[];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	extras?: Record<string, any>;
+}
+
+export interface ConfigValidationError {
+	loc: string[];
+	msg: string;
+	type: string;
+}
+
 export interface DatasetConfigDetail {
 	name: string;
 	config_path: string;
 	content: string;
-	parsed: Record<string, unknown>;
+	parsed: Config;
+	validation_error?: ConfigValidationError[];
 }
 
 // --- Export API helpers ---
@@ -104,7 +172,7 @@ export async function updateConfig(name: string, content: string): Promise<Datas
 
 export async function patchConfig(
 	name: string,
-	patch: Record<string, unknown>
+	patch: Partial<Config>
 ): Promise<DatasetConfigDetail> {
 	const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {
 		method: 'PATCH',
@@ -119,7 +187,7 @@ export async function patchConfig(
 
 export async function previewConfig(
 	name: string,
-	patch: Record<string, unknown>
+	patch: Partial<Config>
 ): Promise<DatasetConfigDetail> {
 	const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}?dry_run=true`, {
 		method: 'PATCH',

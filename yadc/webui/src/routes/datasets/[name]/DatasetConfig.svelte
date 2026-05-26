@@ -3,7 +3,7 @@
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
 	import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
-	import { fetchConfig, patchConfig, previewConfig } from '$lib/stores/configs';
+	import { fetchConfig, patchConfig, previewConfig, type Config } from '$lib/stores/configs';
 	import { templates, refreshTemplates } from '$lib/stores/templates';
 	import { toast } from '$lib/stores/toasts';
 	import { friendlyErrorMessage } from '$lib/api';
@@ -25,6 +25,7 @@
 	let isSaving = $state(false);
 	let error: string | null = $state(null);
 	let saveError: string | null = $state(null);
+	let validationErrors: Array<{ loc: string[]; msg: string }> = $state([]);
 
 	// (template list comes from the shared store)
 
@@ -89,7 +90,7 @@
 	const DEBOUNCE_MS = 400;
 
 	/** Build the patch dict from current field values. Nullable fields are omitted when null. */
-	function buildPatch(): Record<string, unknown> {
+	function buildPatch(): Partial<Config> {
 		const settings: Record<string, unknown> = {
 			store_conversation: storeConversation
 		};
@@ -159,31 +160,22 @@
 
 			const [config] = await Promise.all([fetchConfig(datasetName), templatesReady]);
 			previewContent = config.content;
-			const p = config.parsed as Record<string, unknown>;
-			const api = (p.api as Record<string, unknown>) ?? {};
-			const settings = (p.settings as Record<string, unknown>) ?? {};
-			const reasoning = (p.reasoning as Record<string, unknown>) ?? {};
-			const prompt = (p.prompt as Record<string, unknown>) ?? {};
+			validationErrors = config.validation_error ?? [];
+			const p = config.parsed;
 
-			apiUrl = loadedApiUrl = (api.url as string) ?? '';
-			apiModelName = loadedApiModelName = (api.model_name as string) ?? '';
-			promptName = loadedPromptName = (prompt.name as string) ?? '';
-			maxTokens = loadedMaxTokens = ('max_tokens' in settings ? settings.max_tokens : null) as
-				| number
-				| null;
-			imageQuality = loadedImageQuality = (
-				'image_quality' in settings ? settings.image_quality : null
-			) as 'auto' | 'high' | 'low' | null;
-			rounds = loadedRounds = ('rounds' in p ? p.rounds : null) as number | null;
-			overwrite = loadedOverwrite = (p.overwrite_captions as boolean) ?? false;
-			storeConversation = loadedStoreConversation =
-				(settings.store_conversation as boolean) ?? false;
-			reasoningEnabled = loadedReasoningEnabled = (reasoning.enable as boolean) ?? false;
-			reasoningEffort = loadedReasoningEffort =
-				(reasoning.thinking_effort as 'low' | 'medium' | 'high') ?? 'low';
+			apiUrl = loadedApiUrl = p.api?.url ?? '';
+			apiModelName = loadedApiModelName = p.api?.model_name ?? '';
+			promptName = loadedPromptName = p.prompt?.name ?? '';
+			maxTokens = loadedMaxTokens = p.settings?.max_tokens ?? null;
+			imageQuality = loadedImageQuality = p.settings?.image_quality ?? null;
+			rounds = loadedRounds = p.rounds ?? null;
+			overwrite = loadedOverwrite = p.overwrite_captions ?? false;
+			storeConversation = loadedStoreConversation = p.settings?.store_conversation ?? false;
+			reasoningEnabled = loadedReasoningEnabled = p.reasoning?.enable ?? false;
+			reasoningEffort = loadedReasoningEffort = p.reasoning?.thinking_effort ?? 'low';
 			reasoningExcludeOutput = loadedReasoningExcludeOutput =
-				(reasoning.exclude_from_output as boolean) ?? true;
-			envName = loadedEnvName = (p.env as string) ?? '';
+				p.reasoning?.exclude_from_output ?? true;
+			envName = loadedEnvName = p.env ?? '';
 		} catch (e) {
 			error = friendlyErrorMessage(e, 'Failed to load config');
 		} finally {
@@ -256,6 +248,16 @@
 		{:else}
 			{#if saveError}
 				<div class="alert-error">{saveError}</div>
+			{/if}
+			{#if validationErrors.length > 0}
+				<div class="alert-warning">
+					<p class="font-medium">Config validation issues:</p>
+					<ul class="mt-1 list-inside list-disc">
+						{#each validationErrors as err (err.loc.join('.'))}
+							<li>{err.loc.join('.')}: {err.msg}</li>
+						{/each}
+					</ul>
+				</div>
 			{/if}
 
 			<!-- ═══ Section: API ═══ -->

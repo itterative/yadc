@@ -2,8 +2,10 @@
 
 import toml
 from flask import jsonify, request
+from pydantic import ValidationError
 
 from yadc.api.services.datasets import DatasetService
+from yadc.core.config import parse_config
 from yadc.utils import deep_merge
 
 from ..modules.logging_factory import LoggingFactory
@@ -42,12 +44,20 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         except Exception:
             parsed = {}
 
+        validation_error = None
+        if parsed:
+            try:
+                parse_config(parsed, strict=False)
+            except ValidationError as e:
+                validation_error = [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()]
+
         return jsonify(
             {
                 "name": name,
                 "config_path": info.config_path,
                 "content": content,
                 "parsed": parsed,
+                "validation_error": validation_error,
             }
         )
 
@@ -129,7 +139,18 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         # Deep-merge patch into existing config
         merged = deep_merge(parsed, body)
 
-        # Serialize and validate
+        # Validate merged result against the Config schema
+        try:
+            parse_config(merged, strict=False)
+        except ValidationError as e:
+            return jsonify(
+                {
+                    "error": "Validation failed",
+                    "details": [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()],
+                }
+            ), 400
+
+        # Serialize and validate round-trip
         try:
             new_content = toml.dumps(merged)
             toml.loads(new_content)  # round-trip validation

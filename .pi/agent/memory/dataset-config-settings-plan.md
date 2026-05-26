@@ -113,28 +113,201 @@ The `GET` and `PATCH /configs/<name>` endpoints currently pass around raw dicts
 models in `yadc/core/config.py` already define the full config schema (`Config`,
 `ConfigApi`, `ConfigSettings`, `ConfigReasoning`, `ConfigPrompt`, etc.). Use them.
 
-### Backend
+### 1. Backend: Validate on reads (`GET /configs/<name>`)
 
-- `GET /configs/<name>`: parse TOML → `Config.model_validate(raw, context={"strict": False})`
-  → `model_dump()` for the `parsed` response field. This gives a validated, typed
-  shape with defaults filled in for missing fields, instead of a raw partial dict.
-- `PATCH /configs/<name>`: validate the incoming patch against the config structure
-  (at minimum, validate the merged result before writing). Catch `ValidationError`
-  and return 400 with field-level error details.
-- The `parsed` response shape becomes predictable and self-documenting.
+In `yadc/api/controllers/api_configs.py`, after `toml.loads(content)`:
 
-### Frontend
+```python
+from yadc.core.config import parse_config
+from pydantic import ValidationError
 
-- Generate or hand-write a TypeScript type matching `Config` (the Pydantic dump shape).
-  Replace `Record<string, unknown>` on `DatasetConfigDetail.parsed` with this type.
-- Extract caption defaults from the typed `parsed` instead of using `?.` chains on `any`.
-- PATCH call body gets typed too — only valid config keys accepted.
+parsed = toml.loads(content)
+validation_error = None
+try:
+    parse_config(parsed, strict=False)
+except ValidationError as e:
+    validation_error = [
+        {"loc": err["loc"], "msg": err["msg"], "type": err["type"]}
+        for err in e.errors()
+    ]
+```
+
+Return `validation_error` in the JSON response alongside `parsed` and `content`:
+
+```python
+return jsonify({
+    "name": name,
+    "config_path": info.config_path,
+    "content": content,
+    "parsed": parsed,
+    "validation_error": validation_error,
+})
+```
+
+Why keep going on error? The raw TOML editor must still open a malformed file so the user can fix it. The win is twofold: for **well-formed** configs `parsed` is guaranteed to match the `Config` schema, and for **broken** configs the frontend gets structured error details to display inline (e.g. a banner or badge in the config editor).
+
+### 2. Backend: Strict validate on writes (`PATCH /configs/<name>`)
+
+After `deep_merge(parsed, body)`, validate the merged dict **before** serializing:
+
+```python
+merged = deep_merge(parsed, body)
+try:
+    parse_config(merged, strict=False)
+except ValidationError as e:
+    return jsonify({
+        "error": "Validation failed",
+        "details": [
+            {"loc": err["loc"], "msg": err["msg"], "type": err["type"]}
+            for err in e.errors()
+        ]
+    }), 400
+```
+
+This catches type/range errors (e.g. `max_tokens = 50`, `rounds = 0`, `image_quality = "best"`) and returns field-level details the frontend can display.
+
+### 3. Frontend: Hand-written `Config` TypeScript interface
+
+Add a typed `Config` tree in `yadc/webui/src/lib/stores/configs.ts` (or a new `configTypes.ts`) that mirrors the Pydantic dump shape. All nested objects optional to match TOML semantics:
+
+```ts
+export interface Config {
+  api?: ConfigApi;
+  prompt?: ConfigPrompt;
+  settings?: ConfigSettings;
+  reasoning?: ConfigReasoning;
+  env?: string;
+  interactive?: boolean;
+  rounds?: number;
+  caption_suffix?: string;
+  overwrite_captions?: boolean;
+}
+
+export interface ConfigApi {
+  url?: string;
+  token?: string;
+  model_name?: string;
+}
+
+export interface ConfigPrompt {
+  name?: string;
+  template?: string;
+}
+
+export interface ConfigSettings {
+  max_tokens?: number;
+  store_conversation?: boolean;
+  image_quality?: 'auto' | 'high' | 'low';
+  advanced?: ConfigSettingsAdvanced;
+}
+
+export interface ConfigSettingsAdvanced {
+  system_role?: string;
+  user_role?: string;
+  assistant_role?: string;
+  assistant_prefill?: string;
+  [key: string]: unknown; // extra="allow"
+}
+
+export interface ConfigReasoning {
+  enable?: boolean;
+  thinking_effort?: 'low' | 'medium' | 'high';
+  exclude_from_output?: boolean;
+  advanced?: ConfigReasoningAdvanced;
+}
+
+export interface ConfigReasoningAdvanced {
+  thinking_start?: string;
+  thinking_end?: string;
+}
+```
+
+Update `DatasetConfigDetail`:
+
+```ts
+export interface DatasetConfigDetail {
+  name: string;
+  config_path: string;
+  content: string;
+  parsed: Config;
+  validation_error?: Array<{ loc: string[]; msg: string; type: string }>;
+}
+```
+
+Also type the patch body:
+
+```ts
+export async function patchConfig(name: string, patch: Partial<Config>): Promise<DatasetConfigDetail> { ... }
+```
+
+> **Sync maintenance:** Add a comment on both the Pydantic `Config` class and the TS `Config` interface pointing to each other. The schema is small and stable, so hand-written types are pragmatic. If it grows much larger, we can later add `Config.model_json_schema()` → codegen.
+
+### 4. Frontend: Remove `as Record<string, unknown>` casts
+
+**`CaptionSettings.svelte`** — replace the deeply nested `as` chain:
+
+```ts
+// before
+const p = config.parsed as Record<string, unknown>;
+const settings = (p.settings as Record<string, unknown>) ?? {};
+datasetDefaults = {
+    maxTokens: (settings.max_tokens as number) ?? HARDCODED_DEFAULTS.maxTokens,
+    ...
+};
+
+// after
+datasetDefaults = {
+    maxTokens: config.parsed.settings?.max_tokens ?? HARDCODED_DEFAULTS.maxTokens,
+    imageQuality: config.parsed.settings?.image_quality ?? HARDCODED_DEFAULTS.imageQuality,
+    draftName: config.parsed.draft ?? HARDCODED_DEFAULTS.draftName,
+    ...
+};
+```
+
+**`DatasetConfig.svelte`** — same pattern:
+
+```ts
+// before
+const p = config.parsed as Record<string, unknown>;
+const settings = (p.settings as Record<string, unknown>) ?? {};
+maxTokens = loadedMaxTokens = ('max_tokens' in settings ? settings.max_tokens : null) as number | null;
+
+// after
+maxTokens = loadedMaxTokens = config.parsed.settings?.max_tokens ?? null;
+```
+
+### 5. Frontend: Surface validation errors from PATCH
+
+Update `apiErrorMessage` in `$lib/api.ts` to check for `body.details` and format field-level messages:
+
+```ts
+if (body.details && Array.isArray(body.details)) {
+    errorFromBody = body.details
+        .map((d: { loc?: string[]; msg: string }) =>
+            d.loc ? `${d.loc.join('.')}: ${d.msg}` : d.msg
+        )
+        .join('; ');
+}
+```
+
+This lets `DatasetConfig.svelte` show specific errors like  
+`settings.max_tokens: must be between 100 and 16384` in the existing `saveError` banner.
+
+Similarly, surface `validation_error` from `GET` in `DatasetConfig.svelte` with a persistent warning banner when the config has issues.
+
+### Key design choice: why not `model_dump()` defaults into `parsed`?
+
+Returning `config.model_dump(mode="json")` would break `DatasetConfig.svelte`'s nullable fields (e.g. "clear max tokens to remove it from TOML") because the frontend couldn't tell whether `512` was explicitly set or just the default. Keeping `parsed` as the **raw TOML dict** (validated but not dumped from the model) preserves that exact semantic while still giving us type safety through the TS interface.
 
 ### Status
 
-- [ ] Backend: validate GET response through `Config` model
-- [ ] Backend: validate PATCH input through `Config` model
-- [ ] Frontend: typed `Config` interface replacing `Record<string, unknown>`
+- [x] Backend: validate GET response + return `validation_error`
+- [x] Backend: validate PATCH input through `Config` model
+- [x] Frontend: typed `Config` interface replacing `Record<string, unknown>`
+- [x] Frontend: surface GET validation errors in DatasetConfig UI
+- [x] Frontend: surface PATCH validation errors in save error banner
+
+> **Note:** During implementation, discovered that `draft` was being read from `parsed.draft` in `CaptionSettings.svelte`, but `draft` is not a field on the `Config` model. The original `as Record<string, unknown>` cast masked this. It now falls back to the hardcoded default (`''`) since the field does not exist in the schema.
 
 ---
 
