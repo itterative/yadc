@@ -1,12 +1,17 @@
 You are working with yadc, a CLI tool for generating text captions for image datasets using vision-capable AI models. These captions are then exported in formats suitable for fine-tuning image generation models (e.g. sd-scripts).
 
-## Commands
+## Development Rules
 
-- **Run Python**: `uv run ...` (never bare `python`)
+1. Always refer to any relevant memories your have. This process improve your efficiency.
+2. Always give a thorough plan for your changes before performing them, unless the user asks for a change directly.
+3. Once changes are made, refer to any relevant memories you have and keep them in sync.
+
+## Commands
 
 ### Python
 
 ```sh
+uv run ... # always use uv, never bare python
 uv run ruff check yadc tests
 uv run ruff format yadc tests
 uv run basedpyright <path>  # tests/ excluded from checking
