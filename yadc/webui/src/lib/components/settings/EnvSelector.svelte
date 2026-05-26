@@ -2,13 +2,10 @@
 	import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
 	import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
 	import { envs, refreshEnvs, fetchEnv, fetchModels, type EnvInfo } from '$lib/stores/envs';
+	import { settingsDialog } from '$lib/stores/settings';
 	import { friendlyErrorMessage } from '$lib/api';
 
 	interface Props {
-		/** Increment to trigger env list reload. */
-		reload?: number;
-		/** Called when user clicks "Manage…". */
-		onmanagerequest?: () => void;
 		/** Selected environment name. */
 		env?: string;
 		/** API URL. */
@@ -20,8 +17,6 @@
 	}
 
 	let {
-		reload = 0,
-		onmanagerequest,
 		env: selectedEnv = $bindable('default'),
 		apiUrl: envUrl = $bindable(''),
 		apiToken: envToken = $bindable(''),
@@ -50,10 +45,19 @@
 		}
 	}
 
-	// Load envs on mount and when reload changes
+	// Load envs on mount
 	$effect(() => {
-		void reload;
 		loadEnvs();
+	});
+
+	// Reload envs when the settings dialog closes (env may have been edited)
+	let wasDialogOpen = $state(false);
+	$effect(() => {
+		const isOpen = $settingsDialog.open;
+		if (wasDialogOpen && !isOpen) {
+			loadEnvs();
+		}
+		wasDialogOpen = isOpen;
 	});
 
 	// Load env detail when selection changes
@@ -122,14 +126,12 @@
 <section class="space-y-3">
 	<div class="flex items-center justify-between">
 		<h3 class="section-heading">Environment</h3>
-		{#if onmanagerequest}
-			<button
-				class="cursor-pointer text-xs text-accent hover:text-accent-hover"
-				onclick={onmanagerequest}
-			>
-				Manage…
-			</button>
-		{/if}
+		<button
+			class="cursor-pointer text-xs text-accent hover:text-accent-hover"
+			onclick={() => settingsDialog.set({ open: true, tab: 'environments' })}
+		>
+			Manage…
+		</button>
 	</div>
 
 	<div>

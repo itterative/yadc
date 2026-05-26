@@ -60,11 +60,10 @@ yadc/webui/
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
           ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + drafts + PromptPreview)
         dialogs/                        # Dialog-shaped components
-          EnvManager.svelte           # Environment CRUD dialog
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
-          SettingsDialog.svelte       # App settings dialog (General tab + EnvManager launcher)
+          SettingsDialog.svelte       # App settings dialog (General tab + Environments tab with inline CRUD)
         settings/                       # Settings-domain sub-components
-          EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props, reload trigger)
+          EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props). "Manage…" link opens SettingsDialog at the Environments tab.
           TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
       icons/             # SVG icon components (Svg* prefix)
     routes/
@@ -105,7 +104,7 @@ yadc/webui/
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning". Priority: localStorage override → dataset config default → hardcoded default. |
-| `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`) for browser notification preference |
+| `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`) for browser notification preference. `settingsDialog` store tracks open state + active tab (`general`/`environments`) so external components can open the dialog at a specific tab. |
 
 ## Key Patterns
 

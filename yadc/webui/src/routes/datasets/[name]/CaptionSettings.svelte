@@ -1,5 +1,4 @@
 <script lang="ts">
-	import EnvManager from '$lib/components/dialogs/EnvManager.svelte';
 	import EnvSelector from '$lib/components/settings/EnvSelector.svelte';
 	import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
@@ -40,8 +39,6 @@
 	let envUrl = $state('');
 	let envToken = $state('');
 	let envModelName = $state('');
-	let envReloadCounter = $state(0);
-	let showEnvManager = $state(false);
 
 	// --- State: Templates ---
 
@@ -449,15 +446,6 @@
 	}
 </script>
 
-<!-- Sub-dialogs -->
-<EnvManager
-	open={showEnvManager}
-	onclose={() => {
-		showEnvManager = false;
-		envReloadCounter++;
-	}}
-/>
-
 <div class="flex h-full flex-col">
 	<!-- Scrollable content -->
 	<div class="flex-1 space-y-5 overflow-y-auto p-4">
@@ -467,8 +455,6 @@
 			bind:apiUrl={envUrl}
 			bind:apiToken={envToken}
 			bind:apiModelName={envModelName}
-			reload={envReloadCounter}
-			onmanagerequest={() => (showEnvManager = true)}
 		/>
 
 		<!-- ═══ Section: Template ═══ -->

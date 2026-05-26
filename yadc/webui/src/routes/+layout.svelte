@@ -11,6 +11,7 @@
 	import { toast } from '$lib/stores/toasts';
 	import { captioningStatus, resumptionFailed } from '$lib/stores/events';
 	import { sendNotification } from '$lib/notifications';
+	import { settingsDialog } from '$lib/stores/settings';
 
 	interface Props {
 		children: Snippet;
@@ -23,7 +24,6 @@
 	let isTemplatesPage = $derived(currentHash.startsWith('#/templates'));
 	let datasetName = $derived(isDatasetPage ? $page.params.name : null);
 
-	let showSettings = $state(false);
 	let showExport = $state(false);
 
 	$effect(() => {
@@ -99,7 +99,11 @@
 			<button class="nav-btn" onclick={() => (showExport = true)} title="Export">
 				<SvgUpload class="h-6 w-6" />
 			</button>
-			<button class="nav-btn" onclick={() => (showSettings = true)} title="Settings">
+			<button
+				class="nav-btn"
+				onclick={() => settingsDialog.update((d) => ({ ...d, open: true }))}
+				title="Settings"
+			>
 				<SvgSettings class="h-6 w-6" />
 			</button>
 		</div>
@@ -110,7 +114,10 @@
 	</main>
 </div>
 
-<SettingsDialog open={showSettings} onclose={() => (showSettings = false)} />
+<SettingsDialog
+	open={$settingsDialog.open}
+	onclose={() => settingsDialog.update((d) => ({ ...d, open: false }))}
+/>
 <ExportDialog open={showExport} onclose={() => (showExport = false)} onexported={handleExported} />
 <ToastContainer />
 

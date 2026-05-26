@@ -14,4 +14,7 @@ export const settings = storable<Settings>('yadc/settings', {
 	notifications: 'unset'
 });
 
-export const settingsOpen = writable<boolean>(false);
+export const settingsDialog = writable<{ open: boolean; tab: 'general' | 'environments' }>({
+	open: false,
+	tab: 'general'
+});
