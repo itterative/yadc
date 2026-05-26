@@ -16,7 +16,7 @@ yadc/webui/
   src/
     lib/
       index.ts             # Re-exports: storable, async helpers, TypedEventSource, API_BASE, random
-      api.ts               # API_BASE constant (empty in prod, backend URL in dev)
+      api.ts               # API_BASE constant, structured error response parsing (isAPIErrorResponse / isAPIErrorDetail / apiErrorMessage), and user-friendly HTTP status messages
       events.ts            # TypedEventSource — SSE with Zod validation
       async.ts             # deferred, sleep, synchronized, delayed helpers
       notifications.ts   # Browser Notification API helpers (permission, sending, first-use prompt)

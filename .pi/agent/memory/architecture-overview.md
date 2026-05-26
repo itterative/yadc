@@ -37,8 +37,9 @@ yadc/
     configuration.py    # @dataclass config (http, cors, sse, yadc paths, banner_enable)
     discovery.py        # discover_services() / discover_controllers() — package scanning
     events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent
-    json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
+      utils_json.py       # DataclassJSONEncoder + jsonify_dataclass + jsonify_error() (shared JSON utilities)
+      models_errors.py    # APIErrorDetail + APIErrorResponse dataclasses, Pydantic ValidationError conversion
       __init__.py          # @controller decorator (auto-discovery marker + @inject)
       blueprints.py     # ApiBlueprint, AppBlueprint (@singleton injector classes)
       app_frontend.py   # @controller — serves SvelteKit build
