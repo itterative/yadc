@@ -9,6 +9,7 @@ from yadc.cmd import envs as cmd_envs
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
+from .utils_json import jsonify_error
 
 
 @controller
@@ -65,7 +66,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
     def delete_env(name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete an environment."""
         if name == "default":
-            return jsonify({"error": "Cannot delete the default environment"}), 400
+            return jsonify_error("Cannot delete the default environment", status=400)
 
         cmd_envs.delete_env(env=name)
         _logger.info("Environment '%s' deleted.", name)
@@ -84,7 +85,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
 
         api_url = settings.get("api_url")
         if not api_url or not api_url.value:
-            return jsonify({"error": "Environment has no API URL configured"}), 400
+            return jsonify_error("Environment has no API URL configured", status=400)
 
         api_token = settings.get("api_token")
         api_model_name = settings.get("api_model_name")
@@ -98,14 +99,14 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
             resp = http_requests.get(url, headers=headers, timeout=10)
             resp.raise_for_status()
         except http_requests.ConnectionError:
-            return jsonify({"error": f"Could not connect to {url}"}), 502
+            return jsonify_error(f"Could not connect to {url}", status=502)
         except http_requests.Timeout:
-            return jsonify({"error": f"Connection to {url} timed out"}), 504
+            return jsonify_error(f"Connection to {url} timed out", status=504)
         except http_requests.HTTPError as e:
-            return jsonify({"error": f"API returned {e.response.status_code}"}), 502
+            return jsonify_error(f"API returned {e.response.status_code}", status=502)
         except Exception as e:
             _logger.warning("Failed to fetch models from '%s': %s", url, e)
-            return jsonify({"error": str(e)}), 502
+            return jsonify_error(str(e), status=502)
 
         data = resp.json()
 
@@ -134,7 +135,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
 
         if not models:
             _logger.warning("Could not parse models from response: %s", type(data).__name__)
-            return jsonify({"error": "Could not parse model list from API response"}), 502
+            return jsonify_error("Could not parse model list from API response", status=502)
 
         models.sort()
 

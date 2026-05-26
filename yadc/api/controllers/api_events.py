@@ -5,11 +5,11 @@ from typing import cast
 from flask import Response, request, stream_with_context
 
 from ..configuration import Configuration
-from ..json_utils import DataclassJSONEncoder
 from ..modules.logging_factory import LoggingFactory
 from ..modules.sse_events import SSEEvents
 from . import controller
 from .blueprints import ApiBlueprint
+from .utils_json import DataclassJSONEncoder
 
 SSE_RETRY_MS = 5000
 

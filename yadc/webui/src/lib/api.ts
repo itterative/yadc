@@ -5,6 +5,35 @@
  */
 export const API_BASE = '';
 
+interface APIErrorDetail {
+	loc?: string[];
+	msg: string;
+	type?: string;
+}
+
+interface APIErrorResponse {
+	error: string;
+	details?: APIErrorDetail[];
+}
+
+function isAPIErrorDetail(value: unknown): value is APIErrorDetail {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'msg' in value &&
+		typeof (value as Record<string, unknown>).msg === 'string'
+	);
+}
+
+function isAPIErrorResponse(value: unknown): value is APIErrorResponse {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'error' in value &&
+		typeof (value as Record<string, unknown>).error === 'string'
+	);
+}
+
 /** Extract a human-readable error message from a failed API response.
  *
  * Technical details (status, URL, response body) are logged to the console
@@ -18,26 +47,26 @@ export async function apiErrorMessage(res: Response, context?: string): Promise<
 		/* body already consumed or unreadable */
 	}
 
-	let body: Record<string, unknown> = {};
+	let parsedBody: unknown;
 	let errorFromBody: string | undefined;
 	try {
-		body = JSON.parse(bodyText);
-		if (body.error) {
-			if (typeof body.error === 'string') {
-				errorFromBody = body.error;
-			} else if (Array.isArray(body.error)) {
-				errorFromBody = body.error.map((e: { msg: string }) => e.msg).join(', ');
-			}
-		}
-		if (!errorFromBody && body.details && Array.isArray(body.details)) {
-			errorFromBody = body.details
-				.map((d: { loc?: string[]; msg: string }) =>
-					d.loc ? `${d.loc.join('.')}: ${d.msg}` : d.msg
-				)
-				.join('; ');
-		}
+		parsedBody = JSON.parse(bodyText);
 	} catch {
 		/* not JSON */
+	}
+
+	if (isAPIErrorResponse(parsedBody)) {
+		if (parsedBody.details && parsedBody.details.length > 0) {
+			const detailMessages = parsedBody.details
+				.filter(isAPIErrorDetail)
+				.map((d) => (d.loc && d.loc.length ? `${d.loc.join('.')}: ${d.msg}` : d.msg));
+			if (detailMessages.length > 0) {
+				errorFromBody = detailMessages.join('; ');
+			}
+		}
+		if (!errorFromBody) {
+			errorFromBody = parsedBody.error;
+		}
 	}
 
 	console.error(

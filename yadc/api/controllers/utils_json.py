@@ -1,10 +1,12 @@
-"""Shared JSON utilities for the yadc API."""
+"""Shared JSON utilities for the yadc API controllers."""
 
 import dataclasses
 import json
 from typing import Any, override
 
 from flask import Response
+
+from .models_errors import APIErrorDetail, APIErrorResponse
 
 
 class DataclassJSONEncoder(json.JSONEncoder):
@@ -20,3 +22,8 @@ class DataclassJSONEncoder(json.JSONEncoder):
 def jsonify_dataclass(obj: Any) -> Response:
     """JSON-serialize a dataclass or list of dataclasses as a Flask Response."""
     return Response(json.dumps(obj, cls=DataclassJSONEncoder), mimetype="application/json")
+
+
+def jsonify_error(message: str, details: list[APIErrorDetail] | None = None, status: int = 400) -> tuple[Response, int]:
+    """Build a consistent JSON error response with an HTTP status code."""
+    return jsonify_dataclass(APIErrorResponse(error=message, details=details)), status

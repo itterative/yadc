@@ -11,6 +11,8 @@ from yadc.utils import deep_merge
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
+from .models_errors import APIErrorDetail
+from .utils_json import jsonify_error
 
 
 @controller
@@ -28,15 +30,15 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         """Return the raw TOML content of a dataset config."""
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
-            return jsonify({"error": f"Dataset '{name}' not found"}), 404
+            return jsonify_error(f"Dataset '{name}' not found", status=404)
 
         try:
             with open(info.config_path) as f:
                 content = f.read()
         except FileNotFoundError:
-            return jsonify({"error": f"Config file not found for dataset '{name}'"}), 404
+            return jsonify_error(f"Config file not found for dataset '{name}'", status=404)
         except PermissionError:
-            return jsonify({"error": "Permission denied"}), 403
+            return jsonify_error("Permission denied", status=403)
 
         # Parse to get structured fields alongside the raw text
         try:
@@ -70,27 +72,27 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         """
         body = request.get_json(silent=True)
         if body is None or "content" not in body:
-            return jsonify({"error": "Request body must include 'content'"}), 400
+            return jsonify_error("Request body must include 'content'", status=400)
 
         content = body["content"]
         if not isinstance(content, str):
-            return jsonify({"error": "'content' must be a string"}), 400
+            return jsonify_error("'content' must be a string", status=400)
 
         # Validate it parses as TOML
         try:
             toml.loads(content)
         except Exception as e:
-            return jsonify({"error": f"Invalid TOML: {e}"}), 400
+            return jsonify_error(f"Invalid TOML: {e}", status=400)
 
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
-            return jsonify({"error": f"Dataset '{name}' not found"}), 404
+            return jsonify_error(f"Dataset '{name}' not found", status=404)
 
         try:
             with open(info.config_path, "w") as f:
                 f.write(content)
         except PermissionError:
-            return jsonify({"error": "Permission denied"}), 403
+            return jsonify_error("Permission denied", status=403)
 
         _logger.info("Config for dataset '%s' updated.", name)
 
@@ -116,25 +118,25 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
 
         body = request.get_json(silent=True)
         if body is None or not isinstance(body, dict):
-            return jsonify({"error": "Request body must be a JSON object"}), 400
+            return jsonify_error("Request body must be a JSON object", status=400)
 
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
-            return jsonify({"error": f"Dataset '{name}' not found"}), 404
+            return jsonify_error(f"Dataset '{name}' not found", status=404)
 
         # Read current config
         try:
             with open(info.config_path) as f:
                 content = f.read()
         except FileNotFoundError:
-            return jsonify({"error": f"Config file not found for dataset '{name}'"}), 404
+            return jsonify_error(f"Config file not found for dataset '{name}'", status=404)
         except PermissionError:
-            return jsonify({"error": "Permission denied"}), 403
+            return jsonify_error("Permission denied", status=403)
 
         try:
             parsed = toml.loads(content)
         except Exception as e:
-            return jsonify({"error": f"Existing config is invalid TOML: {e}"}), 500
+            return jsonify_error(f"Existing config is invalid TOML: {e}", status=500)
 
         # Deep-merge patch into existing config
         merged = deep_merge(parsed, body)
@@ -143,19 +145,15 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         try:
             parse_config(merged, strict=False)
         except ValidationError as e:
-            return jsonify(
-                {
-                    "error": "Validation failed",
-                    "details": [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()],
-                }
-            ), 400
+            details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
+            return jsonify_error("Validation failed", details=details, status=400)
 
         # Serialize and validate round-trip
         try:
             new_content = toml.dumps(merged)
             toml.loads(new_content)  # round-trip validation
         except Exception as e:
-            return jsonify({"error": f"Failed to serialize config: {e}"}), 400
+            return jsonify_error(f"Failed to serialize config: {e}", status=400)
 
         if dry_run:
             return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": merged})
@@ -164,7 +162,7 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
             with open(info.config_path, "w") as f:
                 f.write(new_content)
         except PermissionError:
-            return jsonify({"error": "Permission denied"}), 403
+            return jsonify_error("Permission denied", status=403)
 
         _logger.info("Config for dataset '%s' patched (fields: %s).", name, ", ".join(body.keys()))
 
@@ -177,7 +175,7 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
     def delete_config(name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a dataset config and unregister the dataset."""
         if not datasets.unregister_dataset(name):
-            return jsonify({"error": f"Dataset '{name}' not found"}), 404
+            return jsonify_error(f"Dataset '{name}' not found", status=404)
 
         _logger.info("Config for dataset '%s' deleted.", name)
         return jsonify({"status": "ok"})

@@ -13,6 +13,7 @@ from yadc.core.exporters import get_backend, list_backends, run_export
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
+from .utils_json import jsonify_error
 
 
 @controller
@@ -54,18 +55,18 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         # --- Required fields ---
         dataset_name = body.get("dataset")
         if not dataset_name:
-            return jsonify({"error": "'dataset' is required"}), 400
+            return jsonify_error("'dataset' is required", status=400)
 
         dataset_info = datasets.get_dataset(dataset_name)
         if dataset_info is None or dataset_info.config_path is None:
-            return jsonify({"error": f"Dataset '{dataset_name}' not found"}), 404
+            return jsonify_error(f"Dataset '{dataset_name}' not found", status=404)
 
         # --- Resolve backend & format ---
         backend_name = body.get("backend", "sd-scripts")
         try:
             backend_desc = get_backend(backend_name)
         except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify_error(str(e), status=400)
 
         fmt = body.get("format")
         if fmt is None:
@@ -77,9 +78,9 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                 fmt = "jsonl"
 
         if fmt not in backend_desc.formats:
-            return (
-                jsonify({"error": f"Backend '{backend_name}' does not support format '{fmt}'. Available: {', '.join(backend_desc.formats)}"}),
-                400,
+            return jsonify_error(
+                f"Backend '{backend_name}' does not support format '{fmt}'. Available: {', '.join(backend_desc.formats)}",
+                status=400,
             )
 
         # --- Source & drafts ---
@@ -98,18 +99,18 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
 
         config_path = pathlib.Path(dataset_info.config_path)
         if not config_path.exists():
-            return jsonify({"error": f"Config file not found: {config_path}"}), 404
+            return jsonify_error(f"Config file not found: {config_path}", status=404)
 
         try:
             with open(config_path) as f:
                 raw = toml_lib.load(f)
             config = parse_config(raw, strict=False)
         except Exception as e:
-            return jsonify({"error": f"Invalid dataset config: {e}"}), 400
+            return jsonify_error(f"Invalid dataset config: {e}", status=400)
 
         images = resolve_dataset(config.dataset, config.caption_suffix)
         if not images:
-            return jsonify({"error": "No images found in dataset"}), 400
+            return jsonify_error("No images found in dataset", status=400)
 
         # --- Output path ---
         output_str: str | None = body.get("output")
@@ -119,7 +120,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             output_path = pathlib.Path(output_str)
             if fmt == "txt":
                 if not output_path.is_dir():
-                    return jsonify({"error": "Output must be an existing directory for txt format"}), 400
+                    return jsonify_error("Output must be an existing directory for txt format", status=400)
             else:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
         else:
@@ -147,10 +148,10 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                 caption_extension=caption_extension,
             )
         except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify_error(str(e), status=400)
         except Exception as e:
             _logger.exception("Export failed for dataset '%s': %s", dataset_name, e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify_error(str(e), status=500)
 
         _logger.info(
             "Exported %d images from '%s' (backend=%s, format=%s, source=%s)",

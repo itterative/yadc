@@ -5,11 +5,11 @@ from flask import jsonify, request, send_file
 from PIL import Image
 
 from ..configuration import Configuration
-from ..json_utils import jsonify_dataclass
 from ..modules.logging_factory import LoggingFactory
 from ..services.datasets import DatasetService
 from . import controller
 from .blueprints import ApiBlueprint
+from .utils_json import jsonify_dataclass, jsonify_error
 
 
 def _thumbnail_cache_path(cache_dir: Path, image_path: Path, size: int) -> Path:
@@ -50,7 +50,7 @@ def api_datasets(
         """
         body = request.get_json(silent=True)
         if body is None or "name" not in body:
-            return jsonify({"error": "Request body must include 'name'"}), 400
+            return jsonify_error("Request body must include 'name'", status=400)
 
         name = body["name"]
 
@@ -60,11 +60,11 @@ def api_datasets(
             elif "image_paths" in body:
                 result = datasets.create_dataset(name, body["image_paths"])
             else:
-                return jsonify({"error": "Provide 'toml_path' to import or 'image_paths' to create"}), 400
+                return jsonify_error("Provide 'toml_path' to import or 'image_paths' to create", status=400)
 
             return jsonify_dataclass(result), 201
         except Exception as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify_error(str(e), status=400)
 
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]
@@ -77,7 +77,7 @@ def api_datasets(
         """Unregister a dataset and delete its state dir."""
         found = datasets.unregister_dataset(name)
         if not found:
-            return jsonify({"error": "Dataset not found"}), 404
+            return jsonify_error("Dataset not found", status=404)
         return jsonify({"status": "ok"})
 
     @app.post("/datasets/<name>/rescan")
@@ -85,7 +85,7 @@ def api_datasets(
         """Force a rescan of a dataset's images."""
         found = datasets.rescan_dataset(name)
         if not found:
-            return jsonify({"error": "Dataset not found"}), 404
+            return jsonify_error("Dataset not found", status=404)
         result = datasets.get_dataset(name)
         return jsonify_dataclass(result)
 
@@ -110,7 +110,7 @@ def api_datasets(
         """Serve the original image file."""
         image_path = datasets.get_image_path(name, image_id)
         if image_path is None:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
         return send_file(str(image_path))
 
     @app.get("/datasets/<name>/images/<int:image_id>/thumbnail")
@@ -118,7 +118,7 @@ def api_datasets(
         """Serve a cached thumbnail, generating it on first request."""
         image_path = datasets.get_image_path(name, image_id)
         if image_path is None:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
 
         size = request.args.get("size", 256, type=int)
         size = max(32, min(size, 1024))
@@ -139,7 +139,7 @@ def api_datasets(
         """Get caption text, TOML extras, and drafts for an image."""
         result = datasets.get_caption(name, image_id)
         if result is None:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
         return jsonify(result)
 
     @app.put("/datasets/<name>/images/<int:image_id>/caption")
@@ -147,11 +147,11 @@ def api_datasets(
         """Update the caption text for an image."""
         body = request.get_json(silent=True)
         if body is None or "caption" not in body:
-            return jsonify({"error": "Request body must include 'caption'"}), 400
+            return jsonify_error("Request body must include 'caption'", status=400)
 
         ok = datasets.update_caption(name, image_id, body["caption"])
         if not ok:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
 
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
@@ -159,15 +159,15 @@ def api_datasets(
         """Update the TOML extras sidecar for an image."""
         body = request.get_json(silent=True)
         if body is None or "extras_raw" not in body:
-            return jsonify({"error": "Request body must include 'extras_raw'"}), 400
+            return jsonify_error("Request body must include 'extras_raw'", status=400)
 
         try:
             ok = datasets.update_extras(name, image_id, body["extras_raw"])
         except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify_error(str(e), status=400)
 
         if not ok:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
 
     @app.post("/datasets/<name>/images/<int:image_id>/preview-prompt")
@@ -198,14 +198,14 @@ def api_datasets(
                     continue
 
             if not template:
-                return jsonify({"error": f"Template '{template_name}' not found"}), 404
+                return jsonify_error(f"Template '{template_name}' not found", status=404)
 
         try:
             result = datasets.preview_prompt(name, image_id, template)
         except Exception as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify_error(str(e), status=400)
 
         if result is None:
-            return jsonify({"error": "Image not found"}), 404
+            return jsonify_error("Image not found", status=404)
 
         return jsonify(result)

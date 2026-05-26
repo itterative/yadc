@@ -3,11 +3,12 @@ from typing import Any
 import pydantic
 from flask import jsonify, request
 
-from ..json_utils import jsonify_dataclass
 from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService, CaptionJobOptions, JobInfo
 from . import controller
 from .blueprints import ApiBlueprint
+from .models_errors import APIErrorDetail
+from .utils_json import jsonify_dataclass, jsonify_error
 
 
 @controller
@@ -28,12 +29,13 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         try:
             options = CaptionJobOptions.model_validate(raw)
         except pydantic.ValidationError as e:
-            return jsonify({"error": e.errors()}), 400
+            details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
+            return jsonify_error("Validation failed", details=details, status=400)
 
         try:
             info: JobInfo = captioning.start_job(name, options)
         except ValueError as e:
-            return jsonify({"error": str(e)}), 409
+            return jsonify_error(str(e), status=409)
 
         return jsonify_dataclass(info), 202
 
@@ -42,7 +44,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         """Stop a running captioning run."""
         stopped = captioning.stop_job(name)
         if not stopped:
-            return jsonify({"error": "No running captioning job for this dataset"}), 404
+            return jsonify_error("No running captioning job for this dataset", status=404)
         return jsonify({"status": "stopping"})
 
     @app.get("/datasets/<name>/caption")
@@ -63,11 +65,12 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         try:
             options = CaptionJobOptions.model_validate(raw)
         except pydantic.ValidationError as e:
-            return jsonify({"error": e.errors()}), 400
+            details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
+            return jsonify_error("Validation failed", details=details, status=400)
 
         try:
             result = captioning.caption_single(name, image_id, options)
         except ValueError as e:
-            return jsonify({"error": str(e)}), 409
+            return jsonify_error(str(e), status=409)
 
         return jsonify(result)
