@@ -18,7 +18,7 @@
 		setCaptioningStatus
 	} from '$lib/stores/events';
 	import { toast } from '$lib/stores/toasts';
-	import { API_BASE, friendlyErrorMessage } from '$lib/api';
+	import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
 	import {
 		fetchDatasets,
 		fetchImages,
@@ -80,7 +80,6 @@
 				{ method: 'DELETE' }
 			);
 			if (!res.ok) {
-				const { apiErrorMessage } = await import('$lib/api');
 				toast.error(`Failed to stop captioning: ${await apiErrorMessage(res)}`);
 			}
 		} catch {
