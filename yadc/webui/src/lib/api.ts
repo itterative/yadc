@@ -99,18 +99,19 @@ export function friendlyErrorMessage(error: unknown, fallback: string): string {
 	return fallback;
 }
 
+const messages: Record<number, string> = {
+	400: "That request wasn't valid. Please check your input and try again.",
+	401: 'You need to sign in to do that.',
+	403: "You don't have permission to do that.",
+	404: "That doesn't exist.",
+	409: 'That conflicts with something already there.',
+	422: "That input isn't valid. Please check and try again.",
+	500: 'Something went wrong on the server.',
+	502: "Can't connect to the backend. Is the server running?",
+	503: 'The server is temporarily unavailable. Please try again later.',
+	504: 'The server took too long to respond. Please try again later.'
+};
+
 function userFriendlyMessage(status: number): string {
-	const messages: Record<number, string> = {
-		400: "That request wasn't valid. Please check your input and try again.",
-		401: 'You need to sign in to do that.',
-		403: "You don't have permission to do that.",
-		404: "That doesn't exist.",
-		409: 'That conflicts with something already there.',
-		422: "That input isn't valid. Please check and try again.",
-		500: 'Something went wrong on the server.',
-		502: "Can't connect to the backend. Is the server running?",
-		503: 'The server is temporarily unavailable. Please try again later.',
-		504: 'The server took too long to respond. Please try again later.'
-	};
 	return messages[status] || 'Something went wrong. Please try again.';
 }
