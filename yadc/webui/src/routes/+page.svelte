@@ -8,6 +8,7 @@
         type DatasetInfo
     } from '$lib/stores/datasetImages';
     import { captioningStatus, type CaptioningStatus } from '$lib/stores/events';
+    import Topbar from '$lib/components/ui/Topbar.svelte';
     import AddDatasetDialog from './AddDatasetDialog.svelte';
     import EditDatasetDialog from './EditDatasetDialog.svelte';
     import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
@@ -72,6 +73,20 @@
         }
     }
 </script>
+
+<Topbar>
+    <div class="min-w-0 flex-1">
+        <h1 class="text-xl font-bold text-white">Datasets</h1>
+
+        <p class="mt-0.5 text-sm text-gray-400">
+            {#if loading}
+                ...
+            {:else}
+                {datasets.length} dataset{datasets.length === 1 ? '' : 's'}
+            {/if}
+        </p>
+    </div>
+</Topbar>
 
 {#if loading}
     <p class="text-muted">Loading datasets...</p>

@@ -7,6 +7,7 @@
     import SidePanel from './SidePanel.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import Topbar from '$lib/components/ui/Topbar.svelte';
     import type { CaptionOptions } from '$lib/stores/captionOptions';
     import {
         captioningStatus,
@@ -447,51 +448,50 @@
     <title>{datasetName} — yadc</title>
 </svelte:head>
 
-<div class="flex h-full flex-col gap-4">
-    <!-- Header -->
-    <div class="flex shrink-0 items-center gap-4">
-        <a href="#/" class="-ml-2 p-2 text-gray-400 transition-colors hover:text-white">
-            <SvgChevronLeft class="h-6 w-6" />
-        </a>
-        <div class="min-w-0 flex-1">
-            <h1 class="text-xl font-bold text-white">{datasetName}</h1>
-            <div class="mt-0.5 flex min-h-7 w-full items-center">
-                {#if isBatchCaptioning}
-                    <div class="flex w-full items-center gap-2">
-                        {#if isStopping}
-                            <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-yellow-400" />
-                            <span class="text-sm text-yellow-300">Stopping…</span>
-                        {:else}
-                            <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-                            <span class="text-sm text-gray-400">
-                                Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
-                            </span>
-                            <div class="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-bg">
-                                <div
-                                    class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
-                                    style:width="{captionPct}%"
-                                ></div>
-                            </div>
-                            <span class="text-xs text-gray-500">{captionPct}%</span>
-                            <button
-                                class="cursor-pointer rounded-md border border-error/30 bg-error/20 px-2 py-0.5 text-xs text-error transition-colors hover:bg-error/30 disabled:opacity-50"
-                                onclick={handleStopCaptioning}
-                            >
-                                Stop
-                            </button>
-                        {/if}
-                    </div>
-                {:else if currentDataset}
-                    <p class="text-sm text-gray-400">
-                        {currentDataset.image_count} images · {currentDataset.has_caption} captioned ·
-                        {currentDataset.has_toml}
-                        with TOML
-                    </p>
-                {/if}
-            </div>
+<Topbar>
+    <a href="#/" class="hidden md:flex -ml-2 p-2 text-gray-400 transition-colors hover:text-white">
+        <SvgChevronLeft class="h-6 w-6" />
+    </a>
+    <div class="min-w-0 flex-1">
+        <h1 class="text-xl font-bold text-white">{datasetName}</h1>
+        <div class="mt-0.5 flex min-h-7 w-full items-center">
+            {#if isBatchCaptioning}
+                <div class="flex w-full items-center gap-2">
+                    {#if isStopping}
+                        <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-yellow-400" />
+                        <span class="text-sm text-yellow-300">Stopping…</span>
+                    {:else}
+                        <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                        <span class="text-sm text-gray-400">
+                            Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
+                        </span>
+                        <div class="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-bg">
+                            <div
+                                class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
+                                style:width="{captionPct}%"
+                            ></div>
+                        </div>
+                        <span class="text-xs text-gray-500">{captionPct}%</span>
+                        <button
+                            class="cursor-pointer rounded-md border border-error/30 bg-error/20 px-2 py-0.5 text-xs text-error transition-colors hover:bg-error/30 disabled:opacity-50"
+                            onclick={handleStopCaptioning}
+                        >
+                            Stop
+                        </button>
+                    {/if}
+                </div>
+            {:else if currentDataset}
+                <p class="text-sm text-gray-400">
+                    {currentDataset.image_count} images · {currentDataset.has_caption} captioned ·
+                    {currentDataset.has_toml}
+                    with TOML
+                </p>
+            {/if}
         </div>
     </div>
+</Topbar>
 
+<div class="flex h-full flex-col gap-4">
     <!-- Filesystem change notification -->
     {#if hasPendingChanges}
         <div

@@ -14,6 +14,7 @@
     import SvgFile from '$lib/icons/SvgFile.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import { friendlyErrorMessage } from '$lib/api';
+    import Topbar from '$lib/components/ui/Topbar.svelte';
 
     let loading = $state(true);
     let error = $state('');
@@ -67,6 +68,20 @@
         editingTemplate = { name, source: 'user' };
     }
 </script>
+
+<Topbar>
+    <div class="min-w-0 flex-1">
+        <h1 class="text-xl font-bold text-white">Templates</h1>
+
+        <p class="mt-0.5 text-sm text-gray-400">
+            {#if loading}
+                ...
+            {:else}
+                {$templates.items.length} template{$templates.items.length === 1 ? '' : 's'}
+            {/if}
+        </p>
+    </div>
+</Topbar>
 
 {#if loading}
     <p class="text-muted">Loading templates...</p>
