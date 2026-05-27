@@ -7,29 +7,7 @@ description: When a user query involves tests, test structure, or how to run tes
 
 ## Test Structure
 
-```
-tests/
-  conftest.py                    # shared fixtures
-  test_cli_draft.py              # draft CLI tests
-
-  captioners/api/
-    conftest.py                  # API test fixtures
-    test_gemini.py
-    test_koboldcpp.py
-    test_llamacpp.py
-    test_openai.py
-    test_openrouter.py
-
-  cli/
-    conftest.py                  # CLI test fixtures
-    test_cli_local.py            # local API tests
-    test_cli_official.py         # official API tests (OpenAI, Gemini, etc.)
-
-  core/
-    test_config.py               # Config parsing (v1/v2)
-    test_dataset_resolver.py     # Dataset resolution, extras merging
-    test_export.py               # Export functionality
-```
+Tests live under `tests/` and mirror `yadc/` structure (`api/`, `captioners/api/`, `cli/`, `core/`). Each subdirectory may have a `conftest.py` for shared fixtures. Individual test files follow the `test_*.py` naming convention.
 
 ## Test Dependencies
 
