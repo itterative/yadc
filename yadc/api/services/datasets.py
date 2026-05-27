@@ -79,6 +79,15 @@ class ImageInfo:
 
 
 @dataclass
+class HistoryEntry:
+    """A single history snapshot for an image."""
+
+    index: int
+    caption: str = ""
+    extras: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ImagePage:
     """A paginated page of images."""
 
@@ -410,8 +419,44 @@ class DatasetService(Service):
             "template_context_toml": toml.dumps(template_context),
         }
 
-    def update_caption(self, dataset_name: str, image_id: int, caption: str) -> bool:
-        """Update the caption file for an image. Returns True on success."""
+    def get_history(self, dataset_name: str, image_id: int, limit: int = 3) -> list[HistoryEntry] | None:
+        """Read history entries for an image, most recent first.
+
+        Returns None if image not found, empty list if no history.
+        """
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return None
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return None
+
+        dataset_image = DatasetImage(path=str(image_path))
+        all_entries = dataset_image.read_history()
+
+        # Take the last `limit` entries and reverse (most recent first)
+        recent = all_entries[-limit:] if len(all_entries) > limit else all_entries
+        recent.reverse()
+
+        result: list[HistoryEntry] = []
+        for i, entry in enumerate(recent):
+            extras = dict(entry.__pydantic_extra__ or {})
+            result.append(HistoryEntry(index=len(recent) - 1 - i, caption=entry.caption, extras=extras))
+
+        # Re-index using absolute positions from the end of the full list
+        total = len(all_entries)
+        for i, entry in enumerate(result):
+            entry.index = total - 1 - i
+
+        return result
+
+    def restore_history(self, dataset_name: str, image_id: int, history_index: int) -> bool:
+        """Restore caption + extras from a history entry.
+
+        Saves the current state to history before restoring.
+        Returns True on success.
+        """
         info = self.get_image(dataset_name, image_id)
         if info is None:
             return False
@@ -421,6 +466,73 @@ class DatasetService(Service):
             return False
 
         dataset_image = DatasetImage(path=str(image_path))
+
+        # Load current extras into the model so save_history captures them
+        if dataset_image.toml_path.exists():
+            try:
+                with open(dataset_image.toml_path) as f:
+                    extras = toml.loads(f.read())
+                if extras:
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+            except Exception:
+                pass
+
+        # Read current caption
+        dataset_image.caption = dataset_image.read_caption()
+
+        # Save current state to history before restoring
+        dataset_image.save_history()
+
+        # Read all history and find the target entry
+        all_entries = dataset_image.read_history()
+        if history_index < 0 or history_index >= len(all_entries):
+            return False
+
+        target = all_entries[history_index]
+
+        # Restore caption
+        dataset_image.update_caption(target.caption)
+
+        # Restore extras
+        target_extras = dict(target.__pydantic_extra__ or {})
+        if target_extras:
+            dataset_image.toml_path.write_text(toml.dumps(target_extras))
+            self._update_image_index(image_id, has_toml=True)
+        else:
+            # Clear extras if the history entry had none
+            if dataset_image.toml_path.exists():
+                dataset_image.toml_path.write_text("")
+            self._update_image_index(image_id, has_toml=False)
+
+        self._update_image_index(image_id, has_caption=True)
+        return True
+
+    def update_caption(self, dataset_name: str, image_id: int, caption: str) -> bool:
+        """Update the caption file for an image. Saves history first. Returns True on success."""
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return False
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return False
+
+        dataset_image = DatasetImage(path=str(image_path))
+
+        # Load current state and save to history before overwriting
+        if dataset_image.toml_path.exists():
+            try:
+                with open(dataset_image.toml_path) as f:
+                    extras = toml.loads(f.read())
+                if extras:
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+            except Exception:
+                pass
+        dataset_image.caption = dataset_image.read_caption()
+        dataset_image.save_history()
+
+        # Now apply the update
+        dataset_image = DatasetImage(path=str(image_path))
         dataset_image.update_caption(caption)
 
         # Update the index
@@ -428,7 +540,7 @@ class DatasetService(Service):
         return True
 
     def update_extras(self, dataset_name: str, image_id: int, extras_raw: str) -> bool:
-        """Update the TOML extras sidecar for an image. Returns True on success."""
+        """Update the TOML extras sidecar for an image. Saves history first. Returns True on success."""
         info = self.get_image(dataset_name, image_id)
         if info is None:
             return False
@@ -444,6 +556,21 @@ class DatasetService(Service):
             raise ValueError(f"Invalid TOML: {e}") from e
 
         dataset_image = DatasetImage(path=str(image_path))
+
+        # Load current state and save to history before overwriting
+        current_extras: dict[str, Any] = {}
+        if dataset_image.toml_path.exists():
+            try:
+                with open(dataset_image.toml_path) as f:
+                    current_extras = toml.loads(f.read())
+                if current_extras:
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **current_extras})
+            except Exception:
+                pass
+        dataset_image.caption = dataset_image.read_caption()
+        dataset_image.save_history()
+
+        # Now write the new extras
         dataset_image.toml_path.write_text(extras_raw)
 
         self._update_image_index(image_id, has_toml=bool(extras_raw.strip()))

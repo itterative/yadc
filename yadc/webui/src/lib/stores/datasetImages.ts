@@ -38,6 +38,12 @@ export interface CaptionData {
     drafts: Record<string, string>;
 }
 
+export interface HistoryEntry {
+    index: number;
+    caption: string;
+    extras: Record<string, unknown>;
+}
+
 // --- API helpers ---
 
 export async function fetchDatasets(): Promise<DatasetInfo[]> {
@@ -127,6 +133,30 @@ export async function updateCaption(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ caption })
         }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+}
+
+export async function fetchHistory(datasetName: string, imageId: number): Promise<HistoryEntry[]> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history`
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+export async function restoreHistory(
+    datasetName: string,
+    imageId: number,
+    historyIndex: number
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${historyIndex}/restore`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' } }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));

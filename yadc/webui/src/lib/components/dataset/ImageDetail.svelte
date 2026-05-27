@@ -4,10 +4,13 @@
     import PromptPreview from '$lib/components/ui/PromptPreview.svelte';
     import {
         fetchCaption,
+        fetchHistory,
         mediaUrl,
+        restoreHistory,
         updateCaption,
         updateExtras,
         type CaptionData,
+        type HistoryEntry,
         type ImageInfo
     } from '$lib/stores/datasetImages';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
@@ -42,6 +45,12 @@
     // Track previous isCaptioning to detect completion and reload caption
     let wasCaptioning = $state(false);
 
+    // History state
+    let historyEntries: HistoryEntry[] = $state([]);
+    let isHistoryExpanded = $state(false);
+    let isLoadingHistory = $state(false);
+    let isRestoring = $state(false);
+
     // TOML extras editing state
     let isEditingExtras = $state(false);
     let editExtrasRaw = $state('');
@@ -55,6 +64,8 @@
             captionError = null;
             isEditing = false;
             isEditingExtras = false;
+            isHistoryExpanded = false;
+            historyEntries = [];
             return;
         }
 
@@ -64,6 +75,8 @@
         captionData = null;
         isEditing = false;
         isEditingExtras = false;
+        isHistoryExpanded = false;
+        historyEntries = [];
 
         (async () => {
             try {
@@ -102,6 +115,14 @@
             captionData = { ...captionData!, caption: editCaption };
             isEditing = false;
             oncaptionupdated?.(item.id, editCaption);
+            // Refresh history since save creates a new entry
+            if (isHistoryExpanded) {
+                try {
+                    historyEntries = await fetchHistory(datasetName, item.id);
+                } catch {
+                    /* best effort */
+                }
+            }
         } catch (e) {
             captionError = friendlyErrorMessage(e, 'Failed to save caption');
         } finally {
@@ -161,6 +182,14 @@
             await updateExtras(datasetName, item.id, editExtrasRaw);
             captionData = { ...captionData!, extras_raw: editExtrasRaw };
             isEditingExtras = false;
+            // Refresh history since save creates a new entry
+            if (isHistoryExpanded) {
+                try {
+                    historyEntries = await fetchHistory(datasetName, item.id);
+                } catch {
+                    /* best effort */
+                }
+            }
         } catch (e) {
             captionError = friendlyErrorMessage(e, 'Failed to save extras');
         } finally {
@@ -311,6 +340,112 @@
                     </div>
                 {/if}
             </div>
+
+            <!-- History -->
+            {#if captionData}
+                {@const hasHistoryEntries = historyEntries.length > 0}
+                <div>
+                    <button
+                        class="flex w-full cursor-pointer items-center justify-between"
+                        onclick={async () => {
+                            isHistoryExpanded = !isHistoryExpanded;
+                            if (isHistoryExpanded && historyEntries.length === 0 && item !== null) {
+                                isLoadingHistory = true;
+                                try {
+                                    historyEntries = await fetchHistory(datasetName, item.id);
+                                } catch (e) {
+                                    captionError = friendlyErrorMessage(
+                                        e,
+                                        'Failed to load history'
+                                    );
+                                } finally {
+                                    isLoadingHistory = false;
+                                }
+                            }
+                        }}
+                    >
+                        <h3 class="text-sm font-medium text-gray-300">History</h3>
+                        <span class="text-xs text-gray-500"
+                            >{isHistoryExpanded ? '▲' : '▼'}{#if hasHistoryEntries}
+                                ({historyEntries.length})
+                            {/if}</span
+                        >
+                    </button>
+                    {#if isHistoryExpanded}
+                        {#if isLoadingHistory}
+                            <SpinnerBlock size="h-4 w-4" label="Loading history..." />
+                        {:else if hasHistoryEntries}
+                            <div class="mt-2 space-y-3">
+                                {#each historyEntries as entry (entry.index)}
+                                    {@const hasExtras = Object.keys(entry.extras).length > 0}
+                                    <div class="rounded-lg bg-gray-800 p-3">
+                                        <div class="mb-1 flex items-center justify-between">
+                                            <span class="text-xs font-medium text-gray-400"
+                                                >Revision #{entry.index}</span
+                                            >
+                                            <button
+                                                class="btn-secondary px-2 py-0.5 text-xs"
+                                                onclick={async () => {
+                                                    if (
+                                                        !confirm(
+                                                            'Restore this revision? The current caption and extras will be saved to history first.'
+                                                        )
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    isRestoring = true;
+                                                    try {
+                                                        await restoreHistory(
+                                                            datasetName,
+                                                            item!.id,
+                                                            entry.index
+                                                        );
+                                                        // Reload caption and history
+                                                        const [caption, hist] = await Promise.all([
+                                                            fetchCaption(datasetName, item!.id),
+                                                            fetchHistory(datasetName, item!.id)
+                                                        ]);
+                                                        captionData = caption;
+                                                        editCaption = caption.caption || '';
+                                                        historyEntries = hist;
+                                                        oncaptionupdated?.(
+                                                            item!.id,
+                                                            caption.caption
+                                                        );
+                                                    } catch (e) {
+                                                        captionError = friendlyErrorMessage(
+                                                            e,
+                                                            'Failed to restore'
+                                                        );
+                                                    } finally {
+                                                        isRestoring = false;
+                                                    }
+                                                }}
+                                                disabled={isRestoring}
+                                            >
+                                                {isRestoring ? 'Restoring...' : 'Restore'}
+                                            </button>
+                                        </div>
+                                        <pre
+                                            class="max-h-32 overflow-y-auto font-mono text-sm whitespace-pre-wrap text-gray-200">{entry.caption ||
+                                                '(empty)'}</pre>
+                                        {#if hasExtras}
+                                            <pre
+                                                class="mt-2 max-h-32 overflow-y-auto rounded bg-gray-900 p-2 text-xs text-gray-400">{JSON.stringify(
+                                                    entry.extras,
+                                                    null,
+                                                    2
+                                                )}</pre>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+                        {:else}
+                            <p class="mt-2 text-sm text-gray-500 italic">No history</p>
+                        {/if}
+                    {/if}
+                </div>
+            {/if}
 
             <!-- TOML extras -->
             {#if captionData?.extras_raw}

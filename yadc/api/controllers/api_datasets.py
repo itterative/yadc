@@ -154,6 +154,22 @@ def api_datasets(
             return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
 
+    @app.get("/datasets/<name>/images/<int:image_id>/history")
+    def get_image_history(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Get history entries for an image (most recent first, up to 3)."""
+        result = datasets.get_history(name, image_id)
+        if result is None:
+            return jsonify_error("Image not found", status=404)
+        return jsonify_dataclass(result)
+
+    @app.put("/datasets/<name>/images/<int:image_id>/history/<int:history_index>/restore")
+    async def restore_image_history(name: str, image_id: int, history_index: int):  # pyright: ignore[reportUnusedFunction]
+        """Restore caption + extras from a history entry."""
+        ok = datasets.restore_history(name, image_id, history_index)
+        if not ok:
+            return jsonify_error("Image or history entry not found", status=404)
+        return jsonify({"status": "ok"})
+
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
     async def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the TOML extras sidecar for an image."""
