@@ -27,6 +27,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | Plan | Description | Status |
 |------|-------------|--------|
 | [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Flask/waitress → Quart/uvicorn async migration | Complete |
+| [`captioning-status-bar-plan`](.pi/agent/memory/plans/captioning-status-bar-plan.md) | Move captioning progress UI into a global floating status bar | Not started |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
 | [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, component index, design notes | Complete |
