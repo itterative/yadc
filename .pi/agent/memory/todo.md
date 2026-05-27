@@ -23,13 +23,18 @@ Key files changed: `yadc/api/application.py`, `yadc/api/controllers/`, `yadc/api
 
 When building wheels with `yadc/webui/__init__.py` present (needed for `package-data` to include `build/**/*`), setuptools discovers `yadc/webui/node_modules/flatted/python/flatted.py` as a submodule and includes it in the wheel. This is a harmless 3.7KB file but shouldn't be there. `exclude-package-data` doesn't work because setuptools treats it as a module, not data. Proper fix: use explicit `packages = [...]` list in pyproject.toml instead of `packages.find`, or filter out node_modules at the sdist level.
 
+## Sidebar / topbar refactor
+
+The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). This is functional but needs cleanup:
+
+- **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
+- **Tailwind migration**: The sidebar/topbar CSS in `+layout.svelte` uses custom scoped styles instead of Tailwind utilities. Should be migrated to inline Tailwind classes per the project's styling conventions (see frontend-architecture memory). The `Tooltip.svelte` component also uses custom CSS.
+
 ## Frontend remaining cleanup
 
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
 
-## Missing webui assets
-
-- **Logo** — no app logo exists for use in the navbar/header and potentially as a larger brand mark. Theme-matching to be done later.
+## ~~Missing webui assets~~ **DONE** — Logo added (android-chrome-192x192.png used in sidebar)
 
 ## Webui code quality pass
 

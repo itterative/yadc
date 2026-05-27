@@ -53,6 +53,8 @@ yadc/webui/
           ConfirmDelete.svelte        # Delete confirmation block (cancel/confirm buttons)
           SpinnerBlock.svelte         # Centered spinner with optional label and size
           PromptPreview.svelte        # Self-contained prompt preview (template selector + system/user prompt display)
+          Tooltip.svelte              # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
+          SetTopbar.svelte            # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
           ToastContainer.svelte       # Fixed-position toast stack (mounted in +layout.svelte)
           ToastItem.svelte            # Single toast (message, variant, progress bar, dismiss, optional action button)
         dataset/                        # Dataset-domain components
@@ -72,7 +74,7 @@ yadc/webui/
       icons/             # SVG icon components (Svg* prefix)
     routes/
       layout.css        # Tailwind v4 imports + @theme block + typography plugin
-      +layout.svelte    # App shell with breadcrumb nav (hash routing links) + global captioning notification watcher
+      +layout.svelte    # App shell with left sidebar nav (icon-rail on desktop, slide-in overlay on mobile with burger menu). Brand uses android-chrome-192x192.png icon. Tooltip component for desktop hover labels.
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
       AddDatasetDialog.svelte   # Co-located: create/import dataset dialog (used only by +page.svelte)
       EditDatasetDialog.svelte  # Co-located: edit dataset TOML config dialog (CodeMirror TOML editor)
@@ -111,6 +113,7 @@ yadc/webui/
 | `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`). `settingsDialog` store tracks open state + active tab (`general`/`environments`/`security`). |
 | `passwordPrompt.ts` | Global password prompt store — `requestPassword()` returns `Promise<string>`, `withPasswordRetry(action)` catches `PasswordRequiredError` and retries once after dialog. Module-level `pendingPromise` deduplicates concurrent callers. |
 | `sessionPassword.ts` | Tab-scoped in-memory password store (Svelte writable, never persisted to localStorage). Captioning requests read from it automatically. |
+| `topbar.svelte.ts` | `$state` module holding the current page's topbar `Snippet`. Pages set it via `<SetTopbar>` (which uses `$effect` lifecycle to set/clear). Layout reads it with `getTopbarContent()` and renders with `{@render}`. |
 | `storageStore.ts` | Generic `localStorage`/`sessionStorage`-backed writable store factory. |
 
 ## Key Patterns
@@ -127,10 +130,11 @@ yadc/webui/
 - **Z-index layers**: Fixed-position elements use a consistent z-index stack:
   - `z-10`: Local absolute-positioned overlays within components (e.g. ImageDetail hover/delete masks)
   - `z-20`: FABs (mobile caption settings floating button)
-  - `z-30`: Mobile overlay backdrops (side panel scrim)
-  - `z-40`: Mobile slide-in panels (side panel drawer on small screens)
+  - `z-30`: Mobile overlay backdrops (side panel scrim, sidebar scrim)
+  - `z-40`: Mobile slide-in panels (side panel drawer, sidebar drawer on small screens)
   - `z-50`: Global overlays — dialogs (`Dialog.svelte`) and toast stack (`ToastContainer.svelte`)
   - When adding new fixed/absolute layers, use the appropriate slot and avoid values outside this scale.
+- **Topbar pattern**: The layout has a topbar (inside `app-content`, between sidebar and main). Pages set topbar content by defining a `{#snippet}` and passing it to `<SetTopbar>`. The snippet is stored in `topbar.svelte.ts` (a `$state` module). The layout reads it with `getTopbarContent()` and renders with `{@render}`. On mobile the topbar also houses the burger menu button. On desktop, if no snippet is set, the topbar is hidden via `:empty`.
 - **Browser notifications**: `notifications.ts` is the single gatekeeper. `sendNotification()` checks support, settings preference (`notifications === "enabled"`), browser permission, and tab visibility — callers just call it with no pre-checks. `promptNotificationsOnce()` shows a one-time toast with "Enable" action on first captioning start (session-guarded, only when `notifications === "unset"`). Settings dialog General tab has a checkbox that toggles between `"enabled"`/`"disabled"`. Global notification dispatching lives in `+layout.svelte` so it works even when the user navigates away from the dataset page.
 
 ## Styling Patterns
