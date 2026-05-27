@@ -59,9 +59,10 @@
     // --- Captioning state ---
 
     // Per-image SSE events (ImageCaptionedEvent / ImageCaptionErrorEvent)
-    // update individual grid tiles live during captioning. A full reload
-    // still happens when captioning finishes (handleCaptioningDone) as a
-    // safety net for any missed events.
+    // update individual grid tiles live during captioning. When captioning
+    // finishes we skip the full grid reload unless the SSE stream reported
+    // a resumption failure (meaning some per-image events may have been
+    // missed). Aggregate dataset stats are always refreshed.
 
     // KNOWN ISSUE: Hot Module Replacement (HMR) can break captioning state
     // tracking. If a reload happens, state of runningJobId survives, and
@@ -441,7 +442,13 @@
         // leave the dataset untouched, so reloading is pointless.
         const hadProgress = status.processed > 0 || status.errors > 0;
         if (browser && datasetName && hadProgress) {
-            loadInitial(datasetName);
+            // If SSE resumption failed we may have missed per-image events,
+            // so reload page 1 as a safety net. Otherwise the tiles are
+            // already current from live ImageCaptionedEvents.
+            if (get(resumptionFailed)) {
+                toast.warning('Some captioning events were missed. Refreshing grid to ensure accuracy.');
+                loadInitial(datasetName);
+            }
             (async () => {
                 try {
                     datasets = await fetchDatasets();

@@ -145,15 +145,16 @@ Frontend SSE handler:
 
 ### Phase 3: Cleanup
 - Remove the NOTE comment about grid tiles not updating live ✅ (done in Phase 2)
-- Keep the full reload on `handleCaptioningDone` as safety net
-  - **Decision pending**: Now that tiles update live, the grid reload is redundant but still causes a scroll reset. Two options:
-    1. **Remove `loadInitial()`, keep `fetchDatasets()`** — grid tiles are already current via per-image events; only refresh aggregate dataset stats (image_count, has_caption) for the topbar. Missed events covered by SSE resumption.
-    2. **Keep both** — safety net for edge cases (page opened mid-captioning, SSE gap). Drawback: jarring scroll reset.
-    - Leaning toward option 1.
+- **Conditional `loadInitial` on captioning done** ✅
+  - `handleCaptioningDone` now skips `loadInitial()` unless `resumptionFailed` is true (SSE history buffer cycled, some per-image events may have been missed).
+  - When `resumptionFailed` is true, a warning toast explains why the grid is refreshing: *"Some captioning events were missed. Refreshing grid to ensure accuracy."*
+  - Aggregate dataset stats (`fetchDatasets()`) are always refreshed for the topbar.
+  - Pagination is not a concern: `loadInitial` only reloads page 1 (50 images). Per-image events update whatever pages are already loaded; `loadMore()` fetches fresh data when the user scrolls. Images on unloaded pages are irrelevant until scrolled into view.
+  - This eliminates the jarring scroll reset that `loadInitial` caused when the user had scrolled beyond page 1.
 - Refine the ⚠ warning badge on `DatasetImage.svelte` — current implementation is a minimal first pass. Improve styling, positioning (avoid overlap with draft badge at `top-1 left-1`), and consider clearing the error when the tile is successfully re-captioned or on full reload
 - Add a one-shot accent border glow animation (`tile-flash`) that triggers when a tile is updated via per-image events, so the user can see which tiles changed. Uses a `flash` timestamp on `ImageInfo` and `animationend` to auto-clear
 - **TODO**: Investigate how to show an animation on the image *currently being processed* (not just after completion). This would require the backend to emit a `captioning_started` per-image event before calling the API, or deriving the current image from the `CaptioningStatusEvent.processed` count and the known image order
-- **Pre-existing issue**: If captioning is started from another tab/device, an already-open dataset page may not show the progress bar until the next aggregate `CaptioningStatusEvent`. The mid-page-load poll handles fresh page loads, but a tab that's already open and connected to SSE would miss the initial "running" event if it was dispatched before the SSE connection was established. Consider: (1) periodic status polling while the page is visible and no captioning is detected, (2) having the backend re-emit the current status on new SSE connections, or (3) a dedicated `CaptioningStartedEvent`
+- ~~**Pre-existing issue**: If captioning is started from another tab/device, an already-open dataset page may not show the progress bar until the next aggregate `CaptioningStatusEvent`.~~ **RESOLVED — not reproducible.** Traced the SSE stream with curl: `CaptioningStatusEvent(status="running")` is dispatched to all connected clients immediately when a job starts, including cross-tab jobs. `Last-Event-ID` resumption was also verified to work correctly. The symptom was most likely caused by **Hot Module Replacement (HMR)** during development, which tears down and recreates the page (and its `$effect` subscriptions) while captioning is in progress. The existing `fetchCaptioningStatus` poll on page mount already handles recovery from HMR. No backend or frontend changes needed.
 - Update todo memory
 
 ## Files changed
