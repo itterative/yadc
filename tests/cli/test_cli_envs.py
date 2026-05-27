@@ -14,12 +14,14 @@ def _keyring_available() -> bool:
 
 
 class TestEnvsBasic:
+    @pytest.mark.integration_test
     def test_envs_list_empty(self, cli):
         runner = cli(isolated=True)
         result = runner("envs list")
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
+    @pytest.mark.integration_test
     def test_envs_set_and_get(self, cli):
         runner = cli(isolated=True)
         r1 = runner("envs set api_url http://localhost:5000")
@@ -29,6 +31,7 @@ class TestEnvsBasic:
         assert r2.returncode == 0, r2.stderr
         assert r2.stdout.strip() == "http://localhost:5000"
 
+    @pytest.mark.integration_test
     def test_envs_show(self, cli):
         runner = cli(isolated=True)
         r1 = runner("envs set api_url http://localhost:5000")
@@ -38,6 +41,7 @@ class TestEnvsBasic:
         assert r2.returncode == 0, r2.stderr
         assert "api_url" in r2.stdout
 
+    @pytest.mark.integration_test
     def test_envs_delete(self, cli):
         runner = cli(isolated=True)
         r1 = runner("envs set api_url http://localhost:5000")
@@ -49,6 +53,7 @@ class TestEnvsBasic:
         r3 = runner("envs get api_url", should_fail=True)
         assert r3.returncode != 0
 
+    @pytest.mark.integration_test
     def test_envs_clear(self, cli):
         runner = cli(isolated=True)
         r1 = runner("envs set api_url http://localhost:5000")
@@ -63,12 +68,14 @@ class TestEnvsBasic:
 
 
 class TestKeyMode:
+    @pytest.mark.integration_test
     def test_key_mode_get_default(self, cli):
         runner = cli(isolated=True)
         result = runner("envs key-mode get")
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "keyring"
 
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
@@ -85,6 +92,7 @@ class TestKeyMode:
         assert r2.returncode == 0, r2.stderr
         assert r2.stdout.strip() == "password"
 
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
@@ -98,6 +106,7 @@ class TestKeyMode:
         assert r2.returncode == 0, r2.stderr
         assert r2.stdout.strip() == "password"
 
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
@@ -126,6 +135,7 @@ class TestKeyMode:
 
 
 class TestPasswordEncryption:
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
@@ -149,6 +159,7 @@ class TestPasswordEncryption:
         assert r3.returncode == 0, r3.stderr
         assert r3.stdout.strip() == "mytoken"
 
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
@@ -169,6 +180,7 @@ class TestPasswordEncryption:
         assert r3.returncode == 0, r3.stderr
         assert r3.stdout.strip() == "mytoken"
 
+    @pytest.mark.integration_test
     @pytest.mark.skipif(
         not _keyring_available(),
         reason="No keyring backend available (e.g. gpg/keyrings.alt missing)",
