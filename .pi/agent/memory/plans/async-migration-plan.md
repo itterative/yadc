@@ -146,9 +146,9 @@ Remove the manual `signal.signal(SIGINT, ...)` handler. Uvicorn handles signal p
 - Start a captioning job; SSE progress events arrive.
 - Ctrl+C with an active SSE tab shuts down cleanly within 2 seconds.
 
-### Phase 3: Cleanup, Testing, and Hardening
+### Phase 3: Cleanup, Testing, and Validation
 
-**Goal**: Remove Flask/waitress remnants, verify stability, document deferred FastAPI work.
+**Goal**: Remove Flask/waitress remnants, verify stability, fix shutdown bugs, document deferred FastAPI work.
 
 - Remove all `flask` imports from `yadc/api/`.
 - Remove all `waitress` references.
@@ -157,7 +157,25 @@ Remove the manual `signal.signal(SIGINT, ...)` handler. Uvicorn handles signal p
 - Run `uv run basedpyright yadc/api`.
 - Verify the full WebUI captioning flow end-to-end.
 - Verify graceful shutdown under load (multiple SSE clients + active captioning job).
+- Fix Ctrl+C shutdown with active SSE connections (dispatch `ShutdownEvent` before uvicorn waits for connections).
 - Add a note to `todo.md` that a FastAPI migration is deferred until after this refactor is validated.
+
+### Phase 4: Hardening — Shutdown Timeouts and Integration Tests
+
+**Goal**: Make the server resilient to edge cases and add automated tests for the async behaviour.
+
+- **Uvicorn graceful shutdown timeout**: Add `timeout_graceful_shutdown` to `uvicorn.Config` (e.g. 5–10 seconds) so that even if SSE generators or background tasks fail to exit, uvicorn force-cancels them and the process terminates.
+- **SSE shutdown integration test**: Write a test that:
+  1. Starts the Quart app via `quart.testing.QuartClient` or `httpx.AsyncClient`.
+  2. Opens an SSE connection to `/api/events`.
+  3. Simulates `SIGINT` (or calls the shutdown path directly).
+  4. Asserts that the connection closes and the server terminates within the timeout.
+- **Connection leak test**: Verify that client disconnect removes the queue from `SSEEvents._queues` (could be tested by inspecting the service directly or counting open listeners).
+- **EventDispatcher bridge test**: Verify that `dispatch()` called from a background thread correctly schedules an async handler on the main loop.
+
+**Verify**:
+- `pytest tests/` passes including the new tests.
+- `ruff` and `basedpyright` remain clean.
 
 ## File-by-File Reference
 
@@ -203,9 +221,11 @@ This is intentionally **out of scope** for this plan.
 
 ## Success Criteria
 
-- [ ] `yadc webui serve` starts with uvicorn.
-- [ ] All existing API endpoints return identical JSON shapes.
-- [ ] SSE connects, receives events, reconnects with `Last-Event-ID`, and resumption works.
-- [ ] Ctrl+C shuts down cleanly within 2 seconds even with active SSE connections.
-- [ ] `uv run pytest tests` passes (or at least no new failures introduced).
-- [ ] Full WebUI captioning flow works end-to-end.
+- [x] `yadc webui serve` starts with uvicorn.
+- [x] All existing API endpoints return identical JSON shapes.
+- [x] SSE connects, receives events, reconnects with `Last-Event-ID`, and resumption works.
+- [x] Ctrl+C shuts down cleanly within 2 seconds even with active SSE connections.
+- [x] `uv run pytest tests` passes (or at least no new failures introduced).
+- [x] Full WebUI captioning flow works end-to-end.
+- [ ] Uvicorn graceful shutdown timeout configured and honoured.
+- [ ] Integration tests exist for SSE shutdown and EventDispatcher thread-to-async bridge.
