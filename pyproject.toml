@@ -45,6 +45,11 @@ yadc = "yadc.cli:cli"
 [tool.setuptools.package-data]
 "yadc.api" = ["banner.txt"]
 "yadc.templates.jinja" = ["*"]
+"yadc.webui" = ["build/**/*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["node_modules/**/*"]
+"yadc.webui" = ["node_modules/**/*", "src/**/*", "static/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["."]
