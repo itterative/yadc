@@ -30,7 +30,6 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`captioning-status-bar-plan`](.pi/agent/memory/plans/captioning-status-bar-plan.md) | Move captioning progress UI into a global floating status bar | Not started |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
-| [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, component index, design notes | Complete |
 | [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Not started |
 | [`selective-image-refresh-plan`](.pi/agent/memory/plans/selective-image-refresh-plan.md) | Per-image SSE events during captioning for live grid tile updates | Not started |
 

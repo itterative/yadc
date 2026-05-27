@@ -79,6 +79,6 @@ The component uses the existing `captioningStatus` store (`$lib/stores/events`) 
 
 ---
 
-## Related Plans
+## Related
 
-- `frontend-plans` — Topbar padding / height inconsistency (will be resolved by this plan)
+- `todo.md` — Topbar padding / height inconsistency (will be resolved by this plan)

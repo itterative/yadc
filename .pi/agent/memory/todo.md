@@ -29,6 +29,7 @@ The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on d
 
 - **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
 - **Tailwind migration**: The sidebar/topbar CSS in `+layout.svelte` uses custom scoped styles instead of Tailwind utilities. Should be migrated to inline Tailwind classes per the project's styling conventions (see frontend-architecture memory). The `Tooltip.svelte` component also uses custom CSS.
+- **Topbar padding / height inconsistency**: The dataset listing (`#/`) and templates (`#/templates`) pages feel cramped below the topbar because `.app-topbar` has `padding-bottom: 0`. Adding bottom padding globally causes the dataset browser (`#/datasets/:name`) to shift down because its subtitle row uses `min-h-7` to reserve space for the captioning status row, which is taller than the idle text line. The hamburger button and subtitle also shift slightly when captioning starts/stops. **Superseded by `captioning-status-bar-plan`** — moving the progress UI out of the topbar entirely.
 
 ## Frontend remaining cleanup
 
