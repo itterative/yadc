@@ -35,6 +35,7 @@
     let confirmDelete: string | null = $state(null);
     let envDetailMap = $state<Record<string, EnvInfo>>({});
     let showToken = $state(false);
+    let revealedToken = $state('');
 
     $effect(() => {
         loadEnvs();
@@ -77,11 +78,13 @@
         editModelName = '';
         saveEnvError = null;
         showToken = false;
+        revealedToken = '';
     }
 
     async function startEditEnv(name: string) {
         saveEnvError = null;
         showToken = false;
+        revealedToken = '';
         try {
             const info = await fetchEnv(name);
             isNewEnv = false;
@@ -100,6 +103,7 @@
         isNewEnv = false;
         saveEnvError = null;
         showToken = false;
+        revealedToken = '';
         cancelPassword();
     }
 
@@ -144,7 +148,18 @@
 
     async function toggleTokenReveal() {
         if (showToken) {
+            // If user didn't change the revealed token, clear it so placeholder shows
+            if (editToken === revealedToken) {
+                editToken = '';
+            }
+            revealedToken = '';
             showToken = false;
+            return;
+        }
+
+        // If the user already has a token value (typed or modified), just toggle visibility
+        if (editToken) {
+            showToken = true;
             return;
         }
 
@@ -156,6 +171,7 @@
         try {
             const data = await withPasswordRetry(() => revealEnvValue(envName, 'api_token'));
             editToken = data.value;
+            revealedToken = data.value;
             showToken = true;
         } catch (e) {
             if (e instanceof PasswordPromptCancelled) {
