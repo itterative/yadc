@@ -1,6 +1,10 @@
 <script lang="ts">
     import type { Toast, ToastVariant } from '$lib/stores/toasts';
     import { dismissToast } from '$lib/stores/toasts';
+    import SvgCheck from '$lib/icons/SvgCheck.svelte';
+    import SvgError from '$lib/icons/SvgError.svelte';
+    import SvgInfo from '$lib/icons/SvgInfo.svelte';
+    import SvgWarning from '$lib/icons/SvgWarning.svelte';
 
     interface Props {
         toast: Toast;
@@ -50,12 +54,14 @@
         error: 'bg-red-900 border-error/40 text-error'
     };
 
-    const variantIcons: Record<ToastVariant, string> = {
-        info: 'ℹ',
-        success: '✓',
-        warning: '⚠',
-        error: '✗'
+    const variantIconComponents: Record<ToastVariant, typeof SvgInfo> = {
+        info: SvgInfo,
+        success: SvgCheck,
+        warning: SvgWarning,
+        error: SvgError
     };
+
+    let Icon = $derived(variantIconComponents[toast.variant]);
 
     const progressBarColors: Record<ToastVariant, string> = {
         info: 'bg-accent',
@@ -82,7 +88,9 @@
     role="alert"
 >
     <!-- Icon -->
-    <span class="mt-0.5 flex-shrink-0 text-base leading-5">{variantIcons[toast.variant]}</span>
+    <span class="mt-0.5 flex-shrink-0">
+        <Icon class="h-5 w-5" />
+    </span>
 
     <!-- Message + optional action -->
     <div class="min-w-0 flex-1">

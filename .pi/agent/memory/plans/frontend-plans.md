@@ -30,6 +30,7 @@ For frontend directory structure, stores, component organization, and general pa
 - **EnvSelector.svelte** (`settings/`): Environment form with env dropdown, URL/token/model fields, model fetching. Uses `$bindable()` props for two-way value binding with parent. **Auto-fetches models** when env loads (populates dropdown immediately). The "Manage…" link opens `SettingsDialog` at the Environments tab via the `settingsDialog` store.
 - **ConfigEditor.svelte** (`settings/`): *(REMOVED)* Was a full config CRUD panel. Dataset config management is now on the dataset listing page (edit/delete buttons), the side panel Config tab (`DatasetConfig.svelte`), and caption settings panel (config defaults integration).
 - **TemplateManager.svelte** (`settings/`): Full template CRUD panel — sidebar list + JinjaEditor + new/save/delete. Self-contained, takes `open` prop to trigger data loading.
+- **ToastItem.svelte** (`ui/`): Variant icons (info/success/warning/error) rendered via dedicated SVG icon components (`SvgInfo`, `SvgCheck`, `SvgWarning`, `SvgError`) instead of text characters.
 
 ## Known Issues
 
