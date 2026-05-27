@@ -58,7 +58,7 @@ yadc/webui/
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + drafts + PromptPreview)
+          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview)
         dialogs/                        # Dialog-shaped components
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
           SettingsDialog.svelte       # App settings dialog (tab container)
@@ -99,7 +99,7 @@ yadc/webui/
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers + deleteDataset + createDatasetBrowserStore |
+| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers + deleteDataset + createDatasetBrowserStore |
 | `envs.ts` | Env types + CRUD + model fetching |
 | `templates.ts` | Template types + CRUD + `extractVariables()` |
 | `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) |

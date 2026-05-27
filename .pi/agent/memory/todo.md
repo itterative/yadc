@@ -115,6 +115,13 @@ Remaining:
 - Preset profiles, config diff banner (Phase 3 nice-to-haves)
 - ~~Phase 4: type-safe config API (Pydantic validation on GET/PATCH)~~ **DONE** — see `plans/dataset-config-settings-plan`
 
+## History restore UI and semantics
+
+The first pass of history browsing/restoring is implemented (backend API + frontend UI). Needs refinement:
+
+- **UI polish**: The history section in ImageDetail needs visual improvement — better layout, spacing, differentiation between entries
+- **Current state in history**: History always includes the current state as the most recent entry, which means restoring always adds a duplicate (current state gets saved again). Need to decide: should history only contain *past* states? Should the frontend filter out the current state? Should restore skip saving if the current state is already the target?
+
 ## Incremental filesystem index updates
 
 Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-scans every file in every directory of the dataset. This is wasteful when only one file was added or removed.

@@ -133,7 +133,7 @@ yadc/
 - **API type auto-detection**: `APICaptioner` infers the backend from URL domain and `/models` response, then delegates to the appropriate inner captioner
 - **Mixin composition**: OpenAI/Gemini captioners use `ErrorNormalizationMixin` + `ThinkingMixin`
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
-- **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
+- **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history (TOML entries separated by `----------` markers), `.<name>.draft~` for named drafts. History is saved on every caption update (both captioning jobs and manual webui edits) and extras updates. History entries can be browsed and restored via `GET /images/<id>/history` and `PUT /images/<id>/history/<index>/restore`.
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
 - **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
 - **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/<name>/config.toml`. `import_dataset(name, toml_path)` copies TOML to state dir (resolving relative paths). `create_dataset(name, image_paths)` generates a new TOML. `name` is the unique key — no `path` column.
