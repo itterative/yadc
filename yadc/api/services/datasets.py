@@ -397,6 +397,9 @@ class DatasetService(Service):
         if extras:
             dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
 
+        # Read current caption from .txt file
+        dataset_image.caption = dataset_image.read_caption()
+
         # Load drafts
         drafts: dict[str, str] = {}
         try:
