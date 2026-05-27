@@ -34,3 +34,4 @@ For frontend directory structure, stores, component organization, and general pa
 ## Known Issues
 
 - No per-tile SSE updates during captioning (aggregate events only)
+- **Topbar padding / height inconsistency:** The dataset listing (`#/`) and templates (`#/templates`) pages feel cramped below the topbar because `.app-topbar` has `padding-bottom: 0`. Adding bottom padding globally causes the dataset browser (`#/datasets/:name`) to shift down because its subtitle row uses `min-h-7` to reserve space for the captioning status row, which is taller than the idle text line. The hamburger button and subtitle also shift slightly when captioning starts/stops. Needs a solution that gives consistent bottom spacing across all pages without shifting the dataset browser or creating layout jumps when captioning toggles.
