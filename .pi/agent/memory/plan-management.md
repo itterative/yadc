@@ -13,6 +13,7 @@ All project plans live in **`.pi/agent/memory/plans/`** inside the agent memory 
 
 | Plan | Description | Status |
 |------|-------------|--------|
+| [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Migrate API backend from Flask/waitress to FastAPI/uvicorn. Covers async SSE, EventDispatcher thread-to-async bridge, controller Pydantic models, CORS middleware, static file serving, and phased implementation. | Draft |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Integrating caption settings panel with dataset TOML config. Covers `PATCH /configs/<name>`, typed Config API (Pydantic + TS), diff indicators, overrides section, "Save as dataset default". Remaining: preset profiles, config diff banner, TOML multiline string serialization for templates. | Mostly implemented |
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Complete historical summary of replacing `keyring`-based RSA private key storage with a password-protected alternative (PBKDF2 + AES-256-GCM in config TOML). Tracks original intent, deviations, decisions, and all files touched. | Complete |
 | [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, backend controller endpoint index, component design notes (CodeMirror, editors, selectors), and known issues. All phases 1–4 implemented. | Complete |
