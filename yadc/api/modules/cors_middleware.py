@@ -19,7 +19,7 @@ class CORSMiddleware(Service):
 
     @event_handler(StartupEvent)
     def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
-        """Register CORS after_request handler on a Flask blueprint."""
+        """Register CORS after_request handler on a Quart blueprint."""
 
         @self._blueprint.after_request
         def after_request(response: Response):  # pyright: ignore[reportUnusedFunction]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import FrameType
 from typing import override
 
 from injector import Binder, Injector, Module, get_bindings, inject, singleton
@@ -108,12 +109,23 @@ class Application(Module):
         # NOTE: the app must be configured before the cors middleware is set up (on startup event)
         self.configure_app()
 
-        try:
-            uvicorn.run(
-                self.app,
-                host=self.configuration.http_host,
-                port=self.configuration.http_port,
-                log_level="info",
-            )
-        finally:
+        config = uvicorn.Config(
+            self.app,
+            host=self.configuration.http_host,
+            port=self.configuration.http_port,
+            log_level="info",
+            lifespan="on",
+        )
+        server = uvicorn.Server(config)
+
+        # Monkey-patch uvicorn's signal handler so we can dispatch ShutdownEvent
+        # *before* uvicorn starts waiting for connections to close. This lets SSE
+        # generators see the shutdown flag and exit cleanly.
+        _original_handle_exit = server.handle_exit
+
+        def _handle_exit(sig: int, frame: FrameType | None) -> None:
             event_dispatcher.dispatch(ShutdownEvent())
+            _original_handle_exit(sig, frame)
+
+        server.handle_exit = _handle_exit  # type: ignore[method-assign]
+        server.run()

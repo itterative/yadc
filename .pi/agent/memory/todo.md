@@ -5,18 +5,18 @@ description: When a user query involves deferred tasks, known issues, or future 
 
 # TODO
 
-## Convert API backend to async (ASGI)
+## ~~Convert API backend to async (ASGI)~~ **DONE** — migrated to Quart + uvicorn
 
-SSE (Server-Sent Events) is fundamentally incompatible with synchronous WSGI servers. SSE connections block a thread indefinitely, causing:
-- **Ctrl+C hangs**: waitress and gunicorn both struggle to shut down with active SSE generators — the worker thread is stuck, and `SIGTERM`/`SIGINT` can't cleanly interrupt it. Gunicorn falls back to SIGKILL after `graceful_timeout`.
-- **TCP proxy zombie connections**: If a TCP proxy buffers data after the real client disconnects, the backend has no signal the connection is dead. No WSGI server can detect this.
-- **Thread pool exhaustion**: Each SSE connection consumes a thread for its entire lifetime.
+The API backend was migrated from Flask/waitress to Quart/uvicorn in two phases:
+- **Phase 1**: Framework swap (Flask → Quart, waitress → uvicorn, `async def` on `send_file` routes).
+- **Phase 2**: Fully async SSE (`asyncio.Queue` per client, `EventDispatcher` async bridge, native `async for` in `/events`).
 
-The proper solution is to convert the API to an async framework (FastAPI/Starlette + uvicorn) where SSE connections are `async for` generators that can be cancelled by `asyncio` shutdown, and idle connections don't block threads.
+All success criteria met: SSE connects/reconnects/resumes, Ctrl+C shuts down cleanly within 2s, no thread blocking, `pytest` passes.
 
-This is a large refactor — Flask → FastAPI, injector DI integration, CORS middleware, all controllers, the SSE event system, etc. See stash `Gunicorn + SSE shutdown improvements` and `SSE subscriber TTL and yield stall detection` for intermediate workarounds that were attempted.
+### Deferred: FastAPI migration
+A future FastAPI migration is possible but intentionally deferred. Quart is API-compatible with Flask and validated. FastAPI would give native Pydantic request/response models (fixing 21 basedpyright warnings in controllers) and automatic OpenAPI docs, but requires rewriting every route to use `Depends()` instead of injector closures. Not worth the churn until Quart proves problematic.
 
-Key files that would change: `yadc/api/application.py`, `yadc/api/controllers/`, `yadc/api/modules/sse_events.py`, `yadc/api/events.py`, `pyproject.toml` (swap waitress → uvicorn, flask → fastapi).
+Key files changed: `yadc/api/application.py`, `yadc/api/controllers/`, `yadc/api/modules/sse_events.py`, `yadc/api/modules/event_dispatcher.py`, `pyproject.toml`.
 
 ## Frontend remaining cleanup
 
@@ -99,7 +99,7 @@ The current implementation (never clearing) is being reverted. The job_id infras
 ### Remaining edge cases
 
 - ~~**Mid-captioning page load**: If a user opens the dataset page while captioning is already running, they won't see any progress until the next SSE event arrives.~~ **DONE** — Added `GET /datasets/<name>/caption` endpoint and a one-time fetch in the dataset page's `$effect` (guarded to only seed when the store is idle, so it never clobbers live SSE events).
-- **WSGI thread exhaustion**: Each SSE connection still blocks a thread. The async migration (see top-level TODO) is the proper fix.
+- ~~**WSGI thread exhaustion**: Each SSE connection still blocks a thread. The async migration (see top-level TODO) is the proper fix.~~ **DONE** — SSE is fully async since the Quart migration.
 
 ## Caption settings: dataset defaults integration
 

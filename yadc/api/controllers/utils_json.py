@@ -34,7 +34,7 @@ class DataclassJSONEncoder(json.JSONEncoder):
 
 
 def jsonify_dataclass(obj: Any) -> Response:
-    """JSON-serialize a dataclass or list of dataclasses as a Flask Response."""
+    """JSON-serialize a dataclass or list of dataclasses as a Quart Response."""
     return Response(json.dumps(obj, cls=DataclassJSONEncoder), mimetype="application/json")
 
 
