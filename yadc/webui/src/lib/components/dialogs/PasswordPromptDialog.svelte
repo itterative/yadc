@@ -45,7 +45,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<Dialog class="dialog-surface w-full max-w-sm p-6" {open} onclose={handleCancel}>
+<Dialog class="dialog-panel w-full max-w-sm p-6" {open} onclose={handleCancel}>
     <h2 class="dialog-title mb-3">Password Required</h2>
     <p class="mb-4 text-sm text-gray-300">
         This environment uses a password-protected key. Please enter the password to continue.
