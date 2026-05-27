@@ -71,14 +71,18 @@ yadc/
 
   cmd/                # pure logic (no click imports)
     app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()
+    config.py         # AppConfig Pydantic model hierarchy (v0→v1 TOML migration), save_config()
     status.py         # exit codes: STATUS_OK=0, STATUS_ERROR=1, STATUS_USER_ERROR=2
     cache/            # cache dir helpers, clean_cache()
     configs/          # user config CRUD, deep merge
-    envs/             # env loading/saving, RSA encryption via keyring
-      encryption.py   # keyring-based RSA encryption helpers
-      envs.py         # env loading/saving logic
-      setting.py      # Setting base class for env settings
-      user_config.py  # UserConfig / UserConfigApi models
+    envs/             # env loading/saving, RSA encryption via keyring or password
+      encryption.py   # active KeyStorage management, RSA encrypt/decrypt, key-mode switch
+      envs.py         # env CRUD using AppConfig
+      setting.py      # Setting base class, EncryptionMethod enum
+      keystorage.py   # KeyStorage ABC (load/save private key, generate key pair)
+      keystorage_keyring.py   # KeyringKeyStorage — system keyring private key
+      keystorage_password.py  # PasswordKeyStorage — config-TOML private key, PBKDF2 + AES-256-GCM
+      user_config.py  # UserConfig / UserConfigApi models (legacy)
     templates/        # user template CRUD in STATE_PATH/templates/
 
   utils/              # shared utility functions
@@ -89,7 +93,7 @@ yadc/
     config.py         # Config models (v1/v2), parse_config()
     dataset.py        # DatasetImage model (path, caption, drafts, history, TOML persistence)
     dataset_resolver.py # resolve_dataset() — scans paths, merges images, applies extras
-    env.py            # env var flags (DEBUG_CAPTION_RESPONSES, etc.)
+    env.py            # env var flags (DEBUG_CAPTION_RESPONSES, YADC_PASSWORD, etc.)
     exporters/        # export backends (currently sd-scripts: json/jsonl/txt)
       utils.py          # read_caption_source() — shared caption/draft reading for export
     logging.py        # custom logger with TRACE level, global level/handler management

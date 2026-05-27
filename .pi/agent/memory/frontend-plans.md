@@ -18,7 +18,7 @@ For frontend directory structure, stores, component organization, and general pa
 |------|-----------|
 | `api_datasets.py` | Dataset/image CRUD, caption update, prompt preview, **add dataset (import TOML / create new)** |
 | `api_captioning.py` | Start/stop/status (SSE) captioning |
-| `api_envs.py` | Env CRUD + model list proxy |
+| `api_envs.py` | Env CRUD + model list proxy + key-mode get/set + per-field value reveal |
 | `api_templates.py` | Template CRUD + variable extraction |
 | `api_configs.py` | Dataset config TOML CRUD (GET, PUT raw TOML, **PATCH JSON merge**, DELETE) |
 | `api_export.py` | Export backends list + run export |
