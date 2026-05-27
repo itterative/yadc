@@ -25,6 +25,7 @@ export interface ImageInfo {
     draft_names: string[];
     last_modified_t: number | null;
     caption_error?: string;
+    flash?: number;
 }
 
 export interface ImagePage {

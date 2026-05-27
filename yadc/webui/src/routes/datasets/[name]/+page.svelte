@@ -209,6 +209,7 @@
         if (!event || event.dataset_name !== datasetName) {
             return;
         }
+        const now = Date.now();
         untrack(() => {
             images = images.map((img) =>
                 img.id === event.id
@@ -217,7 +218,8 @@
                           has_caption: event.has_caption,
                           has_toml: event.has_toml,
                           draft_names: event.draft_names,
-                          caption_error: undefined
+                          caption_error: undefined,
+                          flash: now
                       }
                     : img
             );
@@ -230,9 +232,10 @@
         if (!event || event.dataset_name !== datasetName) {
             return;
         }
+        const now = Date.now();
         untrack(() => {
             images = images.map((img) =>
-                img.id === event.image_id ? { ...img, caption_error: event.error } : img
+                img.id === event.image_id ? { ...img, caption_error: event.error, flash: now } : img
             );
         });
     });

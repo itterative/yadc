@@ -13,6 +13,7 @@
 
     let media: HTMLImageElement | null = $state(null);
     let loading: boolean = $state(true);
+    let flashing: boolean = $state(false);
 
     let thumbnailSrc = $derived(
         `/api/datasets/${encodeURIComponent(datasetName)}/images/${item.id}/thumbnail?size=512`
@@ -30,6 +31,17 @@
         media?.addEventListener('load', setLoadingToFalse);
         return () => media?.removeEventListener('load', setLoadingToFalse);
     });
+
+    // Trigger a one-shot highlight animation when flash changes.
+    $effect(() => {
+        if (item.flash) {
+            flashing = true;
+        }
+    });
+
+    function handleFlashEnd() {
+        flashing = false;
+    }
 </script>
 
 <button
@@ -38,6 +50,8 @@
     class:has-caption={item.has_caption}
     class:has-toml={item.has_toml}
     class:selected
+    class:flashing
+    onanimationend={handleFlashEnd}
 >
     <img
         src={thumbnailSrc}
@@ -86,5 +100,20 @@
     .selected {
         outline: 2px solid var(--color-accent);
         outline-offset: -2px;
+    }
+
+    .flashing {
+        animation: tile-flash 0.8s ease-out;
+    }
+
+    @keyframes tile-flash {
+        0% {
+            outline: 3px solid var(--color-accent);
+            outline-offset: -3px;
+        }
+        100% {
+            outline: 3px solid transparent;
+            outline-offset: -3px;
+        }
     }
 </style>
