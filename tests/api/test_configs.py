@@ -47,9 +47,7 @@ image_quality = "best"
 [reasoning]
 thinking_effort = "extreme"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.get("/api/configs/test")
     assert resp.status_code == 200
@@ -77,9 +75,7 @@ model_name = "gemma3"
 max_tokens = 512
 image_quality = "auto"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.get("/api/configs/test")
     assert resp.status_code == 200
@@ -94,9 +90,7 @@ def test_patch_config_rejects_invalid_max_tokens(client):
 url = "http://localhost:11434"
 model_name = "gemma3"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.patch(
         "/api/configs/test",
@@ -106,9 +100,7 @@ model_name = "gemma3"
     assert resp.status_code == 400
     data = json.loads(resp.data)
     assert data["error"] == "Validation failed"
-    assert any(
-        e["loc"] == ["settings"] for e in data["details"]
-    )
+    assert any(e["loc"] == ["settings"] for e in data["details"])
 
 
 def test_patch_config_rejects_invalid_image_quality(client):
@@ -118,9 +110,7 @@ def test_patch_config_rejects_invalid_image_quality(client):
 url = "http://localhost:11434"
 model_name = "gemma3"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.patch(
         "/api/configs/test",
@@ -129,9 +119,7 @@ model_name = "gemma3"
     )
     assert resp.status_code == 400
     data = json.loads(resp.data)
-    assert any(
-        e["loc"] == ["settings"] for e in data["details"]
-    )
+    assert any(e["loc"] == ["settings"] for e in data["details"])
 
 
 def test_patch_config_rejects_invalid_rounds(client):
@@ -141,9 +129,7 @@ def test_patch_config_rejects_invalid_rounds(client):
 url = "http://localhost:11434"
 model_name = "gemma3"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.patch(
         "/api/configs/test",
@@ -162,9 +148,7 @@ def test_patch_config_rejects_nested_type_error(client):
 url = "http://localhost:11434"
 model_name = "gemma3"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.patch(
         "/api/configs/test",
@@ -174,9 +158,7 @@ model_name = "gemma3"
     assert resp.status_code == 400
     data = json.loads(resp.data)
     assert "details" in data
-    assert any(
-        "max_tokens" in e["loc"] or "settings" in e["loc"] for e in data["details"]
-    )
+    assert any("max_tokens" in e["loc"] or "settings" in e["loc"] for e in data["details"])
 
 
 def test_patch_config_accepts_valid_patch(client):
@@ -186,9 +168,7 @@ def test_patch_config_accepts_valid_patch(client):
 url = "http://localhost:11434"
 model_name = "gemma3"
 """)
-    mock_service.get_dataset.return_value = DatasetInfo(
-        name="test", config_path=config_path
-    )
+    mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
     resp = test_client.patch(
         "/api/configs/test",

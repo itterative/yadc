@@ -30,3 +30,4 @@ class APIErrorResponse:
 
     error: str
     details: list[APIErrorDetail] | None = None
+    code: str | None = None

@@ -3,12 +3,14 @@ from typing import Any
 import pydantic
 from flask import jsonify, request
 
+from yadc.cmd import envs as cmd_envs
+
 from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService, CaptionJobOptions, JobInfo
 from . import controller
 from .blueprints import ApiBlueprint
 from .models_errors import APIErrorDetail
-from .utils_json import jsonify_dataclass, jsonify_error
+from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error
 
 
 @controller
@@ -30,12 +32,22 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             options = CaptionJobOptions.model_validate(raw)
         except pydantic.ValidationError as e:
             details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
-            return jsonify_error("Validation failed", details=details, status=400)
+            return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
+
+        try:
+            # Pre-flight env load to catch password-required errors before starting a background job.
+            cmd_envs.load_env(options.env, password=options.password)
+        except cmd_envs.PasswordRequiredError:
+            return jsonify_error(
+                "Password required to decrypt environment settings",
+                status=403,
+                code=ErrorCode.PASSWORD_REQUIRED,
+            )
 
         try:
             info: JobInfo = captioning.start_job(name, options)
         except ValueError as e:
-            return jsonify_error(str(e), status=409)
+            return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
 
         return jsonify_dataclass(info), 202
 
@@ -44,7 +56,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         """Stop a running captioning run."""
         stopped = captioning.stop_job(name)
         if not stopped:
-            return jsonify_error("No running captioning job for this dataset", status=404)
+            return jsonify_error("No running captioning job for this dataset", status=404, code=ErrorCode.NOT_FOUND)
         return jsonify({"status": "stopping"})
 
     @app.get("/datasets/<name>/caption")
@@ -55,10 +67,11 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
 
     @app.post("/datasets/<name>/images/<int:image_id>/caption")
     def caption_single_image(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
-        """Caption a single image synchronously.
+        """Start a single-image captioning job.
 
         Accepts the same JSON body fields as the batch endpoint.
-        Returns the generated caption.
+        Returns job status immediately (202 Accepted); listen to SSE events
+        or poll GET /datasets/<name>/caption for completion.
         """
         raw: dict[str, Any] = request.get_json(silent=True) or {}
 
@@ -66,11 +79,20 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             options = CaptionJobOptions.model_validate(raw)
         except pydantic.ValidationError as e:
             details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
-            return jsonify_error("Validation failed", details=details, status=400)
+            return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
 
         try:
-            result = captioning.caption_single(name, image_id, options)
-        except ValueError as e:
-            return jsonify_error(str(e), status=409)
+            cmd_envs.load_env(options.env, password=options.password)
+        except cmd_envs.PasswordRequiredError:
+            return jsonify_error(
+                "Password required to decrypt environment settings",
+                status=403,
+                code=ErrorCode.PASSWORD_REQUIRED,
+            )
 
-        return jsonify(result)
+        try:
+            info: JobInfo = captioning.caption_single(name, image_id, options)
+        except ValueError as e:
+            return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
+
+        return jsonify_dataclass(info), 202

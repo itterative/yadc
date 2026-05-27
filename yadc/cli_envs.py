@@ -1,12 +1,16 @@
 import sys
+from typing import Literal, cast
 
 import click
 import pydantic
 
 from yadc.cmd import app as cmd_app
+from yadc.cmd import config as cmd_config
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd import status as cmd_status
+from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core import logging
+from yadc.core.env import YADC_PASSWORD
 
 from . import cli_common
 
@@ -21,6 +25,69 @@ _logger = logging.get_logger(__name__)
 )
 def envs():
     pass
+
+
+@envs.group(
+    "key-mode",
+    short_help="Manage key storage mode",
+    help="Switch between keyring and password-based private key storage.",
+)
+def key_mode():
+    pass
+
+
+@key_mode.command("get", short_help="Show current key storage mode")
+@cli_common.log_level
+def key_mode_get():
+    try:
+        config = cmd_config.load_config()
+        click.echo(config.key_storage.mode)
+    except Exception as e:
+        _logger.error("Error: failed to read key storage mode: %s", e)
+        sys.exit(cmd_status.STATUS_ERROR)
+
+
+def _read_password(prompt: str) -> str | None:
+    """Read password from YADC_PASSWORD env, stdin, or interactive prompt."""
+    env_password = YADC_PASSWORD
+    if env_password:
+        return env_password
+    if not sys.stdin.isatty():
+        password = sys.stdin.read().strip()
+        return password if password else None
+    return click.prompt(prompt, hide_input=True)
+
+
+@key_mode.command("set", short_help="Set key storage mode")
+@click.argument("mode", type=click.Choice(["keyring", "password"]))
+@cli_common.log_level
+def key_mode_set(mode: str):
+    try:
+        config = cmd_config.load_config()
+    except Exception as e:
+        _logger.error("Error: failed to read user config: %s", e)
+        sys.exit(cmd_status.STATUS_ERROR)
+
+    password: str | None = None
+    old_password: str | None = None
+
+    if config.key_storage.mode == "password" and mode == "keyring":
+        old_password = _read_password("Enter current password to decrypt existing tokens")
+
+    if mode == "password":
+        password = _read_password("Enter new password for key storage")
+
+    try:
+        cmd_envs.set_key_mode(
+            config,
+            cast(Literal["keyring", "password"], mode),
+            password=password,
+            old_password=old_password,
+        )
+        _logger.info("Key storage mode set to '%s'.", mode)
+    except Exception as e:
+        _logger.error("Error: failed to set key storage mode: %s", e)
+        sys.exit(cmd_status.STATUS_ERROR)
 
 
 @envs.command(
@@ -38,29 +105,37 @@ def envs_path():
     short_help="Retrieve a setting",
     help="Retrieve a setting value from user environments",
 )
-@click.argument("key", type=click.Choice(cmd_envs.ENV_KEYS))
+@click.argument("key", type=click.Choice(list(cmd_config.AppConfigEnv.model_fields.keys())))
 @cli_common.log_level
 @cli_common.env
 def envs_get(key: str, env: str = "default"):
-    if key not in cmd_envs.ENV_KEYS:
+    if key not in cmd_config.AppConfigEnv.model_fields:
         _logger.error("Error: invalid setting: %s", key)
         sys.exit(cmd_status.STATUS_USER_ERROR)
 
     try:
-        env_config = cmd_envs.get_env(env)
-        env_setting = env_config[key]
-
-        if not env_setting or not env_setting.value:
+        env_config = cmd_envs.get_env(env) or cmd_config.AppConfigEnv()
+        value_obj = getattr(env_config, key)
+        if value_obj.value is None:
             _logger.error("Error: key not found: %s (env: %s)", key, env)
             sys.exit(cmd_status.STATUS_USER_ERROR)
 
-        if not env_setting.encrypted:
-            click.echo(env_setting)
+        if value_obj.method == "none":
+            click.echo(value_obj.value)
             return
 
-        env_setting_decrypted = cmd_envs.decrypt_setting(env_setting.value)
-        if env_setting_decrypted is not None:
-            click.echo(env_setting_decrypted)
+        method = cmd_envs.EncryptionMethod(value_obj.method)
+        try:
+            decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method)
+        except PasswordRequiredError:
+            password = _read_password("Enter password to decrypt this setting")
+            if password is None:
+                _logger.error("Error: password required to decrypt '%s'.", key)
+                sys.exit(cmd_status.STATUS_USER_ERROR)
+            decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method, password=password)
+
+        if decrypted is not None:
+            click.echo(decrypted)
             return
 
         _logger.error("Error: failed to decrypted setting.")
@@ -75,39 +150,39 @@ def envs_get(key: str, env: str = "default"):
     short_help="Update a setting",
     help="Update a setting value in user environments",
 )
-@click.argument("key", type=click.Choice(cmd_envs.ENV_KEYS))
+@click.argument("key", type=click.Choice(list(cmd_config.AppConfigEnv.model_fields.keys())))
 @click.argument("value", type=str, required=False, default=None)
 @click.option("--force", is_flag=True, help="Recreates the user environment if invalid")
 @cli_common.log_level
 @cli_common.env
 def envs_set(key: str, value: str | None, env: str = "default", force: bool = False):
-    if key not in cmd_envs.ENV_KEYS:
+    if key not in cmd_config.AppConfigEnv.model_fields:
         _logger.error("Error: invalid setting: %s", key)
         sys.exit(cmd_status.STATUS_USER_ERROR)
 
     if value is None:
-        secret_value = key in cmd_envs.ENCRYPTED_KEYS
+        secret_value = key in cmd_config.AppConfigEnv.ENCRYPTED_FIELDS
         value = click.prompt(f"Enter {key}", hide_input=secret_value)
 
     try:
-        config_toml = cmd_app.load_config()
+        config = cmd_config.load_config()
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error("Error: user environments is invalid")
-            sys.exit(cmd_status.STATUS_ERROR)
-        config_toml = {}
+            sys.exit(cmd_status.STATUS_USER_ERROR)
+        config = cmd_config.AppConfig(key_storage=cmd_config.AppConfigKeyStorage(mode="keyring"), envs={})
     except Exception as e:
         _logger.error("Error: failed to read user environments: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
     try:
-        env_config = cmd_envs.update_env(key, value, env=env, config_toml=config_toml)
+        cmd_envs.update_env(key, value, env=env, config=config)
     except ValueError as e:
         _logger.error("Error: %s", e)
-        sys.exit(cmd_status.STATUS_ERROR)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
 
     try:
-        cmd_envs.save_env(env=env, env_config=env_config, config_toml=config_toml)
+        cmd_envs.save_env(config=config)
         _logger.info("User environment setting %s (env: %s) has been updated.", key, env)
     except Exception as e:
         _logger.error("Error: user environments could not be updated: %s", e)
@@ -115,34 +190,34 @@ def envs_set(key: str, value: str | None, env: str = "default", force: bool = Fa
 
 
 @envs.command("delete", short_help="Delete a setting", help="Delete a setting from user environments")
-@click.argument("key", type=click.Choice(cmd_envs.ENV_KEYS))
+@click.argument("key", type=click.Choice(list(cmd_config.AppConfigEnv.model_fields.keys())))
 @click.option("--force", is_flag=True, help="Recreates the user environment if invalid")
 @cli_common.log_level
 @cli_common.env
 def envs_delete(key: str, env: str = "default", force: bool = False):
-    if key not in cmd_envs.ENV_KEYS:
+    if key not in cmd_config.AppConfigEnv.model_fields:
         _logger.error("Error: invalid setting: %s", key)
         sys.exit(cmd_status.STATUS_USER_ERROR)
 
     try:
-        config_toml = cmd_app.load_config()
+        config = cmd_config.load_config()
     except (pydantic.ValidationError, ValueError):
         if not force:
             _logger.error("Error: user environments is invalid")
-            sys.exit(cmd_status.STATUS_ERROR)
-        config_toml = {}
+            sys.exit(cmd_status.STATUS_USER_ERROR)
+        config = cmd_config.AppConfig(key_storage=cmd_config.AppConfigKeyStorage(mode="keyring"), envs={})
     except Exception as e:
         _logger.error("Error: failed to read user environments: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
     try:
-        env_config = cmd_envs.update_env(key, None, env=env, config_toml=config_toml)
+        cmd_envs.update_env(key, None, env=env, config=config)
     except ValueError as e:
         _logger.error("Error: %s", e)
-        sys.exit(cmd_status.STATUS_ERROR)
+        sys.exit(cmd_status.STATUS_USER_ERROR)
 
     try:
-        cmd_envs.save_env(env=env, env_config=env_config, config_toml=config_toml)
+        cmd_envs.save_env(config=config)
         _logger.info("User environment setting %s (env: %s) has been removed.", key, env)
     except Exception as e:
         _logger.error("Error: user environments could not be updated: %s", e)
@@ -204,21 +279,22 @@ def envs_list():
 @cli_common.env
 def envs_show(env: str = "default"):
     try:
-        env_config = cmd_envs.get_env(env)
+        env_config = cmd_envs.get_env(env) or cmd_config.AppConfigEnv()
     except Exception as e:
         _logger.error("Error: failed to read user environments: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
     found = False
-
-    # buffer so error and warnings show at the beginning
     buffer = ""
 
-    for key, setting in env_config.items():
-        if not setting or not setting.value:
+    for key in cmd_config.AppConfigEnv.model_fields:
+        value_obj = getattr(env_config, key)
+        assert isinstance(value_obj, cmd_config.AppConfigEnvValue)
+        if value_obj.value is None:
             continue
 
-        buffer += f"{key} = {setting}\n"
+        display = "[REDACTED]" if value_obj.is_encrypted else value_obj.value
+        buffer += f"{key} = {display}\n"
         found = True
 
     if not found:

@@ -9,7 +9,7 @@ from ..modules.logging_factory import LoggingFactory
 from ..services.datasets import DatasetService
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import jsonify_dataclass, jsonify_error
+from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error
 
 
 def _thumbnail_cache_path(cache_dir: Path, image_path: Path, size: int) -> Path:
@@ -198,14 +198,14 @@ def api_datasets(
                     continue
 
             if not template:
-                return jsonify_error(f"Template '{template_name}' not found", status=404)
+                return jsonify_error(f"Template '{template_name}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
         try:
             result = datasets.preview_prompt(name, image_id, template)
         except Exception as e:
-            return jsonify_error(str(e), status=400)
+            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
 
         if result is None:
-            return jsonify_error("Image not found", status=404)
+            return jsonify_error("Image not found", status=404, code=ErrorCode.NOT_FOUND)
 
         return jsonify(result)

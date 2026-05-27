@@ -1,14 +1,14 @@
 <script lang="ts">
-	let { class: klazz = '' }: { class?: string } = $props();
+    let { class: klazz = '' }: { class?: string } = $props();
 </script>
 
 <svg
-	class={klazz}
-	xmlns="http://www.w3.org/2000/svg"
-	height="24px"
-	viewBox="0 -960 960 960"
-	width="24px"
-	fill="currentColor"
+    class={klazz}
+    xmlns="http://www.w3.org/2000/svg"
+    height="24px"
+    viewBox="0 -960 960 960"
+    width="24px"
+    fill="currentColor"
 >
-	<path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z" />
+    <path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z" />
 </svg>

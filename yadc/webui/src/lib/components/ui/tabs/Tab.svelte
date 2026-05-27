@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
-	import { getTabsContext } from './TabsContext.svelte';
+    import { untrack, type Snippet } from 'svelte';
+    import { getTabsContext } from './TabsContext.svelte';
 
-	interface Props {
-		id: string;
-		label: string;
-		class?: string;
-		children: Snippet;
-	}
+    interface Props {
+        id: string;
+        label: string;
+        class?: string;
+        children: Snippet;
+    }
 
-	let { id, label, class: className = '', children }: Props = $props();
+    let { id, label, class: className = '', children }: Props = $props();
 
-	const ctx = getTabsContext();
-	const index = untrack(() => ctx.registerTab(id, label));
-	let isActive = $derived(ctx.activeIndex === index);
+    const ctx = getTabsContext();
+    const index = untrack(() => ctx.registerTab(id, label));
+    let isActive = $derived(ctx.activeIndex === index);
 </script>
 
-<div class={isActive ? className : 'hidden'}>
-	{@render children()}
+<div class={isActive ? `${className} min-h-0 flex-1` : 'hidden'}>
+    {@render children()}
 </div>

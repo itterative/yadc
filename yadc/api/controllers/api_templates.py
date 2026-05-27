@@ -9,7 +9,7 @@ from yadc.cmd import templates as cmd_templates
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import jsonify_error
+from .utils_json import ErrorCode, jsonify_error
 
 # Light Jinja2 variable extractor — finds {{ var }} and {% for x in ... %} references.
 # Not a full parser, but good enough for editor hints.
@@ -71,9 +71,9 @@ def api_templates(app: ApiBlueprint, logging: LoggingFactory):
                 content = cmd_templates.load_builtin_template(name)
                 source = "builtin"
             except Exception:
-                return jsonify_error(f"Template '{name}' not found", status=404)
+                return jsonify_error(f"Template '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
         except Exception as e:
-            return jsonify_error(str(e), status=500)
+            return jsonify_error(str(e), status=500, code=ErrorCode.INTERNAL_ERROR)
 
         variables = _extract_variables(content)
 
@@ -94,11 +94,11 @@ def api_templates(app: ApiBlueprint, logging: LoggingFactory):
         """
         body = request.get_json(silent=True)
         if body is None or "content" not in body:
-            return jsonify_error("Request body must include 'content'", status=400)
+            return jsonify_error("Request body must include 'content'", status=400, code=ErrorCode.BAD_REQUEST)
 
         content = body["content"]
         if not isinstance(content, str):
-            return jsonify_error("'content' must be a string", status=400)
+            return jsonify_error("'content' must be a string", status=400, code=ErrorCode.BAD_REQUEST)
 
         cmd_templates.save_user_template(name, content)
         _logger.info("Template '%s' saved.", name)
@@ -122,11 +122,11 @@ def api_templates(app: ApiBlueprint, logging: LoggingFactory):
             try:
                 cmd_templates.load_user_template(name)
             except FileNotFoundError:
-                return jsonify_error("Cannot delete built-in templates", status=400)
+                return jsonify_error("Cannot delete built-in templates", status=400, code=ErrorCode.BAD_REQUEST)
 
         deleted = cmd_templates.delete_user_template(name)
         if not deleted:
-            return jsonify_error(f"Template '{name}' not found", status=404)
+            return jsonify_error(f"Template '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
         _logger.info("Template '%s' deleted.", name)
         return jsonify({"status": "ok"})

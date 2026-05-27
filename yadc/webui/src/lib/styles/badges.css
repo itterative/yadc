@@ -1,25 +1,25 @@
 @layer components {
-	.badge {
-		@apply rounded-md px-2 py-0.5 text-xs font-medium;
-	}
+    .badge {
+        @apply rounded-md px-2 py-0.5 text-xs font-medium;
+    }
 
-	.badge-sm {
-		@apply rounded px-0.5 py-px text-[0.625rem] leading-none font-bold;
-	}
+    .badge-sm {
+        @apply rounded px-0.5 py-px text-[0.625rem] leading-none font-bold;
+    }
 
-	.badge-accent {
-		@apply rounded-md border border-accent/25 bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent;
-	}
+    .badge-accent {
+        @apply rounded-md border border-accent/25 bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent;
+    }
 
-	.badge-success {
-		@apply rounded-md bg-success/20 px-2 py-0.5 text-xs font-medium text-success;
-	}
+    .badge-success {
+        @apply rounded-md bg-success/20 px-2 py-0.5 text-xs font-medium text-success;
+    }
 
-	.badge-error {
-		@apply rounded-md bg-error/20 px-2 py-0.5 text-xs font-medium text-error;
-	}
+    .badge-error {
+        @apply rounded-md bg-error/20 px-2 py-0.5 text-xs font-medium text-error;
+    }
 
-	.badge-muted {
-		@apply rounded-md bg-gray-600/50 px-2 py-0.5 text-xs font-medium text-gray-400;
-	}
+    .badge-muted {
+        @apply rounded-md bg-gray-600/50 px-2 py-0.5 text-xs font-medium text-gray-400;
+    }
 }

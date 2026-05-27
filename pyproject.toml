@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "keyrings-alt>=5.0.2",
     "mock>=5.2.0",
     "pytest>=8.4.2",
     "pytest-integration>=0.2.3",

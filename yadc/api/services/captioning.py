@@ -14,7 +14,7 @@ Usage from the API layer::
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -55,6 +55,7 @@ class JobInfo:
     total: int = 0
     errors: int = 0
     error: str | None = None
+    error_messages: list[str] = field(default_factory=list)
 
 
 class CaptionJobOptions(pydantic.BaseModel):
@@ -86,6 +87,12 @@ class CaptionJobOptions(pydantic.BaseModel):
     reasoning_effort: str = "low"
     reasoning_exclude_output: bool = True
 
+    # Password for decrypting password-mode environment settings
+    password: str | None = None
+
+    # If set, only caption these specific image IDs (single-image mode)
+    image_ids: list[int] | None = None
+
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="ignore")
 
 
@@ -97,7 +104,7 @@ class CaptionJobOptions(pydantic.BaseModel):
 def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict[str, Any]:
     """Merge env/config overrides from *opts* into the raw TOML dict."""
     env_name = opts.env or raw.get("env", "default")
-    user_env = cmd_envs.load_env(env_name)
+    user_env = cmd_envs.load_env(env_name, password=opts.password)
 
     raw.setdefault("api", {})
     api: dict[str, Any] = raw["api"]
@@ -194,6 +201,7 @@ class CaptionJob:
         self._total: int = 0
         self._errors: int = 0
         self._error: str | None = None
+        self._error_messages: list[str] = []
 
         self._thread: threading.Thread | None = None
 
@@ -226,6 +234,7 @@ class CaptionJob:
                 total=self._total,
                 errors=self._errors,
                 error=self._error,
+                error_messages=self._error_messages.copy(),
             )
 
     # -- main loop -----------------------------------------------------------
@@ -236,7 +245,10 @@ class CaptionJob:
             self._do_run()
         except Exception as exc:
             self._logger.exception("Captioning job for '%s' failed: %s", self._dataset_name, exc)
-            self._set_state(error=str(exc), status="error", set_error=True)
+            msg = str(exc)
+            self._set_state(error=msg, status="error", set_error=True)
+            with self._state_lock:
+                self._error_messages.append(msg)
             self._emit_status()
         finally:
             self._on_done()
@@ -273,6 +285,17 @@ class CaptionJob:
             self._set_state(status="done")
             self._emit_status()
             return
+
+        # 5b. Filter to specific image IDs if requested (single-image mode)
+        if self._opts.image_ids:
+            target_paths: set[Path] = set()
+            for image_id in self._opts.image_ids:
+                info = self._dataset_service.get_image(self._dataset_name, image_id)
+                if info:
+                    target_paths.add(Path(info.path))
+            images = [img for img in images if Path(img.path) in target_paths]
+            if not images:
+                raise ValueError(f"Specified image(s) not found in dataset '{self._dataset_name}'")
 
         # 6. Filter already-captioned images
         to_do: list[DatasetImage] = []
@@ -318,7 +341,7 @@ class CaptionJob:
                 self._caption_one(model, img, config.settings, conversation_overrides)
             except Exception as exc:
                 self._logger.warning("Failed to caption %s: %s", img.path, exc)
-                self._increment_errors()
+                self._record_error(str(exc))
                 self._emit_status()
                 continue
 
@@ -402,9 +425,10 @@ class CaptionJob:
         with self._state_lock:
             self._processed += 1
 
-    def _increment_errors(self) -> None:
+    def _record_error(self, message: str) -> None:
         with self._state_lock:
             self._errors += 1
+            self._error_messages.append(message)
 
     def _check_stop(self) -> bool:
         with self._state_lock:
@@ -420,6 +444,7 @@ class CaptionJob:
             errors=snap.errors,
             job_id=snap.job_id,
             error=snap.error,
+            error_messages=snap.error_messages,
         )
         self._event_dispatcher.dispatch(event)
 
@@ -449,7 +474,6 @@ class CaptioningService(Service):
 
         self._lock: threading.Lock = threading.Lock()
         self._jobs: dict[str, CaptionJob] = {}
-        self._active_single: set[str] = set()  # datasets with an active single-image caption
 
     # -- public API ----------------------------------------------------------
 
@@ -472,8 +496,6 @@ class CaptioningService(Service):
         with self._lock:
             if dataset_name in self._jobs and self._jobs[dataset_name].alive:
                 raise ValueError(f"A captioning job is already running for dataset '{dataset_name}'")
-            if dataset_name in self._active_single:
-                raise ValueError(f"A single-image caption is in progress for dataset '{dataset_name}'")
 
             job = CaptionJob(
                 dataset_name=dataset_name,
@@ -510,131 +532,28 @@ class CaptioningService(Service):
                 return JobInfo(status="idle", dataset_name=dataset_name)
             return job.snapshot
 
-    def caption_single(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> dict[str, Any]:
-        """Caption a single image synchronously.
+    def caption_single(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> JobInfo:
+        """Start a single-image captioning job for *dataset_name*.
 
-        Resolves the dataset config, creates a captioner, and captions the
-        specified image. Returns a dict with the resulting caption and job_id.
+        Creates a background job constrained to *image_id* and returns
+        immediately with the initial job status.
 
         Raises:
-            ValueError: If the dataset or image is not found, or another operation is running.
+            ValueError: If another operation is already running for this dataset.
         """
-        job_id = uuid.uuid4().hex[:12]
-
-        # Block if another captioning operation is running for this dataset
-        with self._lock:
-            if dataset_name in self._jobs and self._jobs[dataset_name].alive:
-                raise ValueError(f"A batch captioning job is running for dataset '{dataset_name}'")
-            if dataset_name in self._active_single:
-                raise ValueError(f"A single-image caption is already in progress for dataset '{dataset_name}'")
-            self._active_single.add(dataset_name)
-
-        try:
-            result = self._caption_single_inner(dataset_name, image_id, options, job_id)
-            result["job_id"] = job_id
-            return result
-        finally:
-            with self._lock:
-                self._active_single.discard(dataset_name)
-
-    def _caption_single_inner(self, dataset_name: str, image_id: int, options: CaptionJobOptions, job_id: str) -> dict[str, Any]:
-        """Inner implementation of caption_single (caller handles locking)."""
-
-        # Resolve dataset config
-        ds_info = self._dataset_service.get_dataset(dataset_name)
-        if ds_info is None or ds_info.config_path is None:
-            raise ValueError(f"Dataset '{dataset_name}' not found")
-
-        config_path = Path(ds_info.config_path)
-        if not config_path.exists():
-            raise ValueError(f"Config file not found: {config_path}")
-
-        with open(config_path) as f:
-            raw = toml.load(f)
-
-        # Build a temporary job-like object just for _apply_overrides
-        raw = apply_config_overrides(raw, options)
-
-        try:
-            config = parse_config(raw)
-        except Exception as exc:
-            raise ValueError(f"Invalid dataset config: {exc}") from exc
-
-        # Resolve template
-        config.prompt.template = resolve_template(config.prompt.name, config.prompt.template, self._logger)
-
-        # Resolve the specific image
-        info = self._dataset_service.get_image(dataset_name, image_id)
-        if info is None:
-            raise ValueError(f"Image {image_id} not found in dataset '{dataset_name}'")
-
-        image_path = Path(info.path)
-        if not image_path.exists():
-            raise ValueError(f"Image file not found: {image_path}")
-
-        # Build DatasetImage with extras
-        dataset_image = DatasetImage(path=str(image_path))
-        dataset_image.caption = dataset_image.read_caption()
-
-        # Load TOML extras
-        extras: dict[str, Any] = {}
-        if dataset_image.toml_path.exists():
-            try:
-                with open(dataset_image.toml_path) as f:
-                    extras = toml.loads(f.read())
-            except Exception:
-                pass
-        if extras:
-            dataset_image = DatasetImage.model_validate({"path": str(image_path), "caption": dataset_image.caption, **extras})
-
-        # Create the captioner
-        model = APICaptioner(
-            api_url=config.api.url,
-            api_token=config.api.token,
-            prompt_template=config.prompt.template,
-            store_conversation=config.settings.store_conversation,
-            image_quality=config.settings.image_quality,
-            reasoning=config.reasoning.enable,
-            reasoning_effort=config.reasoning.thinking_effort,
-            reasoning_exclude_output=config.reasoning.exclude_from_output,
-        )
-        model.load_model(config.api.model_name)
-
-        # Caption
-        conversation_overrides = config.settings.advanced.model_dump()
-        caption = model.predict(
-            dataset_image,
-            max_new_tokens=config.settings.max_tokens,
-            use_cache=True,
-            conversation_overrides=conversation_overrides,
-            prefill=config.settings.advanced.assistant_prefill,
-            drafts=dataset_image.read_all_drafts() or None,
-            prediction_context=PredictionContext(),
-        ).strip()
-
-        if caption:
-            self._mark_expected_changes(dataset_name, job_id)
-            if options.draft:
-                dataset_image.write_draft(options.draft, caption)
-            else:
-                if dataset_image.caption:
-                    dataset_image.save_history(when_not_exists=True)
-                dataset_image.update_caption(caption)
-                dataset_image.save_history(when_not_exists=False)
-
-            # Update the image index
-            self._dataset_service.refresh_image_index(dataset_name, image_id)
-            # Clear the source tag after the debounce window passes
-            threading.Timer(2.0, lambda: self._dataset_watcher.clear_expected_changes(dataset_name)).start()
-
-        model.log_usage()
-
-        return {"caption": caption}
+        single_opts = options.model_copy(update={"image_ids": [image_id]})
+        return self.start_job(dataset_name, single_opts)
 
     # -- private helpers -----------------------------------------------------
 
     def _cleanup(self, dataset_name: str) -> None:
         """Remove finished jobs after a short delay (so clients can read final status)."""
+
+        # Capture the job ID before the delay so a stale cleanup timer can't
+        # wipe a newer job's expected-changes tag.
+        with self._lock:
+            job = self._jobs.get(dataset_name)
+            job_id = job.snapshot.job_id if job is not None else ""
 
         def _delayed():
             import time
@@ -644,7 +563,7 @@ class CaptioningService(Service):
                 job = self._jobs.get(dataset_name)
                 if job is not None and not job.alive:
                     del self._jobs[dataset_name]
-            self._dataset_watcher.clear_expected_changes(dataset_name)
+            self._dataset_watcher.clear_expected_changes_for_job(dataset_name, job_id)
 
         t = threading.Thread(target=_delayed, daemon=True)
         t.start()

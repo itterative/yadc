@@ -153,6 +153,15 @@ class DatasetWatcherService(Service):
         with self._lock:
             self._expected_sources.pop(dataset_name, None)
 
+    def clear_expected_changes_for_job(self, dataset_name: str, job_id: str) -> None:
+        """Remove the source tag only if it still matches *job_id*.
+
+        Prevents a stale cleanup timer from wiping a newer job's source tag.
+        """
+        with self._lock:
+            if self._expected_sources.get(dataset_name) == job_id:
+                self._expected_sources.pop(dataset_name, None)
+
     def _unwatch_dataset_locked(self, dataset_name: str) -> None:
         """Remove watches for a dataset (caller must hold self._lock)."""
         # Cancel any pending debounce timer
@@ -177,18 +186,21 @@ class DatasetWatcherService(Service):
             if old_timer is not None:
                 old_timer.cancel()
 
+            # Capture the job_id now so a later cleanup can't wipe it before the
+            # debounce fires. If no job is active, job_id will be None.
+            job_id = self._expected_sources.get(dataset_name)
+
             # Schedule a new one
-            timer = threading.Timer(self._debounce_seconds, self._dispatch_change, args=(dataset_name,))
+            timer = threading.Timer(self._debounce_seconds, self._dispatch_change, args=(dataset_name, job_id))
             timer.daemon = True
             self._timers[dataset_name] = timer
 
         timer.start()
 
-    def _dispatch_change(self, dataset_name: str) -> None:
+    def _dispatch_change(self, dataset_name: str, job_id: str | None) -> None:
         """Dispatch a DatasetChangedEvent (called from debounce timer thread)."""
         with self._lock:
             self._timers.pop(dataset_name, None)
-            job_id = self._expected_sources.get(dataset_name)
 
         self._logger.debug("Dispatching dataset_changed event. [dataset=%s, job_id=%s]", dataset_name, job_id)
         self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name, job_id=job_id))

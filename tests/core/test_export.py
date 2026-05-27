@@ -614,5 +614,5 @@ class TestReadCaptionSource:
 
     def test_invalid_source_raises(self, tmp_images):
         tmp_path, images = tmp_images
-        with pytest.raises(ValueError, match='source must be'):
+        with pytest.raises(ValueError, match="source must be"):
             read_caption_source(images[0], source="bogus")

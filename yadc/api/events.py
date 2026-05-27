@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
@@ -5,12 +6,14 @@ from typing import ClassVar, Literal
 class Event:
     TYPE: ClassVar[str]
 
+
 class StartupEvent(Event):
     TYPE: ClassVar[str] = "startup"
 
 
 class ShutdownEvent(Event):
     TYPE: ClassVar[str] = "shutdown"
+
 
 @dataclass
 class PingEvent(Event):
@@ -28,6 +31,7 @@ class CaptioningStatusEvent(Event):
     errors: int
     job_id: str = ""
     error: str | None = None
+    error_messages: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclass

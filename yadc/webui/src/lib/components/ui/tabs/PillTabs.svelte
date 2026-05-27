@@ -1,30 +1,30 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-	import Tabs from './Tabs.svelte';
+    import type { Snippet } from 'svelte';
+    import Tabs from './Tabs.svelte';
 
-	interface Props {
-		class?: string;
-		value?: string;
-		end?: Snippet;
-		children: Snippet;
-	}
+    interface Props {
+        class?: string;
+        value?: string;
+        end?: Snippet;
+        children: Snippet;
+    }
 
-	let { class: className = '', value = $bindable(''), end, children }: Props = $props();
+    let { class: className = '', value = $bindable(''), end, children }: Props = $props();
 </script>
 
 <Tabs class={className} bind:value {end}>
-	{#snippet tab(t, isActive, onclick)}
-		<button
-			type="button"
-			role="tab"
-			aria-selected={isActive}
-			class="cursor-pointer rounded-full px-4 py-1.5 text-sm font-medium transition-colors {isActive
-				? 'bg-accent text-white'
-				: 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}"
-			{onclick}
-		>
-			{t.label}
-		</button>
-	{/snippet}
-	{@render children()}
+    {#snippet tab(t, isActive, onclick)}
+        <button
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            class="cursor-pointer rounded-full px-4 py-1.5 text-sm font-medium transition-colors {isActive
+                ? 'bg-accent text-white'
+                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}"
+            {onclick}
+        >
+            {t.label}
+        </button>
+    {/snippet}
+    {@render children()}
 </Tabs>

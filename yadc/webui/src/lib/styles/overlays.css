@@ -1,25 +1,25 @@
 @layer components {
-	.dialog-panel {
-		@apply m-auto w-full rounded-xl border border-border bg-surface shadow-2xl;
-	}
+    .dialog-panel {
+        @apply m-auto w-full rounded-xl border border-border bg-surface shadow-2xl;
+    }
 
-	.dialog-header {
-		@apply mb-4 flex items-center justify-between;
-	}
+    .dialog-header {
+        @apply mb-4 flex items-center justify-between;
+    }
 
-	.dialog-title {
-		@apply text-lg font-semibold text-white;
-	}
+    .dialog-title {
+        @apply text-lg font-semibold text-white;
+    }
 
-	.alert-error {
-		@apply rounded-lg border border-error/20 bg-error/10 p-3 text-sm text-error;
-	}
+    .alert-error {
+        @apply rounded-lg border border-error/20 bg-error/10 p-3 text-sm text-error;
+    }
 
-	.alert-warning {
-		@apply rounded-lg border border-warning/20 bg-warning/10 p-3 text-sm text-warning;
-	}
+    .alert-warning {
+        @apply rounded-lg border border-warning/20 bg-warning/10 p-3 text-sm text-warning;
+    }
 
-	.alert-success {
-		@apply rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success;
-	}
+    .alert-success {
+        @apply rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success;
+    }
 }
