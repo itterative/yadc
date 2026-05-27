@@ -5,6 +5,14 @@ description: When a user query involves deferred tasks, known issues, or future 
 
 # TODO
 
+## API request consolidation (4 issues)
+
+Captured in **plans/api-request-consolidation-plan**:
+- (a) Env list returns only names → need full details endpoint
+- (b) Dataset browser triggers 4 parallel requests (images, datasets list, captioning status, config)
+- (c) Environment call repeats when opening CaptionSettings (same root cause as a)
+- (d) `ImageCaptionedEvent` via SSE doesn't include caption text → still need `fetchCaption` HTTP call
+
 ## ~~Convert API backend to async (ASGI)~~ **DONE** — migrated to Quart + uvicorn
 
 The API backend was migrated from Flask/waitress to Quart/uvicorn in two phases:
