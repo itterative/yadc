@@ -66,6 +66,15 @@ class ImageCaptionedEvent(Event):
 
 
 @dataclass
+class ImageCaptionStartedEvent(Event):
+    TYPE: ClassVar[str] = "image_caption_started"
+    dataset_name: str
+    job_id: str
+    image_id: int
+    file_name: str
+
+
+@dataclass
 class ImageCaptionErrorEvent(Event):
     TYPE: ClassVar[str] = "image_caption_error"
     dataset_name: str

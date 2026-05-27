@@ -1,7 +1,7 @@
 ---
 name: selective-image-refresh-plan
 description: Per-image SSE events during captioning for live grid tile updates.
-last_history: 3
+last_history: 4
 ---
 
 # Selective Image Refresh During Captioning
@@ -153,7 +153,7 @@ Frontend SSE handler:
   - This eliminates the jarring scroll reset that `loadInitial` caused when the user had scrolled beyond page 1.
 - Refine the ⚠ warning badge on `DatasetImage.svelte` — current implementation is a minimal first pass. Improve styling, positioning (avoid overlap with draft badge at `top-1 left-1`), and consider clearing the error when the tile is successfully re-captioned or on full reload
 - Add a one-shot accent border glow animation (`tile-flash`) that triggers when a tile is updated via per-image events, so the user can see which tiles changed. Uses a `flash` timestamp on `ImageInfo` and `animationend` to auto-clear
-- **TODO**: Investigate how to show an animation on the image *currently being processed* (not just after completion). This would require the backend to emit a `captioning_started` per-image event before calling the API, or deriving the current image from the `CaptioningStatusEvent.processed` count and the known image order
+- **~~TODO~~ ✅ DONE**: Show an animation on the image *currently being processed* (not just after completion). Implemented via `ImageCaptionStartedEvent` — a new per-image event emitted before the API call. Frontend shows a diagonal gradient shimmer sweep (`::after` pseudo-element with animated `background-position`) on the active tile. The shimmer uses accent color at 20-35% opacity, 3.5s cycle, smooth infinite loop. Store auto-clears on `image_captioned`, `image_caption_error`, or terminal `captioning_status`.
 - ~~**Pre-existing issue**: If captioning is started from another tab/device, an already-open dataset page may not show the progress bar until the next aggregate `CaptioningStatusEvent`.~~ **RESOLVED — not reproducible.** Traced the SSE stream with curl: `CaptioningStatusEvent(status="running")` is dispatched to all connected clients immediately when a job starts, including cross-tab jobs. `Last-Event-ID` resumption was also verified to work correctly. The symptom was most likely caused by **Hot Module Replacement (HMR)** during development, which tears down and recreates the page (and its `$effect` subscriptions) while captioning is in progress. The existing `fetchCaptioningStatus` poll on page mount already handles recovery from HMR. No backend or frontend changes needed.
 - Update todo memory
 
@@ -161,14 +161,15 @@ Frontend SSE handler:
 
 | File | Change |
 |------|--------|
-| `yadc/api/events.py` | Add `ImageCaptionedEvent`, `ImageCaptionErrorEvent` |
+| `yadc/api/events.py` | Add `ImageCaptionedEvent`, `ImageCaptionErrorEvent`, `ImageCaptionStartedEvent` |
 | `yadc/api/services/datasets.py` | Add `get_image_by_path()` method |
-| `yadc/api/services/captioning.py` | Emit per-image events in `CaptionJob._do_run()` |
+| `yadc/api/services/captioning.py` | Emit per-image events (started + captioned/error) in `CaptionJob._do_run()` |
 | `yadc/api/modules/sse_events.py` | Add `@event_handler` for new events |
-| `yadc/webui/src/lib/stores/events.ts` | Add Zod schemas, stores, SSE listeners |
+| `yadc/webui/src/lib/stores/events.ts` | Add Zod schemas, stores, SSE listeners (including `currentlyCaptioning`) |
 | `yadc/webui/src/lib/stores/datasetImages.ts` | Extend `ImageInfo` type with optional `caption_error` |
-| `yadc/webui/src/lib/components/dataset/DatasetImage.svelte` | Warning badge for caption errors |
-| `yadc/webui/src/routes/datasets/[name]/+page.svelte` | Subscribe to per-image stores, call `updateImage()` |
+| `yadc/webui/src/lib/components/dataset/DatasetImage.svelte` | Warning badge, shimmer animation for active captioning |
+| `yadc/webui/src/lib/components/dataset/DatasetBrowser.svelte` | Forward `captioningId` prop to tiles |
+| `yadc/webui/src/routes/datasets/[name]/+page.svelte` | Subscribe to per-image stores, derive `captioningImageId`, pass to browser |
 
 ## Open questions
 

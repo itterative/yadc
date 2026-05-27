@@ -30,7 +30,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.prediction import PredictionContext
 
-from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent
+from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent, ImageCaptionStartedEvent
 from ..modules.dataset_watcher import DatasetWatcherService
 from ..modules.event_dispatcher import EventDispatcher
 from ..modules.logging_factory import LoggingFactory
@@ -337,6 +337,9 @@ class CaptionJob:
             if self._check_stop():
                 break
 
+            # Emit a started event so the frontend can show which image is actively being captioned.
+            self._emit_image_started(img)
+
             try:
                 self._caption_one(model, img, config.settings, conversation_overrides)
             except Exception as exc:
@@ -449,6 +452,20 @@ class CaptionJob:
             error_messages=snap.error_messages,
         )
         self._event_dispatcher.dispatch(event)
+
+    def _emit_image_started(self, dataset_image: DatasetImage) -> None:
+        """Emit a per-image event before captioning starts."""
+        info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
+        if info is None:
+            return
+        self._event_dispatcher.dispatch(
+            ImageCaptionStartedEvent(
+                dataset_name=self._dataset_name,
+                job_id=self._job_id,
+                image_id=info.id,
+                file_name=info.file_name,
+            )
+        )
 
     def _emit_image_captioned(self, dataset_image: DatasetImage) -> None:
         """Emit a per-image event after successful captioning."""

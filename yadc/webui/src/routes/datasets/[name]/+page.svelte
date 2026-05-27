@@ -18,7 +18,8 @@
         clearResumptionFailed,
         setCaptioningStatus,
         lastCaptionedImage,
-        lastCaptionError
+        lastCaptionError,
+        currentlyCaptioning
     } from '$lib/stores/events';
     import { toast } from '$lib/stores/toasts';
     import {
@@ -89,6 +90,11 @@
     let isBatchCaptioning = $derived(
         $captioningStatus?.dataset_name === datasetName &&
             ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
+    );
+
+    // ID of the image currently being captioned (for pulsing animation)
+    let captioningImageId = $derived(
+        $currentlyCaptioning?.dataset_name === datasetName ? $currentlyCaptioning.image_id : null
     );
 
     // Is a single-image job currently running for the focused item?
@@ -446,7 +452,9 @@
             // so reload page 1 as a safety net. Otherwise the tiles are
             // already current from live ImageCaptionedEvents.
             if (get(resumptionFailed)) {
-                toast.warning('Some captioning events were missed. Refreshing grid to ensure accuracy.');
+                toast.warning(
+                    'Some captioning events were missed. Refreshing grid to ensure accuracy.'
+                );
                 loadInitial(datasetName);
             }
             (async () => {
@@ -595,6 +603,7 @@
                     {isLoading}
                     {isLoadingMore}
                     selectedId={focusedItem?.id ?? null}
+                    captioningId={captioningImageId}
                     onclick={handleItemClick}
                     onendreached={loadMore}
                 />

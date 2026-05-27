@@ -12,6 +12,7 @@
         isLoading: boolean;
         isLoadingMore: boolean;
         selectedId?: number | null;
+        captioningId?: number | null;
         onclick: (item: ImageInfo) => void;
         onendreached: () => void;
     }
@@ -23,6 +24,7 @@
         isLoading,
         isLoadingMore,
         selectedId = null,
+        captioningId = null,
         onclick,
         onendreached
     }: Props = $props();
@@ -136,6 +138,7 @@
                         {datasetName}
                         {item}
                         selected={item.id === selectedId}
+                        captioning={item.id === captioningId}
                         onclick={() => onclick(item)}
                     />
                 {/each}

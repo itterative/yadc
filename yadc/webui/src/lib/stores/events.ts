@@ -65,12 +65,20 @@ export const ImageCaptionErrorEventZ = z.object({
     error: z.string()
 });
 
+export const ImageCaptionStartedEventZ = z.object({
+    dataset_name: z.string(),
+    job_id: z.string(),
+    image_id: z.number(),
+    file_name: z.string()
+});
+
 // --- Types ---
 
 export type CaptioningStatus = z.infer<typeof CaptioningStatusZ>;
 export type DatasetChangedEvent = z.infer<typeof DatasetChangedEventZ>;
 export type ImageCaptionedEvent = z.infer<typeof ImageCaptionedEventZ>;
 export type ImageCaptionErrorEvent = z.infer<typeof ImageCaptionErrorEventZ>;
+export type ImageCaptionStartedEvent = z.infer<typeof ImageCaptionStartedEventZ>;
 
 // --- Internal writable stores ---
 
@@ -99,6 +107,9 @@ const _lastCaptionedImage = writable<ImageCaptionedEvent | null>(null);
 /** Latest per-image caption error event. */
 const _lastCaptionError = writable<ImageCaptionErrorEvent | null>(null);
 
+/** Image currently being captioned (null when idle or between images). */
+const _currentlyCaptioning = writable<{ dataset_name: string; image_id: number } | null>(null);
+
 const MAX_ACTIVE_JOB_IDS = 16;
 
 // --- Public readonly stores ---
@@ -119,6 +130,10 @@ export const lastCaptionedImage: Readable<ImageCaptionedEvent | null> =
 /** Most recent per-image caption error event. */
 export const lastCaptionError: Readable<ImageCaptionErrorEvent | null> =
     readonly(_lastCaptionError);
+
+/** Image currently being captioned (null when idle or between images). */
+export const currentlyCaptioning: Readable<{ dataset_name: string; image_id: number } | null> =
+    readonly(_currentlyCaptioning);
 
 // --- Public actions ---
 
@@ -169,6 +184,15 @@ function connect() {
 
     _eventSource.listen('captioning_status', CaptioningStatusZ, (data) => {
         _captioningStatus.set(data);
+        // Clear "currently captioning" when the job finishes or errors.
+        if (data.status === 'done' || data.status === 'error' || data.status === 'idle') {
+            _currentlyCaptioning.update((cur) => {
+                if (cur && cur.dataset_name === data.dataset_name) {
+                    return null;
+                }
+                return cur;
+            });
+        }
     });
 
     _eventSource.listen('ping', PingEventZ, () => {
@@ -203,10 +227,28 @@ function connect() {
 
     _eventSource.listen('image_captioned', ImageCaptionedEventZ, (data) => {
         _lastCaptionedImage.set(data);
+        // Clear the "currently captioning" indicator for this image (it just finished).
+        _currentlyCaptioning.update((cur) => {
+            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.id) {
+                return null;
+            }
+            return cur;
+        });
     });
 
     _eventSource.listen('image_caption_error', ImageCaptionErrorEventZ, (data) => {
         _lastCaptionError.set(data);
+        // Clear the "currently captioning" indicator for this image (it failed).
+        _currentlyCaptioning.update((cur) => {
+            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.image_id) {
+                return null;
+            }
+            return cur;
+        });
+    });
+
+    _eventSource.listen('image_caption_started', ImageCaptionStartedEventZ, (data) => {
+        _currentlyCaptioning.set({ dataset_name: data.dataset_name, image_id: data.image_id });
     });
 
     // Let the browser handle reconnection automatically.  The server sends a

@@ -6,10 +6,18 @@
         datasetName: string;
         item: ImageInfo;
         selected?: boolean;
+        captioning?: boolean;
         onclick: (item: ImageInfo) => void;
     }
 
-    let { class: klazz = '', datasetName, item, selected = false, onclick }: Props = $props();
+    let {
+        class: klazz = '',
+        datasetName,
+        item,
+        selected = false,
+        captioning = false,
+        onclick
+    }: Props = $props();
 
     let media: HTMLImageElement | null = $state(null);
     let loading: boolean = $state(true);
@@ -50,6 +58,7 @@
     class:has-caption={item.has_caption}
     class:has-toml={item.has_toml}
     class:selected
+    class:captioning
     class:flashing
     onanimationend={handleFlashEnd}
 >
@@ -106,6 +115,15 @@
         animation: tile-flash 0.8s ease-out;
     }
 
+    .captioning {
+        animation: none;
+    }
+
+    /* When both captioning and flashing, show the shimmer (not the flash). */
+    .captioning.flashing {
+        animation: none;
+    }
+
     @keyframes tile-flash {
         0% {
             outline: 3px solid var(--color-accent);
@@ -114,6 +132,33 @@
         100% {
             outline: 3px solid transparent;
             outline-offset: -3px;
+        }
+    }
+
+    .captioning::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            110deg,
+            transparent 25%,
+            color-mix(in oklch, var(--color-accent) 20%, transparent) 40%,
+            color-mix(in oklch, var(--color-accent) 35%, transparent) 50%,
+            color-mix(in oklch, var(--color-accent) 20%, transparent) 60%,
+            transparent 75%
+        );
+        background-size: 300% 100%;
+        animation: shimmer 3.5s ease-in-out infinite;
+        pointer-events: none;
+        border-radius: inherit;
+    }
+
+    @keyframes shimmer {
+        0% {
+            background-position: 150% 0;
+        }
+        100% {
+            background-position: -150% 0;
         }
     }
 </style>

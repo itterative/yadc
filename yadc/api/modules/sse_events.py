@@ -11,6 +11,7 @@ from ..events import (
     Event,
     ImageCaptionedEvent,
     ImageCaptionErrorEvent,
+    ImageCaptionStartedEvent,
     PingEvent,
     ResumptionFailedEvent,
     ShutdownEvent,
@@ -77,6 +78,10 @@ class SSEEvents(Service):
 
     @event_handler(ImageCaptionedEvent)
     async def on_image_captioned(self, event: ImageCaptionedEvent) -> None:
+        await self.push(event)
+
+    @event_handler(ImageCaptionStartedEvent)
+    async def on_image_caption_started(self, event: ImageCaptionStartedEvent) -> None:
         await self.push(event)
 
     @event_handler(ImageCaptionErrorEvent)
