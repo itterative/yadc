@@ -131,6 +131,10 @@ Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-sca
 - `DatasetService` should handle these by doing targeted SQLite upserts/deletes for the affected files instead of a full rescan.
 - Increase or remove the `_refresh_stale_datasets` interval (currently 60s) since the watcher now handles updates incrementally — the stale refresh becomes just a fallback.
 
+## Unify DatasetImage resolution for webui preview and captioning
+
+`DatasetService.preview_prompt()` manually constructs `DatasetImage` instances (reading caption, TOML extras, drafts) with ad-hoc code that diverges from `read_image_from_disk()` used by `resolve_dataset()` in the captioning pipeline. This duplication caused the caption to be missing from the template preview context (fixed with a one-liner). A single shared resolution function (e.g. `DatasetImage.from_path()` or a service-level helper) should be used by both paths to prevent similar regressions. Key files: `yadc/api/services/datasets.py` (`preview_prompt`), `yadc/core/dataset_resolver.py` (`read_image_from_disk`).
+
 ## Clean up captioning server logs
 
 The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level code (`APICaptioner`, `cmd_envs`, `cmd_templates`, `resolve_dataset`, etc.) which logs verbosely to stdout/stderr using print statements and CLI-style formatters (progress bars, usage stats, interactive prompts). When captioning via the API/webui, these logs pollute the server output. The logging needs a pass to:
