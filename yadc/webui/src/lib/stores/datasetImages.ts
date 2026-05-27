@@ -24,6 +24,7 @@ export interface ImageInfo {
     height: number;
     draft_names: string[];
     last_modified_t: number | null;
+    caption_error?: string;
 }
 
 export interface ImagePage {

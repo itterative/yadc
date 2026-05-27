@@ -1,7 +1,7 @@
 ---
 name: selective-image-refresh-plan
 description: Per-image SSE events during captioning for live grid tile updates.
-last_history: 1
+last_history: 2
 ---
 
 # Selective Image Refresh During Captioning
@@ -137,7 +137,7 @@ Frontend SSE handler:
 - Modify `CaptionJob._do_run()` to dispatch per-image events
 - Register handlers in `SSEEvents`
 
-### Phase 2: Frontend — SSE parsing + tile updates
+### Phase 2: Frontend — SSE parsing + tile updates ✅
 - Add Zod schemas for new events
 - Add writable stores and SSE listeners in `events.ts`
 - Subscribe in dataset page, call `updateImage()`

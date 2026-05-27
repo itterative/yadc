@@ -44,10 +44,33 @@ export const ResumptionFailedEventZ = z.object({
     requested_event_id: z.number()
 });
 
+export const ImageCaptionedEventZ = z.object({
+    dataset_name: z.string(),
+    job_id: z.string(),
+    id: z.number(),
+    file_name: z.string(),
+    path: z.string(),
+    has_caption: z.boolean(),
+    has_toml: z.boolean(),
+    width: z.number(),
+    height: z.number(),
+    draft_names: z.array(z.string()),
+    last_modified_t: z.number().nullable()
+});
+
+export const ImageCaptionErrorEventZ = z.object({
+    dataset_name: z.string(),
+    job_id: z.string(),
+    image_id: z.number(),
+    error: z.string()
+});
+
 // --- Types ---
 
 export type CaptioningStatus = z.infer<typeof CaptioningStatusZ>;
 export type DatasetChangedEvent = z.infer<typeof DatasetChangedEventZ>;
+export type ImageCaptionedEvent = z.infer<typeof ImageCaptionedEventZ>;
+export type ImageCaptionErrorEvent = z.infer<typeof ImageCaptionErrorEventZ>;
 
 // --- Internal writable stores ---
 
@@ -70,6 +93,12 @@ const _activeJobIds = writable<string[]>([]);
 /** Set to true when the server signals that SSE resumption failed. */
 const _resumptionFailed = writable(false);
 
+/** Latest per-image captioned event (null when no event has been received yet). */
+const _lastCaptionedImage = writable<ImageCaptionedEvent | null>(null);
+
+/** Latest per-image caption error event. */
+const _lastCaptionError = writable<ImageCaptionErrorEvent | null>(null);
+
 const MAX_ACTIVE_JOB_IDS = 16;
 
 // --- Public readonly stores ---
@@ -82,6 +111,14 @@ export const pendingDatasetChanges: Readable<Set<string>> = readonly(_pendingDat
 
 /** True when the SSE event history was too old to resume after a reconnect. */
 export const resumptionFailed: Readable<boolean> = readonly(_resumptionFailed);
+
+/** Most recent per-image captioned event. Set to null after consumption if needed. */
+export const lastCaptionedImage: Readable<ImageCaptionedEvent | null> =
+    readonly(_lastCaptionedImage);
+
+/** Most recent per-image caption error event. */
+export const lastCaptionError: Readable<ImageCaptionErrorEvent | null> =
+    readonly(_lastCaptionError);
 
 // --- Public actions ---
 
@@ -162,6 +199,14 @@ function connect() {
             data.requested_event_id
         );
         _resumptionFailed.set(true);
+    });
+
+    _eventSource.listen('image_captioned', ImageCaptionedEventZ, (data) => {
+        _lastCaptionedImage.set(data);
+    });
+
+    _eventSource.listen('image_caption_error', ImageCaptionErrorEventZ, (data) => {
+        _lastCaptionError.set(data);
     });
 
     // Let the browser handle reconnection automatically.  The server sends a

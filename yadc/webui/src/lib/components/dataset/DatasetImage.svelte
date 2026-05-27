@@ -71,6 +71,13 @@
             title="{item.draft_names.length} draft(s)">D</span
         >
     {/if}
+
+    {#if item.caption_error}
+        <span
+            class="badge-sm pointer-events-none absolute top-1 left-1 bg-warning text-black"
+            title={item.caption_error}>⚠</span
+        >
+    {/if}
 </button>
 
 <style>

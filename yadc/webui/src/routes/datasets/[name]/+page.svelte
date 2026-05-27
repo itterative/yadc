@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from '$app/stores';
-    import { onMount } from 'svelte';
+    import { onMount, untrack } from 'svelte';
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/DatasetBrowser.svelte';
@@ -16,7 +16,9 @@
         registerJobId,
         resumptionFailed,
         clearResumptionFailed,
-        setCaptioningStatus
+        setCaptioningStatus,
+        lastCaptionedImage,
+        lastCaptionError
     } from '$lib/stores/events';
     import { toast } from '$lib/stores/toasts';
     import {
@@ -56,11 +58,10 @@
 
     // --- Captioning state ---
 
-    // NOTE: Grid tiles are NOT updated live during captioning — the SSE events
-    // (CaptioningStatusEvent) only carry aggregate counts (processed/total/errors),
-    // not individual image IDs. A full reload happens when captioning finishes
-    // (see handleCaptioningDone). For live per-tile updates, the backend would
-    // need to emit per-image events (e.g. CaptionedImageEvent with image_id).
+    // Per-image SSE events (ImageCaptionedEvent / ImageCaptionErrorEvent)
+    // update individual grid tiles live during captioning. A full reload
+    // still happens when captioning finishes (handleCaptioningDone) as a
+    // safety net for any missed events.
 
     // KNOWN ISSUE: Hot Module Replacement (HMR) can break captioning state
     // tracking. If a reload happens, state of runningJobId survives, and
@@ -199,6 +200,40 @@
         const name = datasetName;
         return pendingDatasetChanges.subscribe((set) => {
             hasPendingChanges = set.has(name);
+        });
+    });
+
+    // Update individual grid tiles as captioning progresses.
+    $effect(() => {
+        const event = $lastCaptionedImage;
+        if (!event || event.dataset_name !== datasetName) {
+            return;
+        }
+        untrack(() => {
+            images = images.map((img) =>
+                img.id === event.id
+                    ? {
+                          ...img,
+                          has_caption: event.has_caption,
+                          has_toml: event.has_toml,
+                          draft_names: event.draft_names,
+                          caption_error: undefined
+                      }
+                    : img
+            );
+        });
+    });
+
+    // Mark tiles that failed captioning with an error indicator.
+    $effect(() => {
+        const event = $lastCaptionError;
+        if (!event || event.dataset_name !== datasetName) {
+            return;
+        }
+        untrack(() => {
+            images = images.map((img) =>
+                img.id === event.image_id ? { ...img, caption_error: event.error } : img
+            );
         });
     });
 
@@ -449,7 +484,7 @@
 </svelte:head>
 
 <Topbar>
-    <a href="#/" class="hidden md:flex -ml-2 p-2 text-gray-400 transition-colors hover:text-white">
+    <a href="#/" class="-ml-2 hidden p-2 text-gray-400 transition-colors hover:text-white md:flex">
         <SvgChevronLeft class="h-6 w-6" />
     </a>
     <div class="min-w-0 flex-1">
