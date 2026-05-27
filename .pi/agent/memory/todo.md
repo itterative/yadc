@@ -14,6 +14,15 @@ The API backend was migrated from Flask/waitress to Quart/uvicorn in two phases:
 
 All success criteria met: SSE connects/reconnects/resumes, Ctrl+C shuts down cleanly within 2s (hard timeout at 5s), no thread blocking, `pytest` passes.
 
+## Test cleanup
+
+Several test files need structural cleanup:
+
+- **Awkward structure**: `test_dataset_resolver.py` and `test_cli_draft.py` use class-based test organization that doesn't match the rest of the codebase (top-level functions). Should be refactored to use flat `def test_*` functions.
+- **Wrong location**: `test_cli_draft.py` lives at `tests/test_cli_draft.py` (root of `tests/`) instead of `tests/cli/test_cli_draft.py` alongside the other CLI tests.
+- **Inconsistent patterns**: Some tests use classes (`class TestXxx`), some use modules with top-level functions. Standardize on top-level `def test_*` functions.
+- **Shared fixtures**: Consider consolidating the `cli` fixture usage patterns — `isolated=True` vs `env="..."` — into a clearer naming convention (e.g. `cli_isolated` / `cli_integration` fixtures).
+
 ### Deferred: FastAPI migration
 A future FastAPI migration is possible but intentionally deferred. Quart is API-compatible with Flask and validated. FastAPI would give native Pydantic request/response models (fixing 21 basedpyright warnings in controllers) and automatic OpenAPI docs, but requires rewriting every route to use `Depends()` instead of injector closures. Not worth the churn until Quart proves problematic.
 
