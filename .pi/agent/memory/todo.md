@@ -10,8 +10,9 @@ description: When a user query involves deferred tasks, known issues, or future 
 The API backend was migrated from Flask/waitress to Quart/uvicorn in two phases:
 - **Phase 1**: Framework swap (Flask → Quart, waitress → uvicorn, `async def` on `send_file` routes).
 - **Phase 2**: Fully async SSE (`asyncio.Queue` per client, `EventDispatcher` async bridge, native `async for` in `/events`).
+- **Phase 4**: Graceful shutdown timeout (`timeout_graceful_shutdown=5`), integration tests for SSE connection cleanup, event delivery, and EventDispatcher thread-to-async bridging.
 
-All success criteria met: SSE connects/reconnects/resumes, Ctrl+C shuts down cleanly within 2s, no thread blocking, `pytest` passes.
+All success criteria met: SSE connects/reconnects/resumes, Ctrl+C shuts down cleanly within 2s (hard timeout at 5s), no thread blocking, `pytest` passes.
 
 ### Deferred: FastAPI migration
 A future FastAPI migration is possible but intentionally deferred. Quart is API-compatible with Flask and validated. FastAPI would give native Pydantic request/response models (fixing 21 basedpyright warnings in controllers) and automatic OpenAPI docs, but requires rewriting every route to use `Depends()` instead of injector closures. Not worth the churn until Quart proves problematic.

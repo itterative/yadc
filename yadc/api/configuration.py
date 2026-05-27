@@ -29,6 +29,9 @@ class Configuration:
     sse_listener_max_events: int = 100
     sse_event_history_size: int = 128
 
+    # Server
+    graceful_shutdown_timeout: int = 5
+
     # Display
     banner_enable: bool = True
 

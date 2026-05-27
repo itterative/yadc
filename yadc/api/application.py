@@ -115,6 +115,7 @@ class Application(Module):
             port=self.configuration.http_port,
             log_level="info",
             lifespan="on",
+            timeout_graceful_shutdown=self.configuration.graceful_shutdown_timeout,
         )
         server = uvicorn.Server(config)
 

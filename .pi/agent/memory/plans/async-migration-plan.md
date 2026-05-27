@@ -227,5 +227,5 @@ This is intentionally **out of scope** for this plan.
 - [x] Ctrl+C shuts down cleanly within 2 seconds even with active SSE connections.
 - [x] `uv run pytest tests` passes (or at least no new failures introduced).
 - [x] Full WebUI captioning flow works end-to-end.
-- [ ] Uvicorn graceful shutdown timeout configured and honoured.
-- [ ] Integration tests exist for SSE shutdown and EventDispatcher thread-to-async bridge.
+- [x] Uvicorn graceful shutdown timeout configured and honoured.
+- [x] Integration tests exist for SSE shutdown and EventDispatcher thread-to-async bridge.
