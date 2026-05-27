@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 from dataclasses import dataclass
 from typing import ClassVar, Literal
@@ -45,3 +47,28 @@ class DatasetChangedEvent(Event):
 class ResumptionFailedEvent(Event):
     TYPE: ClassVar[str] = "resumption_failed"
     requested_event_id: int
+
+
+@dataclass
+class ImageCaptionedEvent(Event):
+    TYPE: ClassVar[str] = "image_captioned"
+    dataset_name: str
+    job_id: str
+    id: int
+    file_name: str
+    path: str
+    has_caption: bool = False
+    has_toml: bool = False
+    width: int = 0
+    height: int = 0
+    draft_names: list[str] = dataclasses.field(default_factory=list)
+    last_modified_t: float | None = None
+
+
+@dataclass
+class ImageCaptionErrorEvent(Event):
+    TYPE: ClassVar[str] = "image_caption_error"
+    dataset_name: str
+    job_id: str
+    image_id: int
+    error: str

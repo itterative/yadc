@@ -307,6 +307,37 @@ class DatasetService(Service):
         p = Path(info.path)
         return p if p.exists() else None
 
+    def get_image_by_path(self, dataset_name: str, image_path: str | Path) -> ImageInfo | None:
+        """Look up an image by its filesystem path within a dataset."""
+        conn = self._db.connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t
+                FROM dataset_images di
+                JOIN datasets d ON d.id = di.dataset_id
+                WHERE d.name = ? AND di.path = ?
+                """,
+                (dataset_name, str(image_path)),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            return ImageInfo(
+                id=row[0],
+                file_name=row[1],
+                path=row[2],
+                has_caption=bool(row[3]),
+                has_toml=bool(row[4]),
+                width=row[5] or 0,
+                height=row[6] or 0,
+                draft_names=row[7].split(",") if row[7] else [],
+                last_modified_t=row[8],
+            )
+        finally:
+            conn.close()
+
     def get_draft_names(self, dataset_name: str) -> list[str]:
         """Return sorted list of unique draft names across all images in a dataset."""
         conn = self._db.connection()

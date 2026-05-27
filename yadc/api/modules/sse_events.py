@@ -5,7 +5,16 @@ from collections.abc import AsyncGenerator
 from logging import Logger
 
 from ..configuration import Configuration
-from ..events import CaptioningStatusEvent, DatasetChangedEvent, Event, PingEvent, ResumptionFailedEvent, ShutdownEvent
+from ..events import (
+    CaptioningStatusEvent,
+    DatasetChangedEvent,
+    Event,
+    ImageCaptionedEvent,
+    ImageCaptionErrorEvent,
+    PingEvent,
+    ResumptionFailedEvent,
+    ShutdownEvent,
+)
 from .event_dispatcher import EventDispatcher, event_handler
 from .job_scheduler import JobScheduler
 from .logging_factory import LoggingFactory
@@ -64,6 +73,14 @@ class SSEEvents(Service):
 
     @event_handler(DatasetChangedEvent)
     async def on_dataset_changed(self, event: DatasetChangedEvent) -> None:
+        await self.push(event)
+
+    @event_handler(ImageCaptionedEvent)
+    async def on_image_captioned(self, event: ImageCaptionedEvent) -> None:
+        await self.push(event)
+
+    @event_handler(ImageCaptionErrorEvent)
+    async def on_image_caption_error(self, event: ImageCaptionErrorEvent) -> None:
         await self.push(event)
 
     async def push(self, event: Event) -> None:

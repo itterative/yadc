@@ -30,7 +30,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.prediction import PredictionContext
 
-from ..events import CaptioningStatusEvent
+from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent
 from ..modules.dataset_watcher import DatasetWatcherService
 from ..modules.event_dispatcher import EventDispatcher
 from ..modules.logging_factory import LoggingFactory
@@ -343,10 +343,12 @@ class CaptionJob:
                 self._logger.warning("Failed to caption %s: %s", img.path, exc)
                 self._record_error(str(exc))
                 self._emit_status()
+                self._emit_image_error(img, str(exc))
                 continue
 
             self._increment_processed()
             self._emit_status()
+            self._emit_image_captioned(img)
 
         model.log_usage()
 
@@ -447,6 +449,45 @@ class CaptionJob:
             error_messages=snap.error_messages,
         )
         self._event_dispatcher.dispatch(event)
+
+    def _emit_image_captioned(self, dataset_image: DatasetImage) -> None:
+        """Emit a per-image event after successful captioning."""
+        info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
+        if info is None:
+            return
+        self._dataset_service.refresh_image_index(self._dataset_name, info.id)
+        # Re-fetch to get updated has_caption/draft_names
+        info = self._dataset_service.get_image(self._dataset_name, info.id)
+        if info is None:
+            return
+        self._event_dispatcher.dispatch(
+            ImageCaptionedEvent(
+                dataset_name=self._dataset_name,
+                job_id=self._job_id,
+                id=info.id,
+                file_name=info.file_name,
+                path=info.path,
+                has_caption=info.has_caption,
+                has_toml=info.has_toml,
+                width=info.width,
+                height=info.height,
+                draft_names=info.draft_names,
+                last_modified_t=info.last_modified_t,
+            )
+        )
+
+    def _emit_image_error(self, dataset_image: DatasetImage, error: str) -> None:
+        """Emit a per-image event when captioning fails."""
+        info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
+        image_id = info.id if info is not None else -1
+        self._event_dispatcher.dispatch(
+            ImageCaptionErrorEvent(
+                dataset_name=self._dataset_name,
+                job_id=self._job_id,
+                image_id=image_id,
+                error=error,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

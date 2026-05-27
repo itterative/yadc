@@ -1,7 +1,7 @@
 ---
 name: selective-image-refresh-plan
 description: Per-image SSE events during captioning for live grid tile updates.
-last_history: 0
+last_history: 1
 ---
 
 # Selective Image Refresh During Captioning
@@ -23,7 +23,7 @@ Two new event types in `yadc/api/events.py`:
 1. **`ImageCaptionedEvent`** — emitted after an image is successfully captioned
    - `dataset_name: str`
    - `job_id: str`
-   - `image: ImageInfo` — full image info (reuses the `ImageInfo` dataclass from `DatasetService`)
+   - Flattened `ImageInfo` fields: `id`, `file_name`, `path`, `has_caption`, `has_toml`, `width`, `height`, `draft_names`, `last_modified_t`
 
 2. **`ImageCaptionErrorEvent`** — emitted when captioning a single image fails
    - `dataset_name: str`
@@ -36,8 +36,7 @@ Two new event types in `yadc/api/events.py`:
 #### 1. New events (`yadc/api/events.py`)
 
 - Add `ImageCaptionedEvent` and `ImageCaptionErrorEvent` dataclasses
-- `ImageCaptionedEvent` embeds an `ImageInfo` object directly (it's already a dataclass, so `DataclassJSONEncoder` handles serialization)
-- Import `ImageInfo` from `yadc.api.services.datasets`
+- `ImageCaptionedEvent` embeds the same fields as `ImageInfo` flattened directly on the event (avoids import cycle with `datasets.py`)
 
 #### 2. CaptionJob emits per-image events (`yadc/api/services/captioning.py`)
 
@@ -132,12 +131,11 @@ Frontend SSE handler:
 
 ## Phased implementation
 
-### Phase 1: Backend — events + emission
+### Phase 1: Backend — events + emission ✅
 - Add `ImageCaptionedEvent` and `ImageCaptionErrorEvent` to `events.py`
 - Add `DatasetService.get_image_by_path()` helper
 - Modify `CaptionJob._do_run()` to dispatch per-image events
 - Register handlers in `SSEEvents`
-- Add `DatasetService.get_image_by_path()` method
 
 ### Phase 2: Frontend — SSE parsing + tile updates
 - Add Zod schemas for new events
