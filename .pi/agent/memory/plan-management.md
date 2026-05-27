@@ -7,30 +7,53 @@ description: When a user query relates to features, refactors, or design work th
 
 ## Storage Location
 
-All project plans live in **`.pi/agent/memory/plans/`** inside the agent memory directory. These are **feature/design plans** — documents with phased implementation, checklists, architecture decisions, and historical context. They are separate from reference docs (architecture, conventions, workflows) which belong in `memory/docs/`.
+All project plans live in **`.pi/agent/memory/plans/`** inside the agent memory directory. These are **feature/design plans** — documents focused on current state: phased implementation, active decisions, and remaining work. They are separate from reference docs (architecture, conventions, workflows) which belong in `memory/docs/`.
+
+### Directory Structure
+
+```
+plans/
+├── <name>.md                  # Active/completed plans (current state)
+├── archive/<name>.md          # Obsolete/superseded plans
+└── history/<name>/            # Sidecar change records (per-entry files)
+    ├── 001-slug.md
+    └── 002-slug.md
+```
+
+Plan frontmatter may include `last_history: <N>` — the latest history entry number (omit if no history).
 
 ## Plan Index
 
 | Plan | Description | Status |
 |------|-------------|--------|
-| [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Migrate API backend from Flask/waitress to FastAPI/uvicorn. Covers async SSE, EventDispatcher thread-to-async bridge, controller Pydantic models, CORS middleware, static file serving, and phased implementation. | Draft |
-| [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Integrating caption settings panel with dataset TOML config. Covers `PATCH /configs/<name>`, typed Config API (Pydantic + TS), diff indicators, overrides section, "Save as dataset default". Remaining: preset profiles, config diff banner, TOML multiline string serialization for templates. | Mostly implemented |
-| [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Complete historical summary of replacing `keyring`-based RSA private key storage with a password-protected alternative (PBKDF2 + AES-256-GCM in config TOML). Tracks original intent, deviations, decisions, and all files touched. | Complete |
-| [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, backend controller endpoint index, component design notes (CodeMirror, editors, selectors), and known issues. All phases 1–4 implemented. | Complete |
+| [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Flask/waitress → Quart/uvicorn async migration | Draft |
+| [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
+| [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
+| [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, component index, design notes | Complete |
 
-## When to Review Plans
+## When to Read Plans
 
-**Before any of the following, read the relevant plan(s):**
-- The user asks to implement, change, or remove a feature that appears in the index above.
-- The user references something that sounds like a past design decision (e.g. "why do we have two key pairs?", "how does config patching work?").
-- The user proposes a refactor touching areas covered by a plan.
-- The user asks about remaining work, TODO items, or open questions from a past effort.
+- User asks to implement/change/remove a feature in the index.
+- User references a past design decision — also check `history/<name>/` if it exists.
+- User proposes a refactor touching a planned area.
+- User asks about remaining work or open questions.
 
-## Keeping Plans Up to Date
+## Maintenance
 
-- **When a plan is completed**, update its status in this index to "Complete".
-- **When a plan has remaining items**, keep its status accurate (e.g. "Mostly implemented", "In progress").
-- **When a new plan is created**, add it to the index with a concise description and status.
-- **When a plan is fully superseded or obsolete**, move it to a `plans/archive/` subdirectory (create if needed) and remove it from the active index.
-- **When a plan's details change**, update the plan file itself, not just this index. Cross-reference `todo.md` if remaining work is tracked there instead.
-- **Reference style**: use `plans/<name>` in other memories and `todo.md` so links remain valid if the directory structure changes.
+- **New plan** → add to index with status.
+- **Plan completed** → set status to "Complete".
+- **Plan superseded** → move to `archive/`, remove from index; history stays in `history/`.
+- **Historical content accumulated** → create numbered entry in `history/<name>/`, update `last_history` in plan frontmatter.
+- **Plan details changed** → update plan file, create history entry for deviations.
+- **Reference style**: `plans/<name>`, `history/<name>/<NNN>-<slug>`.
+
+## History Entry Format
+
+```markdown
+---
+date: YYYY-MM-DD
+---
+# Title
+**Context:** Why. **Decision:** What. **Rationale:** Why this way.
+**Files touched:** (optional)
+```
