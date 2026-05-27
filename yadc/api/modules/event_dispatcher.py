@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 from inspect import signature
 from logging import Logger
 from threading import Lock
@@ -73,6 +75,11 @@ class EventDispatcher(Service):
         self._logger: Logger = logging.get_logger(__name__)
         self._lock: Lock = Lock()
         self._subscribers: dict[str, list[Handler]] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Capture a reference to the running event loop for async handler bridging."""
+        self._loop = loop
 
     def subscribe[T: Event](self, event_cls: type[T], handler: Callable[[T], None]):
         event_type = event_cls.TYPE
@@ -130,11 +137,12 @@ class EventDispatcher(Service):
                 return attr
         raise ValueError(f"No event class found with type '{event_type}'")
 
-    def dispatch(self, event: Event):
+    def dispatch(self, event: Event) -> None:
         """Dispatch an event to all registered handlers.
 
-        Args:
-            event: The event to dispatch
+        Sync handlers are called directly. Async handlers are scheduled on the
+        captured event loop via ``create_task`` (same thread) or
+        ``run_coroutine_threadsafe`` (background thread).
         """
         event_type = event.__class__.TYPE
 
@@ -143,7 +151,10 @@ class EventDispatcher(Service):
 
         for handler in list(handlers):
             try:
-                handler(event)
+                if inspect.iscoroutinefunction(handler):
+                    self._dispatch_async(handler, event)
+                else:
+                    handler(event)
             except Exception as e:
                 self._logger.error(
                     "Error handling event. [type=%s, handler=%s, error=%s]",
@@ -152,3 +163,27 @@ class EventDispatcher(Service):
                     str(e),
                 )
                 raise
+
+    def _dispatch_async(self, handler: Callable[[Event], Any], event: Event) -> None:
+        """Schedule an async handler on the event loop."""
+        loop = self._loop
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+                self._loop = loop
+            except RuntimeError:
+                pass
+
+        if loop is None or not loop.is_running():
+            self._logger.warning("Event loop not available for async handler %s, skipping", handler.__name__)
+            return
+
+        try:
+            current_loop = asyncio.get_running_loop()
+            if current_loop is loop:
+                asyncio.create_task(handler(event))
+                return
+        except RuntimeError:
+            pass
+
+        asyncio.run_coroutine_threadsafe(handler(event), loop)

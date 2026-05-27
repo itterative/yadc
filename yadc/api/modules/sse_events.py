@@ -1,9 +1,8 @@
+import asyncio
 import itertools
 from collections import deque
-from collections.abc import Callable, Generator
+from collections.abc import AsyncGenerator
 from logging import Logger
-from threading import Condition
-from typing import Any
 
 from ..configuration import Configuration
 from ..events import CaptioningStatusEvent, DatasetChangedEvent, Event, PingEvent, ResumptionFailedEvent, ShutdownEvent
@@ -28,11 +27,11 @@ class SSEEvents(Service):
         logging: LoggingFactory,
     ):
         self._logger: Logger = logging.get_logger(__name__)
-
+        self._event_dispatcher: EventDispatcher = event_dispatcher
         self.configuration: Configuration = configuration
 
-        self._queue_cv: Condition = Condition()
-        self._queues: list[list[_QueueItem]] = []
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._queues: list[asyncio.Queue[_QueueItem]] = []
         self._shutdown: bool = False
 
         # Event ID counter and history ring buffer for Last-Event-ID resumption.
@@ -45,58 +44,58 @@ class SSEEvents(Service):
 
         job_scheduler.new_scheduled_job(5, self._send_ping)
 
-    def _send_ping(self):
+    def _send_ping(self) -> None:
         from datetime import datetime, timezone
 
-        self.push(PingEvent(time=datetime.now(timezone.utc).isoformat()))
+        self._event_dispatcher.dispatch(PingEvent(time=datetime.now(timezone.utc).isoformat()))
 
     @event_handler(ShutdownEvent)
-    def on_shutdown(self, _event: ShutdownEvent):
+    def on_shutdown(self, _event: ShutdownEvent) -> None:
         self._logger.info("Shutdown event received, stopping %d listeners", len(self._queues))
-        with self._queue_cv:
-            self._shutdown = True
-            self._queue_cv.notify_all()
+        self._shutdown = True
+
+    @event_handler(PingEvent)
+    async def on_ping(self, event: PingEvent) -> None:
+        await self.push(event)
 
     @event_handler(CaptioningStatusEvent)
-    def on_captioning_status(self, event: CaptioningStatusEvent):
-        self.push(event)
+    async def on_captioning_status(self, event: CaptioningStatusEvent) -> None:
+        await self.push(event)
 
     @event_handler(DatasetChangedEvent)
-    def on_dataset_changed(self, event: DatasetChangedEvent):
-        self.push(event)
+    async def on_dataset_changed(self, event: DatasetChangedEvent) -> None:
+        await self.push(event)
 
-    def push(self, event: Event):
-        with self._queue_cv:
+    async def push(self, event: Event) -> None:
+        async with self._lock:
             is_ping = isinstance(event, PingEvent)
 
             if not is_ping:
                 self._logger.debug("New sse event. [type=%s, listeners=%d]", event.TYPE, len(self._queues))
-
                 event_id = next(self._event_counter)
                 self._history.append((event_id, event))
             else:
                 event_id = 0
 
             for queue in self._queues:
-                if len(queue) > self.configuration.sse_listener_max_events:
+                if queue.full():
+                    if not self._did_warn:
+                        self._logger.warning(
+                            "An SSE event listener has reached the maximum number of events (%d) in the queue.",
+                            self.configuration.sse_listener_max_events,
+                        )
+                        self._did_warn = True
                     continue
 
-                queue.append((event_id, event))
+                queue.put_nowait((event_id, event))
 
-                if len(queue) >= self.configuration.sse_listener_max_events:
-                    self._logger.warning(
-                        "An SSE event listener has reached the maximum number of events (%d) in the queue.",
-                        self.configuration.sse_listener_max_events,
-                    )
+            self._did_warn = False
 
-            self._queue_cv.notify_all()
-
-    def receive(
+    async def receive(
         self,
         event_cls: type,
         last_event_id: int | None = None,
-        client_disconnected: Callable[[], bool] | None = None,
-    ) -> Generator[tuple[int, Event], Any, None]:
+    ) -> AsyncGenerator[tuple[int, Event], None]:
         """Yield ``(event_id, event)`` tuples filtered by *event_cls*.
 
         If *last_event_id* is provided (from the SSE ``Last-Event-ID`` header),
@@ -105,21 +104,20 @@ class SSEEvents(Service):
         ``ResumptionFailedEvent`` is yielded before the live stream begins so
         the client can warn the user.
 
-        If *client_disconnected* is provided, it is called on each loop
-        iteration to detect a gone client without waiting for a socket write.
+        The async generator is cancelled by Quart when the client disconnects;
+        the ``finally`` block ensures the per-client queue is removed.
         """
-        with self._queue_cv:
+        async with self._lock:
             if len(self._queues) >= self.configuration.sse_listeners_max:
                 if not self._did_error:
-                    self._logger.warning("Number of SSE listeners have reached %d. No longer accepting listeners.", len(self._queues))
+                    self._logger.warning(
+                        "Number of SSE listeners have reached %d. No longer accepting listeners.",
+                        len(self._queues),
+                    )
                     self._did_error = True
-
                 return
 
-            # Register the client queue **before** snapshotting history so that
-            # no events pushed between the snapshot and queue registration are
-            # lost.  Because both happen under _queue_cv, there is no race.
-            queue: list[_QueueItem] = []
+            queue: asyncio.Queue[_QueueItem] = asyncio.Queue(maxsize=self.configuration.sse_listener_max_events)
             self._queues.append(queue)
             self._logger.debug("New sse events listener. [listeners=%d]", len(self._queues))
 
@@ -138,7 +136,6 @@ class SSEEvents(Service):
 
             if last_event_id is not None:
                 if self._history and last_event_id < self._history[0][0]:
-                    # Requested ID is older than our oldest buffered event.
                     resumption_failed = True
                     failed_id = last_event_id
                     self._logger.info(
@@ -152,7 +149,6 @@ class SSEEvents(Service):
                         self._logger.debug("SSE resumption: replaying %d events after id %d", len(replay_events), last_event_id)
 
         try:
-            # Phase 1: replay missed history (or signal failure).
             if resumption_failed:
                 yield (0, ResumptionFailedEvent(requested_event_id=failed_id))
 
@@ -160,24 +156,17 @@ class SSEEvents(Service):
                 if isinstance(ev, event_cls):
                     yield (eid, ev)
 
-            # Phase 2: live stream.
             while not self._shutdown:
-                if client_disconnected is not None and client_disconnected():
-                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
 
-                with self._queue_cv:
-                    self._queue_cv.wait(timeout=1)
-
-                    if self._shutdown:
-                        break
-
-                    items: list[_QueueItem] = []
-                    while queue:
-                        items.append(queue.pop(0))
-
-                yield from ((eid, ev) for eid, ev in items if isinstance(ev, event_cls))
+                eid, ev = item
+                if isinstance(ev, event_cls):
+                    yield (eid, ev)
         finally:
-            with self._queue_cv:
+            async with self._lock:
                 try:
                     self._queues.remove(queue)
                     self._logger.debug("Removed sse events listener. [listeners=%d]", len(self._queues))

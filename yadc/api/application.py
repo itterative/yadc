@@ -19,7 +19,7 @@ from .modules.service import Service
 
 
 class Application(Module):
-    """Creates the Flask app, wires DI, and starts the server."""
+    """Creates the Quart app, wires DI, and starts the server."""
 
     def __init__(self, configuration: Configuration):
         self.configuration: Configuration = configuration
@@ -74,7 +74,15 @@ class Application(Module):
             ctrl(**controller_deps)
 
     def configure_app(self):
+        import asyncio
+
         app = self.injector.get(Quart)
+        event_dispatcher = self.injector.get(EventDispatcher)
+
+        @app.before_serving
+        async def _capture_loop():
+            event_dispatcher.set_loop(asyncio.get_running_loop())
+
         app.register_blueprint(self.injector.get(ApiBlueprint))
         app.register_blueprint(self.injector.get(AppBlueprint))
 
