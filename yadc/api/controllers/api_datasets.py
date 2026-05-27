@@ -1,8 +1,8 @@
 import hashlib
 from pathlib import Path
 
-from flask import jsonify, request, send_file
 from PIL import Image
+from quart import jsonify, request, send_file
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
@@ -41,14 +41,14 @@ def api_datasets(
     _thumb_cache_dir = Path(configuration.cache_path) / "thumbnails"
 
     @app.post("/datasets")
-    def add_dataset():  # pyright: ignore[reportUnusedFunction]
+    async def add_dataset():  # pyright: ignore[reportUnusedFunction]
         """Import an existing TOML or create a new dataset.
 
         JSON body:
             Import: {"name": "...", "toml_path": "..."}
             Create: {"name": "...", "image_paths": ["...", ...]}
         """
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or "name" not in body:
             return jsonify_error("Request body must include 'name'", status=400)
 
@@ -106,15 +106,15 @@ def api_datasets(
         return jsonify_dataclass(page)
 
     @app.get("/datasets/<name>/images/<int:image_id>/media")
-    def serve_image_media(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def serve_image_media(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Serve the original image file."""
         image_path = datasets.get_image_path(name, image_id)
         if image_path is None:
             return jsonify_error("Image not found", status=404)
-        return send_file(str(image_path))
+        return await send_file(str(image_path))
 
     @app.get("/datasets/<name>/images/<int:image_id>/thumbnail")
-    def serve_image_thumbnail(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def serve_image_thumbnail(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Serve a cached thumbnail, generating it on first request."""
         image_path = datasets.get_image_path(name, image_id)
         if image_path is None:
@@ -130,9 +130,9 @@ def api_datasets(
                 _generate_thumbnail(image_path, cache_path, size)
             except Exception as e:
                 _logger.warning("Failed to generate thumbnail for %s: %s", image_path, e)
-                return send_file(str(image_path))
+                return await send_file(str(image_path))
 
-        return send_file(str(cache_path), mimetype="image/webp")
+        return await send_file(str(cache_path), mimetype="image/webp")
 
     @app.get("/datasets/<name>/images/<int:image_id>/caption")
     def get_image_caption(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
@@ -143,9 +143,9 @@ def api_datasets(
         return jsonify(result)
 
     @app.put("/datasets/<name>/images/<int:image_id>/caption")
-    def update_image_caption(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def update_image_caption(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the caption text for an image."""
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or "caption" not in body:
             return jsonify_error("Request body must include 'caption'", status=400)
 
@@ -155,9 +155,9 @@ def api_datasets(
         return jsonify({"status": "ok"})
 
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
-    def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the TOML extras sidecar for an image."""
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or "extras_raw" not in body:
             return jsonify_error("Request body must include 'extras_raw'", status=400)
 
@@ -171,7 +171,7 @@ def api_datasets(
         return jsonify({"status": "ok"})
 
     @app.post("/datasets/<name>/images/<int:image_id>/preview-prompt")
-    def preview_prompt(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def preview_prompt(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Render the system and user prompts for an image using a given template.
 
         JSON body:
@@ -180,7 +180,7 @@ def api_datasets(
             {}  — use the default template
         If both are provided, "template" takes priority.
         """
-        body = request.get_json(silent=True) or {}
+        body = await request.get_json(silent=True) or {}
 
         template = body.get("template", "")
         template_name = body.get("template_name", "")

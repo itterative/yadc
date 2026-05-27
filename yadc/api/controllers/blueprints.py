@@ -1,5 +1,5 @@
-from flask import Blueprint
 from injector import singleton
+from quart import Blueprint
 
 
 @singleton

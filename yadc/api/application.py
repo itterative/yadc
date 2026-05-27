@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import override
 
-from flask import Flask
 from injector import Binder, Injector, Module, get_bindings, inject, singleton
+from quart import Quart
 
 from yadc.api.modules import EventDispatcher
 
@@ -23,7 +23,7 @@ class Application(Module):
 
     def __init__(self, configuration: Configuration):
         self.configuration: Configuration = configuration
-        self.app: Flask = Flask(__name__, static_folder=None)
+        self.app: Quart = Quart(__name__, static_folder=None)
 
         self._discovered_services: list[type[Service]] = []
         self.injector: Injector = Injector(self)
@@ -32,7 +32,7 @@ class Application(Module):
     @override
     def configure(self, binder: Binder):
         binder.bind(Configuration, to=self.configuration)
-        binder.bind(Flask, to=self.app)
+        binder.bind(Quart, to=self.app)
 
         binder.bind(
             ApiBlueprint,
@@ -74,16 +74,13 @@ class Application(Module):
             ctrl(**controller_deps)
 
     def configure_app(self):
-        app = self.injector.get(Flask)
+        app = self.injector.get(Quart)
         app.register_blueprint(self.injector.get(ApiBlueprint))
         app.register_blueprint(self.injector.get(AppBlueprint))
 
     def run(self) -> None:
-        """Configure everything and start the server via waitress."""
-        import signal
-        from types import FrameType
-
-        import waitress
+        """Configure everything and start the server via uvicorn."""
+        import uvicorn
 
         self.configure_services()
         self.configure_controllers()
@@ -103,23 +100,12 @@ class Application(Module):
         # NOTE: the app must be configured before the cors middleware is set up (on startup event)
         self.configure_app()
 
-        # Dispatch ShutdownEvent on Ctrl+C so SSE listeners unblock.
-        original_sigint = signal.getsignal(signal.SIGINT)
-
-        def _handle_sigint(sig: int, frame: FrameType | None) -> None:
+        try:
+            uvicorn.run(
+                self.app,
+                host=self.configuration.http_host,
+                port=self.configuration.http_port,
+                log_level="info",
+            )
+        finally:
             event_dispatcher.dispatch(ShutdownEvent())
-            signal.signal(sig, original_sigint)
-            if callable(original_sigint):
-                original_sigint(sig, frame)
-
-        signal.signal(signal.SIGINT, _handle_sigint)
-
-        waitress.serve(
-            self.app,
-            host=self.configuration.http_host,
-            port=self.configuration.http_port,
-            threads=self.configuration.http_threads,
-            # Enable waitress.client_disconnected WSGI environ callback so SSE
-            # listeners can detect client disconnect without waiting for a write.
-            channel_request_lookahead=1,
-        )

@@ -1,8 +1,7 @@
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from flask import Flask
+from quart import Quart
 
 from yadc.api.controllers.api_envs import api_envs
 from yadc.api.controllers.blueprints import ApiBlueprint
@@ -12,7 +11,7 @@ from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 
 @pytest.fixture
 def client():
-    app = Flask(__name__)
+    app = Quart(__name__)
     bp = ApiBlueprint("api", __name__, url_prefix="/api")
 
     mock_logging = MagicMock()
@@ -24,31 +23,34 @@ def client():
     return app.test_client()
 
 
-def test_get_key_mode_env_password_not_set(client):
+@pytest.mark.asyncio
+async def test_get_key_mode_env_password_not_set(client):
     with patch("yadc.api.controllers.api_envs.cmd_config") as mock_config:
         mock_config.load_config.return_value.key_storage.mode = "password"
         with patch("yadc.api.controllers.api_envs.YADC_PASSWORD", None):
-            resp = client.get("/api/envs/key-mode")
+            resp = await client.get("/api/envs/key-mode")
 
     assert resp.status_code == 200
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["mode"] == "password"
     assert data["env_password_set"] is False
 
 
-def test_get_key_mode_env_password_set(client):
+@pytest.mark.asyncio
+async def test_get_key_mode_env_password_set(client):
     with patch("yadc.api.controllers.api_envs.cmd_config") as mock_config:
         mock_config.load_config.return_value.key_storage.mode = "keyring"
         with patch("yadc.api.controllers.api_envs.YADC_PASSWORD", "secret"):
-            resp = client.get("/api/envs/key-mode")
+            resp = await client.get("/api/envs/key-mode")
 
     assert resp.status_code == 200
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["mode"] == "keyring"
     assert data["env_password_set"] is True
 
 
-def test_list_models_password_required(client):
+@pytest.mark.asyncio
+async def test_list_models_password_required(client):
     env_data = AppConfigEnv(
         api_url=AppConfigEnvValue(value="http://localhost:11434", method="none"),
         api_token=AppConfigEnvValue(value="encrypted-token", method="password"),
@@ -61,9 +63,9 @@ def test_list_models_password_required(client):
         mock_cmd_envs.decrypt_setting.side_effect = PasswordRequiredError("test")
         mock_cmd_envs.PasswordRequiredError = PasswordRequiredError
 
-        resp = client.post("/api/envs/default/models")
+        resp = await client.post("/api/envs/default/models")
 
     assert resp.status_code == 403
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["error"] == "Password required to decrypt environment settings"
     assert data["code"] == "PASSWORD_REQUIRED"

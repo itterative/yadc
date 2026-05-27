@@ -3,7 +3,7 @@
 import pathlib
 from typing import Any
 
-from flask import jsonify, request
+from quart import jsonify, request
 
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
@@ -36,7 +36,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         )
 
     @app.post("/export")
-    def export_dataset():  # pyright: ignore[reportUnusedFunction]
+    async def export_dataset():  # pyright: ignore[reportUnusedFunction]
         """Run an export for a dataset.
 
         JSON body:
@@ -50,7 +50,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             append (bool):      Append to existing output. Default: false.
             caption_extension (str): File extension for txt format. Default: ".txt".
         """
-        body: dict[str, Any] = request.get_json(silent=True) or {}
+        body: dict[str, Any] = await request.get_json(silent=True) or {}
 
         # --- Required fields ---
         dataset_name = body.get("dataset")

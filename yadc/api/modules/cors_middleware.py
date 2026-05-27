@@ -1,6 +1,6 @@
 from logging import Logger
 
-from flask import Response, request
+from quart import Response, request
 
 from yadc.api.controllers.blueprints import ApiBlueprint
 from yadc.api.events import StartupEvent

@@ -1,7 +1,7 @@
 from typing import Any
 
 import pydantic
-from flask import jsonify, request
+from quart import jsonify, request
 
 from yadc.cmd import envs as cmd_envs
 
@@ -18,7 +18,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
     _logger = logging.get_logger(__name__)
 
     @app.post("/datasets/<name>/caption")
-    def start_captioning(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def start_captioning(name: str):  # pyright: ignore[reportUnusedFunction]
         """Start a captioning run.
 
         Optional JSON body fields (all override config / env defaults):
@@ -26,7 +26,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             prompt_template, prompt_name, max_tokens, image_quality,
             overwrite, draft, reasoning, reasoning_effort, reasoning_exclude_output
         """
-        raw: dict[str, Any] = request.get_json(silent=True) or {}
+        raw: dict[str, Any] = await request.get_json(silent=True) or {}
 
         try:
             options = CaptionJobOptions.model_validate(raw)
@@ -66,14 +66,14 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         return jsonify_dataclass(info), 200
 
     @app.post("/datasets/<name>/images/<int:image_id>/caption")
-    def caption_single_image(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+    async def caption_single_image(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Start a single-image captioning job.
 
         Accepts the same JSON body fields as the batch endpoint.
         Returns job status immediately (202 Accepted); listen to SSE events
         or poll GET /datasets/<name>/caption for completion.
         """
-        raw: dict[str, Any] = request.get_json(silent=True) or {}
+        raw: dict[str, Any] = await request.get_json(silent=True) or {}
 
         try:
             options = CaptionJobOptions.model_validate(raw)

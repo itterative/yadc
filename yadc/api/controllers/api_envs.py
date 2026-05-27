@@ -1,6 +1,6 @@
 """Environment CRUD endpoints — backed by the ``cmd.envs`` module."""
 
-from flask import jsonify, request
+from quart import jsonify, request
 
 # cmd.envs is a heavy import (keyring, cryptography) — keep it at module level
 # so it's loaded once, not on every request.
@@ -47,14 +47,14 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
         )
 
     @app.post("/envs/<name>/reveal")
-    def reveal_env_value(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def reveal_env_value(name: str):  # pyright: ignore[reportUnusedFunction]
         """Reveal the unredacted value of a specific environment key.
 
         JSON body:
             key: str
             password: str | null  (required when the value is password-encrypted)
         """
-        body = request.get_json(silent=True) or {}
+        body = await request.get_json(silent=True) or {}
         key = body.get("key")
         password: str | None = body.get("password")
 
@@ -89,7 +89,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
         return jsonify({"value": value_obj.value})
 
     @app.put("/envs/<name>")
-    def put_env(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def put_env(name: str):  # pyright: ignore[reportUnusedFunction]
         """Create or update an environment.
 
         JSON body (all fields optional):
@@ -97,7 +97,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
             api_token: str
             api_model_name: str
         """
-        body = request.get_json(silent=True) or {}
+        body = await request.get_json(silent=True) or {}
 
         config = cmd_config.load_config()
 
@@ -218,7 +218,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
         })
 
     @app.put("/envs/key-mode")
-    def put_key_mode():  # pyright: ignore[reportUnusedFunction]
+    async def put_key_mode():  # pyright: ignore[reportUnusedFunction]
         """Switch the key storage mode or change the password for password mode.
 
         JSON body:
@@ -226,7 +226,7 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
             password: str | null  (new password when mode="password")
             old_password: str | null  (current password when changing FROM password mode)
         """
-        body = request.get_json(silent=True) or {}
+        body = await request.get_json(silent=True) or {}
         mode = body.get("mode")
 
         if mode not in ("keyring", "password"):

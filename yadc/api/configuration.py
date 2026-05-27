@@ -8,7 +8,6 @@ class Configuration:
     # HTTP
     http_host: str = "127.0.0.1"
     http_port: int = 7860
-    http_threads: int = 16
 
     # Frontend
     app_frontend_build_path: str = str(__import__("pathlib").Path(__file__).parent.parent / "webui" / "build")

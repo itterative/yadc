@@ -1,10 +1,11 @@
+import asyncio
 import json
-from collections.abc import Callable
 from typing import cast
 
-from flask import Response, request, stream_with_context
+from quart import Response, request
 
 from ..configuration import Configuration
+from ..events import Event
 from ..modules.logging_factory import LoggingFactory
 from ..modules.sse_events import SSEEvents
 from . import controller
@@ -31,23 +32,23 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
             except ValueError:
                 _logger.warning("Ignoring invalid Last-Event-ID: %r", raw_id)
 
-        def _retrieve_events():
+        async def _retrieve_events():
             # Tell the browser to wait 5 s before auto-reconnecting.
             yield f"retry: {SSE_RETRY_MS}\n\n"
 
-            # waitress exposes a callable in the WSGI environ that checks if
-            # the client socket is still connected without writing to it.
-            client_disconnected: Callable[[], bool] | None = None
-            raw_cb = request.environ.get("waitress.client_disconnected")
-            if raw_cb is not None:
-                assert callable(raw_cb)
-                client_disconnected = cast(Callable[[], bool], raw_cb)
-
-            for event_id, event in sse_events.receive(
+            # Run the synchronous SSEEvents.receive() generator in a thread
+            # pool so the event loop is not blocked by threading.Condition.
+            # This is a temporary measure until SSEEvents is fully async.
+            sync_gen = sse_events.receive(
                 object,
                 last_event_id=last_event_id,
-                client_disconnected=client_disconnected,
-            ):
+            )
+            sentinel = object()
+            while True:
+                item = await asyncio.to_thread(next, sync_gen, sentinel)
+                if item is sentinel:
+                    break
+                event_id, event = cast(tuple[int, Event], item)
                 try:
                     parts = [f"event: {event.TYPE}", f"data: {json.dumps(event, cls=DataclassJSONEncoder)}"]
                     if event_id:
@@ -58,4 +59,4 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
                 except Exception as e:
                     _logger.warning("Failed to send sse event: %s", e)
 
-        return Response(stream_with_context(_retrieve_events()), mimetype="text/event-stream")
+        return Response(_retrieve_events(), mimetype="text/event-stream")

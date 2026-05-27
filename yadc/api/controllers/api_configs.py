@@ -1,8 +1,8 @@
 """Dataset config CRUD endpoints — view and edit the TOML configs stored in STATE_PATH."""
 
 import toml
-from flask import jsonify, request
 from pydantic import ValidationError
+from quart import jsonify, request
 
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
@@ -64,13 +64,13 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         )
 
     @app.put("/configs/<name>")
-    def put_config(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def put_config(name: str):  # pyright: ignore[reportUnusedFunction]
         """Update a dataset config's raw TOML content.
 
         JSON body: {"content": "..."} (raw TOML string)
         The TOML is validated before saving.
         """
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or "content" not in body:
             return jsonify_error("Request body must include 'content'", status=400, code=ErrorCode.BAD_REQUEST)
 
@@ -102,7 +102,7 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         return get_config(name)
 
     @app.patch("/configs/<name>")
-    def patch_config(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def patch_config(name: str):  # pyright: ignore[reportUnusedFunction]
         """Partially update a dataset config using a JSON body.
 
         JSON body: a partial dict matching the TOML structure (e.g.
@@ -116,7 +116,7 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         """
         dry_run = request.args.get("dry_run", "").lower() in ("1", "true")
 
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or not isinstance(body, dict):
             return jsonify_error("Request body must be a JSON object", status=400, code=ErrorCode.BAD_REQUEST)
 

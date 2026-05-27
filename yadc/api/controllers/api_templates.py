@@ -2,7 +2,7 @@
 
 import re
 
-from flask import jsonify, request
+from quart import jsonify, request
 
 from yadc.cmd import templates as cmd_templates
 
@@ -87,12 +87,12 @@ def api_templates(app: ApiBlueprint, logging: LoggingFactory):
         )
 
     @app.put("/templates/<name>")
-    def put_template(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def put_template(name: str):  # pyright: ignore[reportUnusedFunction]
         """Create or update a user template.
 
         JSON body: {"content": "..."}
         """
-        body = request.get_json(silent=True)
+        body = await request.get_json(silent=True)
         if body is None or "content" not in body:
             return jsonify_error("Request body must include 'content'", status=400, code=ErrorCode.BAD_REQUEST)
 

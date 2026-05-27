@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from flask import Flask
+from quart import Quart
 
 from yadc.api.controllers.api_configs import api_configs
 from yadc.api.controllers.blueprints import ApiBlueprint
@@ -13,7 +13,7 @@ from yadc.api.services.datasets import DatasetInfo
 
 @pytest.fixture
 def client():
-    app = Flask(__name__)
+    app = Quart(__name__)
     bp = ApiBlueprint("api", __name__, url_prefix="/api")
 
     mock_logging = MagicMock()
@@ -33,7 +33,8 @@ def _make_temp_config(content: str) -> tuple[str, Path]:
     return tmp.name, Path(tmp.name)
 
 
-def test_get_config_returns_validation_error_for_invalid_config(client):
+@pytest.mark.asyncio
+async def test_get_config_returns_validation_error_for_invalid_config(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -49,9 +50,9 @@ thinking_effort = "extreme"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.get("/api/configs/test")
+    resp = await test_client.get("/api/configs/test")
     assert resp.status_code == 200
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["name"] == "test"
     assert data["parsed"]["api"]["url"] == "not-a-url"
     assert data["validation_error"] is not None
@@ -64,7 +65,8 @@ thinking_effort = "extreme"
     assert ("reasoning",) in locs
 
 
-def test_get_config_no_validation_error_for_valid_config(client):
+@pytest.mark.asyncio
+async def test_get_config_no_validation_error_for_valid_config(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -77,13 +79,14 @@ image_quality = "auto"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.get("/api/configs/test")
+    resp = await test_client.get("/api/configs/test")
     assert resp.status_code == 200
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["validation_error"] is None
 
 
-def test_patch_config_rejects_invalid_max_tokens(client):
+@pytest.mark.asyncio
+async def test_patch_config_rejects_invalid_max_tokens(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -92,18 +95,18 @@ model_name = "gemma3"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.patch(
+    resp = await test_client.patch(
         "/api/configs/test",
-        data=json.dumps({"settings": {"max_tokens": 50}}),
-        content_type="application/json",
+        json={"settings": {"max_tokens": 50}},
     )
     assert resp.status_code == 400
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["error"] == "Validation failed"
     assert any(e["loc"] == ["settings"] for e in data["details"])
 
 
-def test_patch_config_rejects_invalid_image_quality(client):
+@pytest.mark.asyncio
+async def test_patch_config_rejects_invalid_image_quality(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -112,17 +115,17 @@ model_name = "gemma3"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.patch(
+    resp = await test_client.patch(
         "/api/configs/test",
-        data=json.dumps({"settings": {"image_quality": "best"}}),
-        content_type="application/json",
+        json={"settings": {"image_quality": "best"}},
     )
     assert resp.status_code == 400
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert any(e["loc"] == ["settings"] for e in data["details"])
 
 
-def test_patch_config_rejects_invalid_rounds(client):
+@pytest.mark.asyncio
+async def test_patch_config_rejects_invalid_rounds(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -131,17 +134,17 @@ model_name = "gemma3"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.patch(
+    resp = await test_client.patch(
         "/api/configs/test",
-        data=json.dumps({"rounds": 0}),
-        content_type="application/json",
+        json={"rounds": 0},
     )
     assert resp.status_code == 400
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert any(e["loc"] == [] for e in data["details"])
 
 
-def test_patch_config_rejects_nested_type_error(client):
+@pytest.mark.asyncio
+async def test_patch_config_rejects_nested_type_error(client):
     test_client, mock_service = client
     config_path, _ = _make_temp_config("""
 [api]
@@ -150,18 +153,18 @@ model_name = "gemma3"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.patch(
+    resp = await test_client.patch(
         "/api/configs/test",
-        data=json.dumps({"settings": {"max_tokens": "foo"}}),
-        content_type="application/json",
+        json={"settings": {"max_tokens": "foo"}},
     )
     assert resp.status_code == 400
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert "details" in data
     assert any("max_tokens" in e["loc"] or "settings" in e["loc"] for e in data["details"])
 
 
-def test_patch_config_accepts_valid_patch(client):
+@pytest.mark.asyncio
+async def test_patch_config_accepts_valid_patch(client):
     test_client, mock_service = client
     config_path, path_obj = _make_temp_config("""
 [api]
@@ -170,13 +173,12 @@ model_name = "gemma3"
 """)
     mock_service.get_dataset.return_value = DatasetInfo(name="test", config_path=config_path)
 
-    resp = test_client.patch(
+    resp = await test_client.patch(
         "/api/configs/test",
-        data=json.dumps({"rounds": 2, "settings": {"max_tokens": 1024}}),
-        content_type="application/json",
+        json={"rounds": 2, "settings": {"max_tokens": 1024}},
     )
     assert resp.status_code == 200
-    data = json.loads(resp.data)
+    data = await resp.get_json()
     assert data["parsed"]["rounds"] == 2
     assert data["parsed"]["settings"]["max_tokens"] == 1024
 

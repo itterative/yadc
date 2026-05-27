@@ -5,7 +5,7 @@ import json
 from enum import StrEnum
 from typing import Any, override
 
-from flask import Response
+from quart import Response
 
 from .models_errors import APIErrorDetail, APIErrorResponse
 
