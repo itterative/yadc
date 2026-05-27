@@ -17,12 +17,22 @@ In `pyproject.toml` under `[project.optional-dependencies].test`:
 ## Running Tests
 
 ```bash
-uv run pytest tests                    # all tests
+uv run pytest tests                    # all tests (integration tests excluded)
 uv run pytest tests/core/              # core tests only
 uv run pytest tests -k "test_name"     # specific test
+uv run pytest -m "integration_test"    # run integration tests
 ```
 
-Default timeout: 5 seconds (configured in `[tool.pytest.ini_options]`).
+Default timeout: 5 seconds. Integration tests are excluded by default via `addopts = "-m 'not integration_test'"` in `[tool.pytest.ini_options]`.
+
+## Integration Tests
+
+CLI tests that run the real `yadc` binary via subprocess (not Click's `CliRunner`) are marked with `@pytest.mark.integration_test` and skipped by default. Files:
+- `tests/cli/test_cli_local.py` — local model servers (llamacpp, koboldcpp, vllm, ollama)
+- `tests/cli/test_cli_official.py` — official API providers (gemini, openrouter, openai)
+- `tests/cli/test_cli_envs.py` — env/keyring/config CLI commands
+
+To run: `uv run pytest -m "integration_test"` (may skip individual tests if required envs are not configured).
 
 ## Test Patterns
 
