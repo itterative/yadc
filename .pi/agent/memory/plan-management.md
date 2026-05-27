@@ -30,6 +30,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
 | [`frontend-plans`](.pi/agent/memory/plans/frontend-plans.md) | Frontend implementation status, component index, design notes | Complete |
+| [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Not started |
 
 ## When to Read Plans
 
