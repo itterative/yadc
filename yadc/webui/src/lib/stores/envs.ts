@@ -111,7 +111,10 @@ export async function revealEnvValue(
     return res.json();
 }
 
-export async function fetchKeyMode(): Promise<{ mode: 'keyring' | 'password'; env_password_set: boolean }> {
+export async function fetchKeyMode(): Promise<{
+    mode: 'keyring' | 'password';
+    env_password_set: boolean;
+}> {
     const res = await fetch(`${API_BASE}/api/envs/key-mode`);
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));

@@ -77,28 +77,28 @@
 
     {#if item.has_caption}
         <span
-            class="badge-sm h-4 w-4 flex items-center justify-center pointer-events-none absolute top-2 right-2 bg-success text-black"
+            class="badge-sm pointer-events-none absolute top-2 right-2 flex h-4 w-4 items-center justify-center bg-success text-black"
             title="Has caption">✓</span
         >
     {/if}
 
     {#if item.has_toml}
         <span
-            class="badge-sm h-4 w-4 flex items-center justify-center pointer-events-none absolute top-2 right-7 bg-accent text-black"
+            class="badge-sm pointer-events-none absolute top-2 right-7 flex h-4 w-4 items-center justify-center bg-accent text-black"
             title="Has TOML extras">T</span
         >
     {/if}
 
     {#if item.draft_names.length > 0}
         <span
-            class="badge-sm h-4 w-4 flex items-center justify-center pointer-events-none absolute top-2 left-2 bg-error text-white"
+            class="badge-sm pointer-events-none absolute top-2 left-2 flex h-4 w-4 items-center justify-center bg-error text-white"
             title="{item.draft_names.length} draft(s)">D</span
         >
     {/if}
 
     {#if item.caption_error}
         <span
-            class="badge-sm h-4 w-4 flex items-center justify-center pointer-events-none absolute bottom-2 left-2 bg-warning text-black"
+            class="badge-sm pointer-events-none absolute bottom-2 left-2 flex h-4 w-4 items-center justify-center bg-warning text-black"
             title={item.caption_error}
         >
             <SvgWarning class="h-full w-full" />
