@@ -80,6 +80,12 @@ class Application(Module):
         app = self.injector.get(Quart)
         event_dispatcher = self.injector.get(EventDispatcher)
 
+        # Allow request bodies up to the configured upload size limit.
+        # Our route handlers perform their own size checks, but Quart's
+        # built-in MAX_CONTENT_LENGTH guard fires during body parsing
+        # (e.g. await request.form) and defaults to 16 MB.
+        app.config["MAX_CONTENT_LENGTH"] = self.configuration.max_upload_size_bytes
+
         @app.before_serving
         async def _capture_loop():
             event_dispatcher.set_loop(asyncio.get_running_loop())

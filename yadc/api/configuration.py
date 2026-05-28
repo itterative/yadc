@@ -38,6 +38,9 @@ class Configuration:
     # File watcher
     watcher_debounce_seconds: float = 1.0
 
+    # Upload
+    max_upload_size_bytes: int = 524_288_000  # ~500 MB
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))

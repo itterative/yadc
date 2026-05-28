@@ -1,4 +1,5 @@
 import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
+import { upload, type UploadProgress } from '$lib/upload';
 import { debounce } from '$lib/async';
 import { sessionPassword } from './sessionPassword';
 import { writable } from 'svelte/store';
@@ -32,6 +33,11 @@ export interface ImageInfo {
 export interface ImagePage {
     images: ImageInfo[];
     next_token: string | null;
+}
+
+export interface DatasetUploadResult {
+    dataset: DatasetInfo;
+    warnings: string[];
 }
 
 export interface CaptionData {
@@ -84,6 +90,33 @@ export async function createDataset(name: string, imagePaths: string[]): Promise
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
+}
+
+/** Upload files to create a new dataset. */
+export async function uploadDataset(
+    name: string,
+    files: File[],
+    onProgress?: (progress: UploadProgress) => void,
+    signal?: AbortSignal
+): Promise<DatasetUploadResult> {
+    const formData = new FormData();
+    formData.append('name', name);
+    for (const file of files) {
+        const filename = file.webkitRelativePath || file.name;
+        formData.append('files', file, filename);
+    }
+
+    const res = await upload({
+        url: '/api/datasets/upload',
+        body: formData,
+        onProgress,
+        signal
+    });
+
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json() as Promise<DatasetUploadResult>;
 }
 
 /** Delete/unregister a dataset. */

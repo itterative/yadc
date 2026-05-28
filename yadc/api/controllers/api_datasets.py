@@ -66,6 +66,43 @@ def api_datasets(
         except Exception as e:
             return jsonify_error(str(e), status=400)
 
+    @app.post("/datasets/upload")
+    async def upload_dataset():  # pyright: ignore[reportUnusedFunction]
+        """Create a dataset from uploaded image files.
+
+        multipart/form-data:
+            name (text, required): dataset name
+            files (file, required): one or more image files
+        """
+        form = await request.form
+        name = form.get("name", "").strip()
+
+        if not name:
+            return jsonify_error("Dataset name is required", status=400, code=ErrorCode.BAD_REQUEST)
+
+        files = await request.files
+        uploaded = files.getlist("files")
+        if not uploaded:
+            return jsonify_error("At least one file is required", status=400, code=ErrorCode.BAD_REQUEST)
+
+        if request.content_length and request.content_length > configuration.max_upload_size_bytes:
+            return jsonify_error(
+                f"Total upload size exceeds {configuration.max_upload_size_bytes} bytes limit",
+                status=413,
+                code=ErrorCode.PAYLOAD_TOO_LARGE,
+            )
+
+        if datasets.get_dataset(name) is not None:
+            return jsonify_error(f"Dataset '{name}' already exists", status=409, code=ErrorCode.CONFLICT)
+
+        file_tuples = [(f.filename, f.stream) for f in uploaded if f.filename]
+
+        try:
+            result = datasets.create_dataset_from_upload(name, file_tuples)
+            return jsonify_dataclass(result), 201
+        except ValueError as e:
+            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]
         """List available datasets."""

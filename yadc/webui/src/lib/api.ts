@@ -43,12 +43,19 @@ export class PasswordRequiredError extends Error {
     }
 }
 
+export interface ResponseLike {
+    status: number;
+    statusText: string;
+    url: string;
+    text(): Promise<string>;
+}
+
 /** Extract a human-readable error message from a failed API response.
  *
  * Technical details (status, URL, response body) are logged to the console
  * so they can be referenced during debugging.
  */
-export async function apiErrorMessage(res: Response, context?: string): Promise<string> {
+export async function apiErrorMessage(res: ResponseLike, context?: string): Promise<string> {
     let bodyText = '';
     try {
         bodyText = await res.text();
@@ -117,6 +124,7 @@ const messages: Record<number, string> = {
     403: "You don't have permission to do that.",
     404: "That doesn't exist.",
     409: 'That conflicts with something already there.',
+    413: 'The upload is too large. Please use smaller files or fewer images.',
     422: "That input isn't valid. Please check and try again.",
     500: 'Something went wrong on the server.',
     502: "Can't connect to the backend. Is the server running?",
