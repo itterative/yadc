@@ -60,7 +60,7 @@ yadc/webui/
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview)
+          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview). Derives isCaptioning from currentlyCaptioning store. Calls captionActions.captionSingleImage directly.
         dialogs/                        # Dialog-shaped components
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
           SettingsDialog.svelte       # App settings dialog (tab container)
@@ -83,9 +83,9 @@ yadc/webui/
         EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
       datasets/[name]/
         +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line)
-        CaptionSettings.svelte    # Co-located: captioning settings side panel. Fetches dataset config defaults from GET /configs/<name>, pre-fills fields, shows diff dots for overridden values, collapsible Overrides section with per-field reset.
+        CaptionSettings.svelte    # Co-located: captioning settings side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides.
         DatasetConfig.svelte      # Co-located: dataset config editor tab. Structured form for caption settings (max_tokens, image_quality, rounds, overwrite, reasoning, prompt) saved via PATCH /configs/<name>. Read-only raw TOML view at bottom.
-        SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer
+        SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.
 ```
 
 ## Component Organization
@@ -101,12 +101,13 @@ yadc/webui/
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers + deleteDataset + createDatasetBrowserStore |
+| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers + deleteDataset + createDatasetBrowserStore. `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
 | `envs.ts` | Env types + CRUD + model fetching |
 | `templates.ts` | Template types + CRUD + `extractVariables()` |
-| `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) |
+| `captionActions.ts` | Caption action store — `captionOptions` (writable, reactively synced from CaptionSettings), `startBatchCaptioning()`, `captionSingleImage()`, `stopCaptioning()` (with toasts + optional onError callback), `lastStartedJobId` (for completion toast tracking). Reads options from store, handles password retry, registers job IDs, seeds SSE stores. |
+| `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) — used by `captionActions.ts` and `CaptionSettings.svelte` |
 | `configs.ts` | Config CRUD + export API |
-| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `clearPendingDatasetChange()`, `clearResumptionFailed()`. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
+| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`, `currentlyCaptioning`, `clearPendingDatasetChange()`, `clearResumptionFailed()`, `setCaptioningStatus()`, `setCurrentlyCaptioning()`. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning". Priority: localStorage override → dataset config default → hardcoded default. |
