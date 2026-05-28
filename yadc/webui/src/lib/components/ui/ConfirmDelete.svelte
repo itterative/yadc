@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
+    import Dialog from './Dialog.svelte';
 
     interface Props {
         open: boolean;
@@ -11,12 +12,17 @@
     let { open, oncancel, onconfirm, children }: Props = $props();
 </script>
 
-{#if open}
-    <div class="rounded-lg border border-error/20 bg-error/10 p-4">
-        <p class="mb-3 text-sm text-gray-200">{@render children()}</p>
+<Dialog class="dialog-panel m-auto w-full max-w-sm" {open} onclose={oncancel}>
+    <div class="space-y-4 p-5">
+        <div class="dialog-header">
+            <h2 class="dialog-title">Confirm Delete</h2>
+        </div>
+        <div class="alert-warning">
+            {@render children()}
+        </div>
         <div class="btn-bar">
             <button class="btn-secondary px-3 py-1.5" onclick={oncancel}>Cancel</button>
             <button class="btn-danger" onclick={onconfirm}>Delete</button>
         </div>
     </div>
-{/if}
+</Dialog>
