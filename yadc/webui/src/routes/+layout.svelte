@@ -93,74 +93,97 @@
 {#if sidebarOpen}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="sidebar-scrim" onclick={() => (sidebarOpen = false)}></div>
+    <div
+        class="fixed inset-0 z-30 bg-black/50 md:hidden"
+        onclick={() => (sidebarOpen = false)}
+    ></div>
 {/if}
 
-<div class="app-shell">
-    <nav class="app-sidebar" class:open={sidebarOpen}>
+<div class="flex h-screen overflow-hidden">
+    <nav
+        class="fixed top-0 bottom-0 left-0 z-40 flex w-56 -translate-x-full flex-col items-center border-r border-border bg-surface p-3 transition-transform duration-200 ease-in-out md:relative md:w-14 md:shrink-0 md:translate-x-0 md:items-stretch md:p-2 md:transition-none"
+        class:translate-x-0={sidebarOpen}
+    >
         <!-- Brand -->
-        <div class="sidebar-brand">
-            <a href="#/" onclick={() => (sidebarOpen = false)}>
-                <img src="/android-chrome-192x192.png" alt="yadc" class="brand-icon" />
-                <span class="brand-text">yadc</span>
-            </a>
-        </div>
+        <a
+            href="#/"
+            class="mb-3 flex items-center gap-2 p-1 no-underline"
+            onclick={() => (sidebarOpen = false)}
+        >
+            <img src="/android-chrome-192x192.png" alt="yadc" class="h-8 w-8 shrink-0 rounded-md" />
+            <span class="text-[1.1rem] font-bold text-accent md:hidden">yadc</span>
+        </a>
 
         <!-- Nav links -->
-        <div class="sidebar-links">
-            <a href="#/" class:active={isDatasetPage} onclick={() => (sidebarOpen = false)}>
-                <Tooltip label="Datasets">
-                    <SvgImage class="nav-icon" />
+        <div class="flex w-full flex-col gap-1">
+            <a
+                href="#/"
+                class="flex items-center gap-3 rounded-md p-2 no-underline transition-colors duration-200 {isDatasetPage
+                    ? 'bg-bg text-fg'
+                    : 'text-muted hover:bg-bg hover:text-fg'}"
+                onclick={() => (sidebarOpen = false)}
+            >
+                <Tooltip label="Datasets" direction="right">
+                    <SvgImage class="h-6 w-6 shrink-0" />
                 </Tooltip>
-                <span class="nav-label">Datasets</span>
+                <span class="text-lg md:hidden">Datasets</span>
             </a>
             <a
                 href="#/templates"
-                class:active={isTemplatesPage}
+                class="flex items-center gap-3 rounded-md p-2 no-underline transition-colors duration-200 {isTemplatesPage
+                    ? 'bg-bg text-fg'
+                    : 'text-muted hover:bg-bg hover:text-fg'}"
                 onclick={() => (sidebarOpen = false)}
             >
-                <Tooltip label="Templates">
-                    <SvgFile class="nav-icon" />
+                <Tooltip label="Templates" direction="right">
+                    <SvgFile class="h-6 w-6 shrink-0" />
                 </Tooltip>
-                <span class="nav-label">Templates</span>
+                <span class="text-lg md:hidden">Templates</span>
             </a>
         </div>
 
-        <div class="sidebar-spacer"></div>
+        <div class="flex-1"></div>
 
         <!-- Actions -->
-        <div class="sidebar-actions">
-            <Tooltip label="Export">
-                <button class="nav-btn" onclick={() => (showExport = true)}>
-                    <SvgUpload class="nav-icon" />
-                    <span class="nav-label">Export</span>
+        <div class="flex w-full flex-col gap-1">
+            <Tooltip label="Export" direction="right">
+                <button
+                    class="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent p-2 text-base text-muted transition-colors duration-200 hover:bg-bg hover:text-fg"
+                    onclick={() => (showExport = true)}
+                >
+                    <SvgUpload class="h-6 w-6 shrink-0" />
+                    <span class="text-lg md:hidden">Export</span>
                 </button>
             </Tooltip>
-            <Tooltip label="Settings">
+            <Tooltip label="Settings" direction="right">
                 <button
-                    class="nav-btn"
+                    class="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent p-2 text-base text-muted transition-colors duration-200 hover:bg-bg hover:text-fg"
                     onclick={() => settingsDialog.update((d) => ({ ...d, open: true }))}
                 >
-                    <SvgSettings class="nav-icon" />
-                    <span class="nav-label">Settings</span>
+                    <SvgSettings class="h-6 w-6 shrink-0" />
+                    <span class="text-lg md:hidden">Settings</span>
                 </button>
             </Tooltip>
         </div>
     </nav>
 
-    <div class="app-content">
-        <header class="app-topbar">
-            <button class="burger-btn" onclick={() => (sidebarOpen = !sidebarOpen)} title="Menu">
+    <div class="flex min-w-0 flex-1 flex-col">
+        <header class="flex min-h-12 items-center gap-4 px-6 pt-4 md:empty:hidden">
+            <button
+                class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-muted transition-colors duration-200 hover:bg-bg hover:text-fg md:hidden"
+                onclick={() => (sidebarOpen = !sidebarOpen)}
+                title="Menu"
+            >
                 <SvgMenu class="h-6 w-6" />
             </button>
             {#if getTopbarContent()}
-                <div class="topbar-content">
+                <div class="flex min-w-0 flex-1 items-center gap-3">
                     {@render getTopbarContent()!()}
                 </div>
             {/if}
         </header>
 
-        <main class="app-main">
+        <main class="min-h-0 flex-1 overflow-y-auto p-6">
             {@render children()}
         </main>
     </div>
@@ -177,240 +200,3 @@
     oncancel={cancelPassword}
 />
 <ToastContainer />
-
-<style>
-    .app-shell {
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-    }
-
-    /* --- Content area (topbar + main) --- */
-    .app-content {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-width: 0;
-    }
-
-    /* --- Topbar --- */
-    .app-topbar {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1rem 1.5rem 0;
-        min-height: 3rem;
-    }
-
-    /* Hide topbar on desktop when there's no content (burger is hidden too) */
-    @media (min-width: 768px) {
-        .app-topbar:empty {
-            display: none;
-        }
-    }
-
-    /* --- Burger button (mobile only, inside topbar) --- */
-    .burger-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 2.25rem;
-        height: 2.25rem;
-        border-radius: 0.375rem;
-        color: var(--color-muted);
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        flex-shrink: 0;
-        transition:
-            color 0.2s,
-            background-color 0.2s;
-    }
-
-    .burger-btn:hover {
-        color: var(--color-fg);
-        background: var(--color-bg);
-    }
-
-    @media (min-width: 768px) {
-        .burger-btn {
-            display: none;
-        }
-    }
-
-    .topbar-content {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        min-width: 0;
-        flex: 1;
-    }
-
-    /* --- Mobile backdrop scrim --- */
-    .sidebar-scrim {
-        position: fixed;
-        inset: 0;
-        z-index: 30;
-        background: rgba(0, 0, 0, 0.5);
-    }
-
-    @media (min-width: 768px) {
-        .sidebar-scrim {
-            display: none;
-        }
-    }
-
-    /* --- Sidebar --- */
-    .app-sidebar {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        background: var(--color-surface);
-        border-right: 1px solid var(--color-border);
-        /* Mobile: fixed overlay */
-        position: fixed;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 14rem;
-        z-index: 40;
-        transform: translateX(-100%);
-        transition: transform 0.2s ease-in-out;
-        padding: 1rem 0.75rem;
-    }
-
-    .app-sidebar.open {
-        transform: translateX(0);
-    }
-
-    @media (min-width: 768px) {
-        .app-sidebar {
-            position: relative;
-            transform: none;
-            transition: none;
-            z-index: auto;
-            width: 3.5rem;
-            flex-shrink: 0;
-            padding: 0.75rem 0.5rem;
-            align-items: stretch;
-        }
-    }
-
-    /* --- Brand --- */
-    .sidebar-brand a {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        text-decoration: none;
-        padding: 0.25rem;
-        margin-bottom: 0.75rem;
-    }
-
-    .brand-icon {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 0.375rem;
-        flex-shrink: 0;
-    }
-
-    .brand-text {
-        font-weight: 700;
-        font-size: 1.1rem;
-        color: var(--color-accent);
-    }
-
-    @media (min-width: 768px) {
-        .brand-text {
-            display: none;
-        }
-    }
-
-    /* --- Nav links --- */
-    .sidebar-links {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        width: 100%;
-    }
-
-    .sidebar-links a {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        color: var(--color-muted);
-        text-decoration: none;
-        padding: 0.5rem;
-        border-radius: 0.375rem;
-        transition:
-            color 0.2s,
-            background-color 0.2s;
-    }
-
-    .sidebar-links a:hover {
-        color: var(--color-fg);
-        background: var(--color-bg);
-    }
-
-    .sidebar-links a.active {
-        color: var(--color-fg);
-        background: var(--color-bg);
-    }
-
-    :global(.nav-icon) {
-        width: 1.5rem;
-        height: 1.5rem;
-        flex-shrink: 0;
-    }
-
-    .nav-label {
-        font-size: 1.125rem;
-    }
-
-    @media (min-width: 768px) {
-        .nav-label {
-            display: none;
-        }
-    }
-
-    .sidebar-spacer {
-        flex: 1;
-    }
-
-    /* --- Actions --- */
-    .sidebar-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        width: 100%;
-    }
-
-    .nav-btn {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        width: 100%;
-        padding: 0.75rem 0.5rem;
-        border-radius: 0.375rem;
-        color: var(--color-muted);
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        font-size: 1rem;
-        transition:
-            color 0.2s,
-            background-color 0.2s;
-    }
-
-    .nav-btn:hover {
-        color: var(--color-fg);
-        background: var(--color-bg);
-    }
-
-    /* --- Main content --- */
-    .app-main {
-        flex: 1;
-        padding: 1.5rem;
-        min-height: 0;
-        overflow-y: auto;
-    }
-</style>

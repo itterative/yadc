@@ -1,0 +1,47 @@
+@layer components {
+    @keyframes tile-flash {
+        0% {
+            outline: 3px solid var(--color-accent);
+            outline-offset: -3px;
+        }
+        100% {
+            outline: 3px solid transparent;
+            outline-offset: -3px;
+        }
+    }
+
+    @keyframes shimmer {
+        0% {
+            background-position: 150% 0;
+        }
+        100% {
+            background-position: -150% 0;
+        }
+    }
+
+    .animate-tile-flash {
+        animation: tile-flash 0.8s ease-out;
+    }
+
+    .shimmer-accent {
+        position: relative;
+    }
+
+    .shimmer-accent::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            110deg,
+            transparent 25%,
+            color-mix(in oklch, var(--color-accent) 20%, transparent) 40%,
+            color-mix(in oklch, var(--color-accent) 35%, transparent) 50%,
+            color-mix(in oklch, var(--color-accent) 20%, transparent) 60%,
+            transparent 75%
+        );
+        background-size: 300% 100%;
+        animation: shimmer 3.5s ease-in-out infinite;
+        pointer-events: none;
+        border-radius: inherit;
+    }
+}

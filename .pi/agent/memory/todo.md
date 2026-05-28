@@ -45,12 +45,12 @@ When building wheels with `yadc/webui/__init__.py` present (needed for `package-
 The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). This is functional but needs cleanup:
 
 - **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
-- **Tailwind migration**: See **plans/tailwind-style-migration-plan** — migrate remaining manual CSS in Svelte components to Tailwind utilities (scoped `<style>` blocks in `+layout.svelte`, `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`; inline `style=` attributes). Preferred approach: combine Option C (keep the three-tier architecture, clean the edges) with Option D (move keyframes global, use `animate-[...]` utilities).
 - **Topbar padding / height inconsistency**: The dataset listing (`#/`) and templates (`#/templates`) pages feel cramped below the topbar because `.app-topbar` has `padding-bottom: 0`. Adding bottom padding globally causes the dataset browser (`#/datasets/:name`) to shift down because its subtitle row uses `min-h-7` to reserve space for the captioning status row, which is taller than the idle text line. The hamburger button and subtitle also shift slightly when captioning starts/stops. **Superseded by `captioning-status-bar-plan`** — moving the progress UI out of the topbar entirely.
 
 ## Frontend remaining cleanup
 
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
+- **Tooltip z-index / stacking context**: `Tooltip.svelte` was migrated to Tailwind but the tooltip label renders underneath `DatasetImage` tiles. The `DatasetBrowser` tiles use `transform` (hover scale) and `relative` positioning, which create new stacking contexts. The old tooltip had `z-index: 50` but that alone is not sufficient when the parent stacking contexts are lower. The tooltip should not hardcode its own z-index; it should be parent-driven (e.g. via a `class` prop on the wrapper `div` or a dedicated `zIndex` prop). Deciding the right API is deferred. Key files: `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`.
 
 ## ~~Missing webui assets~~ **DONE** — Logo added (android-chrome-192x192.png used in sidebar)
 

@@ -133,7 +133,7 @@
     <div class="alert-error">{templateError}</div>
 {/if}
 
-<div class="flex gap-4" style="height: 50vh;">
+<div class="flex h-[50vh] gap-4">
     <!-- Template list sidebar -->
     <div class="w-48 shrink-0 space-y-1 overflow-y-auto">
         {#each $templates.items as t (t.name)}

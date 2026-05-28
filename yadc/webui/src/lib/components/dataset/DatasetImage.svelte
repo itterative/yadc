@@ -54,13 +54,14 @@
 </script>
 
 <button
-    class={klazz}
+    class="{klazz} relative {selected
+        ? 'outline-2 outline-offset-[-2px] outline-accent'
+        : ''} {captioning ? 'shimmer-accent animate-none' : ''} {flashing && !captioning
+        ? 'animate-tile-flash'
+        : ''}"
     onclick={() => onclick(item)}
     class:has-caption={item.has_caption}
     class:has-toml={item.has_toml}
-    class:selected
-    class:captioning
-    class:flashing
     onanimationend={handleFlashEnd}
 >
     <img
@@ -105,63 +106,3 @@
         </span>
     {/if}
 </button>
-
-<style>
-    /* .has-caption — indicator applied via has-caption class name, styling via border in parent */
-
-    .selected {
-        outline: 2px solid var(--color-accent);
-        outline-offset: -2px;
-    }
-
-    .flashing {
-        animation: tile-flash 0.8s ease-out;
-    }
-
-    .captioning {
-        animation: none;
-    }
-
-    /* When both captioning and flashing, show the shimmer (not the flash). */
-    .captioning.flashing {
-        animation: none;
-    }
-
-    @keyframes tile-flash {
-        0% {
-            outline: 3px solid var(--color-accent);
-            outline-offset: -3px;
-        }
-        100% {
-            outline: 3px solid transparent;
-            outline-offset: -3px;
-        }
-    }
-
-    .captioning::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(
-            110deg,
-            transparent 25%,
-            color-mix(in oklch, var(--color-accent) 20%, transparent) 40%,
-            color-mix(in oklch, var(--color-accent) 35%, transparent) 50%,
-            color-mix(in oklch, var(--color-accent) 20%, transparent) 60%,
-            transparent 75%
-        );
-        background-size: 300% 100%;
-        animation: shimmer 3.5s ease-in-out infinite;
-        pointer-events: none;
-        border-radius: inherit;
-    }
-
-    @keyframes shimmer {
-        0% {
-            background-position: 150% 0;
-        }
-        100% {
-            background-position: -150% 0;
-        }
-    }
-</style>

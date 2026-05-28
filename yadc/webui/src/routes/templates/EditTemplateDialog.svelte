@@ -125,7 +125,7 @@
         {#if isLoading}
             <SpinnerBlock class="py-12" label="Loading template..." />
         {:else}
-            <div class="max-h-[55vh] min-h-0 flex-1 overflow-y-auto" style="min-height: 200px;">
+            <div class="max-h-[55vh] min-h-0 min-h-[200px] flex-1 overflow-y-auto">
                 <JinjaEditor value={content} onchange={(v) => (content = v)} />
             </div>
         {/if}
