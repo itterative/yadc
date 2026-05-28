@@ -13,36 +13,35 @@
     } from '$lib/stores/templates';
     import type { CaptionOptions } from '$lib/stores/captionOptions';
     import { captionSettings } from '$lib/stores/captionSettings';
+    import { captioningStatus } from '$lib/stores/events';
+    import {
+        captionOptions as captionOptionsStore,
+        startBatchCaptioning,
+        stopCaptioning
+    } from '$lib/stores/captionActions';
     import { promptNotificationsOnce } from '$lib/notifications';
     import { fetchConfig } from '$lib/stores/configs';
     import { get } from 'svelte/store';
-    import { friendlyErrorMessage } from '$lib/api';
+    import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
+    import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
+    import { toast } from '$lib/stores/toasts';
 
     // --- Props ---
 
     interface Props {
         /** Which dataset this is for. */
         datasetName: string;
-        /** The currently assembled caption options (reactive, updated as settings change). */
-        currentOptions?: CaptionOptions;
-        /** Whether a batch captioning job is currently running for this dataset. */
-        isBatchCaptioning?: boolean;
-        /** Called when the user clicks "Start Captioning". Receives the assembled options. */
-        onstart?: (options: CaptionOptions) => void;
-        /** Called when the user clicks "Stop Captioning". */
-        onstop?: () => void;
-        /** Called when the panel wants to close (e.g. after starting). */
+        /** Called when the panel wants to close (e.g. after starting/stopping). */
         onclose?: () => void;
     }
 
-    let {
-        datasetName: _datasetName,
-        currentOptions = $bindable(),
-        isBatchCaptioning = false,
-        onstart,
-        onstop,
-        onclose: _onclose
-    }: Props = $props();
+    let { datasetName: _datasetName, onclose: _onclose }: Props = $props();
+
+    // Derive batch captioning state from the global SSE store
+    let isBatchCaptioning = $derived(
+        $captioningStatus?.dataset_name === _datasetName &&
+            ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
+    );
 
     // --- State: Environment (managed by EnvSelector via bindings) ---
 
@@ -434,11 +433,13 @@
         reasoning_effort: reasoningEnabled ? reasoningEffort : undefined
     });
 
+    // Keep the shared store in sync with assembled options so
+    // single-image captioning from ImageDetail always uses current settings.
     $effect(() => {
-        currentOptions = _assembledOptions;
+        captionOptionsStore.set(_assembledOptions);
     });
 
-    function handleStart() {
+    async function handleStart() {
         captionSettings.update((s) => ({
             ...s,
             env: selectedEnv,
@@ -455,7 +456,20 @@
         }));
 
         promptNotificationsOnce();
-        onstart?.(_assembledOptions);
+        try {
+            await startBatchCaptioning(_datasetName);
+        } catch (e) {
+            if (e instanceof PasswordPromptCancelled) {
+                return;
+            }
+            if (e instanceof PasswordRequiredError) {
+                toast.error('Incorrect password. Please try again.');
+                return;
+            }
+            toast.error(friendlyErrorMessage(e, 'Failed to start captioning'));
+            return;
+        }
+        _onclose?.();
     }
 </script>
 
@@ -741,9 +755,9 @@
     <div class="flex-shrink-0 border-t border-border p-4">
         {#if isBatchCaptioning}
             <button
-                class="btn w-full px-4 py-2 text-sm border-error/40 bg-error/20 text-error hover:bg-error/30"
+                class="btn w-full border-error/40 bg-error/20 px-4 py-2 text-sm text-error hover:bg-error/30"
                 onclick={() => {
-                    onstop?.();
+                    stopCaptioning(_datasetName);
                     _onclose?.();
                 }}
             >

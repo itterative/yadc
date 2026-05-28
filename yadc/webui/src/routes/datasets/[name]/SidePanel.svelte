@@ -4,7 +4,6 @@
     import ImageDetail from '$lib/components/dataset/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
-    import type { CaptionOptions } from '$lib/stores/captionOptions';
     import type { ImageInfo } from '$lib/stores/datasetImages';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
@@ -16,14 +15,7 @@
         focusedItem: ImageInfo | null;
         activeTab?: PanelTab;
         open?: boolean;
-        captionOptions?: CaptionOptions;
-        onstartcaptioning?: (options: CaptionOptions) => void;
-        onstopcaptioning?: () => void;
         onpanelclose?: () => void;
-        oncaptionupdated?: (imageId: number, caption: string) => void;
-        isCaptioning?: boolean;
-        isBatchCaptioning?: boolean;
-        oncaptionimage?: (imageId: number) => Promise<unknown>;
         onconfigsaved?: () => void;
     }
 
@@ -32,14 +24,7 @@
         focusedItem,
         activeTab: panelTab = $bindable('caption'),
         open = $bindable(false),
-        captionOptions = $bindable(),
-        isCaptioning = false,
-        isBatchCaptioning = false,
-        onstartcaptioning,
-        onstopcaptioning,
         onpanelclose,
-        oncaptionupdated,
-        oncaptionimage,
         onconfigsaved
     }: Props = $props();
 </script>
@@ -84,10 +69,6 @@
             <Tab id="caption" label="Caption" class="h-full overflow-y-auto">
                 <CaptionSettings
                     {datasetName}
-                    bind:currentOptions={captionOptions}
-                    {isBatchCaptioning}
-                    onstart={onstartcaptioning}
-                    onstop={onstopcaptioning}
                     onclose={() => {
                         open = false;
                     }}
@@ -95,13 +76,7 @@
             </Tab>
             <Tab id="details" label="Details" class="h-full overflow-y-auto">
                 {#if focusedItem !== null}
-                    <ImageDetail
-                        {datasetName}
-                        item={focusedItem}
-                        {isCaptioning}
-                        {oncaptionupdated}
-                        {oncaptionimage}
-                    />
+                    <ImageDetail {datasetName} item={focusedItem} />
                 {:else}
                     <div class="flex h-full items-center justify-center py-4 text-sm text-gray-500">
                         Select an image to view details

@@ -257,15 +257,12 @@ export async function fetchCaptioningStatus(datasetName: string): Promise<Captio
     return res.json();
 }
 
-/** Stop a running captioning job. */
+/** Stop a running captioning job. Raw API call — for toast-enabled version use `captionActions.stopCaptioning`. */
 export async function stopCaptioning(datasetName: string): Promise<boolean> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {
         method: 'DELETE'
     });
-    if (!res.ok) {
-        return false;
-    }
-    return true;
+    return res.ok;
 }
 
 /** Start a single-image captioning job. Returns initial job info. */

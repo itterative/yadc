@@ -8,7 +8,6 @@
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import Topbar from '$lib/components/ui/Topbar.svelte';
-    import type { CaptionOptions } from '$lib/stores/captionOptions';
     import {
         captioningStatus,
         pendingDatasetChanges,
@@ -21,20 +20,13 @@
         lastCaptionError,
         currentlyCaptioning
     } from '$lib/stores/events';
+    import { lastStartedJobId } from '$lib/stores/captionActions';
     import { toast } from '$lib/stores/toasts';
-    import {
-        API_BASE,
-        apiErrorMessage,
-        friendlyErrorMessage,
-        PasswordRequiredError
-    } from '$lib/api';
-    import { withPasswordRetry, PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
+    import { friendlyErrorMessage } from '$lib/api';
     import {
         fetchDatasets,
         fetchImages,
         fetchCaptioningStatus,
-        startCaptioning,
-        captionSingleImage,
         type DatasetInfo,
         type ImageInfo
     } from '$lib/stores/datasetImages';
@@ -59,33 +51,6 @@
 
     // --- Captioning state ---
 
-    // Per-image SSE events (ImageCaptionedEvent / ImageCaptionErrorEvent)
-    // update individual grid tiles live during captioning. When captioning
-    // finishes we skip the full grid reload unless the SSE stream reported
-    // a resumption failure (meaning some per-image events may have been
-    // missed). Aggregate dataset stats are always refreshed.
-
-    // KNOWN ISSUE: Hot Module Replacement (HMR) can break captioning state
-    // tracking. If a reload happens, state of runningJobId survives, and
-    // the captioning status also has the same job id, regardless of how many
-    // the captioning is triggered, page never updates
-    //
-    // Possible causes:
-    // - The activeJobs ring buffer in stores/events.ts may evict the job_id,
-    //   causing dataset_changed suppression to fail (harmless but noisy).
-    //
-    // Workaround: hard-refresh the page (Ctrl+Shift+R) if the progress bar
-    // gets stuck.
-
-    /** Job ID of the batch captioning operation started from this page view.
-     *  NOTE: This is lost on hot reload, so a toast may be missed or
-     *  duplicated until the page is fully refreshed. */
-    let runningJobId = $state('');
-
-    /** Job ID and target image ID of an active single-image captioning job. */
-    let singleImageJobId = $state('');
-    let singleImageTargetId = $state(0);
-
     // Derive batch captioning state from the global SSE store
     let isBatchCaptioning = $derived(
         $captioningStatus?.dataset_name === datasetName &&
@@ -97,14 +62,6 @@
         $currentlyCaptioning?.dataset_name === datasetName ? $currentlyCaptioning.image_id : null
     );
 
-    // Is a single-image job currently running for the focused item?
-    let isFocusedImageCaptioning = $derived(
-        singleImageJobId !== '' &&
-            $captioningStatus?.dataset_name === datasetName &&
-            $captioningStatus?.job_id === singleImageJobId &&
-            ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
-    );
-
     let isStopping = $derived(
         $captioningStatus?.dataset_name === datasetName && $captioningStatus.status === 'stopping'
     );
@@ -114,20 +71,6 @@
             ? Math.round(($captioningStatus.processed / $captioningStatus.total) * 100)
             : 0
     );
-
-    async function handleStopCaptioning() {
-        try {
-            const res = await fetch(
-                `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`,
-                { method: 'DELETE' }
-            );
-            if (!res.ok) {
-                toast.error(`Failed to stop captioning: ${await apiErrorMessage(res)}`);
-            }
-        } catch {
-            toast.error('Failed to stop captioning: request failed');
-        }
-    }
 
     // Register job_id from incoming status events so dataset_changed events
     // from our own captioning are suppressed
@@ -142,7 +85,7 @@
         }
     });
 
-    // Fire a toast when the BATCH captioning job we started reaches a terminal state.
+    // Fire a toast when the captioning job we started reaches a terminal state.
     // Tracking by job_id avoids race conditions between SSE events and the
     // HTTP response, and prevents toasting for stale jobs on page load.
     $effect(() => {
@@ -153,51 +96,14 @@
         if (s.status !== 'error' && s.status !== 'done') {
             return;
         }
-        if (s.job_id !== runningJobId) {
+        if (s.job_id !== $lastStartedJobId) {
             return;
         }
         // Reset so navigating back to this page with a stale status
         // does not re-trigger the toast.
-        runningJobId = '';
+        lastStartedJobId.set('');
         handleCaptioningDone();
     });
-
-    // Handle completion of a SINGLE-IMAGE captioning job.
-    $effect(() => {
-        const s = $captioningStatus;
-        if (s?.dataset_name !== datasetName) {
-            return;
-        }
-        if (s.status !== 'error' && s.status !== 'done') {
-            return;
-        }
-        if (s.job_id !== singleImageJobId) {
-            return;
-        }
-        const targetId = singleImageTargetId;
-        singleImageJobId = '';
-        singleImageTargetId = 0;
-
-        if (s.status === 'error') {
-            const details =
-                s.error_messages.length > 0 ? s.error_messages : [s.error ?? 'Unknown error'];
-            toast.error('Captioning failed', { details });
-        } else if (s.errors > 0) {
-            const details = s.error_messages.slice(0, 2);
-            toast.warning(
-                `Captioning finished with ${s.errors} error${s.errors === 1 ? '' : 's'}`,
-                { details }
-            );
-        } else {
-            images = images.map((img) =>
-                img.id === targetId ? { ...img, has_caption: true } : img
-            );
-            toast.success('Caption generated');
-        }
-    });
-
-    // Live caption options from CaptionSettings (updated reactively as settings change)
-    let captionOptions: CaptionOptions = $state({});
 
     // --- Filesystem watcher state ---
 
@@ -353,88 +259,6 @@
         focusedItem = null;
         panelTab = 'caption';
         panelOpen = false;
-    }
-
-    function handleCaptionUpdated(imageId: number, _caption: string) {
-        void _caption;
-        images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
-    }
-
-    async function _doCaptionSingle(imageId: number, options: Record<string, unknown>) {
-        const info = await captionSingleImage(datasetName, imageId, options);
-        singleImageJobId = info.job_id;
-        singleImageTargetId = imageId;
-        registerJobId(info.job_id);
-
-        // Seed the store so the ImageDetail spinner appears immediately.
-        setCaptioningStatus({
-            status: info.status,
-            dataset_name: info.dataset_name,
-            processed: info.processed,
-            total: info.total,
-            errors: info.errors,
-            job_id: info.job_id,
-            error: info.error,
-            error_messages: []
-        });
-    }
-
-    async function handleCaptionImage(imageId: number) {
-        try {
-            await withPasswordRetry(() =>
-                _doCaptionSingle(imageId, captionOptions as Record<string, unknown>)
-            );
-        } catch (e) {
-            if (e instanceof PasswordPromptCancelled) {
-                return;
-            }
-            if (e instanceof PasswordRequiredError) {
-                toast.error('Incorrect password. Please try again.');
-                return;
-            }
-            toast.error(friendlyErrorMessage(e, 'Failed to caption image'));
-        }
-    }
-
-    async function _doStartCaptioning(options: Record<string, unknown>) {
-        const info = await startCaptioning(datasetName, options);
-        runningJobId = info.job_id;
-        registerJobId(info.job_id);
-
-        // Exit early if events from the jobs already arrived
-        const current = get(captioningStatus);
-        if (current.job_id === info.job_id) {
-            return;
-        }
-
-        // Seed the store with "running" so the progress bar appears immediately.
-        setCaptioningStatus({
-            status: info.status,
-            dataset_name: info.dataset_name,
-            processed: info.processed,
-            total: info.total,
-            errors: info.errors,
-            job_id: info.job_id,
-            error: info.error,
-            error_messages: []
-        });
-    }
-
-    async function handleStartCaptioning(options: CaptionOptions) {
-        captionOptions = options;
-        panelOpen = false;
-        try {
-            await withPasswordRetry(() => _doStartCaptioning(options as Record<string, unknown>));
-        } catch (e) {
-            if (e instanceof PasswordPromptCancelled) {
-                return;
-            }
-            if (e instanceof PasswordRequiredError) {
-                toast.error('Incorrect password. Please try again.');
-                return;
-            }
-            toast.error(friendlyErrorMessage(e, 'Failed to start captioning'));
-        }
     }
 
     function handleCaptioningDone() {
@@ -628,14 +452,7 @@
             {focusedItem}
             bind:activeTab={panelTab}
             bind:open={panelOpen}
-            bind:captionOptions
-            isCaptioning={isFocusedImageCaptioning}
-            {isBatchCaptioning}
-            onstartcaptioning={handleStartCaptioning}
-            onstopcaptioning={handleStopCaptioning}
             onpanelclose={handlePanelClose}
-            oncaptionupdated={handleCaptionUpdated}
-            oncaptionimage={handleCaptionImage}
             onconfigsaved={handleRefreshFromWatcher}
         />
     </div>

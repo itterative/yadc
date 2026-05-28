@@ -166,6 +166,16 @@ export function setCaptioningStatus(status: CaptioningStatus): void {
     _captioningStatus.set(status);
 }
 
+/** Explicitly set the currently-captioning image (e.g. to seed immediate UI feedback). */
+export function setCurrentlyCaptioning(
+    value: {
+        dataset_name: string;
+        image_id: number;
+    } | null
+): void {
+    _currentlyCaptioning.set(value);
+}
+
 // --- Self-connecting SSE lifecycle ---
 
 let _eventSource: TypedEventSource | null = null;

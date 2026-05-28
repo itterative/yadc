@@ -13,24 +13,18 @@
         type HistoryEntry,
         type ImageInfo
     } from '$lib/stores/datasetImages';
+    import { captionSingleImage as startSingleCaptioning } from '$lib/stores/captionActions';
+    import { currentlyCaptioning } from '$lib/stores/events';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { friendlyErrorMessage } from '$lib/api';
+    import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
 
     interface Props {
         datasetName: string;
         item: ImageInfo | null;
-        isCaptioning?: boolean;
-        oncaptionupdated?: (imageId: number, caption: string) => void;
-        oncaptionimage?: (imageId: number) => Promise<unknown>;
     }
 
-    let {
-        datasetName,
-        item,
-        isCaptioning = false,
-        oncaptionupdated,
-        oncaptionimage
-    }: Props = $props();
+    let { datasetName, item }: Props = $props();
 
     let captionData: CaptionData | null = $state(null);
     let isLoadingCaption = $state(false);
@@ -39,8 +33,15 @@
     let editCaption = $state('');
     let isSaving = $state(false);
 
-    // Captioning error state (spinner is controlled by parent via isCaptioning prop)
+    // Captioning error state (spinner is controlled by store-derived isCaptioning)
     let captioningError: string | null = $state(null);
+
+    // Derive captioning state from the global SSE store
+    let isCaptioning = $derived(
+        item !== null &&
+            $currentlyCaptioning?.dataset_name === datasetName &&
+            $currentlyCaptioning?.image_id === item.id
+    );
 
     // Track previous isCaptioning to detect completion and reload caption
     let wasCaptioning = $state(false);
@@ -114,7 +115,6 @@
             await updateCaption(datasetName, item.id, editCaption);
             captionData = { ...captionData!, caption: editCaption };
             isEditing = false;
-            oncaptionupdated?.(item.id, editCaption);
             // Refresh history since save creates a new entry
             if (isHistoryExpanded) {
                 try {
@@ -136,13 +136,16 @@
     }
 
     async function handleCaptionImage() {
-        if (item === null || !oncaptionimage) {
+        if (item === null) {
             return;
         }
         captioningError = null;
         try {
-            await oncaptionimage(item.id);
+            await startSingleCaptioning(datasetName, item.id);
         } catch (e) {
+            if (e instanceof PasswordPromptCancelled) {
+                return;
+            }
             captioningError = friendlyErrorMessage(e, 'Failed to caption image');
         }
     }
@@ -158,9 +161,6 @@
                     const data = await fetchCaption(datasetName, item.id);
                     captionData = data;
                     editCaption = data.caption || '';
-                    if (data.caption) {
-                        oncaptionupdated?.(item.id, data.caption);
-                    }
                 } catch (e) {
                     captionError = friendlyErrorMessage(e, 'Failed to load caption');
                 } finally {
@@ -257,7 +257,7 @@
                     <h3 class="text-sm font-medium text-gray-300">Caption</h3>
                     {#if captionData && !isEditing && !isCaptioning}
                         <div class="flex items-center gap-3">
-                            {#if oncaptionimage}
+                            {#if !isCaptioning}
                                 <button
                                     class="cursor-pointer text-xs text-accent hover:text-accent-hover"
                                     onclick={handleCaptionImage}
@@ -408,10 +408,6 @@
                                                         captionData = caption;
                                                         editCaption = caption.caption || '';
                                                         historyEntries = hist;
-                                                        oncaptionupdated?.(
-                                                            item!.id,
-                                                            caption.caption
-                                                        );
                                                     } catch (e) {
                                                         captionError = friendlyErrorMessage(
                                                             e,
