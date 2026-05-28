@@ -505,40 +505,41 @@
     <a href="#/" class="-ml-2 hidden p-2 text-gray-400 transition-colors hover:text-white md:flex">
         <SvgChevronLeft class="h-6 w-6" />
     </a>
-    <div class="min-w-0 flex-1">
-        <h1 class="text-xl font-bold text-white">{datasetName}</h1>
-        <div class="mt-0.5 flex min-h-7 w-full items-center">
+    <div class="relative min-w-0 flex-1">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-bold text-white">{datasetName}</h1>
             {#if isBatchCaptioning}
-                <div class="flex w-full items-center gap-2">
-                    {#if isStopping}
-                        <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-yellow-400" />
-                        <span class="text-sm text-yellow-300">Stopping…</span>
-                    {:else}
-                        <SvgSpinner class="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-                        <span class="text-sm text-gray-400">
-                            Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
-                        </span>
-                        <div class="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-bg">
-                            <div
-                                class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
-                                style:width="{captionPct}%"
-                            ></div>
-                        </div>
-                        <span class="text-xs text-gray-500">{captionPct}%</span>
-                        <button
-                            class="cursor-pointer rounded-md border border-error/30 bg-error/20 px-2 py-0.5 text-xs text-error transition-colors hover:bg-error/30 disabled:opacity-50"
-                            onclick={handleStopCaptioning}
-                        >
-                            Stop
-                        </button>
-                    {/if}
-                </div>
+                <SvgSpinner
+                    class="h-4 w-4 shrink-0 animate-spin {isStopping
+                        ? 'text-yellow-400'
+                        : 'text-accent'}"
+                />
+            {/if}
+        </div>
+        <div class="relative mt-0.5 flex items-center">
+            {#if isBatchCaptioning}
+                {#if isStopping}
+                    <span class="text-sm text-yellow-300">Stopping…</span>
+                {:else}
+                    <span class="text-sm text-gray-400">
+                        Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
+                        ({captionPct}%)
+                    </span>
+                {/if}
             {:else if currentDataset}
                 <p class="text-sm text-gray-400">
                     {currentDataset.image_count} images · {currentDataset.has_caption} captioned ·
                     {currentDataset.has_toml}
                     with TOML
                 </p>
+            {/if}
+            {#if isBatchCaptioning && !isStopping}
+                <div class="absolute right-0 -bottom-1 left-0 h-0.5 bg-bg">
+                    <div
+                        class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
+                        style:width="{captionPct}%"
+                    ></div>
+                </div>
             {/if}
         </div>
     </div>
@@ -624,7 +625,9 @@
             bind:open={panelOpen}
             bind:captionOptions
             isCaptioning={isFocusedImageCaptioning}
+            {isBatchCaptioning}
             onstartcaptioning={handleStartCaptioning}
+            onstopcaptioning={handleStopCaptioning}
             onpanelclose={handlePanelClose}
             oncaptionupdated={handleCaptionUpdated}
             oncaptionimage={handleCaptionImage}

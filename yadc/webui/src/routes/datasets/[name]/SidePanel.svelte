@@ -18,9 +18,11 @@
         open?: boolean;
         captionOptions?: CaptionOptions;
         onstartcaptioning?: (options: CaptionOptions) => void;
+        onstopcaptioning?: () => void;
         onpanelclose?: () => void;
         oncaptionupdated?: (imageId: number, caption: string) => void;
         isCaptioning?: boolean;
+        isBatchCaptioning?: boolean;
         oncaptionimage?: (imageId: number) => Promise<unknown>;
         onconfigsaved?: () => void;
     }
@@ -32,7 +34,9 @@
         open = $bindable(false),
         captionOptions = $bindable(),
         isCaptioning = false,
+        isBatchCaptioning = false,
         onstartcaptioning,
+        onstopcaptioning,
         onpanelclose,
         oncaptionupdated,
         oncaptionimage,
@@ -81,7 +85,9 @@
                 <CaptionSettings
                     {datasetName}
                     bind:currentOptions={captionOptions}
+                    {isBatchCaptioning}
                     onstart={onstartcaptioning}
+                    onstop={onstopcaptioning}
                     onclose={() => {
                         open = false;
                     }}

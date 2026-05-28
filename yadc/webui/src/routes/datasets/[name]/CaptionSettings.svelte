@@ -25,8 +25,12 @@
         datasetName: string;
         /** The currently assembled caption options (reactive, updated as settings change). */
         currentOptions?: CaptionOptions;
+        /** Whether a batch captioning job is currently running for this dataset. */
+        isBatchCaptioning?: boolean;
         /** Called when the user clicks "Start Captioning". Receives the assembled options. */
         onstart?: (options: CaptionOptions) => void;
+        /** Called when the user clicks "Stop Captioning". */
+        onstop?: () => void;
         /** Called when the panel wants to close (e.g. after starting). */
         onclose?: () => void;
     }
@@ -34,7 +38,9 @@
     let {
         datasetName: _datasetName,
         currentOptions = $bindable(),
+        isBatchCaptioning = false,
         onstart,
+        onstop,
         onclose: _onclose
     }: Props = $props();
 
@@ -731,8 +737,20 @@
         {/if}
     </div>
 
-    <!-- Footer: sticky start button -->
+    <!-- Footer: sticky start/stop button -->
     <div class="flex-shrink-0 border-t border-border p-4">
-        <button class="btn-primary w-full" onclick={handleStart}> Start Captioning </button>
+        {#if isBatchCaptioning}
+            <button
+                class="btn w-full px-4 py-2 text-sm border-error/40 bg-error/20 text-error hover:bg-error/30"
+                onclick={() => {
+                    onstop?.();
+                    _onclose?.();
+                }}
+            >
+                Stop Captioning
+            </button>
+        {:else}
+            <button class="btn-primary w-full" onclick={handleStart}> Start Captioning </button>
+        {/if}
     </div>
 </div>
