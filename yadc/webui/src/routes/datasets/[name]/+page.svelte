@@ -507,7 +507,9 @@
     </a>
     <div class="relative min-w-0 flex-1">
         <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold text-white">{datasetName}</h1>
+            <h1 class="overflow-hidden text-xl font-bold text-nowrap text-ellipsis text-white">
+                {datasetName}
+            </h1>
             {#if isBatchCaptioning}
                 <SvgSpinner
                     class="h-4 w-4 shrink-0 animate-spin {isStopping
@@ -532,7 +534,10 @@
                     {currentDataset.has_toml}
                     with TOML
                 </p>
+            {:else}
+                <p class="text-sm text-gray-400">...</p>
             {/if}
+
             {#if isBatchCaptioning && !isStopping}
                 <div class="absolute right-0 -bottom-1 left-0 h-0.5 bg-bg">
                     <div
