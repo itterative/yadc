@@ -5,13 +5,14 @@ description: When a user query involves deferred tasks, known issues, or future 
 
 # TODO
 
-## API request consolidation (4 issues)
+## ~~API request consolidation~~ **DONE**
 
-Captured in **plans/api-request-consolidation-plan**:
-- (a) Env list returns only names → need full details endpoint
-- (b) Dataset browser triggers 4 parallel requests (images, datasets list, captioning status, config)
-- (c) Environment call repeats when opening CaptionSettings (same root cause as a)
-- (d) `ImageCaptionedEvent` via SSE doesn't include caption text → still need `fetchCaption` HTTP call
+All 4 issues resolved. See **plans/api-request-consolidation-plan** for full details.
+
+- ✅ (a) `GET /api/envs` returns full `EnvInfo[]` details, not just names
+- ✅ (b) Dataset page requests consolidated via `debounce()` dedupe
+- ✅ (c) Env details loaded once via enriched list endpoint + SSE auto-refresh
+- ✅ (d) `ImageCaptionedEvent` includes `caption: str` — SSE caption prefetch
 
 ## ~~Convert API backend to async (ASGI)~~ **DONE** — migrated to Quart + uvicorn
 
@@ -177,6 +178,8 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 ## SSE event pattern standardization
 
 Research whether to standardize on thin events (notify-then-fetch) vs event-carried state transfer (fat events) for SSE. See `todo/thin-events-vs-fat-events.md` for full context.
+
+**Partial decision made**: `EnvironmentsChangedEvent` and `TemplatesChangedEvent` carry the full list of changed names (`envs: list[str]`, `templates: list[str]`). The frontend still calls `refreshEnvs()`/`refreshTemplates()` on these events (the lists are for debugging/future use). The pattern is "enriched thin events" — notify with context, then fetch for authoritative state.
 
 # User TODOs (less verbose)
 

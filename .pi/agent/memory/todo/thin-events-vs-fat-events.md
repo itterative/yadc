@@ -31,3 +31,13 @@ description: Research thin events (notify-then-fetch) vs event-carried state tra
 
 ## Decision needed
 Standardize on one pattern, document the convention, and refactor existing events if needed.
+
+## Current Status (2026-05-28)
+
+The project now uses a **hybrid approach**:
+
+- **Fat events** for data that changes per-item and is consumed immediately (e.g. `ImageCaptionedEvent` carries caption text, `CaptioningStatusEvent` carries full job state)
+- **Enriched thin events** for collection-level changes (e.g. `EnvironmentsChangedEvent` carries `envs: list[str]`, `TemplatesChangedEvent` carries `templates: list[str]`). Frontend still fetches the full list on receipt, but the event payload provides debugging context and future flexibility for targeted updates.
+- **Pure thin events** for cases where no useful context can be provided (e.g. `DatasetChangedEvent` — the changed files are internal implementation details, frontend just refreshes)
+
+The convention: **prefer enriched thin events** for collection changes, **fat events** for per-item data that avoids a round-trip.

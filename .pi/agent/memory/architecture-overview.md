@@ -36,7 +36,8 @@ yadc/
     banner.txt           # ASCII art banner printed on startup (optional, --no-banner to disable)
     configuration.py    # @dataclass config (http, cors, sse, yadc paths, banner_enable)
     discovery.py        # discover_services() / discover_controllers() — package scanning
-    events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent
+    watcher_base.py     # SinglePathWatcherService — shared base for filesystem watchers (debounce, observer lifecycle, create_event for subclasses)
+    events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent, EnvironmentsChangedEvent, TemplatesChangedEvent, ImageCaptionedEvent (with caption text)
     controllers/
       utils_json.py       # DataclassJSONEncoder + jsonify_dataclass + jsonify_error() (shared JSON utilities)
       models_errors.py    # APIErrorDetail + APIErrorResponse dataclasses, Pydantic ValidationError conversion
@@ -57,6 +58,8 @@ yadc/
       event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
       job_scheduler.py       # JobScheduler — daemon threads for periodic jobs
       sse_events.py         # SSEEvents — Condition-based SSE queue with ping, monotonic event IDs, ring buffer history for Last-Event-ID resumption
+      env_watcher.py       # EnvWatcherService — watchdog-based watcher for config.toml, emits EnvironmentsChangedEvent (extends SinglePathWatcherService)
+      template_watcher.py  # TemplateWatcherService — watchdog-based watcher for *.jinja files, emits TemplatesChangedEvent (extends SinglePathWatcherService)
       dataset_watcher.py    # DatasetWatcherService — watchdog-based filesystem watcher for dataset dirs, debounced DatasetChangedEvent emission
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init

@@ -18,7 +18,7 @@ yadc/webui/
       index.ts             # Re-exports: storable, async helpers, TypedEventSource, API_BASE, random
       api.ts               # API_BASE constant, structured error response parsing (isAPIErrorResponse / isAPIErrorDetail / apiErrorMessage), and user-friendly HTTP status messages
       events.ts            # TypedEventSource — SSE with Zod validation
-      async.ts             # deferred, sleep, synchronized, delayed helpers
+      async.ts             # debounce (async debounce+dedupe), sleep, synchronized, delayed helpers
       notifications.ts   # Browser Notification API helpers (permission, sending, first-use prompt)
       storable.js          # localStorage-backed writable store
       random.ts            # Seeded PRNG for deterministic stub layouts
@@ -30,13 +30,13 @@ yadc/webui/
         utilities.css      # .btn-bar
       stores/
         settings.ts       # UI settings (storable)
-        events.ts         # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges)
+        events.ts         # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges, storedCaptions). Auto-refreshes envs/templates on change events. Caption text cached from SSE events (LRU).
         captioning.ts     # Re-export shim from events.ts for backward compatibility
         captionOptions.ts # CaptionJobOptions type for caption settings dialog
-        datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers + deleteDataset
-        configs.ts        # Config CRUD API helpers + export backend types
-        envs.ts           # Environment CRUD API helpers + types (EnvInfo)
-        templates.ts      # Template CRUD API helpers + types (TemplateInfo)
+        datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers (debounced) + deleteDataset
+        configs.ts        # Config CRUD API helpers + export backend types. `fetchConfig` debounced.
+        envs.ts           # Environment types + CRUD + model fetching. Store holds `EnvInfo[]` (full details). `fetchEnvs`/`fetchModels` debounced.
+        templates.ts      # Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced.
       components/
         ui/                           # Atomic, reusable primitives
           Dialog.svelte               # Modal dialog (HTML <dialog>)
@@ -101,13 +101,13 @@ yadc/webui/
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers + deleteDataset + createDatasetBrowserStore. `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
-| `envs.ts` | Env types + CRUD + model fetching |
-| `templates.ts` | Template types + CRUD + `extractVariables()` |
+| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers (debounced via `debounce()`) + deleteDataset + createDatasetBrowserStore. `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
+| `envs.ts` | Env types + CRUD + model fetching. Store holds `EnvInfo[]` (full details from `GET /api/envs`, not just names). `fetchEnvs`/`fetchModels` debounced. |
+| `templates.ts` | Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced. |
 | `captionActions.ts` | Caption action store — `captionOptions` (writable, reactively synced from CaptionSettings), `startBatchCaptioning()`, `captionSingleImage()`, `stopCaptioning()` (with toasts + optional onError callback), `lastStartedJobId` (for completion toast tracking). Reads options from store, handles password retry, registers job IDs, seeds SSE stores. |
 | `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) — used by `captionActions.ts` and `CaptionSettings.svelte` |
-| `configs.ts` | Config CRUD + export API |
-| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`, `currentlyCaptioning`, `clearPendingDatasetChange()`, `clearResumptionFailed()`, `setCaptioningStatus()`, `setCurrentlyCaptioning()`. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
+| `configs.ts` | Config CRUD + export API. `fetchConfig` debounced. |
+| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`, `currentlyCaptioning`, `storedCaptions` (LRU cache of captions from SSE), `getStoredCaption()`, `clearStoredCaption()`, `clearPendingDatasetChange()`, `clearResumptionFailed()`, `setCaptioningStatus()`, `setCurrentlyCaptioning()`. Listens for `environments_changed` and `templates_changed` events to auto-refresh their stores. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning". Priority: localStorage override → dataset config default → hardcoded default. |
