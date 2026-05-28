@@ -101,7 +101,7 @@
 
 <div class="flex h-screen overflow-hidden">
     <nav
-        class="fixed top-0 bottom-0 left-0 z-40 flex w-56 -translate-x-full flex-col items-center border-r border-border bg-surface p-3 transition-transform duration-200 ease-in-out md:relative md:w-14 md:shrink-0 md:translate-x-0 md:items-stretch md:p-2 md:transition-none"
+        class="fixed top-0 bottom-0 left-0 flex w-56 -translate-x-full flex-col items-center border-r border-border bg-surface p-3 transition-transform duration-200 ease-in-out max-md:z-40 md:relative md:w-14 md:shrink-0 md:translate-x-0 md:items-stretch md:p-2 md:transition-none"
         class:translate-x-0={sidebarOpen}
     >
         <!-- Brand -->
@@ -123,7 +123,7 @@
                     : 'text-muted hover:bg-bg hover:text-fg'}"
                 onclick={() => (sidebarOpen = false)}
             >
-                <Tooltip label="Datasets" direction="right">
+                <Tooltip label="Datasets" class="z-50" direction="right">
                     <SvgImage class="h-6 w-6 shrink-0" />
                 </Tooltip>
                 <span class="text-lg md:hidden">Datasets</span>
@@ -135,7 +135,7 @@
                     : 'text-muted hover:bg-bg hover:text-fg'}"
                 onclick={() => (sidebarOpen = false)}
             >
-                <Tooltip label="Templates" direction="right">
+                <Tooltip label="Templates" class="z-50" direction="right">
                     <SvgFile class="h-6 w-6 shrink-0" />
                 </Tooltip>
                 <span class="text-lg md:hidden">Templates</span>
@@ -146,7 +146,7 @@
 
         <!-- Actions -->
         <div class="flex w-full flex-col gap-1">
-            <Tooltip label="Export" direction="right">
+            <Tooltip label="Export" class="z-50" direction="right">
                 <button
                     class="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent p-2 text-base text-muted transition-colors duration-200 hover:bg-bg hover:text-fg"
                     onclick={() => (showExport = true)}
@@ -155,7 +155,7 @@
                     <span class="text-lg md:hidden">Export</span>
                 </button>
             </Tooltip>
-            <Tooltip label="Settings" direction="right">
+            <Tooltip label="Settings" class="z-50" direction="right">
                 <button
                     class="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent p-2 text-base text-muted transition-colors duration-200 hover:bg-bg hover:text-fg"
                     onclick={() => settingsDialog.update((d) => ({ ...d, open: true }))}
