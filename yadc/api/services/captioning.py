@@ -490,6 +490,7 @@ class CaptionJob:
                 height=info.height,
                 draft_names=info.draft_names,
                 last_modified_t=info.last_modified_t,
+                caption=dataset_image.caption,
             )
         )
 

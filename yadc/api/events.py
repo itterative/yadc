@@ -63,6 +63,19 @@ class ImageCaptionedEvent(Event):
     height: int = 0
     draft_names: list[str] = dataclasses.field(default_factory=list)
     last_modified_t: float | None = None
+    caption: str = ""
+
+
+@dataclass
+class EnvironmentsChangedEvent(Event):
+    TYPE: ClassVar[str] = "environments_changed"
+    envs: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class TemplatesChangedEvent(Event):
+    TYPE: ClassVar[str] = "templates_changed"
+    templates: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclass

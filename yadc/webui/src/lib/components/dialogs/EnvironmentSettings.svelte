@@ -8,7 +8,6 @@
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import {
         deleteEnv,
-        fetchEnv,
         refreshEnvs,
         revealEnvValue,
         saveEnv,
@@ -33,7 +32,7 @@
     let isSavingEnv = $state(false);
     let saveEnvError: string | null = $state(null);
     let confirmDelete: string | null = $state(null);
-    let envDetailMap = $state<Record<string, EnvInfo>>({});
+
     let showToken = $state(false);
     let revealedToken = $state('');
 
@@ -45,23 +44,7 @@
         envLoading = true;
         envError = null;
         try {
-            const names = await refreshEnvs();
-            const details = await Promise.all(
-                names.map(async (name) => {
-                    try {
-                        return await fetchEnv(name);
-                    } catch {
-                        return null;
-                    }
-                })
-            );
-            const map: Record<string, EnvInfo> = {};
-            for (let i = 0; i < names.length; i++) {
-                if (details[i]) {
-                    map[names[i]] = details[i]!;
-                }
-            }
-            envDetailMap = map;
+            await refreshEnvs();
         } catch (e) {
             envError = friendlyErrorMessage(e, 'Failed to load environments');
         } finally {
@@ -81,21 +64,16 @@
         revealedToken = '';
     }
 
-    async function startEditEnv(name: string) {
+    function startEditEnv(env: EnvInfo) {
         saveEnvError = null;
         showToken = false;
         revealedToken = '';
-        try {
-            const info = await fetchEnv(name);
-            isNewEnv = false;
-            editingEnv = info;
-            editName = info.name;
-            editUrl = info.api_url || '';
-            editToken = '';
-            editModelName = info.api_model_name || '';
-        } catch (e) {
-            envError = friendlyErrorMessage(e, 'Failed to load environment');
-        }
+        isNewEnv = false;
+        editingEnv = env;
+        editName = env.name;
+        editUrl = env.api_url || '';
+        editToken = '';
+        editModelName = env.api_model_name || '';
     }
 
     function cancelEditEnv() {
@@ -203,28 +181,28 @@
             {:else if $envs.items.length === 0}
                 <p class="py-4 text-center text-sm text-gray-500">No environments yet.</p>
             {:else}
-                {#each $envs.items as name (name)}
+                {#each $envs.items as env (env.name)}
                     <div
                         class="group flex items-center gap-3 rounded-lg border border-border bg-bg p-3"
                     >
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium text-white">{name}</span>
-                                {#if envDetailMap[name]?.api_url}
+                                <span class="text-sm font-medium text-white">{env.name}</span>
+                                {#if env.api_url}
                                     <span
                                         class="rounded border border-gray-700/40 bg-gray-800/40 px-1.5 py-px text-[0.625rem] font-medium text-gray-400"
                                     >
                                         URL
                                     </span>
                                 {/if}
-                                {#if envDetailMap[name]?.has_token}
+                                {#if env.has_token}
                                     <span
                                         class="rounded border border-accent/25 bg-accent/15 px-1.5 py-px text-[0.625rem] font-medium text-accent"
                                     >
                                         Token
                                     </span>
                                 {/if}
-                                {#if envDetailMap[name]?.api_model_name}
+                                {#if env.api_model_name}
                                     <span
                                         class="rounded border border-gray-700/40 bg-gray-800/40 px-1.5 py-px text-[0.625rem] font-medium text-gray-400"
                                     >
@@ -239,15 +217,15 @@
                             <button
                                 class="cursor-pointer rounded p-1.5 text-gray-400 transition-colors hover:text-accent"
                                 title="Edit"
-                                onclick={() => startEditEnv(name)}
+                                onclick={() => startEditEnv(env)}
                             >
                                 <SvgEdit class="h-4 w-4" />
                             </button>
-                            {#if name !== 'default'}
+                            {#if env.name !== 'default'}
                                 <button
                                     class="cursor-pointer rounded p-1.5 text-gray-400 transition-colors hover:text-error"
                                     title="Delete"
-                                    onclick={() => (confirmDelete = name)}
+                                    onclick={() => (confirmDelete = env.name)}
                                 >
                                     <SvgDelete class="h-4 w-4" />
                                 </button>

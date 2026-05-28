@@ -14,7 +14,7 @@
         type ImageInfo
     } from '$lib/stores/datasetImages';
     import { captionSingleImage as startSingleCaptioning } from '$lib/stores/captionActions';
-    import { currentlyCaptioning } from '$lib/stores/events';
+    import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
@@ -87,6 +87,7 @@
                 }
                 captionData = data;
                 editCaption = data.caption || '';
+                clearStoredCaption(item.id);
             } catch (e) {
                 if (cancelled) {
                     return;
@@ -154,19 +155,26 @@
     $effect(() => {
         const current = isCaptioning;
         if (wasCaptioning && !current && item !== null) {
-            isLoadingCaption = true;
-            captionError = null;
-            (async () => {
-                try {
-                    const data = await fetchCaption(datasetName, item.id);
-                    captionData = data;
-                    editCaption = data.caption || '';
-                } catch (e) {
-                    captionError = friendlyErrorMessage(e, 'Failed to load caption');
-                } finally {
-                    isLoadingCaption = false;
-                }
-            })();
+            const stored = getStoredCaption(item.id);
+            if (stored !== undefined && captionData !== null) {
+                captionData = { ...captionData, caption: stored };
+                editCaption = stored;
+                clearStoredCaption(item.id);
+            } else {
+                isLoadingCaption = true;
+                captionError = null;
+                (async () => {
+                    try {
+                        const data = await fetchCaption(datasetName, item.id);
+                        captionData = data;
+                        editCaption = data.caption || '';
+                    } catch (e) {
+                        captionError = friendlyErrorMessage(e, 'Failed to load caption');
+                    } finally {
+                        isLoadingCaption = false;
+                    }
+                })();
+            }
         }
         wasCaptioning = current;
     });

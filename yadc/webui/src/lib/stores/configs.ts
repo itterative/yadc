@@ -1,4 +1,5 @@
 import { API_BASE, apiErrorMessage } from '$lib/api';
+import { debounce } from '$lib/async';
 
 // --- Types matching the backend API ---
 
@@ -150,13 +151,15 @@ export async function fetchConfigs(): Promise<DatasetConfig[]> {
     return res.json();
 }
 
-export async function fetchConfig(name: string): Promise<DatasetConfigDetail> {
+async function _fetchConfig(name: string): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`);
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
 }
+
+export const fetchConfig = debounce(_fetchConfig);
 
 export async function updateConfig(name: string, content: string): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {

@@ -15,7 +15,9 @@
 import { browser } from '$app/environment';
 import { API_BASE } from '$lib/api';
 import { TypedEventSource } from '$lib/events';
-import { writable, readonly, type Readable } from 'svelte/store';
+import { refreshEnvs } from '$lib/stores/envs';
+import { refreshTemplates } from '$lib/stores/templates';
+import { writable, readonly, get, type Readable } from 'svelte/store';
 import { z } from 'zod';
 
 // --- Zod schemas ---
@@ -55,7 +57,8 @@ export const ImageCaptionedEventZ = z.object({
     width: z.number(),
     height: z.number(),
     draft_names: z.array(z.string()),
-    last_modified_t: z.number().nullable()
+    last_modified_t: z.number().nullable(),
+    caption: z.string().default('')
 });
 
 export const ImageCaptionErrorEventZ = z.object({
@@ -72,6 +75,14 @@ export const ImageCaptionStartedEventZ = z.object({
     file_name: z.string()
 });
 
+export const EnvironmentsChangedEventZ = z.object({
+    envs: z.array(z.string())
+});
+
+export const TemplatesChangedEventZ = z.object({
+    templates: z.array(z.string())
+});
+
 // --- Types ---
 
 export type CaptioningStatus = z.infer<typeof CaptioningStatusZ>;
@@ -79,6 +90,8 @@ export type DatasetChangedEvent = z.infer<typeof DatasetChangedEventZ>;
 export type ImageCaptionedEvent = z.infer<typeof ImageCaptionedEventZ>;
 export type ImageCaptionErrorEvent = z.infer<typeof ImageCaptionErrorEventZ>;
 export type ImageCaptionStartedEvent = z.infer<typeof ImageCaptionStartedEventZ>;
+export type EnvironmentsChangedEvent = z.infer<typeof EnvironmentsChangedEventZ>;
+export type TemplatesChangedEvent = z.infer<typeof TemplatesChangedEventZ>;
 
 // --- Internal writable stores ---
 
@@ -110,6 +123,21 @@ const _lastCaptionError = writable<ImageCaptionErrorEvent | null>(null);
 /** Image currently being captioned (null when idle or between images). */
 const _currentlyCaptioning = writable<{ dataset_name: string; image_id: number } | null>(null);
 
+/**
+ * Captions received via SSE, keyed by image ID.
+ *
+ * Bounded LRU cache — oldest entries are evicted when the capacity is
+ * exceeded.  Accessed entries are promoted so recently-viewed captions
+ * survive eviction.
+ *
+ * NOTE: This feature may be refined before committing to the final
+ * implementation.  The capacity and eviction strategy are subject to
+ * change.
+ */
+const _storedCaptions = writable<Map<number, string>>(new Map());
+
+const MAX_STORED_CAPTIONS = 64;
+
 const MAX_ACTIVE_JOB_IDS = 16;
 
 // --- Public readonly stores ---
@@ -134,6 +162,34 @@ export const lastCaptionError: Readable<ImageCaptionErrorEvent | null> =
 /** Image currently being captioned (null when idle or between images). */
 export const currentlyCaptioning: Readable<{ dataset_name: string; image_id: number } | null> =
     readonly(_currentlyCaptioning);
+
+/** Captions received via SSE, keyed by image ID. */
+export const storedCaptions: Readable<Map<number, string>> = readonly(_storedCaptions);
+
+/** Return a caption received via SSE for the given image, if any.
+ *  Promotes the entry to most-recently-used (LRU eviction ordering). */
+export function getStoredCaption(imageId: number): string | undefined {
+    const map = get(_storedCaptions);
+    const value = map.get(imageId);
+    if (value !== undefined) {
+        // Promote to end of iteration order (most-recently-used).
+        _storedCaptions.update((m) => {
+            m.delete(imageId);
+            m.set(imageId, value);
+            return m;
+        });
+    }
+    return value;
+}
+
+/** Remove a stored caption after authoritative data has been fetched. */
+export function clearStoredCaption(imageId: number): void {
+    _storedCaptions.update((map) => {
+        const next = new Map(map);
+        next.delete(imageId);
+        return next;
+    });
+}
 
 // --- Public actions ---
 
@@ -245,10 +301,24 @@ function connect() {
             data.requested_event_id
         );
         _resumptionFailed.set(true);
+        // We may have missed change events while disconnected — refresh as a safety net.
+        refreshEnvs();
+        refreshTemplates();
     });
 
     _eventSource.listen('image_captioned', ImageCaptionedEventZ, (data) => {
         _lastCaptionedImage.set(data);
+        _storedCaptions.update((map) => {
+            const next = new Map(map);
+            next.set(data.id, data.caption);
+            if (next.size > MAX_STORED_CAPTIONS) {
+                const firstKey = next.keys().next().value;
+                if (firstKey !== undefined) {
+                    next.delete(firstKey);
+                }
+            }
+            return next;
+        });
         // Clear the "currently captioning" indicator for this image (it just finished).
         _currentlyCaptioning.update((cur) => {
             if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.id) {
@@ -271,6 +341,14 @@ function connect() {
 
     _eventSource.listen('image_caption_started', ImageCaptionStartedEventZ, (data) => {
         _currentlyCaptioning.set({ dataset_name: data.dataset_name, image_id: data.image_id });
+    });
+
+    _eventSource.listen('environments_changed', EnvironmentsChangedEventZ, () => {
+        refreshEnvs();
+    });
+
+    _eventSource.listen('templates_changed', TemplatesChangedEventZ, () => {
+        refreshTemplates();
     });
 
     // Let the browser handle reconnection automatically.  The server sends a

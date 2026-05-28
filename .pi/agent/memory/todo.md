@@ -174,6 +174,10 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 - A TOML AST-aware library that preserves comments and formatting (e.g. `taplo`/Python bindings if they exist)
 - Accept the limitation and document it (comments are not preserved when editing configs through the webui)
 
+## SSE event pattern standardization
+
+Research whether to standardize on thin events (notify-then-fetch) vs event-carried state transfer (fat events) for SSE. See `todo/thin-events-vs-fat-events.md` for full context.
+
 # User TODOs (less verbose)
 
 * errors when starting captions show up in both the toast and at the top (latter needs removal)
@@ -181,3 +185,4 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 * need to enable prettier
 * ~~need to fix the navbar at the top on mobile (it cuts off, export/settings not visible when selecting a dataset)~~
 * ~~on mobile, cannot edit datasets or templates (hover-only action buttons)~~
+* **Decide on `_metadata` field for env GET endpoints**: Consider grouping read-only metadata (`has_token`, `token_method`) under a `_metadata` key to make the PUT/GET shape symmetry explicit. Currently kept flat for simplicity, but worth revisiting if more read-only fields are added later.

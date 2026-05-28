@@ -14,37 +14,39 @@ from .blueprints import ApiBlueprint
 from .utils_json import ErrorCode, jsonify_error
 
 
+def _format_env(name: str, env_data) -> dict[str, object]:
+    """Format environment data for the API (token masked)."""
+    api_url = env_data.api_url.value if env_data else None
+    api_token = env_data.api_token if env_data else None
+    api_model_name = env_data.api_model_name.value if env_data else None
+
+    has_token = api_token is not None and api_token.value is not None
+
+    return {
+        "name": name,
+        "api_url": api_url,
+        "api_token": "[REDACTED]" if has_token else None,
+        "api_model_name": api_model_name,
+        "has_token": has_token,
+        "token_method": api_token.method if api_token is not None else None,
+    }
+
+
 @controller
 def api_envs(app: ApiBlueprint, logging: LoggingFactory):
     _logger = logging.get_logger(__name__)
 
     @app.get("/envs")
     def list_envs():  # pyright: ignore[reportUnusedFunction]
-        """List all environment names."""
+        """List all environments with full details."""
         names = cmd_envs.list_all_env()
-        return jsonify(names)
+        return jsonify([_format_env(name, cmd_envs.get_env(name)) for name in names])
 
     @app.get("/envs/<name>")
     def get_env(name: str):  # pyright: ignore[reportUnusedFunction]
         """Return environment settings (token masked)."""
         env_data = cmd_envs.get_env(name)
-
-        api_url = env_data.api_url.value if env_data else None
-        api_token = env_data.api_token if env_data else None
-        api_model_name = env_data.api_model_name.value if env_data else None
-
-        has_token = api_token is not None and api_token.value is not None
-
-        return jsonify(
-            {
-                "name": name,
-                "api_url": api_url,
-                "api_token": "[REDACTED]" if has_token else None,
-                "api_model_name": api_model_name,
-                "has_token": has_token,
-                "token_method": api_token.method if api_token is not None else None,
-            }
-        )
+        return jsonify(_format_env(name, env_data))
 
     @app.post("/envs/<name>/reveal")
     async def reveal_env_value(name: str):  # pyright: ignore[reportUnusedFunction]

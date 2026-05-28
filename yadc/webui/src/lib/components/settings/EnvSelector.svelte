@@ -1,7 +1,7 @@
 <script lang="ts">
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
-    import { envs, refreshEnvs, fetchEnv, fetchModels, type EnvInfo } from '$lib/stores/envs';
+    import { envs, refreshEnvs, fetchModels } from '$lib/stores/envs';
     import { settingsDialog } from '$lib/stores/settings';
     import { friendlyErrorMessage } from '$lib/api';
 
@@ -23,7 +23,7 @@
         apiModelName: envModelName = $bindable('')
     }: Props = $props();
 
-    let envInfo: EnvInfo | null = $state(null);
+    let envInfo = $derived($envs.items.find((e) => e.name === selectedEnv) ?? null);
 
     let models: string[] = $state([]);
     let isLoadingModels = $state(false);
@@ -45,54 +45,33 @@
         }
     }
 
-    // Load envs on mount
+    // Load envs on mount (SSE auto-refresh handles subsequent changes)
     $effect(() => {
         loadEnvs();
     });
 
-    // Reload envs when the settings dialog closes (env may have been edited)
-    let wasDialogOpen = $state(false);
-    $effect(() => {
-        const isOpen = $settingsDialog.open;
-        if (wasDialogOpen && !isOpen) {
-            loadEnvs();
-        }
-        wasDialogOpen = isOpen;
-    });
-
-    // Load env detail when selection changes
+    // Pre-fill fields and reset models when selection changes
     $effect(() => {
         const env = selectedEnv;
         if (!env) {
             return;
         }
+        const info = $envs.items.find((e) => e.name === env);
+        if (info) {
+            envUrl = info.api_url || '';
+            envToken = ''; // Don't pre-fill token (masked as [REDACTED] in API)
+            envModelName = info.api_model_name || '';
+        }
+
+        // Reset model list when env changes
+        models = [];
+        modelFetchDone = false;
+        modelsError = null;
 
         let cancelled = false;
         (async () => {
-            try {
-                const info = await fetchEnv(env);
-                if (cancelled) {
-                    return;
-                }
-                envInfo = info;
-                envUrl = info.api_url || '';
-                envToken = ''; // Don't pre-fill token (masked as [REDACTED] in API)
-                envModelName = info.api_model_name || '';
-
-                // Reset model list when env changes
-                models = [];
-                modelFetchDone = false;
-                modelsError = null;
-
-                // Auto-fetch models so the dropdown populates immediately
-                if (!cancelled) {
-                    await loadModels();
-                }
-            } catch {
-                if (cancelled) {
-                    return;
-                }
-                envInfo = null;
+            if (!cancelled) {
+                await loadModels();
             }
         })();
 
@@ -142,8 +121,8 @@
             bind:value={selectedEnv}
             disabled={isLoadingEnvs}
         >
-            {#each $envs.items as name (name)}
-                <option value={name}>{name}</option>
+            {#each $envs.items as env (env.name)}
+                <option value={env.name}>{env.name}</option>
             {/each}
             {#if $envs.items.length === 0}
                 <option value="default" disabled>default</option>

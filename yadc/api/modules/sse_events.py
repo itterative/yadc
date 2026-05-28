@@ -8,6 +8,7 @@ from ..configuration import Configuration
 from ..events import (
     CaptioningStatusEvent,
     DatasetChangedEvent,
+    EnvironmentsChangedEvent,
     Event,
     ImageCaptionedEvent,
     ImageCaptionErrorEvent,
@@ -15,6 +16,7 @@ from ..events import (
     PingEvent,
     ResumptionFailedEvent,
     ShutdownEvent,
+    TemplatesChangedEvent,
 )
 from .event_dispatcher import EventDispatcher, event_handler
 from .job_scheduler import JobScheduler
@@ -74,6 +76,14 @@ class SSEEvents(Service):
 
     @event_handler(DatasetChangedEvent)
     async def on_dataset_changed(self, event: DatasetChangedEvent) -> None:
+        await self.push(event)
+
+    @event_handler(EnvironmentsChangedEvent)
+    async def on_environments_changed(self, event: EnvironmentsChangedEvent) -> None:
+        await self.push(event)
+
+    @event_handler(TemplatesChangedEvent)
+    async def on_templates_changed(self, event: TemplatesChangedEvent) -> None:
         await self.push(event)
 
     @event_handler(ImageCaptionedEvent)

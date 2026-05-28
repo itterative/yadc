@@ -1,4 +1,5 @@
 import { API_BASE, apiErrorMessage } from '$lib/api';
+import { debounce } from '$lib/async';
 import { get } from 'svelte/store';
 import { writable, readonly, type Readable } from 'svelte/store';
 import { sessionPassword } from './sessionPassword';
@@ -23,24 +24,24 @@ export interface EnvListResult {
 
 export interface EnvStoreState {
     loaded: boolean;
-    items: string[];
+    items: EnvInfo[];
 }
 
 const _envs = writable<EnvStoreState>({ loaded: false, items: [] });
 
-/** Reactive store for environment names. */
+/** Reactive store for environments. */
 export const envs: Readable<EnvStoreState> = readonly(_envs);
 
-/** Fetch the environment list from the API and update the store. */
-export async function refreshEnvs(): Promise<string[]> {
-    const names = await fetchEnvs();
-    _envs.set({ loaded: true, items: names });
-    return names;
+/** Fetch all environments from the API and update the store. */
+export async function refreshEnvs(): Promise<EnvInfo[]> {
+    const items = await fetchEnvs();
+    _envs.set({ loaded: true, items });
+    return items;
 }
 
 // --- API helpers ---
 
-export async function fetchEnvs(): Promise<string[]> {
+async function _fetchEnvs(): Promise<EnvInfo[]> {
     const res = await fetch(`${API_BASE}/api/envs`);
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -48,13 +49,8 @@ export async function fetchEnvs(): Promise<string[]> {
     return res.json();
 }
 
-export async function fetchEnv(name: string): Promise<EnvInfo> {
-    const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`);
-    if (!res.ok) {
-        throw new Error(await apiErrorMessage(res));
-    }
-    return res.json();
-}
+/** Debounced env list fetch — dedupes simultaneous manual and SSE-driven refreshes. */
+export const fetchEnvs = debounce(_fetchEnvs);
 
 export async function saveEnv(
     name: string,
@@ -80,7 +76,7 @@ export async function deleteEnv(name: string): Promise<void> {
     }
 }
 
-export async function fetchModels(name: string): Promise<EnvListResult> {
+async function _fetchModels(name: string): Promise<EnvListResult> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}/models`, {
         method: 'POST'
     });
@@ -89,6 +85,9 @@ export async function fetchModels(name: string): Promise<EnvListResult> {
     }
     return res.json();
 }
+
+/** Debounced model list fetch — dedupes rapid env selection changes. */
+export const fetchModels = debounce(_fetchModels);
 
 export async function revealEnvValue(
     name: string,

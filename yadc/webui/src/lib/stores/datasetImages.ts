@@ -1,4 +1,5 @@
 import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
+import { debounce } from '$lib/async';
 import { sessionPassword } from './sessionPassword';
 import { writable } from 'svelte/store';
 
@@ -48,13 +49,16 @@ export interface HistoryEntry {
 
 // --- API helpers ---
 
-export async function fetchDatasets(): Promise<DatasetInfo[]> {
+async function _fetchDatasets(): Promise<DatasetInfo[]> {
     const res = await fetch(`${API_BASE}/api/datasets`);
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
 }
+
+/** Debounced dataset list fetch — dedupes rapid navigation between pages. */
+export const fetchDatasets = debounce(_fetchDatasets);
 
 /** Import an existing TOML config as a new dataset. */
 export async function importDataset(name: string, tomlPath: string): Promise<DatasetInfo> {
@@ -92,7 +96,7 @@ export async function deleteDataset(name: string): Promise<void> {
     }
 }
 
-export async function fetchImages(
+async function _fetchImages(
     datasetName: string,
     options: { limit?: number; afterId?: number } = {}
 ): Promise<ImagePage> {
@@ -113,7 +117,10 @@ export async function fetchImages(
     return res.json();
 }
 
-export async function fetchCaption(datasetName: string, imageId: number): Promise<CaptionData> {
+/** Debounced image fetch — dedupes rapid calls (e.g., tab switching). */
+export const fetchImages = debounce(_fetchImages);
+
+async function _fetchCaption(datasetName: string, imageId: number): Promise<CaptionData> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`
     );
@@ -122,6 +129,9 @@ export async function fetchCaption(datasetName: string, imageId: number): Promis
     }
     return res.json();
 }
+
+/** Debounced caption fetch — dedupes rapid image selection changes. */
+export const fetchCaption = debounce(_fetchCaption);
 
 export async function updateCaption(
     datasetName: string,
@@ -141,7 +151,7 @@ export async function updateCaption(
     }
 }
 
-export async function fetchHistory(datasetName: string, imageId: number): Promise<HistoryEntry[]> {
+async function _fetchHistory(datasetName: string, imageId: number): Promise<HistoryEntry[]> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history`
     );
@@ -150,6 +160,9 @@ export async function fetchHistory(datasetName: string, imageId: number): Promis
     }
     return res.json();
 }
+
+/** Debounced history fetch — dedupes rapid image selection changes. */
+export const fetchHistory = debounce(_fetchHistory);
 
 export async function restoreHistory(
     datasetName: string,
@@ -249,13 +262,16 @@ export async function startCaptioning(
 }
 
 /** Fetch the current captioning status for a dataset. */
-export async function fetchCaptioningStatus(datasetName: string): Promise<CaptioningJobInfo> {
+async function _fetchCaptioningStatus(datasetName: string): Promise<CaptioningJobInfo> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`);
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
 }
+
+/** Debounced captioning status fetch — collapses rapid calls and dedupes in-flight requests. */
+export const fetchCaptioningStatus = debounce(_fetchCaptioningStatus);
 
 /** Stop a running captioning job. Raw API call — for toast-enabled version use `captionActions.stopCaptioning`. */
 export async function stopCaptioning(datasetName: string): Promise<boolean> {
