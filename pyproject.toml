@@ -63,7 +63,7 @@ line-length = 160
 select = ["E", "F", "W", "I"]
 
 [tool.basedpyright]
-exclude = ["tests", ".venv", "**/node_modules"]
+exclude = ["tests", ".venv", "**/node_modules", "yadc/webui"]
 reportAny = "none"
 reportExplicitAny = "none"
 reportUnusedCallResult = "none"

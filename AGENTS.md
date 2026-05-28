@@ -14,7 +14,7 @@ You are working with yadc, a CLI tool for generating text captions for image dat
 uv run ... # always use uv, never bare python
 uv run ruff check yadc tests
 uv run ruff format yadc tests
-uv run basedpyright <path>  # tests/ excluded from checking
+uv run basedpyright <path>  # Python only — never on yadc/webui (use svelte-check for frontend)
 ```
 
 ### Frontend
