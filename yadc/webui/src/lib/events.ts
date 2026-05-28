@@ -8,6 +8,13 @@ type ErrorHandler = (error: Error) => void;
  * Supports listening to multiple named event types with independent schemas.
  */
 export class TypedEventSource extends EventSource {
+    private _lastEventId: string = '';
+
+    /** The last SSE event ID received from the server. Used for manual reconnection. */
+    get lastEventId(): string {
+        return this._lastEventId;
+    }
+
     listen<T>(
         eventType: string,
         schema: ZodType<T>,
@@ -18,6 +25,9 @@ export class TypedEventSource extends EventSource {
             onError || ((err) => console.error(`Error in ${eventType} SSE event handler:`, err));
 
         this.addEventListener(eventType, (rawEvent: MessageEvent) => {
+            if (rawEvent.lastEventId) {
+                this._lastEventId = rawEvent.lastEventId;
+            }
             try {
                 const rawData = JSON.parse(rawEvent.data);
                 const parsedData = schema.parse(rawData);

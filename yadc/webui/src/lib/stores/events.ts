@@ -180,13 +180,25 @@ export function setCurrentlyCaptioning(
 
 let _eventSource: TypedEventSource | null = null;
 
+/** Tracked across reconnections so manual reconnects can resume from the right position. */
+let _lastEventId: string = '';
+
 function connect() {
     if (_eventSource !== null && _eventSource.readyState !== EventSource.CLOSED) {
         return;
     }
 
+    // Preserve the last event ID from the previous EventSource so the server
+    // can replay missed events after a manual reconnection.  The browser's
+    // built-in auto-reconnect preserves this internally, but creating a *new*
+    // EventSource does not.
+    let url = `${API_BASE}/api/events`;
+    if (_lastEventId) {
+        url += `?lastEventId=${_lastEventId}`;
+    }
+
     try {
-        _eventSource = new TypedEventSource(`${API_BASE}/api/events`);
+        _eventSource = new TypedEventSource(url);
     } catch (e) {
         console.warn('Failed to connect to event stream', { error: e });
         return;
@@ -266,15 +278,22 @@ function connect() {
     // reconnect the browser sends ``Last-Event-ID`` automatically, allowing the
     // server to replay missed events.
     _eventSource.onerror = () => {
-        // No-op: the browser will reconnect on its own.  We deliberately do NOT
-        // call close() here — closing would discard the internal last-event-id
-        // state and prevent automatic resumption.
+        // Capture the last event ID before the EventSource potentially becomes
+        // unusable, so that a manual reconnection can resume from the right
+        // position.
+        if (_eventSource) {
+            _lastEventId = _eventSource.lastEventId || _lastEventId;
+        }
+        // We deliberately do NOT call close() here — closing would discard the
+        // internal last-event-id state and prevent automatic resumption.
     };
 }
 
 if (browser) {
     connect();
 
+    // --- Fallback reconnect for permanently closed connections ---
+    //
     // Watch for a permanently closed connection (e.g. server shutdown) and
     // attempt to reconnect.  The normal reconnect path is the browser's
     // built-in auto-reconnect (which preserves Last-Event-ID), so this is only
@@ -289,4 +308,34 @@ if (browser) {
             reconnecting = false;
         }
     }, 5000);
+
+    // --- Mobile background/foreground recovery ---
+    //
+    // Mobile browsers aggressively kill background TCP connections.  When the
+    // user switches back to the browser, the EventSource may be in a stale
+    // state (OPEN with a dead socket) or CLOSED without auto-reconnecting.
+    // Force-reconnect with the tracked last-event-id so the server can replay
+    // any events that were sent while the tab was suspended.
+    let _hiddenAt: number | null = null;
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            _hiddenAt = Date.now();
+        } else if (document.visibilityState === 'visible') {
+            const wasHiddenMs = _hiddenAt ? Date.now() - _hiddenAt : 0;
+            _hiddenAt = null;
+
+            // Only force-reconnect if the page was hidden for longer than the
+            // SSE retry interval (5 s).  Brief background switches (e.g.
+            // notification shade pull-down) should not trigger a reconnect.
+            if (wasHiddenMs < 5000 || _eventSource === null) {
+                return;
+            }
+
+            // Capture the last event ID before closing.
+            _lastEventId = _eventSource.lastEventId || _lastEventId;
+            _eventSource.close();
+            connect();
+        }
+    });
 }
