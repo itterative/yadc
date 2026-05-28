@@ -53,4 +53,7 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
                 # sees a complete response rather than an unhandled exception.
                 return
 
-        return Response(_retrieve_events(), mimetype="text/event-stream")
+        response = Response(_retrieve_events(), mimetype="text/event-stream")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
