@@ -5,7 +5,7 @@
 </script>
 
 {#if $toasts.length > 0}
-    <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col gap-2">
+    <div class="pointer-events-none fixed right-4 bottom-4 z-60 flex flex-col gap-2">
         {#each $toasts as t (t.id)}
             <div
                 class="pointer-events-auto"

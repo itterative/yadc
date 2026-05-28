@@ -101,7 +101,7 @@
 
 <div class="flex h-screen overflow-hidden">
     <nav
-        class="fixed top-0 bottom-0 left-0 flex w-56 -translate-x-full flex-col items-center border-r border-border bg-surface p-3 transition-transform duration-200 ease-in-out max-md:z-40 md:relative md:w-14 md:shrink-0 md:translate-x-0 md:items-stretch md:p-2 md:transition-none"
+        class="fixed top-0 bottom-0 left-0 z-40 flex w-56 -translate-x-full flex-col items-center border-r border-border bg-surface p-3 transition-transform duration-200 ease-in-out md:relative md:w-14 md:shrink-0 md:translate-x-0 md:items-stretch md:p-2 md:transition-none"
         class:translate-x-0={sidebarOpen}
     >
         <!-- Brand -->

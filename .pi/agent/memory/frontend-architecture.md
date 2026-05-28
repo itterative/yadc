@@ -133,7 +133,8 @@ yadc/webui/
   - `z-20`: FABs (mobile caption settings floating button)
   - `z-30`: Mobile overlay backdrops (side panel scrim, sidebar scrim)
   - `z-40`: Mobile slide-in panels (side panel drawer, sidebar drawer on small screens)
-  - `z-50`: Global overlays — dialogs (`Dialog.svelte`) and toast stack (`ToastContainer.svelte`)
+  - `z-50`: Global overlays — dialogs (`Dialog.svelte`)
+  - `z-60`: Toast notifications (`ToastContainer.svelte`) — above dialogs so they remain visible
   - When adding new fixed/absolute layers, use the appropriate slot and avoid values outside this scale.
 - **Topbar pattern**: The layout has a topbar (inside `app-content`, between sidebar and main). Pages set topbar content by defining a `{#snippet}` and passing it to `<SetTopbar>`. The snippet is stored in `topbar.svelte.ts` (a `$state` module). The layout reads it with `getTopbarContent()` and renders with `{@render}`. On mobile the topbar also houses the burger menu button. On desktop, if no snippet is set, the topbar is hidden via `:empty`.
 - **Browser notifications**: `notifications.ts` is the single gatekeeper. `sendNotification()` checks support, settings preference (`notifications === "enabled"`), browser permission, and tab visibility — callers just call it with no pre-checks. `promptNotificationsOnce()` shows a one-time toast with "Enable" action on first captioning start (session-guarded, only when `notifications === "unset"`). Settings dialog General tab has a checkbox that toggles between `"enabled"`/`"disabled"`. Global notification dispatching lives in `+layout.svelte` so it works even when the user navigates away from the dataset page.
