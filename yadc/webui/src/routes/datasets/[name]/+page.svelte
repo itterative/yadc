@@ -7,6 +7,7 @@
     import SidePanel from './SidePanel.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import Alert from '$lib/components/ui/Alert.svelte';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import {
         captioningStatus,
@@ -152,10 +153,6 @@
             );
         });
     });
-
-    function handleDismissResumptionFailed() {
-        clearResumptionFailed();
-    }
 
     async function loadInitial(name: string) {
         nextToken = null;
@@ -391,32 +388,25 @@
     {/if}
 
     <!-- SSE resumption failure notification -->
-    {#if $resumptionFailed}
-        <div
-            class="flex items-center justify-between gap-4 rounded-lg border border-yellow-700/50 bg-yellow-900/50 px-4 py-2"
-        >
-            <span class="text-sm text-yellow-200"
-                >Some events may have been missed due to a disconnected event stream.</span
+    <Alert
+        variant="warning"
+        visible={$resumptionFailed}
+        dismissable
+        ondismiss={clearResumptionFailed}
+    >
+        Some events may have been missed due to a disconnected event stream.
+        {#snippet actions()}
+            <button
+                class="cursor-pointer rounded-md border border-current/20 bg-white/10 px-2.5 py-1 text-xs transition-colors hover:bg-white/20"
+                onclick={() => {
+                    handleRefreshFromWatcher();
+                    clearResumptionFailed();
+                }}
             >
-            <div class="flex shrink-0 items-center gap-2">
-                <button
-                    class="cursor-pointer rounded-lg border border-yellow-500/50 bg-yellow-600/40 px-3 py-1.5 text-xs text-yellow-200 transition-colors hover:bg-yellow-600/60"
-                    onclick={() => {
-                        handleRefreshFromWatcher();
-                        handleDismissResumptionFailed();
-                    }}
-                >
-                    Refresh
-                </button>
-                <button
-                    class="cursor-pointer rounded-lg border border-yellow-500/30 bg-transparent px-2 py-1.5 text-xs text-yellow-300 transition-colors hover:bg-yellow-600/20"
-                    onclick={handleDismissResumptionFailed}
-                >
-                    Dismiss
-                </button>
-            </div>
-        </div>
-    {/if}
+                Refresh
+            </button>
+        {/snippet}
+    </Alert>
 
     <!-- Content: flex row with grid + side panel -->
 

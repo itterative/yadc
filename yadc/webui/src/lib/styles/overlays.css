@@ -22,4 +22,8 @@
     .alert-success {
         @apply rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success;
     }
+
+    .alert-info {
+        @apply rounded-lg border border-accent/20 bg-accent/10 p-3 text-sm text-accent;
+    }
 }

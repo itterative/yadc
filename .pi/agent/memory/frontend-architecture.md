@@ -26,7 +26,7 @@ yadc/webui/
         badges.css         # .badge
         buttons.css        # .btn variants
         forms.css          # .input
-        overlays.css       # .dialog-panel
+        overlays.css       # .dialog-panel, .alert-{error,warning,success,info}
         utilities.css      # .btn-bar
       stores/
         settings.ts       # UI settings (storable)
@@ -40,6 +40,7 @@ yadc/webui/
       components/
         ui/                           # Atomic, reusable primitives
           Dialog.svelte               # Modal dialog (HTML <dialog>)
+          Alert.svelte                # Inline alert (info/warning/error/success, dismissable, optional actions snippet)
           Checkbox.svelte             # Checkbox component
           CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
           JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
