@@ -16,12 +16,14 @@ yadc/webui/
   src/
     lib/
       index.ts             # Re-exports: storable, async helpers, TypedEventSource, API_BASE, random
-      api.ts               # API_BASE constant, structured error response parsing (isAPIErrorResponse / isAPIErrorDetail / apiErrorMessage), and user-friendly HTTP status messages
+      api.ts               # API_BASE constant, structured error response parsing (isAPIErrorResponse / isAPIErrorDetail / apiErrorMessage), and user-friendly HTTP status messages. Exports `ResponseLike` interface so `apiErrorMessage()` works with both native `fetch` `Response` and `UploadResponse`.
       events.ts            # TypedEventSource — SSE with Zod validation
       async.ts             # debounce (async debounce+dedupe), sleep, synchronized, delayed helpers
       notifications.ts   # Browser Notification API helpers (permission, sending, first-use prompt)
       storable.js          # localStorage-backed writable store
       random.ts            # Seeded PRNG for deterministic stub layouts
+      upload.ts            # Promise-based XMLHttpRequest wrapper with upload progress tracking and AbortSignal support. Returns `UploadResponse` which implements `ResponseLike`.
+      format.ts            # Shared formatting utilities — `formatBytes(bytes)` for human-readable file sizes
       styles/              # Tailwind @layer components
         badges.css         # .badge
         buttons.css        # .btn variants
@@ -41,6 +43,7 @@ yadc/webui/
         ui/                           # Atomic, reusable primitives
           Dialog.svelte               # Modal dialog (HTML <dialog>)
           Alert.svelte                # Inline alert (info/warning/error/success, dismissable, optional actions snippet)
+          FileDropZone.svelte         # Drag-and-drop + file/folder picker with client-side validation, recursive directory traversal, and `allowedExtensions` filtering
           Checkbox.svelte             # Checkbox component
           CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
           JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
@@ -62,6 +65,9 @@ yadc/webui/
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
           ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview). Derives isCaptioning from currentlyCaptioning store. Calls captionActions.captionSingleImage directly.
+        datasets/                       # Dataset creation/management components
+          UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
+          CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
         dialogs/                        # Dialog-shaped components
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
           SettingsDialog.svelte       # App settings dialog (tab container)
@@ -77,7 +83,7 @@ yadc/webui/
       layout.css        # Tailwind v4 imports + @theme block + typography plugin
       +layout.svelte    # App shell with left sidebar nav (icon-rail on desktop, slide-in overlay on mobile with burger menu). Brand uses android-chrome-192x192.png icon. Tooltip component for desktop hover labels.
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
-      AddDatasetDialog.svelte   # Co-located: create/import dataset dialog (used only by +page.svelte)
+      AddDatasetDialog.svelte   # Co-located: dataset creation dialog shell. Two tabs: Upload (via UploadDatasetTab) and Create/Import (via CreateDatasetTab)
       EditDatasetDialog.svelte  # Co-located: edit dataset TOML config dialog (CodeMirror TOML editor)
       templates/
         +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing
@@ -102,7 +108,7 @@ yadc/webui/
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry) + API helpers (debounced via `debounce()`) + deleteDataset + createDatasetBrowserStore. `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
+| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult) + API helpers (debounced via `debounce()`) + deleteDataset + createDatasetBrowserStore + `uploadDataset()`. `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
 | `envs.ts` | Env types + CRUD + model fetching. Store holds `EnvInfo[]` (full details from `GET /api/envs`, not just names). `fetchEnvs`/`fetchModels` debounced. |
 | `templates.ts` | Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced. |
 | `captionActions.ts` | Caption action store — `captionOptions` (writable, reactively synced from CaptionSettings), `startBatchCaptioning()`, `captionSingleImage()`, `stopCaptioning()` (with toasts + optional onError callback), `lastStartedJobId` (for completion toast tracking). Reads options from store, handles password retry, registers job IDs, seeds SSE stores. |
