@@ -30,7 +30,7 @@ yadc/
   cli_templates.py    # template management CLI
   cli_webui.py        # web UI CLI (yadc webui serve)
 
-  api/                # web UI backend (Flask + injector DI with auto-discovery)
+  api/                # web UI backend (Quart + injector DI with auto-discovery)
     __init__.py
     application.py      # Application(Module) — DI container, auto-discovers services + controllers
     banner.txt           # ASCII art banner printed on startup (optional, --no-banner to disable)
@@ -145,7 +145,7 @@ yadc/
   - `create_dataset_from_upload(name, files)` — creates a self-contained dataset from uploaded files (images + sidecars). Stores files in `STATE_PATH/<name>/images/` (root files flat) and `STATE_PATH/<name>/folders/` (folder uploads, one subdir per top-level folder). Returns `DatasetUploadResult` (dataset + warnings list).
   - `name` is the unique key — no `path` column.
 - **Upload endpoint**: `POST /api/datasets/upload` accepts `multipart/form-data` with `name` + `files`. Two-stage image validation (`Image.verify()` fast check, `Image.load()` fallback), TOML syntax validation, orphan sidecar detection, atomic cleanup on failure. Configurable `max_upload_size_bytes` limit.
-- **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Flask only serves `GET /` + static assets.
+- **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Quart only serves `GET /` + static assets.
 - **WebUI frontend**: See `frontend-architecture` memory for full directory structure, stores, components, and frontend-specific patterns.
 - **Config validation is strict by default, relaxable**: `parse_config(raw)` enforces CLI-level checks (api url/model_name must exist, prompt must be specified). `parse_config(raw, strict=False)` skips those checks (used by webui, which provides these at caption time). Uses Pydantic validation context to thread the flag — no fields on the model. The `ConfigV1.to_v2()` uses `model_construct()` to avoid re-running validators on already-validated data.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.

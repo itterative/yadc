@@ -19,7 +19,7 @@ The web UI backend (`yadc/api/`) uses the `injector` library with automatic pack
 ## Binding Lifecycle
 
 1. **`Application.configure(binder)`** — called by `Injector.__init__`:
-   - Binds `Configuration`, `Flask`, `ApiBlueprint`, `AppBlueprint` explicitly
+   - Binds `Configuration`, `Quart`, `ApiBlueprint`, `AppBlueprint` explicitly
    - Calls `discover_services(modules_pkg) + discover_services(services_pkg)` to find all `Service` subclasses in both packages
    - Binds each with `binder.bind(cls, to=inject(cls), scope=singleton)` — no per-class `@inject`/`@singleton` decorators needed
 
@@ -31,9 +31,9 @@ The web UI backend (`yadc/api/`) uses the `injector` library with automatic pack
 3. **`Application.configure_controllers()`** — called in `run()`:
    - Calls `discover_controllers(controllers_pkg)` to find all `@controller` functions
    - Uses `get_bindings(fn)` to resolve parameter types, then `injector.get()` for each
-   - Calls each controller function — they register Flask routes as side effects
+   - Calls each controller function — they register Quart routes as side effects
 
-4. **`Application.configure_app()`** — registers blueprints on the Flask app
+4. **`Application.configure_app()`** — registers blueprints on the Quart app
 
 ## How to Add a New Service
 
@@ -62,7 +62,7 @@ class MyService(Service):
 1. Create a function in `yadc/api/controllers/`
 2. Decorate with `@controller` (from `controllers/__init__.py`) — this applies `@inject` and sets `_is_controller`
 3. Parameters are resolved by type via `get_bindings()`
-4. Register Flask routes on the blueprint parameter as side effects
+4. Register Quart routes on the blueprint parameter as side effects
 
 ```python
 # yadc/api/controllers/api_my_feature.py
@@ -107,7 +107,7 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 
 ## Startup Event
 
-A `StartupEvent` is dispatched after controllers are configured but before `configure_app()` registers blueprints on the Flask app. The `run()` order is: `configure_services()` → `configure_controllers()` → print banner → `dispatch(StartupEvent())` → `configure_app()` → signal handler → `waitress.serve()`. The StartupEvent fires first so CORS middleware can register its `after_request` handler on the blueprint before the blueprint is registered on the Flask app. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread) do so via `@event_handler(StartupEvent)`.
+A `StartupEvent` is dispatched after controllers are configured but before `configure_app()` registers blueprints on the Quart app. The `run()` order is: `configure_services()` → `configure_controllers()` → print banner → `dispatch(StartupEvent())` → `configure_app()` → signal handler → `uvicorn.serve()`. The StartupEvent fires first so CORS middleware can register its `after_request` handler on the blueprint before the blueprint is registered on the Quart app. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread) do so via `@event_handler(StartupEvent)`.
 
 ## CORS
 

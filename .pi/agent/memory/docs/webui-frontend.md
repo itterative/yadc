@@ -1,13 +1,13 @@
 ---
 name: webui-frontend
-description: yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Flask integration, and known issues.
+description: yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues.
 ---
 
 # WebUI Frontend Setup
 
 ## Routing: Hash-Based SPA
 
-The webui is served by Flask as a static SPA. With pathname routing (`/datasets/foo`), Flask needs route hacks to serve `index.html` for every possible path. Hash routing (`#/datasets/foo`) means Flask only serves `index.html` for `/` — all navigation is client-side via the URL hash fragment.
+The webui is served by Quart as a static SPA. With pathname routing (`/datasets/foo`), Quart needs route hacks to serve `index.html` for every possible path. Hash routing (`#/datasets/foo`) means Quart only serves `index.html` for `/` — all navigation is client-side via the URL hash fragment.
 
 ### Configuration
 
@@ -39,9 +39,9 @@ All internal navigation links **must** use `#/` prefix:
 
 SvelteKit's `<a href>` with hash routing does **not** automatically transform `/foo` into `#/foo` — you must write the hash prefix explicitly.
 
-### Flask Side
+### Quart Side
 
-Flask only needs:
+Quart only needs:
 - `GET /` → serve `index.html`
 - `GET /_app/<path>` → serve static assets
 - No 404 fallback or path-based SPA routes needed
@@ -100,6 +100,6 @@ plugins: [tailwindcss(), sveltekit()],
 
 ## Development Workflow
 
-- The webui is served by Flask as static files from the built `yadc/webui/build/` directory.
+- The webui is served by Quart as static files from the built `yadc/webui/build/` directory.
 - After running `npm run build` in `yadc/webui/`, the new static assets are written to `build/`.
-- **No webui server restart is needed** — Flask serves the built files directly on each request, so a fresh build is picked up immediately.
+- **No webui server restart is needed** — Quart serves the built files directly on each request, so a fresh build is picked up immediately.

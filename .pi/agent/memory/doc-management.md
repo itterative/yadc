@@ -22,7 +22,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** inside the agent memory 
 | [`paths-and-storage`](.pi/agent/memory/docs/paths-and-storage.md) | File system paths used by yadc (platformdirs) and file storage conventions for `DatasetImage` persistence. |
 | [`template-system`](.pi/agent/memory/docs/template-system.md) | Jinja2 prompt template system — template resolution, loading, and variable context. |
 | [`yadc-config-v2`](.pi/agent/memory/docs/yadc-config-v2.md) | v2 dataset config format — `[[dataset]]` array-of-tables structure and v1 auto-conversion. |
-| [`webui-frontend`](.pi/agent/memory/docs/webui-frontend.md) | yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Flask integration, and known issues. |
+| [`webui-frontend`](.pi/agent/memory/docs/webui-frontend.md) | yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues. |
 
 ## Root-Level Reference Memories
 
