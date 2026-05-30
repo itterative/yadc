@@ -1,6 +1,8 @@
 ---
 name: captioner-architecture
-description: How the captioner hierarchy works — APICaptioner auto-detection, inner captioner delegation, mixin pattern, and per-backend details.
+description: Captioner hierarchy — APICaptioner auto-detection, inner captioner delegation, mixin pattern, and per-backend details.
+category: architecture
+keep_updated: true
 ---
 
 # Captioner Architecture

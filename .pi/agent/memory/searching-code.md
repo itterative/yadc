@@ -1,6 +1,8 @@
 ---
 name: searching-code
-description: When using grep or rg to search the codebase, read this memory for exclusion patterns and best practices.
+description: grep/rg exclusion patterns and best practices. Read when searching the codebase.
+category: workflow
+priority: 4
 ---
 
 # Searching Code with grep / rg

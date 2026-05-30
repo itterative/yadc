@@ -1,6 +1,7 @@
 ---
 name: debug-api-logging
 description: YADC_DEBUG_CAPTION_RESPONSES=1 feature for logging caption API request/response pairs to JSONL files.
+category: workflow
 ---
 
 # Debug Caption Response Logging

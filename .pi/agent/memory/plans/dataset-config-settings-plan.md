@@ -1,6 +1,8 @@
 ---
 name: dataset-config-settings-plan
-description: Plan for integrating the caption settings panel with the dataset's TOML config via a structured read/write API.
+description: Caption settings ↔ dataset TOML config integration.
+status: Mostly implemented
+category: meta
 ---
 
 # Dataset Config Settings Plan

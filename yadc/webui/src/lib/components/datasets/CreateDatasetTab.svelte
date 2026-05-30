@@ -54,6 +54,12 @@
             }
 
             oncreated(dataset);
+            // Reset form for next use
+            name = '';
+            tomlPath = '';
+            imagePaths = '';
+            createMode = 'paths';
+            error = null;
             onclose();
         } catch (e) {
             error = friendlyErrorMessage(
@@ -78,7 +84,7 @@
         />
     </div>
 
-    <div class="flex justify-center gap-4 text-sm text-muted px-4">
+    <div class="flex justify-center gap-4 px-4 text-sm text-muted">
         <label class="flex cursor-pointer items-center gap-2">
             <input type="radio" bind:group={createMode} value="paths" class="accent-accent" />
             <span>Add image paths</span>
@@ -99,7 +105,9 @@
                 class="input"
                 placeholder="/path/to/dataset.toml"
             />
-            <p class="text-muted text-xs mt-4">Absolute path to an existing yadc dataset config TOML file.</p>
+            <p class="mt-4 text-xs text-muted">
+                Absolute path to an existing yadc dataset config TOML file.
+            </p>
         </div>
     {:else}
         <div>
@@ -111,7 +119,7 @@
                 class="input resize-y"
                 placeholder="/path/to/images&#10;/another/image/dir"
             ></textarea>
-            <p class="text-muted text-xs mt-4">
+            <p class="mt-4 text-xs text-muted">
                 One directory path per line. Each directory will be scanned for images.
             </p>
         </div>

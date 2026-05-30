@@ -1,7 +1,9 @@
 ---
 name: selective-image-refresh-plan
 description: Per-image SSE events during captioning for live grid tile updates.
+status: Complete
 last_history: 4
+category: meta
 ---
 
 # Selective Image Refresh During Captioning

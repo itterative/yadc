@@ -51,6 +51,7 @@ class DBMigrations(Service):
             self._run_migration(cursor, step=1, script=self._migration_initial)
             self._run_migration(cursor, step=2, script=self._migration_settings)
             self._run_migration(cursor, step=3, script=self._migration_datasets)
+            self._run_migration(cursor, step=4, script=self._migration_source)
             # When adding new migrations, add them here with incrementing step numbers.
         except Exception as e:
             conn.rollback()
@@ -116,7 +117,13 @@ class DBMigrations(Service):
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_dataset_images_path ON dataset_images (path);
-        CREATE INDEX IF NOT EXISTS idx_dataset_images_dataset_id ON dataset_images (dataset_id);
+        COMMIT;
+    """
+
+    _migration_source: str = """
+        BEGIN IMMEDIATE;
+
+        ALTER TABLE datasets ADD COLUMN source TEXT NOT NULL DEFAULT 'import' CHECK(source IN ('import', 'create', 'upload'));
 
         COMMIT;
     """

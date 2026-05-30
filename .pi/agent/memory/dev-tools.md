@@ -1,6 +1,8 @@
 ---
 name: dev-tools
-description: When a user query involves linting, formatting, or type checking (ruff, basedpyright), read this memory first.
+description: Linting, formatting, and type checking commands (ruff, basedpyright). Read when running or fixing code quality checks.
+category: workflow
+priority: 1
 ---
 
 Both are dev dependencies installed via `uv add --dev`.

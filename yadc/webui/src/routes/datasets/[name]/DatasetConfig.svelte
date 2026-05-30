@@ -13,11 +13,23 @@
     interface Props {
         /** Which dataset this is for. */
         datasetName: string;
+        /** Dataset source — managed (upload) vs external (import/create). */
+        source?: 'upload' | 'import' | 'create';
         /** Called after the config is saved and rescanned. */
         onsaved?: () => void;
     }
 
-    let { datasetName, onsaved }: Props = $props();
+    let { datasetName, source, onsaved }: Props = $props();
+
+    function displayConfigPath(configPath: string | undefined): string {
+        if (!configPath) {
+            return '';
+        }
+        if (source === 'upload' || source === 'create') {
+            return `${datasetName}/config.toml`;
+        }
+        return configPath;
+    }
 
     // --- State ---
 
@@ -26,6 +38,7 @@
     let error: string | null = $state(null);
     let saveError: string | null = $state(null);
     let validationErrors: Array<{ loc: string[]; msg: string }> = $state([]);
+    let loadedConfigPath: string = $state('');
 
     // (template list comes from the shared store)
 
@@ -160,6 +173,7 @@
 
             const [config] = await Promise.all([fetchConfig(datasetName), templatesReady]);
             previewContent = config.content;
+            loadedConfigPath = config.config_path;
             validationErrors = config.validation_error ?? [];
             const p = config.parsed;
 
@@ -259,6 +273,34 @@
                     </ul>
                 </div>
             {/if}
+
+            <!-- ═══ Info: Dataset source & path ═══ -->
+            <section class="space-y-2">
+                <h3 class="section-heading">Dataset</h3>
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        {#if source === 'upload'}
+                            <span class="badge-muted badge-sm">Managed</span>
+                            <span class="text-xs text-gray-400"
+                                >Files stored in yadc state directory</span
+                            >
+                        {:else}
+                            <span class="badge-muted badge-sm">External</span>
+                            <span class="text-xs text-gray-400">References paths outside yadc</span>
+                        {/if}
+                    </div>
+                    {#if loadedConfigPath}
+                        <p
+                            class="truncate font-mono text-xs text-gray-500"
+                            title={source === 'upload' || source === 'create'
+                                ? loadedConfigPath
+                                : undefined}
+                        >
+                            {displayConfigPath(loadedConfigPath)}
+                        </p>
+                    {/if}
+                </div>
+            </section>
 
             <!-- ═══ Section: API ═══ -->
             <section class="space-y-3">

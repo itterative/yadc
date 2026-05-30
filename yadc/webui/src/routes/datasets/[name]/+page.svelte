@@ -331,6 +331,13 @@
             <h1 class="overflow-hidden text-xl font-bold text-nowrap text-ellipsis text-white">
                 {datasetName}
             </h1>
+            {#if currentDataset}
+                {#if currentDataset.source === 'upload'}
+                    <span class="badge-muted badge-sm shrink-0">Managed</span>
+                {:else}
+                    <span class="badge-muted badge-sm shrink-0">External</span>
+                {/if}
+            {/if}
             {#if isBatchCaptioning}
                 <SvgSpinner
                     class="h-4 w-4 shrink-0 animate-spin {isStopping
@@ -439,6 +446,7 @@
 
         <SidePanel
             {datasetName}
+            source={currentDataset?.source}
             {focusedItem}
             bind:activeTab={panelTab}
             bind:open={panelOpen}

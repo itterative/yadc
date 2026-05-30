@@ -11,7 +11,12 @@ export interface UploadOptions {
     body?: XMLHttpRequestBodyInit | null;
     headers?: Record<string, string>;
     signal?: AbortSignal;
+    /** Upload progress (bytes sent to the server). */
     onProgress?: (progress: UploadProgress) => void;
+    /** Streaming response — called for each complete line received so far.
+     *  Only complete lines (terminated by `\n`) are yielded. Use this for
+     *  NDJSON streaming endpoints where the server flushes one JSON object per line. */
+    onChunk?: (line: string) => void;
 }
 
 class UploadResponse {
@@ -66,7 +71,45 @@ export function upload(options: UploadOptions): Promise<UploadResponse> {
             });
         }
 
+        // Chunk flushing logic — shared between progress and load events.
+        // The load event fires when the response is complete, but the last
+        // progress event may not have delivered the final NDJSON lines.
+        let _parsedLength = 0;
+        const _flushChunks = (finalize: boolean) => {
+            const text = xhr.responseText;
+            if (text.length <= _parsedLength) {
+                return;
+            }
+
+            const newText = text.substring(_parsedLength);
+            _parsedLength = text.length;
+
+            // Split into lines.  During progress events, only yield complete
+            // lines (ending with \n) — the last segment may be a partial line
+            // that hasn't fully arrived yet.  When finalizing (load event),
+            // process ALL lines including the last one, since the response is
+            // fully received.
+            const lines = newText.split('\n');
+            const complete = finalize || newText.endsWith('\n') ? lines : lines.slice(0, -1);
+            for (const line of complete) {
+                if (line.length > 0) {
+                    options.onChunk!(line);
+                }
+            }
+        };
+
+        if (options.onChunk) {
+            xhr.addEventListener('progress', () => _flushChunks(false));
+        }
+
         xhr.addEventListener('load', () => {
+            // Flush any remaining chunks.  finalize=true ensures the last
+            // line is processed even if it doesn't end with \n (e.g. a
+            // non-streaming error response or the final NDJSON event).
+            if (options.onChunk) {
+                _flushChunks(true);
+            }
+
             resolve(
                 new UploadResponse(
                     xhr.status,

@@ -1,6 +1,8 @@
 ---
 name: git-conventions
-description: When a user query involves git commits, commit messages, or version control conventions, read this memory first.
+description: Git commit message format and what to commit. Read when committing changes.
+category: convention
+priority: 2
 ---
 
 Conventional commits format: `type: short imperative subject`

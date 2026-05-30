@@ -2,7 +2,11 @@
     import FileDropZone from '$lib/components/ui/FileDropZone.svelte';
     import { formatBytes } from '$lib/format';
     import { toast } from '$lib/stores/toasts';
-    import { uploadDataset, type DatasetInfo } from '$lib/stores/datasetImages';
+    import {
+        uploadDataset,
+        type DatasetInfo,
+        type UploadProgressEvent
+    } from '$lib/stores/datasetImages';
     import { friendlyErrorMessage } from '$lib/api';
 
     const UPLOAD_EXTENSIONS = [
@@ -21,6 +25,8 @@
         '.draft~'
     ];
 
+    type UploadPhase = 'uploading' | 'validating' | 'writing';
+
     interface Props {
         oncreated: (dataset: DatasetInfo) => void;
         onclose: () => void;
@@ -32,8 +38,13 @@
     let selectedFiles: File[] = $state([]);
     let isSubmitting = $state(false);
     let error: string | null = $state(null);
-    let uploadProgress: { loaded: number; total: number } | null = $state(null);
     let uploadAbortController: AbortController | null = $state(null);
+
+    // Upload phase progress (bytes sent)
+    let uploadProgress: { loaded: number; total: number } | null = $state(null);
+    // Server-side phase progress (validating / writing)
+    let phase: UploadPhase | null = $state(null);
+    let phaseProgress: { index: number; total: number; file: string } | null = $state(null);
 
     function handleCancelUpload() {
         if (uploadAbortController) {
@@ -57,6 +68,8 @@
         isSubmitting = true;
         error = null;
         uploadProgress = { loaded: 0, total: 0 };
+        phase = 'uploading';
+        phaseProgress = null;
         uploadAbortController = new AbortController();
 
         try {
@@ -65,6 +78,16 @@
                 selectedFiles,
                 (progress) => {
                     uploadProgress = progress;
+                },
+                (event: UploadProgressEvent) => {
+                    if (event.phase === 'validating' || event.phase === 'writing') {
+                        phase = event.phase;
+                        phaseProgress = {
+                            index: event.index ?? 0,
+                            total: event.total ?? 0,
+                            file: event.file ?? ''
+                        };
+                    }
                 },
                 uploadAbortController.signal
             );
@@ -75,6 +98,10 @@
                 );
             }
             oncreated(dataset);
+            // Reset form for next use
+            name = '';
+            selectedFiles = [];
+            error = null;
             onclose();
         } catch (e) {
             if (e instanceof DOMException && e.name === 'AbortError') {
@@ -85,9 +112,17 @@
         } finally {
             isSubmitting = false;
             uploadProgress = null;
+            phase = null;
+            phaseProgress = null;
             uploadAbortController = null;
         }
     }
+
+    const phaseLabel: Record<UploadPhase, string> = {
+        uploading: 'Uploading',
+        validating: 'Validating',
+        writing: 'Writing'
+    };
 </script>
 
 <div class="space-y-4 py-4">
@@ -119,7 +154,7 @@
         </p>
         <p class="mt-1">
             Invalid files (corrupted images, bad TOML) and orphan sidecars without a matching image
-            are skipped. You’ll be notified if anything is dropped.
+            are skipped. You'll be notified if anything is dropped.
         </p>
     </div>
 
@@ -127,19 +162,37 @@
         <div class="alert-error">{error}</div>
     {/if}
 
-    {#if uploadProgress && isSubmitting}
+    {#if isSubmitting && phase}
         <div class="space-y-1">
-            <div class="h-2 w-full rounded-full bg-gray-700">
-                <div
-                    class="h-2 rounded-full bg-accent transition-all"
-                    style="width: {uploadProgress.total > 0
-                        ? Math.round((uploadProgress.loaded / uploadProgress.total) * 100)
-                        : 0}%"
-                ></div>
-            </div>
-            <div class="text-xs text-gray-400">
-                {formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)}
-            </div>
+            {#if phase === 'uploading' && uploadProgress}
+                <div class="h-2 w-full rounded-full bg-gray-700">
+                    <div
+                        class="h-2 rounded-full bg-accent transition-all"
+                        style="width: {uploadProgress.total > 0
+                            ? Math.round((uploadProgress.loaded / uploadProgress.total) * 100)
+                            : 0}%"
+                    ></div>
+                </div>
+                <div class="text-xs text-gray-400">
+                    {phaseLabel[phase]}: {formatBytes(uploadProgress.loaded)} /
+                    {formatBytes(uploadProgress.total)}
+                </div>
+            {:else if phaseProgress && phaseProgress.total > 0}
+                {@const pct = Math.round((phaseProgress.index / phaseProgress.total) * 100)}
+                <div class="h-2 w-full rounded-full bg-gray-700">
+                    <div
+                        class="h-2 rounded-full bg-accent transition-all"
+                        style="width: {pct}%"
+                    ></div>
+                </div>
+                <div class="text-xs text-gray-400">
+                    {phaseLabel[phase]}
+                    {phaseProgress.index}/{phaseProgress.total}
+                    — {phaseProgress.file}
+                </div>
+            {:else}
+                <div class="text-xs text-gray-400">{phaseLabel[phase]}…</div>
+            {/if}
         </div>
     {/if}
 

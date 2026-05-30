@@ -1,15 +1,18 @@
 import hashlib
+import json
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
-from quart import jsonify, request, send_file
+from quart import Response, jsonify, request, send_file
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from ..services.dataset_upload import DatasetUploadService
 from ..services.datasets import DatasetService
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error
+from .utils_json import DataclassJSONEncoder, ErrorCode, jsonify_dataclass, jsonify_error
 
 
 def _thumbnail_cache_path(cache_dir: Path, image_path: Path, size: int) -> Path:
@@ -36,6 +39,7 @@ def api_datasets(
     app: ApiBlueprint,
     logging: LoggingFactory,
     datasets: DatasetService,
+    dataset_upload: DatasetUploadService,
 ):
     _logger = logging.get_logger(__name__)
     _thumb_cache_dir = Path(configuration.cache_path) / "thumbnails"
@@ -70,9 +74,11 @@ def api_datasets(
     async def upload_dataset():  # pyright: ignore[reportUnusedFunction]
         """Create a dataset from uploaded image files.
 
-        multipart/form-data:
-            name (text, required): dataset name
-            files (file, required): one or more image files
+        Returns a streaming NDJSON response with progress events:
+        - {"phase": "validating", "file": "...", "index": N, "total": M}
+        - {"phase": "writing", "file": "...", "index": N, "total": M}
+        - {"phase": "complete", "dataset": {...}, "warnings": [...]}
+        - {"phase": "error", "message": "..."}
         """
         form = await request.form
         name = form.get("name", "").strip()
@@ -95,13 +101,23 @@ def api_datasets(
         if datasets.get_dataset(name) is not None:
             return jsonify_error(f"Dataset '{name}' already exists", status=409, code=ErrorCode.CONFLICT)
 
-        file_tuples = [(f.filename, f.stream) for f in uploaded if f.filename]
+        # Read all file contents into BytesIO buffers before streaming the response.
+        # Quart closes the SpooledTemporaryFile handles after the multipart body is
+        # consumed, so accessing .stream during the async generator would fail with
+        # "seek of closed file".
+        file_tuples = [(f.filename, BytesIO(f.read())) for f in uploaded if f.filename]
 
-        try:
-            result = datasets.create_dataset_from_upload(name, file_tuples)
-            return jsonify_dataclass(result), 201
-        except ValueError as e:
-            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+        async def _stream_upload():
+            try:
+                async for event in dataset_upload.create_dataset_from_upload(name, file_tuples):
+                    yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
+            except Exception as e:
+                yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
+
+        response = Response(_stream_upload(), mimetype="application/x-ndjson")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
 
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]

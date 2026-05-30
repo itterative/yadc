@@ -1,6 +1,8 @@
 ---
 name: paths-and-storage
 description: File system paths used by yadc (platformdirs) and file storage conventions for DatasetImage persistence.
+category: architecture
+keep_updated: true
 ---
 
 # Paths and Storage

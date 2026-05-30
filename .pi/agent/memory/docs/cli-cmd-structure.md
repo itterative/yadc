@@ -1,6 +1,7 @@
 ---
 name: cli-cmd-structure
-description: How CLI commands and cmd/ modules are structured in the yadc project.
+description: How CLI commands and cmd/ modules are structured — click commands vs pure logic split.
+category: architecture
 ---
 
 # CLI & cmd/ Structure

@@ -19,8 +19,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from logging import Logger
-from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from pathlib import Path
+from typing import Any
 
 import toml
 from PIL import Image
@@ -40,9 +40,6 @@ from ..modules.service import Service
 # Image extensions we recognize (matching what PIL can open).
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
 
-# Extensions allowed for uploaded files (images + sidecars).
-UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | frozenset({".txt", ".toml", ".draft~", ".history~"})
-
 
 def _dataset_state_dir(name: str) -> Path:
     """Return the state directory for a named dataset."""
@@ -59,6 +56,7 @@ class DatasetInfo:
     """Summary of a dataset as returned by the listing API."""
 
     name: str
+    source: str = "import"
     config_path: str | None = None
     image_count: int = 0
     has_caption: int = 0
@@ -97,14 +95,6 @@ class ImagePage:
 
     images: list[ImageInfo]
     next_token: str | None = None
-
-
-@dataclass
-class DatasetUploadResult:
-    """Result of a dataset upload, including the created dataset and any warnings."""
-
-    dataset: DatasetInfo
-    warnings: list[str] = field(default_factory=list)
 
 
 class DatasetService(Service):
@@ -148,7 +138,7 @@ class DatasetService(Service):
         try:
             rows = conn.execute(
                 """
-                SELECT d.name, d.config_path,
+                SELECT d.name, d.source, d.config_path,
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
@@ -169,12 +159,13 @@ class DatasetService(Service):
             return [
                 DatasetInfo(
                     name=row[0],
-                    config_path=row[1],
-                    image_count=row[2],
-                    has_caption=row[3],
-                    has_toml=row[4],
-                    last_scanned_t=row[5],
-                    first_image_id=row[6],
+                    source=row[1],
+                    config_path=row[2],
+                    image_count=row[3],
+                    has_caption=row[4],
+                    has_toml=row[5],
+                    last_scanned_t=row[6],
+                    first_image_id=row[7],
                 )
                 for row in rows
             ]
@@ -189,7 +180,7 @@ class DatasetService(Service):
         try:
             row = conn.execute(
                 """
-                SELECT d.name, d.config_path,
+                SELECT d.name, d.source, d.config_path,
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
@@ -214,12 +205,13 @@ class DatasetService(Service):
 
             return DatasetInfo(
                 name=row[0],
-                config_path=row[1],
-                image_count=row[2],
-                has_caption=row[3],
-                has_toml=row[4],
-                last_scanned_t=row[5],
-                first_image_id=row[6],
+                source=row[1],
+                config_path=row[2],
+                image_count=row[3],
+                has_caption=row[4],
+                has_toml=row[5],
+                last_scanned_t=row[6],
+                first_image_id=row[7],
             )
         finally:
             conn.close()
@@ -628,8 +620,9 @@ class DatasetService(Service):
     def import_dataset(self, name: str, toml_path: str) -> DatasetInfo:
         """Import an existing TOML config as a named dataset.
 
-        Copies the TOML to ``STATE_PATH/<name>/config.toml``, resolving any
-        relative paths in ``[[dataset]]`` entries to absolute first.
+        Resolves any relative paths in ``[[dataset]]`` entries to absolute
+        and writes them back to the original TOML file. The dataset is
+        registered with the original path (no local copy is kept).
         """
         source = Path(toml_path).resolve()
         if not source.is_file():
@@ -639,14 +632,11 @@ class DatasetService(Service):
         raw = self._load_raw_config(source)
         raw = self._resolve_relative_paths(raw, source.parent)
 
-        # Write to state dir
-        dest_dir = _dataset_state_dir(name)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = _dataset_config_path(name)
-        with open(dest, "w") as f:
+        # Write resolved paths back to the original file
+        with open(source, "w") as f:
             toml.dump(raw, f)
 
-        return self._register(name, str(dest))
+        return self.register(name, str(source), source="import")
 
     def create_dataset(self, name: str, image_paths: list[str]) -> DatasetInfo:
         """Create a new dataset with the given image directories.
@@ -675,184 +665,7 @@ class DatasetService(Service):
         with open(dest, "w") as f:
             toml.dump(raw, f)
 
-        return self._register(name, str(dest))
-
-    def create_dataset_from_upload(self, name: str, files: list[tuple[str, BinaryIO]]) -> DatasetUploadResult:
-        """Create a new dataset from uploaded image files.
-
-        Root files (no directory component) are written flat to
-        ``STATE_PATH/<name>/images/``. Files with exactly one directory
-        component (e.g. ``train/cat.jpg``) are written to
-        ``STATE_PATH/<name>/folders/``. Nested files (deeper than one
-        directory level) are skipped with a warning. The generated config
-        has one ``[[dataset]]`` entry for ``images/`` and one per
-        top-level folder inside ``folders/``.
-
-        Uploaded files are validated before writing:
-        - Images are verified with PIL.
-        - TOML sidecars are parsed to ensure valid syntax.
-        - Orphan sidecars (no matching image with the same stem) are skipped.
-        """
-        if not name or not name.strip():
-            raise ValueError("Dataset name is required")
-
-        name = name.strip()
-
-        if not files:
-            raise ValueError("At least one file is required")
-
-        base_dir = _dataset_state_dir(name)
-        images_dir = base_dir / "images"
-        folders_dir = base_dir / "folders"
-        images_dir.mkdir(parents=True, exist_ok=True)
-        folders_dir.mkdir(parents=True, exist_ok=True)
-
-        resolved_images_dir = images_dir.resolve()
-        resolved_folders_dir = folders_dir.resolve()
-
-        warnings: list[str] = []
-        # (directory, stem) for every valid image — used for orphan sidecar checks
-        image_stems: set[tuple[str, str]] = set()
-        # Files to write after validation: (filename, stream, pure, dest_path)
-        files_to_write: list[tuple[str, BinaryIO, PurePosixPath, Path]] = []
-
-        total_written = 0
-        max_size = self._configuration.max_upload_size_bytes
-
-        # --- Phase 1: validate and filter ---
-        for filename, stream in files:
-            ext = Path(filename).suffix.lower()
-            if ext not in UPLOAD_EXTENSIONS:
-                raise ValueError(f"Unsupported file type: {filename}")
-
-            pure = PurePosixPath(filename.replace("\\", "/"))
-            if not pure.name or pure.name in (".", ".."):
-                raise ValueError(f"Invalid file path: {filename}")
-
-            # Skip nested files (deeper than one directory level)
-            if len(pure.parts) > 2:
-                warnings.append(f"Skipped nested file (not supported): {filename}")
-                continue
-
-            if len(pure.parts) == 1:
-                dest_path = (images_dir / str(pure)).resolve()
-                try:
-                    dest_path.relative_to(resolved_images_dir)
-                except ValueError:
-                    raise ValueError(f"Invalid file path: {filename}")
-            else:
-                dest_path = (folders_dir / str(pure)).resolve()
-                try:
-                    dest_path.relative_to(resolved_folders_dir)
-                except ValueError:
-                    raise ValueError(f"Invalid file path: {filename}")
-
-            # Validate content by type
-            if ext in IMAGE_EXTENSIONS:
-                try:
-                    with Image.open(stream) as img:
-                        img.verify()
-                except Exception:
-                    # verify() is overly strict with some valid images;
-                    # fall back to the slower but more reliable load() check.
-                    stream.seek(0)
-                    try:
-                        with Image.open(stream) as img:
-                            img.load()
-                    except Exception as e:
-                        self._logger.debug("Image validation failed: %s — %s", filename, e)
-                        warnings.append(f"Skipped invalid image: {filename}")
-                        continue
-                stream.seek(0)
-                dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
-                image_stems.add((dir_key, pure.stem))
-            elif ext in (".toml", ".toml~"):
-                content = stream.read()
-                stream.seek(0)
-                try:
-                    toml.loads(content.decode("utf-8"))
-                except Exception:
-                    warnings.append(f"Skipped invalid TOML: {filename}")
-                    continue
-            # txt, draft~, history~ — no content validation
-
-            files_to_write.append((filename, stream, pure, dest_path))
-
-        # --- Phase 2: orphan sidecar check ---
-        final_files: list[tuple[str, BinaryIO, PurePosixPath, Path]] = []
-        for filename, stream, pure, dest_path in files_to_write:
-            ext = pure.suffix.lower()
-            if ext in IMAGE_EXTENSIONS:
-                final_files.append((filename, stream, pure, dest_path))
-                continue
-
-            dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
-
-            if ext == ".draft~":
-                # Draft format: IMAGE_STEM.DRAFT_NAME.draft~
-                # Try each known image stem as a prefix.
-                matched = False
-                for known_dir, known_stem in image_stems:
-                    if (
-                        known_dir == dir_key
-                        and pure.name.startswith(known_stem + ".")
-                        and pure.name.endswith(".draft~")
-                    ):
-                        matched = True
-                        break
-                if not matched:
-                    warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                    continue
-            elif (dir_key, pure.stem) not in image_stems:
-                warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                continue
-
-            final_files.append((filename, stream, pure, dest_path))
-
-        if not final_files:
-            shutil.rmtree(base_dir, ignore_errors=True)
-            raise ValueError("No valid files to upload after validation")
-
-        # --- Phase 3: write files ---
-        has_root_files = False
-        folder_names: set[str] = set()
-
-        try:
-            for filename, stream, pure, dest_path in final_files:
-                if len(pure.parts) == 1:
-                    has_root_files = True
-                else:
-                    folder_names.add(pure.parts[0])
-
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(dest_path, "wb") as f:
-                    chunk = stream.read(8192)
-                    while chunk:
-                        total_written += len(chunk)
-                        if max_size > 0 and total_written > max_size:
-                            raise ValueError(
-                                f"Total upload size exceeds {max_size} bytes"
-                            )
-                        f.write(chunk)
-                        chunk = stream.read(8192)
-
-            dataset_entries: list[dict[str, str]] = []
-            if has_root_files:
-                dataset_entries.append({"path": str(images_dir)})
-            for folder_name in sorted(folder_names):
-                dataset_entries.append({"path": str(folders_dir / folder_name)})
-
-            raw: dict[str, Any] = {"dataset": dataset_entries}
-
-            dest = _dataset_config_path(name)
-            with open(dest, "w") as f:
-                toml.dump(raw, f)
-
-            dataset = self._register(name, str(dest))
-            return DatasetUploadResult(dataset=dataset, warnings=warnings)
-        except Exception:
-            shutil.rmtree(base_dir, ignore_errors=True)
-            raise
+        return self.register(name, str(dest), source="create")
 
     def rescan_dataset(self, name: str) -> bool:
         """Force a rescan of a dataset by name. Returns True if dataset was found."""
@@ -871,7 +684,6 @@ class DatasetService(Service):
 
     def unregister_dataset(self, name: str) -> bool:
         """Remove a dataset, its images from the index, and its state dir."""
-        import shutil
 
         self._watcher.unwatch_dataset(name)
 
@@ -890,7 +702,7 @@ class DatasetService(Service):
 
         return found
 
-    def _register(self, name: str, config_path: str) -> DatasetInfo:
+    def register(self, name: str, config_path: str, *, source: str = "import") -> DatasetInfo:
         """Upsert a dataset record and scan its images."""
         config = self._load_config(Path(config_path))
 
@@ -898,13 +710,14 @@ class DatasetService(Service):
         try:
             conn.execute(
                 """
-                INSERT INTO datasets (name, config_path, last_scanned_t, updated_t)
-                VALUES (?, ?, unixepoch(), unixepoch())
+                INSERT INTO datasets (name, source, config_path, last_scanned_t, updated_t)
+                VALUES (?, ?, ?, unixepoch(), unixepoch())
                 ON CONFLICT(name) DO UPDATE SET
                     config_path = excluded.config_path,
+                    source = excluded.source,
                     updated_t = unixepoch()
                 """,
-                (name, config_path),
+                (name, source, config_path),
             )
 
             row = conn.execute("SELECT id FROM datasets WHERE name = ?", (name,)).fetchone()

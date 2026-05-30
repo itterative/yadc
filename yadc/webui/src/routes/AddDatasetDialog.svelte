@@ -16,6 +16,11 @@
     let { open, onclose, oncreated }: Props = $props();
 
     let mode: 'upload' | 'create' = $state('create');
+
+    function handleCreated(dataset: DatasetInfo) {
+        mode = 'create';
+        oncreated(dataset);
+    }
 </script>
 
 <Dialog class="dialog-panel max-h-[80vh] max-w-lg overflow-y-auto" {open} {onclose}>
@@ -29,10 +34,10 @@
 
         <PillTabs bind:value={mode}>
             <Tab id="upload" label="Upload">
-                <UploadDatasetTab {oncreated} {onclose} />
+                <UploadDatasetTab oncreated={handleCreated} {onclose} />
             </Tab>
             <Tab id="create" label="Create">
-                <CreateDatasetTab {oncreated} {onclose} />
+                <CreateDatasetTab oncreated={handleCreated} {onclose} />
             </Tab>
         </PillTabs>
     </div>

@@ -1,6 +1,8 @@
 ---
 name: webui-frontend
 description: yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues.
+category: architecture
+keep_updated: true
 ---
 
 # WebUI Frontend Setup

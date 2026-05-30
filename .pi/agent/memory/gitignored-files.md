@@ -1,6 +1,8 @@
 ---
 name: gitignored-files
-description: When a user query involves files that must not be modified or included in changes, read this memory first.
+description: Files and directories that must not be modified or included in changes. Read when unsure if a file is safe to touch.
+category: convention
+priority: 3
 ---
 
 # Git-Ignored Files in yadc

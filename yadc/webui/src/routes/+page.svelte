@@ -118,7 +118,14 @@
                         </div>
                     {/if}
                     <div class="card-body">
-                        <h3 class="mb-1 text-fg">{dataset.name}</h3>
+                        <div class="mb-1 flex items-center gap-2">
+                            <h3 class="text-fg">{dataset.name}</h3>
+                            {#if dataset.source === 'upload'}
+                                <span class="badge-muted badge-sm">Managed</span>
+                            {:else}
+                                <span class="badge-muted badge-sm">External</span>
+                            {/if}
+                        </div>
                         {#if captionStatusFor(dataset.name)}
                             {@const cs = captionStatusFor(dataset.name)!}
                             <div class="mt-2 flex items-center gap-2 text-sm">

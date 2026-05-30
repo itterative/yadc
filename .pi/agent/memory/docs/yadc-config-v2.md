@@ -1,6 +1,8 @@
 ---
 name: yadc-config-v2
-description: v2 dataset config format for yadc. Each [[dataset]] is a list entry with path, images, and extras. v1 [dataset] dicts are auto-converted via parse_config() duck-typing.
+description: v2 dataset config format — [[dataset]] array-of-tables structure and v1 auto-conversion.
+category: architecture
+keep_updated: true
 ---
 
 # yadc Config v2

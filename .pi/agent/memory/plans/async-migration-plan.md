@@ -1,7 +1,9 @@
 ---
 name: async-migration-plan
 description: Phased plan for migrating the API backend from Flask/waitress to Quart/uvicorn, making SSE fully async, then deferring a potential FastAPI migration.
+status: Complete
 last_history: 3
+category: meta
 ---
 
 # Async API Migration Plan (Quart)

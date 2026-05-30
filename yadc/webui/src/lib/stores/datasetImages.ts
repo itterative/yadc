@@ -8,6 +8,7 @@ import { writable } from 'svelte/store';
 
 export interface DatasetInfo {
     name: string;
+    source: 'upload' | 'import' | 'create';
     config_path: string | null;
     image_count: number;
     has_caption: number;
@@ -38,6 +39,16 @@ export interface ImagePage {
 export interface DatasetUploadResult {
     dataset: DatasetInfo;
     warnings: string[];
+}
+
+export interface UploadProgressEvent {
+    phase: 'validating' | 'writing' | 'complete' | 'error';
+    file?: string;
+    index?: number;
+    total?: number;
+    dataset?: DatasetInfo;
+    warnings?: string[];
+    message?: string;
 }
 
 export interface CaptionData {
@@ -92,11 +103,17 @@ export async function createDataset(name: string, imagePaths: string[]): Promise
     return res.json();
 }
 
-/** Upload files to create a new dataset. */
+/** Upload files to create a new dataset.
+ *
+ *  The server returns a streaming NDJSON response with progress events.
+ *  Use `onEvent` to receive intermediate progress (validation, writing phases).
+ *  The promise resolves with the final result or rejects on error.
+ */
 export async function uploadDataset(
     name: string,
     files: File[],
     onProgress?: (progress: UploadProgress) => void,
+    onEvent?: (event: UploadProgressEvent) => void,
     signal?: AbortSignal
 ): Promise<DatasetUploadResult> {
     const formData = new FormData();
@@ -106,17 +123,47 @@ export async function uploadDataset(
         formData.append('files', file, filename);
     }
 
-    const res = await upload({
-        url: '/api/datasets/upload',
-        body: formData,
-        onProgress,
-        signal
-    });
+    let settled = false;
 
-    if (!res.ok) {
-        throw new Error(await apiErrorMessage(res));
-    }
-    return res.json() as Promise<DatasetUploadResult>;
+    return new Promise<DatasetUploadResult>((resolve, reject) => {
+        upload({
+            url: '/api/datasets/upload',
+            body: formData,
+            onProgress,
+            signal,
+            onChunk: (line) => {
+                try {
+                    const event = JSON.parse(line) as UploadProgressEvent;
+                    if (event.phase === 'complete') {
+                        settled = true;
+                        resolve({ dataset: event.dataset!, warnings: event.warnings ?? [] });
+                    } else if (event.phase === 'error') {
+                        settled = true;
+                        reject(new Error(event.message));
+                    } else if (onEvent) {
+                        onEvent(event);
+                    }
+                } catch {
+                    // Ignore unparseable lines
+                }
+            }
+        })
+            .then(async (res) => {
+                if (settled) {
+                    return;
+                }
+                if (!res.ok) {
+                    reject(new Error(await apiErrorMessage(res)));
+                } else {
+                    reject(new Error('Upload completed without a result'));
+                }
+            })
+            .catch((e) => {
+                if (!settled) {
+                    reject(e);
+                }
+            });
+    });
 }
 
 /** Delete/unregister a dataset. */

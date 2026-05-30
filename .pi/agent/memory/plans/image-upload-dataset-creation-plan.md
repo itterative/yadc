@@ -1,7 +1,9 @@
 ---
 name: image-upload-dataset-creation-plan
-description: Allow users to upload images/folders from the browser when creating a new dataset via the WebUI.
-last_history: 15
+description: Upload images/folders from the browser when creating a dataset via WebUI.
+status: Complete (phases 1–13, 5b); phase 14+ deferred
+last_history: 16
+category: meta
 ---
 
 # Image Upload for Dataset Creation
@@ -162,11 +164,20 @@ Phase 3 is complete.
   - Config TOML has one `[[dataset]]` entry for `images/` and one per unique top-level folder in `folders/`.
   - Updated docstring to describe the new behavior.
 
-### Phase 5: Distinguish uploaded vs imported datasets (pending)
+### Phase 5b: Distinguish uploaded vs imported datasets ✅
 
-Uploaded datasets (from the Upload tab) live entirely inside `STATE_PATH/<name>/` and are managed by yadc. Imported/created datasets (Import TOML and Create New tabs) reference external directories provided by the user. The side panel in the dataset browser currently shows the state folder path for all datasets, which is misleading for uploaded ones. Need to:
-- Track whether a dataset is "managed" (uploaded) vs "external" (imported/created).
-- Display appropriate path info in the side panel (e.g., hide or label the state path for managed datasets).
+Uploaded datasets (from the Upload tab) live entirely inside `STATE_PATH/<name>/` and are managed by yadc. Imported/created datasets (Import TOML and Create New tabs) reference external directories provided by the user.
+
+**Backend:** `DatasetInfo.source` field already existed (`"upload" | "import" | "create"`), populated by `DatasetService.register()`.
+
+**Frontend changes:**
+- Added `source` to the `DatasetInfo` TypeScript interface in `datasetImages.ts`
+- Dataset listing cards (`+page.svelte`): small "Managed" / "External" badge next to the dataset name
+- Dataset detail topbar (`datasets/[name]/+page.svelte`): "Managed" / "External" badge next to the title
+- Config tab (`DatasetConfig.svelte`): new read-only "Dataset" info section at the top
+  - **Managed**: shows "Managed" badge + "Files stored in yadc state directory" + relative path (`<name>/config.toml` — state dir prefix stripped)
+  - **External**: shows "External" badge + "References paths outside yadc" + full absolute `config_path`
+- Props threaded through `SidePanel.svelte` (`source?: 'upload' | 'import' | 'create'`)
 
 ### Phase 6: Atomic upload failure handling ✅
 
@@ -229,22 +240,26 @@ Created `DatasetUploadResult` dataclass (`dataset: DatasetInfo + warnings: list[
 - Single submit button that calls `createDataset()` or `importDataset()` based on selection
 - Button label adapts: "Create" / "Import" and "Creating…" / "Importing…"
 
-### Phase 13: Stream validation progress to frontend (pending)
+### Phase 13: Stream validation progress to frontend ✅
 
-The current upload flow has two silent phases after the HTTP request body is received:
-1. **Validation** — `Image.verify()` / `load()` on every image, `toml.loads()` on TOML files, orphan sidecar matching. For large batches (hundreds of files) this can take several seconds.
-2. **Writing** — copying files from temp storage to `STATE_PATH/<name>/`.
+The upload flow now streams server-side progress back to the client so there is no silent gap after the HTTP body is received.
 
-During validation the UI shows only the network upload progress bar. Once the network transfer finishes, the button goes back to idle and the user has no indication that work is still happening on the server. This makes the app feel stuck.
+**Implementation:** Chunked NDJSON streaming response via `XMLHttpRequest` — see `history/016-streaming-validation-progress.md` for the design analysis.
 
-**Options:**
-- **SSE**: The upload endpoint returns early with a `202 Accepted` + `job_id`, then the client connects to an SSE stream for validation/writing progress. More complex but gives real-time feedback.
-- **Chunked JSON response**: Use `Transfer-Encoding: chunked` and stream `{phase: "validating", file: "cat.jpg", index: 5, total: 100}` lines. The client reads the stream via `ReadableStream` API. Simpler but less standard.
-- **Polling**: Return a job ID, client polls `GET /api/datasets/upload/<job_id>/status` until completion. Simplest to implement but adds latency and request overhead.
+**Wire format:** NDJSON (`application/x-ndjson`), one JSON object per line, flushed after each event.
 
-**Scope:**
-- Backend: Track validation/writing progress and emit events
-- Frontend: Show a second progress bar or status text after the network upload completes ("Validating 45/200 files…")
+**Progress events (from server):**
+- `{"phase": "validating", "file": "cat.jpg", "index": 5, "total": 100}` — during PIL verify / TOML parse
+- `{"phase": "writing", "file": "cat.jpg", "index": 5, "total": 80}` — during file writes
+- `{"phase": "complete", "dataset": {...}, "warnings": [...]}` — final result
+- `{"phase": "error", "message": "..."}` — error result
+
+**Files modified:**
+- `yadc/api/services/dataset_upload.py` — `create_dataset_from_upload()` is now an async generator yielding `UploadProgressEvent` dataclasses
+- `yadc/api/controllers/api_datasets.py` — upload endpoint returns a streaming `Response` with `application/x-ndjson` mimetype
+- `yadc/webui/src/lib/upload.ts` — added `onChunk` callback to `UploadOptions`; parses `xhr.responseText` incrementally during download `onprogress`
+- `yadc/webui/src/lib/stores/datasetImages.ts` — `uploadDataset()` passes `onChunk` through and resolves/rejects from `complete`/`error` events
+- `yadc/webui/src/lib/components/datasets/UploadDatasetTab.svelte` — multi-phase progress bar (upload → validate → write)
 
 ### Phase 14 and beyond (pending)
 

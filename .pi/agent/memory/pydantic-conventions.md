@@ -1,6 +1,8 @@
 ---
 name: pydantic-conventions
-description: When a user query involves Pydantic models, validation, or serialization patterns used in the project, read this memory first.
+description: Pydantic model conventions — model_validate vs ** unpacking, model_config placement. Read when working with Pydantic models.
+category: convention
+priority: 1
 ---
 
 # Pydantic Conventions

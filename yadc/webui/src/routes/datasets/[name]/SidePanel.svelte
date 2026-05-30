@@ -12,6 +12,7 @@
 
     interface Props {
         datasetName: string;
+        source?: 'upload' | 'import' | 'create';
         focusedItem: ImageInfo | null;
         activeTab?: PanelTab;
         open?: boolean;
@@ -21,6 +22,7 @@
 
     let {
         datasetName,
+        source,
         focusedItem,
         activeTab: panelTab = $bindable('caption'),
         open = $bindable(false),
@@ -76,7 +78,7 @@
             </Tab>
             <Tab id="details" label="Details" class="h-full overflow-y-auto">
                 {#if focusedItem !== null}
-                    <ImageDetail {datasetName} item={focusedItem} />
+                    <ImageDetail {datasetName} item={focusedItem} {source} />
                 {:else}
                     <div class="flex h-full items-center justify-center py-4 text-sm text-gray-500">
                         Select an image to view details
@@ -84,7 +86,7 @@
                 {/if}
             </Tab>
             <Tab id="config" label="Config" class="h-full overflow-y-auto">
-                <DatasetConfig {datasetName} onsaved={onconfigsaved} />
+                <DatasetConfig {datasetName} {source} onsaved={onconfigsaved} />
             </Tab>
         </PillTabs>
     </div>

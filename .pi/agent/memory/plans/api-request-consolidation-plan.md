@@ -1,8 +1,9 @@
 ---
 name: api-request-consolidation-plan
-description: Consolidate redundant API requests in the webui — environment list/details, dataset browser (4→1), and SSE caption text
+description: Consolidate redundant API requests — env list/details, dataset browser, SSE caption text.
 status: Complete
 last_history: 13
+category: meta
 ---
 
 # API Request Consolidation

@@ -1,6 +1,9 @@
 ---
 name: frontend-architecture
-description: When a user query relates to the webui frontend structure, stores, components, routes, or patterns, read this memory first.
+description: WebUI frontend directory structure, stores, components, routes, and patterns. Read architecture-overview first if touching backend too.
+category: architecture
+priority: 2
+keep_updated: true
 ---
 
 # Frontend Architecture

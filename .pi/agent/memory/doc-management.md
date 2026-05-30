@@ -1,6 +1,9 @@
 ---
 name: doc-management
-description: When a user query relates to architecture, conventions, workflows, or reference topics, read the relevant doc(s) in .pi/agent/memory/docs/ first.
+description: Index of subsystem docs in docs/ and root-level reference memories. Use after architecture-overview to find detailed docs.
+category: meta
+priority: 1
+keep_updated: true
 ---
 
 # Doc Management

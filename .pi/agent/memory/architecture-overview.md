@@ -1,6 +1,9 @@
 ---
 name: architecture-overview
-description: When a user query relates to the overall project structure, module organization, or how major components fit together, read this memory first.
+description: High-level project structure, module organization, and key patterns. Start here for structural work or cross-cutting changes.
+category: architecture
+priority: 1
+keep_updated: true
 ---
 
 # yadc Architecture Overview
@@ -64,8 +67,9 @@ yadc/
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init
     services/
-      __init__.py           # re-exports CaptioningService, DatasetService, SettingsService
+      __init__.py           # re-exports CaptioningService, DatasetService, DatasetUploadService, DatasetUploadResult, SettingsService
       captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher
+      dataset_upload.py     # DatasetUploadService — file upload validation, writing, and dataset registration (extracted from DatasetService)
       datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 

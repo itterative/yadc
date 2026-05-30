@@ -1,6 +1,7 @@
 ---
 name: template-system
-description: How the Jinja2 prompt template system works — template resolution, loading, and variable context.
+description: Jinja2 prompt template system — template resolution, loading, and variable context.
+category: architecture
 ---
 
 # Template System

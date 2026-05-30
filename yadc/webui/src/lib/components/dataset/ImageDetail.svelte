@@ -22,9 +22,10 @@
     interface Props {
         datasetName: string;
         item: ImageInfo | null;
+        source?: 'upload' | 'import' | 'create';
     }
 
-    let { datasetName, item }: Props = $props();
+    let { datasetName, item, source }: Props = $props();
 
     let captionData: CaptionData | null = $state(null);
     let isLoadingCaption = $state(false);
@@ -226,7 +227,9 @@
         <div class="flex-1 space-y-4 overflow-y-auto p-4">
             <!-- Filename -->
             <h2 class="dialog-title truncate text-base">{item.file_name}</h2>
-            <p class="-mt-3 truncate text-xs text-gray-500">{item.path}</p>
+            {#if source !== 'upload'}
+                <p class="-mt-3 truncate text-xs text-gray-500">{item.path}</p>
+            {/if}
             <!-- Image -->
             <div class="flex shrink-0 items-start justify-center">
                 <img

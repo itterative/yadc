@@ -1,6 +1,8 @@
 ---
 name: plan-management
-description: When a user query relates to features, refactors, or design work that may have an existing plan, always read the relevant plan(s) first before proposing changes.
+description: Index of feature/design plans in plans/. Check before proposing changes that might overlap with existing or completed work.
+category: meta
+priority: 2
 ---
 
 # Plan Management
@@ -31,7 +33,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`captioning-status-bar-plan`](.pi/agent/memory/plans/captioning-status-bar-plan.md) | Refine captioning progress UI + consolidate caption logic into shared store | Complete |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
-| [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Committed (phases 1–12); phase 13+ deferred |
+| [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Complete (phases 1–13, 5b); phase 14+ deferred |
 | [`selective-image-refresh-plan`](.pi/agent/memory/plans/selective-image-refresh-plan.md) | Per-image SSE events during captioning for live grid tile updates | Complete |
 
 ## When to Read Plans

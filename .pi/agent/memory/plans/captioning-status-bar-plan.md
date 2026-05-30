@@ -1,7 +1,9 @@
 ---
 name: captioning-status-bar-plan
-description: Refine captioning progress UI in the dataset browser topbar and side panel button.
+description: Refine captioning progress UI + consolidate caption logic into shared store.
+status: Complete
 last_history: 2
+category: meta
 ---
 
 # Captioning Status Bar Plan

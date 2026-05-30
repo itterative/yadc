@@ -1,6 +1,7 @@
 ---
 name: export-system
 description: How the export system works — backends, formats, and the draft/caption source selection.
+category: architecture
 ---
 
 # Export System

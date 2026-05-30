@@ -1,6 +1,7 @@
 ---
 name: captioning-workflow
-description: The end-to-end captioning workflow — dataset loading, filtering, prediction loop, saving.
+description: End-to-end captioning workflow — dataset loading, filtering, prediction loop, saving.
+category: architecture
 ---
 
 # Captioning Workflow

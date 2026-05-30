@@ -1,6 +1,8 @@
 ---
 name: api-di-system
-description: The web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones.
+description: Web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones.
+category: architecture
+keep_updated: true
 ---
 
 # API DI System (Auto-Discovery)

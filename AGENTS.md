@@ -2,9 +2,10 @@ You are working with yadc, a CLI tool for generating text captions for image dat
 
 ## Development Rules
 
-1. Always refer to any relevant memories you have. This process improves your efficiency.
+1. When exploring or implementing changes, read any relevant memories you have. This process improves your efficiency.
 2. Always give a thorough plan for your changes before performing them, unless the user asks for a change directly.
-3. Once changes are made, refer to any relevant memories you have and keep them in sync.
+3. After you are finished with making changes requested by the user, look for any relevant memories you have and keep them up to date.
+4. You are encouraged to ask the user any questions in order to figure out the best solution when given a task.
 
 ## Commands
 

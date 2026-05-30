@@ -1,6 +1,8 @@
 ---
 name: file-based-private-key-plan
-description: Complete history of replacing keyring-based RSA private key storage with a password-protected alternative. Tracks original intent, deviations, decisions, and all files touched.
+description: Replace keyring-based RSA private key storage with a password-protected alternative.
+status: Complete
+category: meta
 ---
 
 # File-Based Private Key Plan — Historical Summary
