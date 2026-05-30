@@ -55,8 +55,9 @@ yadc/webui/
           tabs/                     # Tab system (Svelte 5 context + snippets)
             Tabs.svelte             # Generic container — tab bar layout, registration, bindable value
             PillTabs.svelte         # Pre-styled pill variant (wraps Tabs with rounded-full buttons)
-            Tab.svelte              # Child that auto-registers via context, shows/hides content
-            TabsContext.svelte.ts   # Symbol key + state factory + typed helpers
+            CompactPillTabs.svelte  # Compact segmented control variant (bg-gray-800/50 container, rounded-md buttons, icon support)
+            Tab.svelte              # Child that auto-registers via context, shows/hides content. Supports optional icon prop.
+            TabsContext.svelte.ts   # Symbol key + state factory + typed helpers. TabItem has optional icon (Component).
           ConfirmDelete.svelte        # Delete confirmation block (cancel/confirm buttons)
           SpinnerBlock.svelte         # Centered spinner with optional label and size
           PromptPreview.svelte        # Self-contained prompt preview (template selector + system/user prompt display)
@@ -134,7 +135,7 @@ yadc/webui/
 - **Dataset watcher**: Backend emits `DatasetChangedEvent` via SSE when filesystem changes are detected. Frontend stores these in `pendingDatasetChanges` (a `Set<string>`). Dataset browser page subscribes and shows a "Refresh" banner.
 - **CodeMirror 6**: `CodeMirror.svelte` wrapper uses three separate `$effect` blocks (create/destroy/sync) — never combine. Uses `editable` prop (default `true`) — not `readonly`. Includes a `baseTheme` (dark surface, accent-colored selection via `color-mix(in oklch, ...)`) and a `darkHighlightStyle` that maps all `@lezer/highlight` tags to CSS `--color-syn-*` variables defined in the Tailwind `@theme` block.
 - **Svelte 5**: No pipe directives on events. No nested `<button>`. Use `<div role="button">` for clickable list items.
-- **Tabs**: `ui/tabs/` uses Svelte context (`TabsContext.svelte.ts` with Symbol key) for parent-child coordination. `Tab` children register themselves during init via `untrack()` (synchronous, before parent renders). `Tabs` supports a custom `tab` snippet for arbitrary button styling; `PillTabs` is a pre-styled variant. `value` is bindable and uses `id` (not `label`) for matching.
+- **Tabs**: `ui/tabs/` uses Svelte context (`TabsContext.svelte.ts` with Symbol key) for parent-child coordination. `Tab` children register themselves during init via `untrack()` (synchronous, before parent renders). `Tabs` supports a custom `tab` snippet for arbitrary button styling; `PillTabs` is a pre-styled variant (rounded-full buttons on border-bottom bar). `CompactPillTabs` is a compact segmented-control variant (bg-gray-800/50 container, rounded-md buttons) with icon support — uses `TabsContext` directly rather than wrapping `Tabs`. `Tab` accepts optional `icon` prop (Svelte `Component<{ class?: string }>`). `value` is bindable and uses `id` (not `label`) for matching.
 - **Tailwind v4**: Custom colors must be registered in `@theme { }` block, not `:root` vars.
 - **Tailwind content detection**: Root `.gitignore` `lib/` rule was hiding `src/lib/` — fixed with `!src/lib/` in `webui/.gitignore`.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.

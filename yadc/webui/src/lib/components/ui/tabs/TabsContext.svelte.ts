@@ -1,16 +1,17 @@
-import { getContext, setContext } from 'svelte';
+import { getContext, setContext, type Component } from 'svelte';
 
 const KEY = Symbol('tabs');
 
 export interface TabItem {
     id: string;
     label: string;
+    icon?: Component<{ class?: string }>;
 }
 
 export interface TabsState {
     readonly tabs: readonly TabItem[];
     readonly activeIndex: number;
-    registerTab(id: string, label: string): number;
+    registerTab(id: string, label: string, icon?: Component<{ class?: string }>): number;
     setActiveIndex(index: number): void;
 }
 
@@ -25,9 +26,9 @@ export function createTabsState(): TabsState {
         get activeIndex() {
             return activeIndex;
         },
-        registerTab(id: string, label: string) {
+        registerTab(id: string, label: string, icon?: Component<{ class?: string }>) {
             const index = tabs.length;
-            tabs.push({ id, label });
+            tabs.push({ id, label, icon });
             return index;
         },
         setActiveIndex(index: number) {
