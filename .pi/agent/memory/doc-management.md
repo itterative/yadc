@@ -18,6 +18,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** inside the agent memory 
 |-----|-------------|
 | [`api-di-system`](.pi/agent/memory/docs/api-di-system.md) | Web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones. |
 | [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Captioner hierarchy — `APICaptioner` auto-detection, inner captioner delegation, mixin pattern, and per-backend details. |
+| [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files`), event dispatch, and frontend suppression. |
 | [`captioning-workflow`](.pi/agent/memory/docs/captioning-workflow.md) | End-to-end captioning workflow — dataset loading, filtering, prediction loop, saving. |
 | [`cli-cmd-structure`](.pi/agent/memory/docs/cli-cmd-structure.md) | How CLI commands and `cmd/` modules are structured — click commands vs pure logic split. |
 | [`debug-api-logging`](.pi/agent/memory/docs/debug-api-logging.md) | `YADC_DEBUG_CAPTION_RESPONSES=1` feature for logging caption API request/response pairs to JSONL files. |

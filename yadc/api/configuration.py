@@ -37,6 +37,8 @@ class Configuration:
 
     # File watcher
     watcher_debounce_seconds: float = 1.0
+    watcher_expected_file_max: int = 256
+    watcher_expected_file_ttl: float = 1.0
 
     # Upload
     max_upload_size_bytes: int = 524_288_000  # ~500 MB

@@ -7,23 +7,51 @@ removed files, modified sidecars) and emits ``DatasetChangedEvent`` via the
 
 from __future__ import annotations
 
+import fnmatch
 import threading
+import time
+from collections import deque
 from logging import Logger
 from pathlib import Path
-from typing import Any, Callable, override
+from typing import Any, Callable, NamedTuple, override
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import ObservedWatch
 
+from ..configuration import Configuration
 from ..events import DatasetChangedEvent, StartupEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .logging_factory import LoggingFactory
 from .service import Service
 
+# Sentinel job_id used when all changes in a debounce window were expected
+# but no client-specific source is available.
+SELF_JOB_ID = "self"
+
+# Prefix for frontend client sources (e.g. "ui:abc123").
+UI_SOURCE_PREFIX = "ui:"
+
+
+class ExpectedFileEntry(NamedTuple):
+    path: str
+    registered_at: float
+    source: str
+
+
+class ExpectedPatternEntry(NamedTuple):
+    pattern: str
+    registered_at: float
+    source: str
+
+
 # Extensions we care about — both images and sidecars.
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
-_SIDECAR_EXTENSIONS = frozenset({".txt", ".toml", ".history~", ".draft~"})
-_WATCHED_EXTENSIONS = _IMAGE_EXTENSIONS | _SIDECAR_EXTENSIONS
+SIDECAR_EXTENSIONS: frozenset[str] = frozenset({".txt", ".toml", ".history~", ".draft~"})
+# Glob suffixes for sidecars when attached to a stem (used in expect_pattern_change).
+# .txt / .toml / .history~ are exact-match patterns; .*.draft~ matches named drafts.
+SIDECAR_EXTENSION_GLOBS: tuple[str, ...] = (".txt", ".toml", ".history~", ".*.draft~")
+_WATCHED_EXTENSIONS = _IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
 
 
 def _is_watched(path: str) -> bool:
@@ -38,30 +66,30 @@ def _is_watched(path: str) -> bool:
 class _DirEventHandler(FileSystemEventHandler):
     """Watchdog handler for a single dataset's watched directories."""
 
-    def __init__(self, dataset_name: str, on_change: Callable[[str], None]):
+    def __init__(self, dataset_name: str, on_change: Callable[[str, str], None]):
         self._dataset_name: str = dataset_name
-        self._on_change: Callable[[str], None] = on_change
+        self._on_change: Callable[[str, str], None] = on_change
 
     @override
     def on_created(self, event: FileSystemEvent) -> None:
         if not event.is_directory and _is_watched(str(event.src_path)):
-            self._on_change(self._dataset_name)
+            self._on_change(self._dataset_name, str(event.src_path))
 
     @override
     def on_deleted(self, event: FileSystemEvent) -> None:
         if not event.is_directory and _is_watched(str(event.src_path)):
-            self._on_change(self._dataset_name)
+            self._on_change(self._dataset_name, str(event.src_path))
 
     @override
-    def on_modified(self, event: FileSystemEvent) -> None:
+    def on_closed(self, event: FileSystemEvent) -> None:
         if not event.is_directory and _is_watched(str(event.src_path)):
-            self._on_change(self._dataset_name)
+            self._on_change(self._dataset_name, str(event.src_path))
 
     @override
     def on_moved(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             if _is_watched(str(event.src_path)) or _is_watched(str(event.dest_path)):
-                self._on_change(self._dataset_name)
+                self._on_change(self._dataset_name, str(event.src_path))
 
 
 class DatasetWatcherService(Service):
@@ -76,20 +104,27 @@ class DatasetWatcherService(Service):
         self,
         event_dispatcher: EventDispatcher,
         logging: LoggingFactory,
+        configuration: Configuration,
     ):
         self._logger: Logger = logging.get_logger(__name__)
         self._event_dispatcher: EventDispatcher = event_dispatcher
-        self._debounce_seconds: float = 1.0  # set via set_debounce_seconds()
+        self._configuration: Configuration = configuration
 
         self._observer: Any = Observer()
         self._observer.daemon = True
 
-        # dataset_name -> list of (watch, handler) for cleanup
-        self._watches: dict[str, list[tuple[object, _DirEventHandler]]] = {}
+        # dataset_name -> list of (ObservedWatch, handler) for cleanup
+        self._watches: dict[str, list[tuple[ObservedWatch, _DirEventHandler]]] = {}
         # dataset_name -> debounce Timer
         self._timers: dict[str, threading.Timer] = {}
-        # dataset_name -> job_id for expected changes
+        # dataset_name -> job_id for expected changes (captioning jobs)
         self._expected_sources: dict[str, str] = {}
+        # dataset_name -> bounded deque of ExpectedFileEntry for webui edits
+        self._expected_files: dict[str, deque[ExpectedFileEntry]] = {}
+        # dataset_name -> bounded deque of ExpectedPatternEntry for bulk deletions
+        self._expected_patterns: dict[str, deque[ExpectedPatternEntry]] = {}
+        # dataset_name -> True if any unexpected file changed during debounce window
+        self._unexpected_changes: dict[str, bool] = {}
         self._lock: threading.Lock = threading.Lock()
 
         self._thread: threading.Thread = threading.Thread(target=self._run_observer, daemon=True)
@@ -102,31 +137,42 @@ class DatasetWatcherService(Service):
     def _run_observer(self) -> None:
         """Run the watchdog observer (blocks until stop())."""
         self._observer.start()
-        self._logger.info("Dataset watcher started. [debounce=%.1fs]", self._debounce_seconds)
+        self._logger.info("Dataset watcher started. [debounce=%.1fs]", self._configuration.watcher_debounce_seconds)
         self._observer.join()
-
-    def set_debounce_seconds(self, seconds: float) -> None:
-        """Set the debounce interval. Should be called before any watch_dataset() calls."""
-        self._debounce_seconds = seconds
 
     def stop(self) -> None:
         """Stop the filesystem observer."""
         self._observer.stop()
 
     def watch_dataset(self, dataset_name: str, paths: list[str]) -> None:
-        """Add directories to watch for a dataset."""
+        """Add directories to watch for a dataset.
+
+        If the watched paths haven't changed since the last call, this is a
+        no-op — avoiding unnecessary unwatch/rewatch cycles that would disrupt
+        ``_expected_sources`` and ``_expected_files`` state.
+        """
         with self._lock:
+            normalized = sorted(str(Path(p).resolve()) for p in paths)
+
+            # Short-circuit if paths haven't changed
+            current_watches = self._watches.get(dataset_name)
+            if current_watches is not None:
+                current_paths = sorted(str(Path(watch.path).resolve()) for watch, _handler in current_watches)
+                if normalized == current_paths:
+                    self._logger.debug("Watch paths unchanged, skipping re-registration. [dataset=%s]", dataset_name)
+                    return
+
             # Preserve the expected-changes tag across re-registration
-            # (e.g. when rescan_dataset() re-watches after a path change).
-            # _unwatch_dataset_locked() clears it, but captioning jobs expect
-            # it to remain active until explicitly cleared.
+            # (e.g. when _refresh_stale_datasets picks up a path change during
+            # captioning).  _unwatch_dataset_locked() clears it, but captioning
+            # jobs expect it to remain active until explicitly cleared.
             saved_source = self._expected_sources.get(dataset_name)
 
             # Remove any existing watches for this dataset first
             self._unwatch_dataset_locked(dataset_name)
 
             handler = _DirEventHandler(dataset_name, self._on_fs_change)
-            watches: list[tuple[object, _DirEventHandler]] = []
+            watches: list[tuple[ObservedWatch, _DirEventHandler]] = []
             for path_str in paths:
                 path = Path(path_str)
                 if not path.is_dir():
@@ -172,6 +218,55 @@ class DatasetWatcherService(Service):
             if self._expected_sources.get(dataset_name) == job_id:
                 self._expected_sources.pop(dataset_name, None)
 
+    def expect_file_change(self, dataset_name: str, file_path: str, *, source: str = SELF_JOB_ID) -> None:
+        """Register *file_path* as an expected upcoming filesystem change.
+
+        Call before writing to a file (caption, extras, history) so the
+        watcher can suppress the resulting ``DatasetChangedEvent`` when
+        *all* changes in a debounce window are expected.  Entries expire
+        after ``_expected_file_ttl`` seconds to handle duplicate inotify
+        events for the same write.
+
+        *source* is a client identifier included on the dispatched event so
+        only the originating frontend tab suppresses it.  Defaults to
+        ``SELF_JOB_ID`` (``"self"``) for backward compatibility.  Frontend
+        clients should pass a ``"ui:<uuid>"`` string.
+        """
+        with self._lock:
+            buf = self._expected_files.setdefault(dataset_name, deque(maxlen=self._configuration.watcher_expected_file_max))
+            buf.append(ExpectedFileEntry(file_path, time.monotonic(), source))
+            self._logger.debug(
+                "Registered expected file change. [dataset=%s, path=%s, source=%s, queue=%d]",
+                dataset_name,
+                Path(file_path).name,
+                source,
+                len(buf),
+            )
+
+    def expect_pattern_change(self, dataset_name: str, pattern: str, *, source: str = SELF_JOB_ID) -> None:
+        """Register a glob *pattern* as an expected upcoming filesystem change.
+
+        Use before bulk deletions (entire folders, or draft files that
+        match ``STEM.*.draft~``) where listing every individual file
+        would be impractical.  Entries share the same TTL as
+        :meth:`expect_file_change` and the same bounded deque limit.
+
+        *pattern* is a ``fnmatch`` glob such as ``"/path/*.txt"`` or
+        ``"/path/folders/train/*"``.
+        """
+        with self._lock:
+            buf = self._expected_patterns.setdefault(
+                dataset_name, deque(maxlen=self._configuration.watcher_expected_file_max)
+            )
+            buf.append(ExpectedPatternEntry(pattern, time.monotonic(), source))
+            self._logger.debug(
+                "Registered expected pattern change. [dataset=%s, pattern=%s, source=%s, queue=%d]",
+                dataset_name,
+                pattern,
+                source,
+                len(buf),
+            )
+
     def _unwatch_dataset_locked(self, dataset_name: str) -> None:
         """Remove watches for a dataset (caller must hold self._lock)."""
         assert self._lock.locked(), "_unwatch_dataset_locked must be called with self._lock held"
@@ -182,6 +277,9 @@ class DatasetWatcherService(Service):
             timer.cancel()
 
         self._expected_sources.pop(dataset_name, None)
+        self._expected_files.pop(dataset_name, None)
+        self._expected_patterns.pop(dataset_name, None)
+        self._unexpected_changes.pop(dataset_name, None)
 
         watches = self._watches.pop(dataset_name, [])
         for watch, _handler in watches:
@@ -190,11 +288,53 @@ class DatasetWatcherService(Service):
             except Exception:
                 pass  # observer may already be stopped
 
-    def _on_fs_change(self, dataset_name: str) -> None:
+    def _on_fs_change(self, dataset_name: str, file_path: str) -> None:
         """Debounced callback — called by _DirEventHandler on any relevant change."""
         with self._lock:
-            # Cancel existing timer
+            # Check if this file was expected (within TTL).  We do NOT consume
+            # the entry on match — a single write can produce multiple inotify
+            # events, so the entry must remain valid for the TTL window.
+            now = time.monotonic()
+
+            # Exact path match
+            expected = self._expected_files.get(dataset_name)
+            matched = False
+            if expected:
+                for entry in expected:
+                    if entry.path == file_path and (now - entry.registered_at) < self._configuration.watcher_expected_file_ttl:
+                        matched = True
+                        break
+
+            # Pattern match (fnmatch glob)
+            if not matched:
+                patterns = self._expected_patterns.get(dataset_name)
+                if patterns:
+                    for entry in patterns:
+                        if fnmatch.fnmatch(file_path, entry.pattern) and (now - entry.registered_at) < self._configuration.watcher_expected_file_ttl:
+                            matched = True
+                            break
+
+            if matched:
+                self._logger.debug(
+                    "Expected file change matched. [dataset=%s, path=%s, queue=%d]",
+                    dataset_name,
+                    Path(file_path).name,
+                    len(expected) if expected else 0,
+                )
+            else:
+                # At least one unexpected change in this debounce window
+                was_unexpected = self._unexpected_changes.get(dataset_name, False)
+                self._unexpected_changes[dataset_name] = True
+                self._logger.debug(
+                    "Unexpected file change. [dataset=%s, path=%s, had_prior_unexpected=%s]",
+                    dataset_name,
+                    Path(file_path).name,
+                    was_unexpected,
+                )
+
+            # Cancel existing timer (debounce restart)
             old_timer = self._timers.pop(dataset_name, None)
+            is_rebatch = old_timer is not None
             if old_timer is not None:
                 old_timer.cancel()
 
@@ -203,9 +343,17 @@ class DatasetWatcherService(Service):
             job_id = self._expected_sources.get(dataset_name)
 
             # Schedule a new one
-            timer = threading.Timer(self._debounce_seconds, self._dispatch_change, args=(dataset_name, job_id))
+            timer = threading.Timer(self._configuration.watcher_debounce_seconds, self._dispatch_change, args=(dataset_name, job_id))
             timer.daemon = True
             self._timers[dataset_name] = timer
+
+            if is_rebatch:
+                self._logger.debug(
+                    "Debounce rebatched. [dataset=%s, job_id=%s, unexpected=%s]",
+                    dataset_name,
+                    job_id,
+                    self._unexpected_changes.get(dataset_name, False),
+                )
 
         timer.start()
 
@@ -213,6 +361,28 @@ class DatasetWatcherService(Service):
         """Dispatch a DatasetChangedEvent (called from debounce timer thread)."""
         with self._lock:
             self._timers.pop(dataset_name, None)
+            unexpected = self._unexpected_changes.pop(dataset_name, False)
+            expected_entries = self._expected_files.pop(dataset_name, deque())
+            expected_patterns = self._expected_patterns.pop(dataset_name, deque())
 
-        self._logger.debug("Dispatching dataset_changed event. [dataset=%s, job_id=%s]", dataset_name, job_id)
+        # If all changes in this debounce window were expected (no unexpected
+        # changes) and no captioning job_id, derive a source from the expected
+        # file entries and patterns so only the originating client tab suppresses.
+        suppressed = False
+        if not unexpected and job_id is None:
+            # Collect unique sources from both exact entries and patterns.
+            # If all share the same source, use it; otherwise fall back to SELF_JOB_ID.
+            sources = {entry.source for entry in expected_entries} | {entry.source for entry in expected_patterns}
+            job_id = sources.pop() if len(sources) == 1 else SELF_JOB_ID
+            suppressed = True
+
+        self._logger.debug(
+            "Dispatching dataset_changed. [dataset=%s, job_id=%s, unexpected=%s, expected=%d, patterns=%d, suppressed=%s]",
+            dataset_name,
+            job_id,
+            unexpected,
+            len(expected_entries),
+            len(expected_patterns),
+            suppressed,
+        )
         self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name, job_id=job_id))

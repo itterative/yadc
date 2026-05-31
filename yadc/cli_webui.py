@@ -2,6 +2,7 @@ import click
 
 from yadc.api.application import Application
 from yadc.api.configuration import Configuration
+from yadc.core import logging
 
 
 @click.group("webui")
@@ -24,6 +25,9 @@ def webui():
 def serve(host: str, port: int, cors: bool, banner: bool, log_level: str):
     """Start the web UI server."""
     import logging as _logging
+
+    # NOTE: temporary until we can properly merge the two logging systems (cli vs webui)
+    logging.set_level("ERROR")
 
     configuration = Configuration(
         http_host=host,

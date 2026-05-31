@@ -181,6 +181,7 @@ class AsyncCaptionJob:
         self,
         dataset_name: str,
         dataset_service: DatasetService,
+        dataset_watcher: DatasetWatcherService,
         event_dispatcher: EventDispatcher,
         logger: Logger,
         options: CaptionJobOptions,
@@ -189,6 +190,7 @@ class AsyncCaptionJob:
     ):
         self._dataset_name: str = dataset_name
         self._dataset_service: DatasetService = dataset_service
+        self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._event_dispatcher: EventDispatcher = event_dispatcher
         self._logger: Logger = logger
         self._opts: CaptionJobOptions = options
@@ -402,8 +404,16 @@ class AsyncCaptionJob:
             return ""
 
         if self._opts.draft:
+            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.draft_path(self._opts.draft)))
             dataset_image.write_draft(self._opts.draft, caption)
         else:
+            # Register all files that will be written so the watcher suppresses
+            # the resulting inotify events for this captioning job.
+            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.caption_path))
+            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.toml_path))
+            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.history_path))
+
+            # Save history of previous caption if present
             if dataset_image.caption:
                 dataset_image.save_history(when_not_exists=True)
             dataset_image.update_caption(caption)
@@ -557,6 +567,7 @@ class CaptioningService(Service):
             job = AsyncCaptionJob(
                 dataset_name=dataset_name,
                 dataset_service=self._dataset_service,
+                dataset_watcher=self._dataset_watcher,
                 event_dispatcher=self._event_dispatcher,
                 logger=self._logger,
                 options=options,
@@ -606,3 +617,9 @@ class CaptioningService(Service):
             if job is not None and not job.alive:
                 del self._async_jobs[dataset_name]
         self._dataset_watcher.clear_expected_changes_for_job(dataset_name, job_id)
+
+        # Final rescan to catch any edge cases (files added/removed by
+        # other processes during captioning). Per-image refresh_image_index
+        # calls already handled the captioning writes, so this is cheap
+        # when there are no external changes.
+        await self._dataset_service.rescan_dataset(dataset_name)

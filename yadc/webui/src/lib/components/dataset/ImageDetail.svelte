@@ -16,6 +16,7 @@
     } from '$lib/stores/datasetImages';
     import { captionSingleImage as startSingleCaptioning } from '$lib/stores/captionActions';
     import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
+    import { captionOptions } from '$lib/stores/captionActions';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
@@ -49,6 +50,9 @@
 
     // Track previous isCaptioning to detect completion and reload caption
     let wasCaptioning = $state(false);
+
+    // Draft name from the caption settings (used to show indication on the Caption button)
+    let activeDraftName = $derived($captionOptions?.draft?.trim() || '');
 
     // History state
     let historyEntries: HistoryEntry[] = $state([]);
@@ -159,26 +163,29 @@
     $effect(() => {
         const current = isCaptioning;
         if (wasCaptioning && !current && item !== null) {
+            // Always re-fetch full caption data (including drafts) after captioning completes.
+            // The SSE stored caption provides instant feedback but doesn't include drafts,
+            // which may have been created/updated by the captioning job.
+            isLoadingCaption = true;
+            captionError = null;
             const stored = getStoredCaption(item.id);
             if (stored !== undefined && captionData !== null) {
+                // Show the stored caption immediately for instant feedback
                 captionData = { ...captionData, caption: stored };
                 editCaption = stored;
                 clearStoredCaption(item.id);
-            } else {
-                isLoadingCaption = true;
-                captionError = null;
-                (async () => {
-                    try {
-                        const data = await fetchCaption(datasetName, item.id);
-                        captionData = data;
-                        editCaption = data.caption || '';
-                    } catch (e) {
-                        captionError = friendlyErrorMessage(e, 'Failed to load caption');
-                    } finally {
-                        isLoadingCaption = false;
-                    }
-                })();
             }
+            (async () => {
+                try {
+                    const data = await fetchCaption(datasetName, item.id);
+                    captionData = data;
+                    editCaption = data.caption || '';
+                } catch (e) {
+                    captionError = friendlyErrorMessage(e, 'Failed to load caption');
+                } finally {
+                    isLoadingCaption = false;
+                }
+            })();
         }
         wasCaptioning = current;
     });
@@ -299,7 +306,7 @@
                                     class="cursor-pointer text-xs text-accent hover:text-accent-hover"
                                     onclick={handleCaptionImage}
                                 >
-                                    Caption
+                                    {activeDraftName ? `Caption → ${activeDraftName}` : 'Caption'}
                                 </button>
                             {/if}
                             <button
@@ -335,7 +342,11 @@
                                 class="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-black/60 text-sm text-gray-300"
                             >
                                 <SvgSpinner class="h-4 w-4 animate-spin" />
-                                <span>Generating caption…</span>
+                                <span
+                                    >{activeDraftName
+                                        ? `Generating draft…`
+                                        : 'Generating caption…'}</span
+                                >
                             </div>
                         {:else if captioningError}
                             <div

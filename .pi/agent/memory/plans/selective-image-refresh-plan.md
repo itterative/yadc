@@ -40,17 +40,17 @@ Two new event types in `yadc/api/events.py`:
 - Add `ImageCaptionedEvent` and `ImageCaptionErrorEvent` dataclasses
 - `ImageCaptionedEvent` embeds the same fields as `ImageInfo` flattened directly on the event (avoids import cycle with `datasets.py`)
 
-#### 2. CaptionJob emits per-image events (`yadc/api/services/captioning.py`)
+#### 2. AsyncCaptionJob emits per-image events (`yadc/api/services/captioning.py`)
 
-- After `_caption_one()` succeeds in the captioning loop:
+- After `_acaption_one()` succeeds in the captioning loop:
   1. Call `self._dataset_service.refresh_image_index(dataset_name, image_id)` to update SQLite
   2. Call `self._dataset_service.get_image(dataset_name, image_id)` to get fresh `ImageInfo`
   3. Dispatch `ImageCaptionedEvent(dataset_name, job_id, image_info)`
 
-- When `_caption_one()` fails (in the `except` block):
+- When `_acaption_one()` fails (in the `except` block):
   1. Dispatch `ImageCaptionErrorEvent(dataset_name, job_id, image_id, error_message)`
 
-- **Need image_id lookup**: `CaptionJob` operates on `DatasetImage` (core model, filesystem paths). It needs to map the `DatasetImage.path` back to a SQLite `image_id`. Options:
+- **Need image_id lookup**: `AsyncCaptionJob` operates on `DatasetImage` (core model, filesystem paths). It needs to map the `DatasetImage.path` back to a SQLite `image_id`. Options:
   - **A)** Add a method `DatasetService.get_image_by_path(dataset_name, path) -> ImageInfo | None` — query by path. Simple and clean.
   - **B)** Pre-build a path→id map before the captioning loop starts (query all images once).
   
@@ -109,10 +109,10 @@ The dataset page subscribes to these stores in a `$effect` and updates the grid.
 ### Flow
 
 ```
-CaptionJob._do_run() loop:
+AsyncCaptionJob._ado_run() loop:
   for img in to_do:
     try:
-      _caption_one(model, img, ...)  → saves caption to disk
+      await _acaption_one(model, img, ...)  → saves caption to disk
       refresh_image_index(name, id)  → updates SQLite row
       get_image(name, id)            → reads fresh ImageInfo
       dispatch(ImageCaptionedEvent)  → SSE push → frontend updates tile
@@ -128,7 +128,7 @@ Frontend SSE handler:
 
 - **Page not open when events fire**: Events are consumed only when the page is mounted. Missed events are harmless — the full reload on `handleCaptioningDone` catches everything.
 - **HMR / reconnect**: If SSE reconnects, missed per-image events from the history buffer are replayed. The `updateImage` calls are idempotent.
-- **Single-image captioning**: Uses the same `CaptionJob` loop with `image_ids` filter — events flow identically.
+- **Single-image captioning**: Uses the same `AsyncCaptionJob` loop with `image_ids` filter — events flow identically.
 - **Draft mode**: When `opts.draft` is set, `has_caption` won't change but `draft_names` will — `refresh_image_index` picks this up.
 
 ## Phased implementation
@@ -136,7 +136,7 @@ Frontend SSE handler:
 ### Phase 1: Backend — events + emission ✅
 - Add `ImageCaptionedEvent` and `ImageCaptionErrorEvent` to `events.py`
 - Add `DatasetService.get_image_by_path()` helper
-- Modify `CaptionJob._do_run()` to dispatch per-image events
+- Modify `AsyncCaptionJob._ado_run()` to dispatch per-image events
 - Register handlers in `SSEEvents`
 
 ### Phase 2: Frontend — SSE parsing + tile updates ✅
@@ -165,7 +165,7 @@ Frontend SSE handler:
 |------|--------|
 | `yadc/api/events.py` | Add `ImageCaptionedEvent`, `ImageCaptionErrorEvent`, `ImageCaptionStartedEvent` |
 | `yadc/api/services/datasets.py` | Add `get_image_by_path()` method |
-| `yadc/api/services/captioning.py` | Emit per-image events (started + captioned/error) in `CaptionJob._do_run()` |
+| `yadc/api/services/captioning.py` | Emit per-image events (started + captioned/error) in `AsyncCaptionJob._ado_run()` |
 | `yadc/api/modules/sse_events.py` | Add `@event_handler` for new events |
 | `yadc/webui/src/lib/stores/events.ts` | Add Zod schemas, stores, SSE listeners (including `currentlyCaptioning`) |
 | `yadc/webui/src/lib/stores/datasetImages.ts` | Extend `ImageInfo` type with optional `caption_error` |

@@ -10,3 +10,8 @@ export function random(seed: number | undefined = undefined) {
         return current - Math.floor(current);
     };
 }
+
+/** Generate a short random ID string (base-36, no crypto dependency). */
+export function generateId(): string {
+    return Math.random().toString(36).slice(2, 12);
+}

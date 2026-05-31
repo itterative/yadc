@@ -10,7 +10,7 @@ date: 2026-05-27
 **Rationale:** The "derive from progress count" approach was ruled out because the frontend's image list may be paginated, filtered, or differently ordered from the backend's processing order. A dedicated event is precise and reliable.
 
 **Implementation details:**
-- Backend: `ImageCaptionStartedEvent(dataset_name, job_id, image_id, file_name)` dispatched before `_caption_one()`. One extra `get_image_by_path` DB query per image (cheap, indexed).
+- Backend: `ImageCaptionStartedEvent(dataset_name, job_id, image_id, file_name)` dispatched before `_acaption_one()`. One extra `get_image_by_path` DB query per image (cheap, indexed).
 - Frontend: `currentlyCaptioning` store auto-clears on `image_captioned`, `image_caption_error`, or terminal `captioning_status` events.
 - Animation: `::after` pseudo-element with `linear-gradient(110deg, ...)` sweeping from 150% to -150% over 3.5s. Accent color at 20-35% opacity. Uses `color-mix(in oklch, ...)` for the gradient bands.
 

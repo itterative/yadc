@@ -22,7 +22,7 @@
         currentlyCaptioning
     } from '$lib/stores/events';
     import { lastStartedJobId } from '$lib/stores/captionActions';
-    import { toast } from '$lib/stores/toasts';
+    import { toast, dismissToast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
     import {
         fetchDatasets,
@@ -108,12 +108,33 @@
 
     // --- Filesystem watcher state ---
 
-    let hasPendingChanges = $state(false);
+    let watcherToastId: string | null = $state(null);
 
+    // Show a toast when external filesystem changes are detected.
+    // Re-use the same toast id so rapid changes don't stack duplicates.
     $effect(() => {
         const name = datasetName;
         return pendingDatasetChanges.subscribe((set) => {
-            hasPendingChanges = set.has(name);
+            if (set.has(name)) {
+                if (!watcherToastId) {
+                    watcherToastId = toast.info('Dataset files have changed', {
+                        duration: 0,
+                        actions: [
+                            {
+                                label: 'Refresh',
+                                handler: () => {
+                                    handleRefreshFromWatcher();
+                                }
+                            }
+                        ]
+                    });
+                }
+            } else {
+                if (watcherToastId) {
+                    dismissToast(watcherToastId);
+                    watcherToastId = null;
+                }
+            }
         });
     });
 
@@ -164,6 +185,8 @@
             images = page.images;
             nextToken = page.next_token;
             hasMore = page.next_token !== null;
+            // We just loaded a fresh view — clear any stale pending-change flag
+            clearPendingDatasetChange(name);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load images');
             toast.error(`Failed to load images: ${error}`);
@@ -322,6 +345,11 @@
         if (!browser || !datasetName) {
             return;
         }
+        // Dismiss the toast and clear state before reloading
+        if (watcherToastId) {
+            dismissToast(watcherToastId);
+            watcherToastId = null;
+        }
         clearPendingDatasetChange(datasetName);
         loadInitial(datasetName);
         (async () => {
@@ -395,21 +423,6 @@
 </Topbar>
 
 <div class="flex h-full flex-col gap-4">
-    <!-- Filesystem change notification -->
-    {#if hasPendingChanges}
-        <div
-            class="flex items-center justify-between rounded-lg border border-blue-700/50 bg-blue-900/50 px-4 py-2"
-        >
-            <span class="text-sm text-blue-200">Dataset files have changed</span>
-            <button
-                class="cursor-pointer rounded-lg border border-blue-500/50 bg-blue-600/40 px-3 py-1.5 text-xs text-blue-200 transition-colors hover:bg-blue-600/60"
-                onclick={handleRefreshFromWatcher}
-            >
-                Refresh
-            </button>
-        </div>
-    {/if}
-
     <!-- SSE resumption failure notification -->
     <Alert
         variant="warning"

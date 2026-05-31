@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from yadc.api.events import DatasetChangedEvent
 from yadc.api.services.datasets import DatasetService, ImageInfo
 
 
@@ -135,3 +136,43 @@ def test_preview_prompt_returns_none_for_missing_file(service, tmp_path):
 
     result = service.preview_prompt("test_ds", 1, "")
     assert result is None
+
+
+class TestOnDatasetChangedSkipsSelfOriginated:
+    """Tests for _on_dataset_changed skipping rescan for self-originated changes."""
+
+    def test_skips_rescan_when_job_id_is_real(self, service):
+        """Events with a real job_id (captioning) should not trigger rescan."""
+        service.rescan_dataset = MagicMock(return_value=True)
+        event = DatasetChangedEvent(dataset_name="test_ds", job_id="abc123")
+
+        service._on_dataset_changed(event)
+
+        service.rescan_dataset.assert_not_called()
+
+    def test_skips_rescan_when_job_id_is_self(self, service):
+        """Events tagged as SELF_JOB_ID (webui edits) should not trigger rescan."""
+        service.rescan_dataset = MagicMock(return_value=True)
+        event = DatasetChangedEvent(dataset_name="test_ds", job_id="self")
+
+        service._on_dataset_changed(event)
+
+        service.rescan_dataset.assert_not_called()
+
+    def test_rescans_when_job_id_is_none(self, service):
+        """Events with no job_id (external change) should trigger rescan."""
+        service.rescan_dataset = MagicMock(return_value=True)
+        event = DatasetChangedEvent(dataset_name="test_ds", job_id=None)
+
+        service._on_dataset_changed(event)
+
+        service.rescan_dataset.assert_called_once_with("test_ds")
+
+    def test_rescans_when_job_id_is_empty(self, service):
+        """Events with empty string job_id should trigger rescan."""
+        service.rescan_dataset = MagicMock(return_value=True)
+        event = DatasetChangedEvent(dataset_name="test_ds", job_id="")
+
+        service._on_dataset_changed(event)
+
+        service.rescan_dataset.assert_called_once_with("test_ds")

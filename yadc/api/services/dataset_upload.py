@@ -17,13 +17,14 @@ import tomlkit
 from PIL import Image
 
 from yadc.api.configuration import Configuration
+from yadc.api.modules.dataset_watcher import SIDECAR_EXTENSIONS
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.modules.service import Service
 from yadc.api.services.datasets import DATASETS_DIR, IMAGE_EXTENSIONS, DatasetService, _dataset_config_path
 
 # Extensions allowed for uploaded files (images + sidecars).
-UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | frozenset({".txt", ".toml", ".draft~", ".history~"})
+UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
 
 
 @dataclass

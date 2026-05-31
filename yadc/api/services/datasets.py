@@ -32,7 +32,7 @@ from yadc.utils.dict_utils import toml_to_plain
 
 from ..configuration import Configuration
 from ..events import DatasetChangedEvent
-from ..modules.dataset_watcher import DatasetWatcherService
+from ..modules.dataset_watcher import SELF_JOB_ID, SIDECAR_EXTENSION_GLOBS, DatasetWatcherService
 from ..modules.db_connection_factory import DBConnectionFactory
 from ..modules.event_dispatcher import EventDispatcher, event_handler
 from ..modules.logging_factory import LoggingFactory
@@ -125,8 +125,7 @@ class DatasetService(Service):
         # Ensure state dir exists
         DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Configure watcher debounce and register existing datasets
-        watcher.set_debounce_seconds(configuration.watcher_debounce_seconds)
+        # Configure watcher and register existing datasets
         self._watch_existing_datasets()
 
         # Register for DatasetChangedEvent to auto-rescan
@@ -491,7 +490,7 @@ class DatasetService(Service):
 
         return result
 
-    def restore_history(self, dataset_name: str, image_id: int, history_index: int) -> bool:
+    def restore_history(self, dataset_name: str, image_id: int, history_index: int, *, source: str = SELF_JOB_ID) -> bool:
         """Restore caption + extras from a history entry.
 
         Saves the current state to history before restoring.
@@ -506,6 +505,11 @@ class DatasetService(Service):
             return False
 
         dataset_image = DatasetImage(path=str(image_path))
+
+        # Register expected file changes so the watcher suppresses the notification.
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.history_path), source=source)
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.caption_path), source=source)
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.toml_path), source=source)
 
         # Load current extras into the model so save_history captures them
         if dataset_image.toml_path.exists():
@@ -547,7 +551,7 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_caption=True)
         return True
 
-    def update_caption(self, dataset_name: str, image_id: int, caption: str) -> bool:
+    def update_caption(self, dataset_name: str, image_id: int, caption: str, *, source: str = SELF_JOB_ID) -> bool:
         """Update the caption file for an image. Saves history first. Returns True on success."""
         info = self.get_image(dataset_name, image_id)
         if info is None:
@@ -558,6 +562,11 @@ class DatasetService(Service):
             return False
 
         dataset_image = DatasetImage(path=str(image_path))
+
+        # Register expected file changes so the watcher suppresses the notification.
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.history_path), source=source)
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.caption_path), source=source)
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.toml_path), source=source)
 
         # Load current state and save to history before overwriting
         if dataset_image.toml_path.exists():
@@ -579,7 +588,7 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_caption=True)
         return True
 
-    def update_extras(self, dataset_name: str, image_id: int, extras_raw: str) -> bool:
+    def update_extras(self, dataset_name: str, image_id: int, extras_raw: str, *, source: str = SELF_JOB_ID) -> bool:
         """Update the TOML extras sidecar for an image. Saves history first. Returns True on success."""
         info = self.get_image(dataset_name, image_id)
         if info is None:
@@ -596,6 +605,10 @@ class DatasetService(Service):
             raise ValueError(f"Invalid TOML: {e}") from e
 
         dataset_image = DatasetImage(path=str(image_path))
+
+        # Register expected file changes so the watcher suppresses the notification.
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.history_path), source=source)
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.toml_path), source=source)
 
         # Load current state and save to history before overwriting
         current_extras: dict[str, Any] = {}
@@ -616,7 +629,7 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_toml=bool(extras_raw.strip()))
         return True
 
-    def delete_items(self, name: str, paths: list[str]) -> tuple[list[str], list[str]]:
+    def delete_items(self, name: str, paths: list[str], *, source: str = SELF_JOB_ID) -> tuple[list[str], list[str]]:
         """Delete files and/or folders from a managed dataset.
 
         Only works for datasets with ``source == "upload"``. For each
@@ -661,7 +674,7 @@ class DatasetService(Service):
             if rel.startswith(images_prefix):
                 file_path = images_dir / rel[len(images_prefix) :]
                 if file_path.exists() and file_path.is_file():
-                    self._delete_file_with_sidecars(file_path)
+                    self._delete_file_with_sidecars(file_path, name, source=source)
                     deleted.append(rel_path)
                     found = True
                 else:
@@ -671,10 +684,13 @@ class DatasetService(Service):
             elif rel.startswith(folders_prefix):
                 target = folders_dir / rel[len(folders_prefix) :]
                 if target.exists() and target.is_file():
-                    self._delete_file_with_sidecars(target)
+                    self._delete_file_with_sidecars(target, name, source=source)
                     deleted.append(rel_path)
                     found = True
                 elif target.exists() and target.is_dir():
+                    # Register a pattern for everything inside the folder so
+                    # the watcher treats the bulk deletion as expected.
+                    self._watcher.expect_pattern_change(name, str(target / "*"), source=source)
                     shutil.rmtree(target)
                     deleted.append(rel_path)
                     deleted_folder_names.append(rel[len(folders_prefix) :])
@@ -691,20 +707,21 @@ class DatasetService(Service):
             if not found:
                 file_path = images_dir / rel
                 if file_path.exists() and file_path.is_file():
-                    self._delete_file_with_sidecars(file_path)
+                    self._delete_file_with_sidecars(file_path, name, source=source)
                     deleted.append(rel_path)
                     found = True
 
             if not found:
                 file_path = folders_dir / rel
                 if file_path.exists() and file_path.is_file():
-                    self._delete_file_with_sidecars(file_path)
+                    self._delete_file_with_sidecars(file_path, name, source=source)
                     deleted.append(rel_path)
                     found = True
 
             if not found:
                 folder_path = folders_dir / rel
                 if folder_path.exists() and folder_path.is_dir():
+                    self._watcher.expect_pattern_change(name, str(folder_path / "*"), source=source)
                     shutil.rmtree(folder_path)
                     deleted.append(rel_path)
                     deleted_folder_names.append(rel)
@@ -768,10 +785,17 @@ class DatasetService(Service):
             with open(config_path, "w") as f:
                 f.write(tomlkit.dumps(doc))
 
-    def _delete_file_with_sidecars(self, file_path: Path) -> None:
+    def _delete_file_with_sidecars(self, file_path: Path, dataset_name: str = "", *, source: str = SELF_JOB_ID) -> None:
         """Delete an image file and all known sidecars in the same directory."""
         parent = file_path.parent
         stem = file_path.stem
+
+        # Register expected file changes before deletion so the watcher
+        # doesn't dispatch unexpected-change events for our own deletes.
+        if dataset_name:
+            self._watcher.expect_file_change(dataset_name, str(file_path), source=source)
+            for suffix in SIDECAR_EXTENSION_GLOBS:
+                self._watcher.expect_pattern_change(dataset_name, str(parent / f"{stem}{suffix}"), source=source)
 
         # Delete the image itself
         file_path.unlink(missing_ok=True)
@@ -1277,6 +1301,20 @@ class DatasetService(Service):
 
     @event_handler(DatasetChangedEvent)
     def _on_dataset_changed(self, event: DatasetChangedEvent) -> None:
-        """Auto-rescan when the watcher detects filesystem changes."""
+        """Auto-rescan when the watcher detects filesystem changes.
+
+        Skips the rescan when the change was self-originated (webui edit or
+        captioning job) — the API endpoints and per-image ``refresh_image_index``
+        calls already keep the DB up to date for those.  Only truly external
+        changes (new files, deletions by other processes) trigger a full rescan.
+        """
+        if event.job_id:
+            self._logger.debug(
+                "Skipping auto-rescan for self-originated change. [dataset=%s, job_id=%s]",
+                event.dataset_name,
+                event.job_id,
+            )
+            return
+
         self._logger.debug("Auto-rescanning dataset due to filesystem change. [dataset=%s]", event.dataset_name)
         self.rescan_dataset(event.dataset_name)

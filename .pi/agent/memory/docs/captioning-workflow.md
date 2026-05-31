@@ -54,15 +54,14 @@ In interactive mode, for each image the user can choose:
 
 ## Model Setup
 
-```
-APICaptioner(
+```python
+model = await APICaptioner.create(
     api_url, api_token, prompt_template,
     store_conversation, image_quality,
     reasoning, reasoning_effort, reasoning_exclude_output,
-    reasoning_start_token, reasoning_end_token,
-    cache, response_logger,
+    async_session=AsyncSession(api_url, headers=headers),
 )
-model.load_model(model_name)
+await model.load_model(model_name)
 ```
 
 ## Usage Logging

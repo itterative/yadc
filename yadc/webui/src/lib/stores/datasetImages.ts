@@ -1,6 +1,7 @@
 import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
 import { upload, type UploadProgress } from '$lib/upload';
 import { debounce } from '$lib/async';
+import { clientId } from './events';
 import { sessionPassword } from './sessionPassword';
 import { writable } from 'svelte/store';
 
@@ -299,11 +300,14 @@ export async function deleteDatasetItems(
     name: string,
     paths: string[]
 ): Promise<{ deleted: string[]; warnings: string[] }> {
-    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/items`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths })
-    });
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(name)}/items?source=${encodeURIComponent(clientId)}`,
+        {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths })
+        }
+    );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -379,7 +383,7 @@ export async function updateCaption(
     caption: string
 ): Promise<void> {
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`,
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption?source=${encodeURIComponent(clientId)}`,
         {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -410,7 +414,7 @@ export async function restoreHistory(
     historyIndex: number
 ): Promise<void> {
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${historyIndex}/restore`,
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${historyIndex}/restore?source=${encodeURIComponent(clientId)}`,
         { method: 'PUT', headers: { 'Content-Type': 'application/json' } }
     );
     if (!res.ok) {
@@ -424,7 +428,7 @@ export async function updateExtras(
     extrasRaw: string
 ): Promise<void> {
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/extras`,
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/extras?source=${encodeURIComponent(clientId)}`,
         {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },

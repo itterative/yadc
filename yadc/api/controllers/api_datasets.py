@@ -235,7 +235,7 @@ def api_datasets(
             return jsonify_error("Request body must include 'paths' array", status=400, code=ErrorCode.BAD_REQUEST)
 
         try:
-            deleted, warnings = datasets.delete_items(name, paths)
+            deleted, warnings = datasets.delete_items(name, paths, source=request.args.get("source", ""))
             return jsonify({"deleted": deleted, "warnings": warnings})
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
@@ -338,7 +338,7 @@ def api_datasets(
         if body is None or "caption" not in body:
             return jsonify_error("Request body must include 'caption'", status=400)
 
-        ok = datasets.update_caption(name, image_id, body["caption"])
+        ok = datasets.update_caption(name, image_id, body["caption"], source=request.args.get("source", ""))
         if not ok:
             return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
@@ -354,7 +354,7 @@ def api_datasets(
     @app.put("/datasets/<name>/images/<int:image_id>/history/<int:history_index>/restore")
     async def restore_image_history(name: str, image_id: int, history_index: int):  # pyright: ignore[reportUnusedFunction]
         """Restore caption + extras from a history entry."""
-        ok = datasets.restore_history(name, image_id, history_index)
+        ok = datasets.restore_history(name, image_id, history_index, source=request.args.get("source", ""))
         if not ok:
             return jsonify_error("Image or history entry not found", status=404)
         return jsonify({"status": "ok"})
@@ -367,7 +367,7 @@ def api_datasets(
             return jsonify_error("Request body must include 'extras_raw'", status=400)
 
         try:
-            ok = datasets.update_extras(name, image_id, body["extras_raw"])
+            ok = datasets.update_extras(name, image_id, body["extras_raw"], source=request.args.get("source", ""))
         except ValueError as e:
             return jsonify_error(str(e), status=400)
 

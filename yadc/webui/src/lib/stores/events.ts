@@ -13,6 +13,12 @@
  */
 
 import { browser } from '$app/environment';
+import { generateId } from '$lib/random';
+
+/** Unique ID for this browser tab, used to tag webui-originated changes
+ *  so only this tab suppresses the resulting DatasetChangedEvent.
+ *  Uses Math.random() since crypto.randomUUID() is unavailable over HTTP. */
+export const clientId = browser ? `ui:${generateId()}` : '';
 import { API_BASE } from '$lib/api';
 import { TypedEventSource } from '$lib/events';
 import { refreshEnvs } from '$lib/stores/envs';
@@ -278,13 +284,21 @@ function connect() {
     });
 
     _eventSource.listen('dataset_changed', DatasetChangedEventZ, (data) => {
-        // Suppress events caused by our own captioning jobs (but not other clients')
+        // Suppress events caused by our own captioning jobs or webui edits (but not other clients')
         if (data.job_id) {
             let suppress = false;
             _activeJobIds.subscribe((ids) => {
                 suppress = ids.includes(data.job_id!);
             })();
             if (suppress) {
+                return;
+            }
+            // Suppress events originating from this tab (webui edits, deletes, uploads)
+            if (data.job_id === clientId) {
+                return;
+            }
+            // Legacy: suppress events from older clients that still send "self"
+            if (data.job_id === 'self') {
                 return;
             }
         }

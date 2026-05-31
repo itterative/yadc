@@ -102,21 +102,13 @@ The dataset browser grid uses `overflow-y-auto` on its parent div, but images ne
 
 ## Watchdog job_id tag cleanup strategy
 
-The `DatasetWatcherService._expected_sources` dict maps `dataset_name → job_id` so that `DatasetChangedEvent`s carry the `job_id` of the captioning operation that caused them. This lets the initiating frontend suppress the "Dataset files have changed" banner.
+~~The `DatasetWatcherService._expected_sources` dict maps `dataset_name → job_id` so that `DatasetChangedEvent`s carry the `job_id` of the captioning operation that caused them. This lets the initiating frontend suppress the "Dataset files have changed" banner.~~ **DONE** — Replaced by the three-tier expected-change tracking system in `DatasetWatcherService` (see `docs/dataset-watcher.md`):
 
-**Problem**: The tag is never cleared, so any future filesystem event for that dataset (e.g. adding a new image hours later) would carry the stale `job_id`. If that `job_id` is still in the frontend's 16-item list, the notification would be incorrectly suppressed.
+- **Dataset-level** (`_expected_sources`): tags the dataset-level `job_id` for captioning jobs; cleared 5s after the job ends.
+- **File-level** (`_expected_files`): per-file TTL-based tracking via `expect_file_change(name, path, *, source)`. `source` is `"ui:<clientId>"` for webui edits (per-tab UUID) or `SELF_JOB_ID = "self"` for backend-only callers. Used by `DatasetService` (caption saves, extras updates, history restores, image deletes) and `AsyncCaptionJob._acaption_one()` (captioning writes).
+- **Pattern-level** (`_expected_patterns`): `fnmatch` globs for bulk deletions (`folder/*`, `STEM.*.draft~`); same TTL/deque semantics. Used by `ManagedDatasetsService.delete_items` (folder deletions) and the draft-delete path.
 
-**Challenge**: There's a fundamental race condition — we can't know when the *last* inotify event from a captioning session has been dispatched. Any timer-based clear is a heuristic:
-- Too short: late inotify events arrive after the tag is cleared → untagged event → spurious notification on the initiating frontend
-- Too long: legitimate external changes get tagged with a stale `job_id` → suppressed incorrectly
-
-**Possible approaches**:
-1. Timer-based clear with generous delay (e.g. 3-5x debounce interval). Pragmatic but racy.
-2. Have `CaptioningService` listen for `DatasetChangedEvent` via `@event_handler` and re-tag them directly — avoids the watcher tag entirely but is architecturally complex.
-3. Track a monotonic "captioning generation" per dataset in the watcher — `_dispatch_change` consumes the tag but stores it for a short grace period so the next event can still match.
-4. Use a different mechanism entirely (e.g. per-request SSE filtering instead of event tagging).
-
-The current implementation (never clearing) is being reverted. The job_id infrastructure in `DatasetChangedEvent`, `CaptioningService`, and the frontend `registerJobId`/bounded list should remain — only the watcher tag lifecycle needs a proper solution.
+All three are bounded deques (`watcher_expected_file_max`, default 256) with TTL expiry (`watcher_expected_file_ttl`, default 1.0s). Entries are NOT consumed on match because a single write can produce multiple inotify events. The frontend suppresses the event when the dispatched `job_id` matches its own `clientId`, an active captioning job_id, or the legacy `"self"` sentinel. The original race-condition concern is moot because file-level matching is the primary suppression mechanism — the dataset-level job_id is just a tag for downstream filtering.
 
 ## SSE captioning event reliability / resumption
 
