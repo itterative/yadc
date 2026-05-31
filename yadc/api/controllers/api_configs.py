@@ -1,5 +1,6 @@
 """Dataset config CRUD endpoints — view and edit the TOML configs stored in STATE_PATH."""
 
+from pathlib import Path
 from typing import Any
 
 import tomlkit
@@ -282,7 +283,48 @@ def api_configs(
         # Delete the restored entry so it doesn't clutter the list
         config_history.delete_entry(entry_id)
 
-        return get_config(name)
+        # Build response by reading the restored config directly
+        with open(info.config_path) as f:
+            content = f.read()
+
+        try:
+            parsed = tomlkit.loads(content)
+        except Exception:
+            parsed = {}
+
+        validation_error = None
+        if parsed:
+            try:
+                parse_config(toml_to_plain(parsed), strict=False)
+            except ValidationError as e:
+                validation_error = [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()]
+
+        # Check for missing folder paths (divergence between config and disk)
+        warnings: list[str] = []
+        try:
+            entries = parsed.get("dataset")
+            if isinstance(entries, list):
+                base_dir = Path(info.config_path).parent
+                for ds_entry in entries:
+                    if isinstance(ds_entry, dict):
+                        path_val = str(ds_entry.get("path", ""))
+                        if path_val.startswith("folders/"):
+                            folder_name = path_val[len("folders/"):]
+                            if not (base_dir / "folders" / folder_name).exists():
+                                warnings.append(f"Folder '{folder_name}' is referenced in config but no longer exists on disk.")
+        except Exception:
+            pass
+
+        result: dict[str, Any] = {
+            "name": name,
+            "config_path": info.config_path,
+            "content": content,
+            "parsed": parsed,
+            "validation_error": validation_error,
+        }
+        if warnings:
+            result["warnings"] = warnings
+        return jsonify(result)
 
     @app.delete("/configs/<name>")
     def delete_config(name: str):  # pyright: ignore[reportUnusedFunction]

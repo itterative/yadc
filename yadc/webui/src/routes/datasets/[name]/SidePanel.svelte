@@ -78,7 +78,12 @@
             </Tab>
             <Tab id="details" label="Details" class="h-full overflow-y-auto">
                 {#if focusedItem !== null}
-                    <ImageDetail {datasetName} item={focusedItem} {source} ondelete={onimagedelete} />
+                    <ImageDetail
+                        {datasetName}
+                        item={focusedItem}
+                        {source}
+                        ondelete={onimagedelete}
+                    />
                 {:else}
                     <div class="flex h-full items-center justify-center py-4 text-sm text-gray-500">
                         Select an image to view details

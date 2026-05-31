@@ -480,8 +480,13 @@
     function handleConfigSaved() {
         configVersion++;
         toast.success('Config saved');
-        // Re-fetch config so the form reflects the actual on-disk state
-        // (especially needed after a history restore, but harmless after normal saves)
+        onsaved?.();
+    }
+
+    function handleHistoryRestored() {
+        configVersion++;
+        toast.success('Config restored');
+        // Re-fetch config so the form reflects the restored on-disk state
         loadConfig();
         onsaved?.();
     }
@@ -509,6 +514,11 @@
             <!-- ═══ View mode toggle ═══ -->
             <CompactPillTabs bind:value={activeView} class="h-full">
                 <Tab id="simplified" label="Form" icon={SvgFile} class="flex flex-col gap-4">
+                    {#if rawDirty}
+                        <div class="alert-info text-xs">
+                            Advanced view has unsaved changes that are not reflected here.
+                        </div>
+                    {/if}
                     <!-- ═══ Simplified mode: structured form ═══ -->
 
                     <!-- ═══ Info: Dataset source & path ═══ -->
@@ -739,23 +749,27 @@
                 </Tab>
                 <Tab id="advanced" label="Advanced" icon={SvgEdit} class="h-full">
                     <div class="flex h-full flex-col gap-2">
+                        {#if simplifiedDirty}
+                            <div class="alert-info text-xs">
+                                Form view has unsaved changes that are not reflected here.
+                            </div>
+                        {/if}
                         <TomlEditor
                             class="rounded-md border border-border text-sm"
-                            value={rawContent}
+                            bind:value={rawContent}
                             editable={true}
-                            onchange={(v) => (rawContent = v)}
                         />
                         {#if source === 'upload'}
                             <p class="text-xs text-gray-500">
-                                Editing <code class="rounded bg-gray-800 px-1 py-0.5 text-gray-300">[[dataset]]</code>
-                                paths for managed datasets will be rejected by the server. Use the Upload tab to add or
-                                remove images.
+                                Editing <code>[[dataset]]</code>
+                                paths for managed datasets will be rejected by the server. Use the Upload
+                                tab to add or remove images.
                             </p>
                         {/if}
                     </div>
                 </Tab>
                 <Tab id="history" label="History" icon={SvgHistory} class="h-full">
-                    <ConfigHistory {datasetName} {configVersion} onsaved={handleConfigSaved} />
+                    <ConfigHistory {datasetName} {configVersion} onsaved={handleHistoryRestored} />
                 </Tab>
             </CompactPillTabs>
         {/if}

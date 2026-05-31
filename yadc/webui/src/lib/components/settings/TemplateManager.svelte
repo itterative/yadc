@@ -66,8 +66,7 @@
         }
     }
 
-    function handleTemplateContentChange(value: string) {
-        templateContent = value;
+    function handleTemplateContentChange() {
         templateDirty = true;
     }
 
@@ -224,7 +223,7 @@
             <div class="min-h-0 flex-1 overflow-hidden">
                 <JinjaEditor
                     class="rounded-md border border-border"
-                    value={templateContent}
+                    bind:value={templateContent}
                     onchange={handleTemplateContentChange}
                 />
             </div>

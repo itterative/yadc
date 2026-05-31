@@ -7,11 +7,11 @@
     import { unifiedMergeView } from '@codemirror/merge';
 
     interface Props {
-        /** Raw TOML text to display. */
-        value: string;
+        /** Raw TOML text. Bindable — use `bind:value` for two-way sync. */
+        value?: string;
         /** Whether the editor is editable. Defaults to true. */
         editable?: boolean;
-        /** Called when the document text changes (only when editable). */
+        /** Called when the document text changes (only when editable). Useful for side effects like dirty flags. */
         onchange?: (value: string) => void;
         class?: string;
         /** When set, renders a unified diff between original and value. Overrides editable to false. */
@@ -23,7 +23,7 @@
     }
 
     let {
-        value,
+        value = $bindable(''),
         editable = true,
         onchange,
         class: klazz = '',
@@ -31,6 +31,11 @@
         autoHeight = false,
         compactDiff = false
     }: Props = $props();
+
+    function handleChange(text: string) {
+        value = text;
+        onchange?.(text);
+    }
 
     let extensions = $derived.by(() => {
         const extensions = [minimalSetup, StreamLanguage.define(toml), EditorView.lineWrapping];
@@ -62,7 +67,7 @@
     doc={value}
     {extensions}
     editable={editable && original === undefined}
-    {onchange}
+    onchange={handleChange}
     class={klazz}
     {autoHeight}
 />

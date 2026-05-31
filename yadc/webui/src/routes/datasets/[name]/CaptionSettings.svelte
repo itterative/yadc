@@ -377,8 +377,7 @@
         }
     }
 
-    function handleTemplateContentChange(content: string) {
-        templateContent = content;
+    function handleTemplateContentChange() {
         templateDirty = true;
     }
 
@@ -561,7 +560,7 @@
                 {:else}
                     <JinjaEditor
                         class="rounded-md border border-border text-sm"
-                        value={templateContent}
+                        bind:value={templateContent}
                         onchange={handleTemplateContentChange}
                     />
                 {/if}

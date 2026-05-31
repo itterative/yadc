@@ -102,24 +102,21 @@ def upload_service(mock_datasets, configuration, mock_logging):
     )
 
 
-# Patch STATE_PATH so _dataset_state_dir writes into tmp_path
+# Patch DATASETS_DIR so dataset writes go into tmp_path
 @pytest.fixture(autouse=True)
 def patch_state_path(tmp_path):
     state_path = tmp_path / "state"
     state_path.mkdir()
+    datasets_dir = state_path / "datasets"
+    datasets_dir.mkdir()
     with (
-        patch("yadc.api.services.dataset_upload._dataset_state_dir") as mock_dir,
+        patch("yadc.api.services.dataset_upload.DATASETS_DIR", datasets_dir),
         patch("yadc.api.services.dataset_upload._dataset_config_path") as mock_config,
-        patch("yadc.api.services.dataset_upload.STATE_PATH", state_path),
     ):
 
-        def _dir(name: str) -> Path:
-            return state_path / name
-
         def _config(name: str) -> Path:
-            return state_path / name / "config.toml"
+            return datasets_dir / name / "config.toml"
 
-        mock_dir.side_effect = _dir
         mock_config.side_effect = _config
         yield
 
@@ -145,7 +142,7 @@ def patch_validate_append(append_service):
 @pytest.fixture
 def managed_dataset(tmp_path):
     """Create a real managed dataset directory and return its info."""
-    base = tmp_path / "state" / "managed"
+    base = tmp_path / "state" / "datasets" / "managed"
     base.mkdir(parents=True)
     images_dir = base / "images"
     folders_dir = base / "folders"
@@ -403,13 +400,13 @@ def test_all_orphan_sidecars_aborts(upload_service):
 def test_folder_file_written_correctly(upload_service, tmp_path):
     run(_collect(upload_service, "ds", [_file("train/img.jpg", _make_bytes())]))
     state_path = tmp_path / "state"
-    assert (state_path / "ds" / "folders" / "train" / "img.jpg").exists()
+    assert (state_path / "datasets" / "ds" / "folders" / "train" / "img.jpg").exists()
 
 
 def test_root_file_written_to_images_dir(upload_service, tmp_path):
     run(_collect(upload_service, "ds", [_file("img.jpg", _make_bytes())]))
     state_path = tmp_path / "state"
-    assert (state_path / "ds" / "images" / "img.jpg").exists()
+    assert (state_path / "datasets" / "ds" / "images" / "img.jpg").exists()
 
 
 def test_multiple_folders_generate_multiple_dataset_entries(upload_service, tmp_path):
@@ -420,7 +417,7 @@ def test_multiple_folders_generate_multiple_dataset_entries(upload_service, tmp_
             [_file("train/a.jpg", _make_bytes()), _file("val/b.jpg", _make_bytes())],
         )
     )
-    config = toml.load(tmp_path / "state" / "ds" / "config.toml")
+    config = toml.load(tmp_path / "state" / "datasets" / "ds" / "config.toml")
     paths = [e["path"] for e in config["dataset"]]
     assert len(paths) == 2
     assert any("train" in p for p in paths)
@@ -435,7 +432,7 @@ def test_root_and_folder_combined(upload_service, tmp_path):
             [_file("root.jpg", _make_bytes()), _file("train/a.jpg", _make_bytes())],
         )
     )
-    config = toml.load(tmp_path / "state" / "ds" / "config.toml")
+    config = toml.load(tmp_path / "state" / "datasets" / "ds" / "config.toml")
     paths = [e["path"] for e in config["dataset"]]
     assert len(paths) == 2  # images/ + folders/train
 
@@ -479,7 +476,7 @@ def test_cleanup_on_register_failure(upload_service, tmp_path):
     assert "db error" in error
 
     # The dataset directory should be cleaned up
-    assert not (state_path / "ds").exists()
+    assert not (state_path / "datasets" / "ds").exists()
 
 
 # --- Real validation methods (exercises actual PIL / toml) ---
@@ -539,7 +536,7 @@ def test_backslash_converted_to_forward_slash(upload_service, tmp_path):
     result = _result_from_events(events)
     assert len(result.warnings) == 0
     state_path = tmp_path / "state"
-    assert (state_path / "ds" / "folders" / "train" / "img.jpg").exists()
+    assert (state_path / "datasets" / "ds" / "folders" / "train" / "img.jpg").exists()
 
 
 # --- Progress events ---
@@ -1028,9 +1025,7 @@ def test_delete_folder(managed_dataset, dataset_service_for_delete):
     (train_dir / "img.txt").write_text("train caption")
 
     config_path = managed_dataset["config_path"]
-    config_path.write_text(
-        toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]})
-    )
+    config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]}))
 
     deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/train"])
     assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
@@ -1096,9 +1091,7 @@ def test_delete_subfolder_named_images(managed_dataset, dataset_service_for_dele
     (images_subdir / "sub.jpg").write_bytes(b"sub")
 
     config_path = managed_dataset["config_path"]
-    config_path.write_text(
-        toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]})
-    )
+    config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]}))
 
     deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/images"])
     assert f"{MANAGED_FOLDERS_PREFIX}/images" in deleted

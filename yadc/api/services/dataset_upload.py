@@ -1,7 +1,7 @@
 """Dataset upload service — handles file uploads for dataset creation.
 
 Validates, writes, and indexes uploaded image files (plus sidecars) into
-a new dataset under ``STATE_PATH/<name>/``.
+a new dataset under ``STATE_PATH/datasets/<name>/``.
 """
 
 import shutil
@@ -13,7 +13,6 @@ from logging import Logger
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
-import toml
 import tomlkit
 from PIL import Image
 
@@ -21,8 +20,7 @@ from yadc.api.configuration import Configuration
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.modules.service import Service
-from yadc.api.services.datasets import IMAGE_EXTENSIONS, DatasetService, _dataset_config_path, _dataset_state_dir
-from yadc.cmd.app import STATE_PATH
+from yadc.api.services.datasets import DATASETS_DIR, IMAGE_EXTENSIONS, DatasetService, _dataset_config_path
 
 # Extensions allowed for uploaded files (images + sidecars).
 UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | frozenset({".txt", ".toml", ".draft~", ".history~"})
@@ -86,9 +84,9 @@ class DatasetUploadService(Service):
         """Remove stale staging directories older than 24 hours."""
         now = time.time()
         max_age = 24 * 3600  # 24 hours
-        if not STATE_PATH.exists():
+        if not DATASETS_DIR.exists():
             return
-        for base_dir in STATE_PATH.iterdir():
+        for base_dir in DATASETS_DIR.iterdir():
             if not base_dir.is_dir():
                 continue
             staging_dir = base_dir / ".staging"
@@ -131,7 +129,7 @@ class DatasetUploadService(Service):
         content = stream.read()
         stream.seek(0)
         try:
-            toml.loads(content.decode("utf-8"))
+            tomlkit.loads(content.decode("utf-8"))
             return True
         except Exception:
             return False
@@ -140,9 +138,9 @@ class DatasetUploadService(Service):
         """Create a new dataset from uploaded image files.
 
         Root files (no directory component) are written flat to
-        ``STATE_PATH/<name>/images/``. Files with exactly one directory
+        ``STATE_PATH/datasets/<name>/images/``. Files with exactly one directory
         component (e.g. ``train/cat.jpg``) are written to
-        ``STATE_PATH/<name>/folders/``. Nested files (deeper than one
+        ``STATE_PATH/datasets/<name>/folders/``. Nested files (deeper than one
         directory level) are skipped with a warning. The generated config
         has one ``[[dataset]]`` entry for ``images/`` and one per
         top-level folder inside ``folders/``.
@@ -160,7 +158,7 @@ class DatasetUploadService(Service):
         if not files:
             raise ValueError("At least one file is required")
 
-        base_dir = _dataset_state_dir(name)
+        base_dir = DATASETS_DIR / name
         images_dir = base_dir / "images"
         folders_dir = base_dir / "folders"
         images_dir.mkdir(parents=True, exist_ok=True)
@@ -289,11 +287,14 @@ class DatasetUploadService(Service):
             for folder_name in sorted(folder_names):
                 dataset_entries.append({"path": f"folders/{folder_name}"})
 
+            # Managed datasets use relative paths (e.g. "images", "folders/train")
+            # for portability. Paths are resolved against config.toml's directory
+            # at scan time.
             raw: dict[str, Any] = {"dataset": dataset_entries}
 
             dest = _dataset_config_path(name)
             with open(dest, "w") as f:
-                toml.dump(raw, f)
+                tomlkit.dump(raw, f)
 
             dataset = self._datasets.register(name, str(dest), source="upload")
             yield UploadProgressEvent(phase="complete", dataset=dataset, warnings=warnings)
@@ -466,6 +467,7 @@ class DatasetUploadService(Service):
         # --- Phase 4: detect conflicts (grouped by stem) ---
         # Build groups: group_key -> { "image": Path|None, "sidecars": [Path] }
         from collections import defaultdict
+
         staged_groups: dict[tuple[str, str], dict[str, Any]] = defaultdict(lambda: {"image": None, "sidecars": []})
         for _filename, _stream, pure, dest_path in final_files:
             dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
@@ -507,11 +509,13 @@ class DatasetUploadService(Service):
                 # Representative file: image if present, else first sidecar
                 rep_path = group["image"] if group["image"] is not None else group["sidecars"][0]
                 rep_pure = PurePosixPath(rep_path.relative_to(staging_base).as_posix().replace("images/", "").replace("folders/", ""))
-                conflicts.append({
-                    "file": str(rep_pure),
-                    "existing_size": conflict_live_path.stat().st_size,
-                    "new_size": conflict_staged_path.stat().st_size,
-                })
+                conflicts.append(
+                    {
+                        "file": str(rep_pure),
+                        "existing_size": conflict_live_path.stat().st_size,
+                        "new_size": conflict_staged_path.stat().st_size,
+                    }
+                )
 
         if conflicts:
             yield UploadProgressEvent(
@@ -546,6 +550,8 @@ class DatasetUploadService(Service):
         info = self._datasets.get_dataset(name)
         if info is None or not info.config_path:
             raise ValueError(f"Dataset '{name}' not found or has no config path")
+        if info.source != "upload":
+            raise ValueError(f"Dataset '{name}' is not a managed dataset")
 
         base_dir = Path(info.config_path).parent
         staging_base = base_dir / ".staging" / staging_id
@@ -559,6 +565,7 @@ class DatasetUploadService(Service):
 
         # Build groups from staged files
         from collections import defaultdict
+
         staged_groups: dict[tuple[str, str], dict[str, Any]] = defaultdict(lambda: {"image": None, "sidecars": []})
         all_staged_files: list[Path] = []
 

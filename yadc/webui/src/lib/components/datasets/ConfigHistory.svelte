@@ -72,7 +72,11 @@
         if (restoringId !== null) {
             return;
         }
-        if (!confirmDialog.danger('Restore this revision? The current config will be saved to history first.')) {
+        if (
+            !(await confirmDialog.danger(
+                'Restore this revision? The current config will be saved to history first.'
+            ))
+        ) {
             return;
         }
         restoringId = entry.id;

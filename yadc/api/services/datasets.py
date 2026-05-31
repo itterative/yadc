@@ -1,17 +1,17 @@
 """Dataset service — filesystem scanning, SQLite indexing, and image queries.
 
 A "dataset" is a named yadc config TOML stored in the XDG state directory
-(``STATE_PATH/<name>/config.toml``). The TOML is the source of truth — it
-defines API settings, prompts, and ``[[dataset]]`` entries pointing to image
-directories.
+(``STATE_PATH/datasets/<name>/config.toml``). The TOML is the
+source of truth — it defines API settings, prompts, and ``[[dataset]]``
+entries pointing to image directories.
 
 Two registration flows:
 
-- **Import**: copy an existing TOML into the state dir (resolving relative
-  paths to absolute first).
+- **Import**: register an existing TOML path (resolving relative paths to
+  absolute first).
 - **Create**: write a fresh TOML with the given image paths.
 
-Both end up as ``STATE_PATH/<name>/config.toml``.
+Both end up as ``STATE_PATH/datasets/<name>/config.toml``.
 """
 
 import shutil
@@ -41,19 +41,17 @@ from ..modules.service import Service
 # Image extensions we recognize (matching what PIL can open).
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
 
+# Base directory for all dataset state directories.
+DATASETS_DIR: Path = STATE_PATH / "datasets"
+
 # Prefixes for managed dataset directory layout (used in config paths and deletion API).
 MANAGED_IMAGES_PREFIX: str = "images"
 MANAGED_FOLDERS_PREFIX: str = "folders"
 
 
-def _dataset_state_dir(name: str) -> Path:
-    """Return the state directory for a named dataset."""
-    return STATE_PATH / name
-
-
 def _dataset_config_path(name: str) -> Path:
     """Return the config TOML path for a named dataset."""
-    return _dataset_state_dir(name) / "config.toml"
+    return DATASETS_DIR / name / "config.toml"
 
 
 @dataclass
@@ -125,7 +123,7 @@ class DatasetService(Service):
         self._configuration: Configuration = configuration
         self._logger: Logger = logging.get_logger(__name__)
         # Ensure state dir exists
-        STATE_PATH.mkdir(parents=True, exist_ok=True)
+        DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
         # Configure watcher debounce and register existing datasets
         watcher.set_debounce_seconds(configuration.watcher_debounce_seconds)
@@ -661,7 +659,7 @@ class DatasetService(Service):
 
             # Explicit prefixed paths (preferred)
             if rel.startswith(images_prefix):
-                file_path = images_dir / rel[len(images_prefix):]
+                file_path = images_dir / rel[len(images_prefix) :]
                 if file_path.exists() and file_path.is_file():
                     self._delete_file_with_sidecars(file_path)
                     deleted.append(rel_path)
@@ -671,7 +669,7 @@ class DatasetService(Service):
                     continue
 
             elif rel.startswith(folders_prefix):
-                target = folders_dir / rel[len(folders_prefix):]
+                target = folders_dir / rel[len(folders_prefix) :]
                 if target.exists() and target.is_file():
                     self._delete_file_with_sidecars(target)
                     deleted.append(rel_path)
@@ -679,7 +677,7 @@ class DatasetService(Service):
                 elif target.exists() and target.is_dir():
                     shutil.rmtree(target)
                     deleted.append(rel_path)
-                    deleted_folder_names.append(rel[len(folders_prefix):])
+                    deleted_folder_names.append(rel[len(folders_prefix) :])
                     found = True
                 else:
                     warnings.append(f"Not found: {rel_path}")
@@ -755,7 +753,6 @@ class DatasetService(Service):
         if not config_path.exists():
             return
 
-
         with open(config_path) as f:
             doc = tomlkit.parse(f.read())
 
@@ -816,11 +813,7 @@ class DatasetService(Service):
         def _count_images(dir_path: Path) -> int:
             if not dir_path.exists():
                 return 0
-            return sum(
-                1
-                for f in dir_path.iterdir()
-                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-            )
+            return sum(1 for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS)
 
         if images_dir.exists() and images_dir.is_dir():
             result.append(
@@ -873,8 +866,8 @@ class DatasetService(Service):
     def create_dataset(self, name: str, image_paths: list[str]) -> DatasetInfo:
         """Create a new dataset with the given image directories.
 
-        Writes a minimal TOML to ``STATE_PATH/<name>/config.toml`` with one
-        ``[[dataset]]`` entry per path.
+        Writes a minimal TOML to ``STATE_PATH/datasets/<name>/config.toml``
+        with one ``[[dataset]]`` entry per path.
         """
         if not image_paths:
             raise ValueError("At least one image path is required")
@@ -891,7 +884,7 @@ class DatasetService(Service):
         for ip in resolved_paths:
             raw["dataset"].append({"path": ip})
 
-        dest_dir = _dataset_state_dir(name)
+        dest_dir = DATASETS_DIR / name
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = _dataset_config_path(name)
         with open(dest, "w") as f:
@@ -936,7 +929,7 @@ class DatasetService(Service):
             conn.close()
 
         if found:
-            state_dir = _dataset_state_dir(name)
+            state_dir = DATASETS_DIR / name
             if state_dir.is_dir():
                 shutil.rmtree(state_dir, ignore_errors=True)
 

@@ -578,6 +578,11 @@ class CaptioningService(Service):
             job.request_stop()
             return True
 
+    def is_captioning(self, dataset_name: str) -> bool:
+        """Return ``True`` if a captioning job is actively running for *dataset_name*."""
+        job = self._async_jobs.get(dataset_name)
+        return job is not None and job.alive
+
     async def get_status_async(self, dataset_name: str) -> JobInfo:
         """Return a snapshot of the async job status for *dataset_name*."""
         async with self._async_lock:

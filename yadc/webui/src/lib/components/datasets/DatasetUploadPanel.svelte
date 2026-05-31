@@ -249,10 +249,17 @@
                     {#each conflicts as c (c.file)}
                         <tr>
                             <td class="px-3 py-2 font-mono text-xs">{c.file}</td>
-                            <td class="px-3 py-2 text-right text-gray-400">{formatBytes(c.existing_size)}</td>
-                            <td class="px-3 py-2 text-right text-gray-400">{formatBytes(c.new_size)}</td>
+                            <td class="px-3 py-2 text-right text-gray-400"
+                                >{formatBytes(c.existing_size)}</td
+                            >
+                            <td class="px-3 py-2 text-right text-gray-400"
+                                >{formatBytes(c.new_size)}</td
+                            >
                             <td class="px-3 py-2">
-                                <select class="input py-1 text-xs" bind:value={conflictResolutions[c.file]}>
+                                <select
+                                    class="input py-1 text-xs"
+                                    bind:value={conflictResolutions[c.file]}
+                                >
                                     <option value="overwrite">Overwrite</option>
                                     <option value="skip">Skip</option>
                                     <option value="keep_both">Keep Both</option>

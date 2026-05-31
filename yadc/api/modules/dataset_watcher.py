@@ -116,6 +116,12 @@ class DatasetWatcherService(Service):
     def watch_dataset(self, dataset_name: str, paths: list[str]) -> None:
         """Add directories to watch for a dataset."""
         with self._lock:
+            # Preserve the expected-changes tag across re-registration
+            # (e.g. when rescan_dataset() re-watches after a path change).
+            # _unwatch_dataset_locked() clears it, but captioning jobs expect
+            # it to remain active until explicitly cleared.
+            saved_source = self._expected_sources.get(dataset_name)
+
             # Remove any existing watches for this dataset first
             self._unwatch_dataset_locked(dataset_name)
 
@@ -132,6 +138,10 @@ class DatasetWatcherService(Service):
                 watches.append((watch, handler))
 
             self._watches[dataset_name] = watches
+
+            # Restore the expected-changes tag if one was active
+            if saved_source is not None:
+                self._expected_sources[dataset_name] = saved_source
 
     def unwatch_dataset(self, dataset_name: str) -> None:
         """Remove all watched directories for a dataset."""
@@ -164,6 +174,8 @@ class DatasetWatcherService(Service):
 
     def _unwatch_dataset_locked(self, dataset_name: str) -> None:
         """Remove watches for a dataset (caller must hold self._lock)."""
+        assert self._lock.locked(), "_unwatch_dataset_locked must be called with self._lock held"
+
         # Cancel any pending debounce timer
         timer = self._timers.pop(dataset_name, None)
         if timer is not None:

@@ -26,6 +26,7 @@
     let content = $state('');
     let templateSource: 'user' | 'builtin' | '' = $state('');
     let isLoading = $state(false);
+    let templateVariables: string[] = $state([]);
     let isSaving = $state(false);
     let error: string | null = $state(null);
 
@@ -128,10 +129,21 @@
             <div class="max-h-[55vh] min-h-0 min-h-[200px] flex-1 overflow-y-auto">
                 <JinjaEditor
                     class="rounded-md border border-border"
-                    value={content}
-                    onchange={(v) => (content = v)}
+                    bind:value={content}
+                    bind:variables={templateVariables}
                 />
             </div>
+            {#if templateVariables.length > 0}
+                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span class="text-xs text-gray-500">Variables:</span>
+                    {#each templateVariables as v (v)}
+                        <code
+                            class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent"
+                            >{v}</code
+                        >
+                    {/each}
+                </div>
+            {/if}
         {/if}
 
         <div class="btn-bar mt-4">

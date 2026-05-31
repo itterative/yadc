@@ -8,6 +8,7 @@ from quart import Response, jsonify, request, send_file
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from ..services.captioning import CaptioningService
 from ..services.config_history import ConfigHistoryService
 from ..services.dataset_upload import DatasetUploadService
 from ..services.datasets import DatasetService
@@ -55,6 +56,7 @@ def api_datasets(
     datasets: DatasetService,
     dataset_upload: DatasetUploadService,
     config_history: ConfigHistoryService,
+    captioning: CaptioningService,
 ):
     _logger = logging.get_logger(__name__)
     _thumb_cache_dir = Path(configuration.cache_path) / "thumbnails"
@@ -150,6 +152,9 @@ def api_datasets(
         - {"phase": "complete", "dataset": {...}, "warnings": [...]}
         - {"phase": "error", "message": "..."}
         """
+        if captioning.is_captioning(name):
+            return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
+
         files = await request.files
         uploaded = files.getlist("files")
         if not uploaded:
@@ -187,6 +192,9 @@ def api_datasets(
         - {"phase": "complete", "dataset": {...}, "warnings": [...]}
         - {"phase": "error", "message": "..."}
         """
+        if captioning.is_captioning(name):
+            return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
+
         body = await request.get_json(silent=True) or {}
         staging_id = body.get("staging_id", "")
         resolutions = body.get("resolutions", {})
@@ -218,6 +226,9 @@ def api_datasets(
         Returns:
             {"deleted": ["foo.jpg", "train"], "warnings": []}
         """
+        if captioning.is_captioning(name):
+            return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
+
         body = await request.get_json(silent=True) or {}
         paths = body.get("paths", [])
         if not paths:
@@ -250,6 +261,9 @@ def api_datasets(
     @app.delete("/datasets/<name>")
     def delete_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
         """Unregister a dataset and delete its state dir."""
+        if captioning.is_captioning(name):
+            return jsonify_error("Cannot delete dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
+
         found = datasets.unregister_dataset(name)
         if not found:
             return jsonify_error("Dataset not found", status=404)

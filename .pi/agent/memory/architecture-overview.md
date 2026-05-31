@@ -143,10 +143,10 @@ yadc/
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history (TOML entries separated by `----------` markers), `.<name>.draft~` for named drafts. History is saved on every caption update (both captioning jobs and manual webui edits) and extras updates. History entries can be browsed and restored via `GET /images/<id>/history` and `PUT /images/<id>/history/<index>/restore`.
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
 - **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
-- **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/<name>/config.toml`. Three creation flows:
+- **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/datasets/<name>/config.toml` (for created/uploaded datasets) or at an external path (for imported datasets). Three creation flows:
   - `import_dataset(name, toml_path)` — copies existing TOML to state dir (resolving relative paths).
-  - `create_dataset(name, image_paths)` — generates a new TOML pointing to external directories.
-  - `create_dataset_from_upload(name, files)` — creates a self-contained dataset from uploaded files (images + sidecars). Stores files in `STATE_PATH/<name>/images/` (root files flat) and `STATE_PATH/<name>/folders/` (folder uploads, one subdir per top-level folder). Returns `DatasetUploadResult` (dataset + warnings list).
+  - `create_dataset(name, image_paths)` — generates a new TOML at `STATE_PATH/datasets/<name>/config.toml` pointing to external directories.
+  - `create_dataset_from_upload(name, files)` — creates a self-contained dataset from uploaded files (images + sidecars). Stores files in `STATE_PATH/datasets/<name>/images/` (root files flat) and `STATE_PATH/datasets/<name>/folders/` (folder uploads, one subdir per top-level folder). Returns `DatasetUploadResult` (dataset + warnings list).
   - `name` is the unique key — no `path` column.
 - **Upload endpoint**: `POST /api/datasets/upload` accepts `multipart/form-data` with `name` + `files`. Two-stage image validation (`Image.verify()` fast check, `Image.load()` fallback), TOML syntax validation, orphan sidecar detection, atomic cleanup on failure. Configurable `max_upload_size_bytes` limit.
 - **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Quart only serves `GET /` + static assets.

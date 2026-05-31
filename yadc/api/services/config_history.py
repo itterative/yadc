@@ -44,9 +44,16 @@ class ConfigHistoryService(Service):
         """
         conn = self._db.connection()
         try:
+            # Look up dataset_id — skip snapshot if dataset isn't registered yet
+            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
+            if row is None:
+                self._logger.warning("Skipping config snapshot for '%s': dataset not registered in DB.", dataset_name)
+                return -1
+            dataset_id = row[0]
+
             cursor = conn.execute(
-                "INSERT INTO config_history (dataset_name, content, created_t) VALUES (?, ?, ?)",
-                (dataset_name, content, time.time()),
+                "INSERT INTO config_history (dataset_name, dataset_id, content, created_t) VALUES (?, ?, ?, ?)",
+                (dataset_name, dataset_id, content, time.time()),
             )
             row_id = cursor.lastrowid
             assert row_id is not None

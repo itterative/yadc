@@ -4,7 +4,11 @@
     import { confirmDialog } from '$lib/stores/confirm';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
-    import { fetchFolders, deleteDatasetItems, type DatasetFolder } from '$lib/stores/datasetImages';
+    import {
+        fetchFolders,
+        deleteDatasetItems,
+        type DatasetFolder
+    } from '$lib/stores/datasetImages';
 
     interface Props {
         datasetName: string;

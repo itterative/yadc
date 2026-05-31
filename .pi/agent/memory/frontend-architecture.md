@@ -49,8 +49,8 @@ yadc/webui/
           FileDropZone.svelte         # Drag-and-drop + file/folder picker with client-side validation, recursive directory traversal, and `allowedExtensions` filtering
           Checkbox.svelte             # Checkbox component
           CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
-          JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
-          TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode)
+          JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja). Bindable `value` + `variables` (extracted template vars)
+          TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode). Bindable `value`
           IntersectionObserverElement.svelte  # Infinite scroll sentinel
           tabs/                     # Tab system (Svelte 5 context + snippets)
             Tabs.svelte             # Generic container — tab bar layout, registration, bindable value

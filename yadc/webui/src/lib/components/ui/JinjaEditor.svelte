@@ -7,11 +7,11 @@
     import { unifiedMergeView } from '@codemirror/merge';
 
     interface Props {
-        /** Raw Jinja text to display. */
-        value: string;
+        /** Raw Jinja text. Bindable — use `bind:value` for two-way sync. */
+        value?: string;
         /** Whether the editor is editable. Defaults to true. */
         editable?: boolean;
-        /** Called when the document text changes (only when editable). */
+        /** Called when the document text changes (only when editable). Useful for side effects like dirty flags. */
         onchange?: (value: string) => void;
         class?: string;
         /** When set, renders a unified diff between original and value. Overrides editable to false. */
@@ -20,20 +20,25 @@
         autoHeight?: boolean;
         /** When true (diff mode only), collapse unchanged regions to show only changed lines with small margin. */
         compactDiff?: boolean;
+        /** Bindable — extracted template variables. Updated when value changes. */
+        variables?: string[];
     }
 
     let {
-        value,
+        value = $bindable(''),
         editable = true,
         onchange,
         class: klazz = '',
         original,
         autoHeight = false,
-        compactDiff = false
+        compactDiff = false,
+        variables = $bindable<string[]>([])
     }: Props = $props();
 
-    // Extract variables reactively
-    let variables = $derived(extractVariables(value));
+    // Sync variables whenever value changes
+    $effect(() => {
+        variables = extractVariables(value);
+    });
 
     let extensions = $derived.by(() => {
         const extensions = [minimalSetup, jinja(), EditorView.lineWrapping];
@@ -75,15 +80,3 @@
     onchange={handleChange}
     {autoHeight}
 />
-
-<!-- Variables bar -->
-<!-- TODO: move this to a bindable (need to make the parent display them) -->
-{#if variables.length > 0}
-    <div class="mt-2 flex flex-wrap items-center gap-1.5">
-        <span class="text-xs text-gray-500">Variables:</span>
-        {#each variables as v (v)}
-            <code class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">{v}</code
-            >
-        {/each}
-    </div>
-{/if}

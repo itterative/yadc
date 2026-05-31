@@ -36,7 +36,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
 | [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Complete (phases 1–13, 5b); phase 14+ deferred |
 | [`selective-image-refresh-plan`](.pi/agent/memory/plans/selective-image-refresh-plan.md) | Per-image SSE events during captioning for live grid tile updates | Complete |
-| [`dataset-config-ux-plan`](.pi/agent/memory/plans/dataset-config-ux-plan.md) | Dataset config editing UX improvements — entries/extras, advanced settings, simplified/advanced toggle, shared components, revision history, TOML serialization | Planning |
+| [`dataset-config-ux-plan`](.pi/agent/memory/plans/dataset-config-ux-plan.md) | Dataset config editing UX — structured form, entries/extras, simplified/advanced toggle, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, managed dataset lifecycle | In Progress (review pass done) |
 
 ## When to Read Plans
 

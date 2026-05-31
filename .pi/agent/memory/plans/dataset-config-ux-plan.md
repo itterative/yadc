@@ -1,8 +1,8 @@
 ---
 name: dataset-config-ux-plan
-description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
+description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, and managed dataset lifecycle.
 status: In Progress
-last_history: 12
+last_history: 24
 category: meta
 ---
 
@@ -111,16 +111,20 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 
 ### Todos
 
-- [ ] **Relative paths for uploaded datasets**: When `source === 'upload'`, display dataset entry paths relative to the dataset's state directory instead of showing the absolute state-folder paths. The backend's `DatasetInfo` likely has enough context; may need to pass the dataset root through to the component or compute relative paths on the backend.
-- [ ] **Image/folder upload for managed datasets**: When `source === 'upload'`, allow uploading new images or folders to the dataset directly from the Paths & Variables section. Builds on the existing upload infrastructure (`DatasetUploadService`, `UploadDatasetTab`). Needs UX design — upload button per entry, or a shared upload action.
-- [ ] **Path editing for external datasets**: Verify that changing a dataset entry's path works correctly with the backend's `DatasetWatcherService` (watchdog). Changing the path triggers a rescan, but the watcher may still be watching the old directory. Need to check if `rescan_dataset` re-registers watchers or if the watcher needs explicit path update handling.
+- [x] **Relative paths for uploaded datasets**: When `source === 'upload'`, display dataset entry paths relative to the dataset's state directory instead of showing the absolute state-folder paths. The backend's `DatasetInfo` likely has enough context; may need to pass the dataset root through to the component or compute relative paths on the backend.
+- [x] **Image/folder upload for managed datasets**: When `source === 'upload'`, allow uploading new images or folders to the dataset directly from the Paths & Variables section. Builds on the existing upload infrastructure (`DatasetUploadService`, `UploadDatasetTab`). Needs UX design — upload button per entry, or a shared upload action.
+- [x] **Path editing for external datasets**: `rescan_dataset()` now re-registers the filesystem watcher with the current config paths after scanning. This ensures `DatasetWatcherService` watches the new directory (not the old one) when paths change, and unwatches everything if all paths are removed. Fixed in `DatasetService.rescan_dataset()`.
 - [x] **Extras value type support**: Extras values can be strings, numbers, booleans, or nested objects. Auto-detects types from parsed config, renders text input for strings, number input for numbers, checkbox for booleans, and read-only JSON preview for objects. Type selector dropdown (str/num/bool/obj) next to each key. Objects are not editable in the form — message prompts user to use Advanced view.
-- [ ] **TomlEditor (and JinjaEditor) doesn't use bindable for value**: should refactor to use that instead of callback
-- [ ] **JinjaEditor should expose the template variables**: should refactor parents to display the variables instead
-- [ ] **Managed datasets should live in `STATE_PATH/datasets/` subfolder**: Currently managed datasets are placed directly in `STATE_PATH/<name>/`, but the state folder also contains templates, configs, and public-private keys. Need to move them to `STATE_PATH/datasets/<name>/` to avoid collisions and keep the state directory organized. Must be done before merging this feature branch to main.
-- [ ] **History restore should wait for confirmation**: The restore button in the config history calls the confirmation dialog, but we still get a toast that the history was changed before we approve or not. Need to check if this actually reverts it.
-- [ ] **Dataset deletion doesn't drop config revision history**: When we delete a dataset, the history entries aren't deleted. Should use a foreign key with cascade delete, or enable foreign key constraints in the database connection setup.
-- [ ] **Deletion button for individual images lives next to the caption**: It's confusing for the users when they see a delete button next to the caption part, since they would assume this deletes the caption, not the image itself.
+- [x] **TomlEditor (and JinjaEditor) doesn't use bindable for value**: refactored both to use `$bindable()` for `value`. Parents use `bind:value` for two-way sync; `onchange` kept as optional side-effect callback (e.g. dirty flags).
+- [x] **JinjaEditor should expose the template variables**: added `bind:variables` (bindable string array, synced via `$effect`). Removed built-in variables bar from JinjaEditor. EditTemplateDialog now displays variables inline. CaptionSettings uses PromptPreview for context instead.
+- [x] **Managed datasets should live in `STATE_PATH/datasets/` subfolder**: Datasets now live at `STATE_PATH/datasets/<name>/` via the `DATASETS_DIR` Path constant. Removed `_dataset_state_dir()` helper; all callers use `DATASETS_DIR / name` directly. Updated tests to patch `DATASETS_DIR`.
+- [x] **History restore should wait for confirmation**: The restore button in the config history calls the confirmation dialog, but we still get a toast that the history was changed before we approve or not. Need to check if this actually reverts it.
+- [x] **Dataset deletion doesn't drop config revision history**: When we delete a dataset, the history entries aren't deleted. The `config_history` table uses `dataset_name` (TEXT, no FK). Fix: add a `delete_dataset_history()` method to `ConfigHistoryService` and call it from `unregister_dataset()`. (Confirmed in review pass — finding #1 in `014-review-pass.md`.)
+- [ ] **Deletion button for individual images lives next to the caption**: It's confusing for the users when they see a delete button next to the caption part, since they would assume this deletes the caption, not the image itself. Consider moving to a kebab menu or adding a visual separator.
+- [ ] **ConfigHistoryService.save_snapshot should handle missing dataset_id gracefully**: Need to check how we can do this appropriately (or just log a warning). Might need to look into transaction management later on.
+- [x] **Dataset refresh notification**: Fixed regression caused by `_unwatch_dataset_locked()` clearing `_expected_sources` when `watch_dataset()` re-registers watches (triggered by `rescan_dataset()` on every `DatasetChangedEvent`). After the first file-change was processed, all subsequent changes lost their `job_id` tag. Fix: save/restore `_expected_sources` across re-registration in `watch_dataset()`. Added assert in `_unwatch_dataset_locked` that lock is held.
+- [ ] **Refactor `_unwatch_dataset_locked` to preserve `_expected_sources`**: Instead of the current save/restore workaround in `watch_dataset()`, `_unwatch_dataset_locked` should diff the paths and only clear `_expected_sources` when actually unwatching (not when re-registering). Investigate passing a `CaptioningService` callback for `get_active_job_id` so the watcher can check at dispatch time instead of managing `expect_changes` lifecycle.
+- [x] **Edge case when deleting image/folder while captioning**: Added `CaptioningService.is_captioning()` method. Backend returns 409 Conflict for `DELETE /datasets/<name>/items`, `DELETE /datasets/<name>`, `POST /datasets/<name>/upload`, and `POST /datasets/<name>/staging/commit` when a captioning job is active for the dataset. No frontend changes needed — existing toast error handling surfaces the message.
 
 ---
 
@@ -374,7 +378,9 @@ Post-implementation polish for issues discovered during use.
 - [x] 7.3: Save/Reload footer visible on History tab — `activeView` expanded to `'simplified' | 'advanced' | 'history'`, footer conditionally hidden when on History.
 - [x] 7.4: History tab layout — implemented incremental diff sections design. Stacked sections with inline diff + full-snapshot toggle eliminates the cramped sidebar+preview split.
 - [x] 7.5: History diff view — `@codemirror/merge` (`UnifiedMergeView`) implemented for inline diff rendering. `collapseUnchanged` used with `minSize: 1` (not 0, which caused a RangeError).
-- [ ] 7.6: **Form/Advanced view sync divergence** — When switching between Form and Advanced tabs, unsaved edits in one view are not reflected in the other. Current behavior: switching Form→Advanced syncs `previewContent` into the editor, but switching back with `rawDirty` reloads from server (discarding advanced changes). After the fix: both views preserve their own drafts, but they can diverge silently. Options: (1) Add inline sync notices ("Form has unsaved changes [Apply] [Keep]"), (2) Re-parse raw TOML into structured fields when switching Advanced→Form (instead of server reload), (3) Unify the two drafts into a single source of truth. **Deferred** — not actively blocking, but will confuse users who expect changes to propagate between tabs.
+- [x] 7.5: History diff view — `@codemirror/merge` (`UnifiedMergeView`) implemented for inline diff rendering. `collapseUnchanged` used with `minSize: 1` (not 0, which caused a RangeError).
+- [x] 7.6: **Path editing watcher re-registration** — `rescan_dataset()` now calls `_watcher.watch_dataset()` after scanning to update the watched directories. Fixes the bug where changing a dataset path left the old directory watched (new files wouldn't trigger auto-rescan) and left the new directory unwatched.
+- [x] 7.7: **Form/Advanced view sync divergence** — Added a simple informational banner at the top of each view when the other view has unsaved changes. `otherViewDirty` state is snapshotted on tab switch, cleared on save/reload. No sync/merge logic — just a heads-up for the user.
 
 1. **Phase 1** (Dataset entries + extras) — highest user value
 2. **Phase 2** (Advanced settings fields) — fills gaps in the structured form
@@ -382,6 +388,98 @@ Post-implementation polish for issues discovered during use.
 4. **Phase 3** (Simplified/Advanced toggle) — builds on a complete structured form
 5. **Phase 5** (Revision history) — independent, can be done anytime after Phase 1
 6. **Phase 6** (TOML serialization) — lowest priority, potential iceberg
+7. **Phase 8** (Edit dialog + upload/manage) — extends the listing page edit dialog
+
+---
+
+## Phase 8: Edit Dialog Rewrite + Upload/Manage Tabs
+
+The listing-page `EditDatasetDialog` was a barebones raw TOML editor. Extended it with the full structured config editor (Form/Advanced/History), an Upload tab for managed datasets, and a Manage tab for folder/image deletion.
+
+### Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------| |
+| Dialog vs page | Keep as dialog | Simplest, no routing changes |
+| Config tab | Form / Advanced / History sub-tabs | Same as side panel, users already know it |
+| Upload merge | Overwrite by filename | Matches how filesystem scanning works; user-selected |
+| Non-managed datasets | Hide Upload/Manage tabs | Only makes sense for managed (uploaded) datasets |
+
+### 8.1 Extract DatasetConfig.svelte to shared component ✅
+
+Moved `routes/datasets/[name]/DatasetConfig.svelte` → `lib/components/datasets/DatasetConfig.svelte`.
+- Also moved `ConfigHistory.svelte` (relative import from DatasetConfig)
+- Updated `SidePanel.svelte` import path
+
+### 8.2 Backend — Append upload endpoint ✅
+
+Added `POST /datasets/<name>/upload` that appends files to an existing managed dataset.
+
+- `DatasetUploadService.append_dataset_from_upload()` — validates dataset exists and is managed, writes files to existing dirs, same validation as create upload
+- If new top-level folders are uploaded, adds new `[[dataset]]` entries to config TOML using `tomlkit`
+- Calls `rescan_dataset()` to re-index
+- Streaming NDJSON response (same shape as create upload)
+
+### 8.3 Frontend — Tabbed EditDatasetDialog ✅
+
+Replaced `EditDatasetDialog.svelte` with a tabbed dialog:
+- **Config tab**: `DatasetConfig` component (Form/Advanced/History)
+- **Upload tab**: `DatasetUploadPanel mode="append"` (only shown for `source === 'upload'`)
+- **Manage tab**: `DatasetManageTab` (only shown for `source === 'upload'`) — folder listing with delete
+
+### 8.4 Frontend — Shared upload component ✅
+
+Created `DatasetUploadPanel.svelte` that wraps the upload logic:
+- `mode: 'create' | 'append'` — `'create'` shows name input, `'append'` uses provided `datasetName`
+- Reuses `FileDropZone`, progress bar, cancel button
+- Used by `UploadDatasetTab` (create mode) and `EditDatasetDialog` (append mode)
+
+### 8.5 Upload conflict handling — staging ✅
+
+Staging folder approach for safe conflict resolution:
+- Files written to `.staging/<uuid>/` first, conflicts detected against live dirs
+- Frontend shows per-file resolution: Skip / Overwrite / Keep Both (auto-rename)
+- `POST /datasets/<name>/staging/commit` applies resolutions
+- Periodic cleanup of stale staging dirs (>24h)
+- Sidecars grouped by image stem, follow the resolution of their group
+
+### 8.6 Managed dataset path guards ✅
+
+Frontend disables path editing for managed datasets; backend rejects path changes on both PUT and PATCH with 400.
+
+### 8.7 Delete items endpoint ✅
+
+- `DELETE /datasets/<name>/items` — deletes individual images or folders with sidecar cleanup
+- `ImageInfo.delete_path` computed by backend from absolute path + config location
+- Frontend `ImageDetail.svelte` shows Delete button for managed datasets
+
+### 8.8 Relative paths in managed configs ✅
+
+Managed configs now store paths like `images` and `folders/train` instead of absolute paths. Resolved against `config.toml` parent at read time. Makes configs portable across machines.
+
+### 8.9 Folder management tab ✅
+
+- `GET /datasets/<name>/folders` — returns folder list with image counts and `can_delete` flag
+- `DatasetManageTab.svelte` — lists folders as cards with delete button
+- Root `images/` shown without delete button
+- Deleting a folder removes its `[[dataset]]` entry from config TOML
+
+### Status
+
+- [x] Phase 8.1: Extract shared DatasetConfig component
+- [x] Phase 8.2: Backend append upload endpoint
+- [x] Phase 8.3: Frontend tabbed EditDatasetDialog
+- [x] Phase 8.4: Shared upload component
+- [x] Phase 8.5: Upload conflict handling (staging + commit)
+- [x] Phase 8.6: Managed dataset path guards
+- [x] Phase 8.7: Delete items endpoint
+- [x] Phase 8.8: Relative paths in managed configs
+- [x] Phase 8.9: Folder management tab
+
+### Open Questions / Deferred
+
+- **~~Managed datasets should live in `STATE_PATH/datasets/` subfolder~~** ✅: Datasets now live at `STATE_PATH/datasets/<name>/` via the `DATASETS_DIR` Path constant.
+- **Config history restore + folder deletion divergence**: When a folder is deleted via the Manage tab, the corresponding `[[dataset]]` entry is removed from config TOML. Restoring an older config history snapshot would re-add that entry even though the folder no longer exists on disk. Scanner silently skips missing dirs. Post-restore warning banner added when restored config references missing paths.
 
 ---
 
@@ -389,14 +487,18 @@ Post-implementation polish for issues discovered during use.
 
 | File | Role |
 |------|------|
-| `yadc/webui/src/routes/datasets/[name]/DatasetConfig.svelte` | Structured config editor |
+| `yadc/webui/src/lib/components/datasets/DatasetConfig.svelte` | Shared structured config editor (moved from routes/) |
 | `yadc/webui/src/routes/datasets/[name]/CaptionSettings.svelte` | Per-session caption settings |
 | `yadc/webui/src/routes/datasets/[name]/SidePanel.svelte` | Tab container |
-| `yadc/webui/src/routes/EditDatasetDialog.svelte` | Raw TOML editor dialog |
+| `yadc/webui/src/routes/EditDatasetDialog.svelte` | Tabbed edit dialog (Config/Upload/Manage) |
 | `yadc/webui/src/lib/stores/configs.ts` | Config API helpers + types |
 | `yadc/api/controllers/api_configs.py` | Config CRUD endpoints |
 | `yadc/core/config.py` | Pydantic config models |
 | `yadc/utils/dict_utils.py` | `deep_merge()` |
+| `yadc/webui/src/lib/components/datasets/DatasetUploadPanel.svelte` | Reusable upload UI (create/append) |
+| `yadc/webui/src/lib/components/datasets/DatasetManageTab.svelte` | Folder management UI |
+| `yadc/api/services/dataset_upload.py` | Upload, append, staging, commit, delete |
+| `yadc/api/controllers/api_datasets.py` | Dataset CRUD + upload/delete routes |
 
 ## Open Questions
 
