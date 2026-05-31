@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
 status: In Progress
-last_history: 5
+last_history: 7
 category: meta
 ---
 
@@ -243,11 +243,11 @@ In the Config tab (both Simplified and Advanced modes), add a "History" section:
 
 ### Status
 
-- [ ] DB migration: `config_history` table
-- [ ] Backend: insert history row on PATCH/PUT
-- [ ] Backend: `GET /configs/<name>/history` endpoint
-- [ ] Backend: `POST /configs/<name>/history/<id>/restore` endpoint
-- [ ] Backend: pruning (max entries per dataset)
+- [x] DB migration: `config_history` table
+- [x] Backend: insert history row on PATCH/PUT
+- [x] Backend: `GET /configs/<name>/history` endpoint
+- [x] Backend: `POST /configs/<name>/history/<id>/restore` endpoint
+- [x] Backend: pruning (max entries per dataset)
 - [ ] Frontend: history section in Config tab
 - [ ] Frontend: preview + restore UI
 

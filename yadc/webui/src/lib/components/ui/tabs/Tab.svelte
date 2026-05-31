@@ -17,6 +17,6 @@
     let isActive = $derived(ctx.activeIndex === index);
 </script>
 
-<div class={isActive ? `${className} min-h-0 flex-1` : 'hidden'}>
+<div class={isActive ? `${className} flex-1` : 'hidden'}>
     {@render children()}
 </div>

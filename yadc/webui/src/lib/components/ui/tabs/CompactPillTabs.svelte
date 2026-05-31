@@ -35,7 +35,7 @@
 <div class="flex flex-col {className}">
     <!-- Segmented control header -->
     {#if !(hideSingle && state.tabs.length <= 1)}
-        <div class="flex items-center gap-1 rounded-lg bg-gray-800/50 p-1" role="tablist">
+        <div class="flex shrink-0 items-center gap-1 rounded-lg bg-gray-800/50 p-1" role="tablist">
             {#each state.tabs as t, i (t.id)}
                 {@const isActive = state.activeIndex === i}
                 <button
@@ -58,7 +58,7 @@
     {/if}
 
     <!-- Tab content -->
-    <div class="mt-4" role="tabpanel">
+    <div class="mt-4 flex-1" role="tabpanel">
         {@render children()}
     </div>
 </div>

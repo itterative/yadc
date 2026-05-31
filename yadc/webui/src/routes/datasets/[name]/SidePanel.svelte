@@ -8,7 +8,7 @@
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
 
-    type PanelTab = 'caption' | 'details' | 'config';
+    type PanelTab = 'caption' | 'details' | 'config' | 'history';
 
     interface Props {
         datasetName: string;
@@ -17,7 +17,6 @@
         activeTab?: PanelTab;
         open?: boolean;
         onpanelclose?: () => void;
-        onconfigsaved?: () => void;
     }
 
     let {
@@ -26,8 +25,7 @@
         focusedItem,
         activeTab: panelTab = $bindable('caption'),
         open = $bindable(false),
-        onpanelclose,
-        onconfigsaved
+        onpanelclose
     }: Props = $props();
 </script>
 
@@ -86,7 +84,7 @@
                 {/if}
             </Tab>
             <Tab id="config" label="Config" class="h-full overflow-y-auto">
-                <DatasetConfig {datasetName} {source} onsaved={onconfigsaved} />
+                <DatasetConfig {datasetName} {source} />
             </Tab>
         </PillTabs>
     </div>

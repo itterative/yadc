@@ -214,10 +214,12 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
     def get_key_mode():  # pyright: ignore[reportUnusedFunction]
         """Return the current key storage mode."""
         config = cmd_config.load_config()
-        return jsonify({
-            "mode": config.key_storage.mode,
-            "env_password_set": bool(YADC_PASSWORD),
-        })
+        return jsonify(
+            {
+                "mode": config.key_storage.mode,
+                "env_password_set": bool(YADC_PASSWORD),
+            }
+        )
 
     @app.put("/envs/key-mode")
     async def put_key_mode():  # pyright: ignore[reportUnusedFunction]

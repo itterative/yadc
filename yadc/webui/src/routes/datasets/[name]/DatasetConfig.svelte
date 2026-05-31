@@ -21,6 +21,8 @@
     import { templates, refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
+    import ConfigHistory from './ConfigHistory.svelte';
+    import SvgHistory from '$lib/icons/SvgHistory.svelte';
 
     // --- Props ---
 
@@ -405,13 +407,23 @@
                     extras: e.extras.map((kv) => ({ ...kv }))
                 }));
             }
-            toast.success('Config saved');
-            onsaved?.();
+
+            handleConfigSaved();
         } catch (e) {
             saveError = friendlyErrorMessage(e, 'Failed to save config');
         } finally {
             isSaving = false;
         }
+    }
+
+    // --- Config history ---
+
+    let configVersion = $state(0);
+
+    function handleConfigSaved() {
+        configVersion++;
+        toast.success('Config saved');
+        onsaved?.();
     }
 </script>
 
@@ -438,8 +450,8 @@
             {/if}
 
             <!-- ═══ View mode toggle ═══ -->
-            <CompactPillTabs bind:value={activeView} class="">
-                <Tab id="simplified" label="Form" icon={SvgFile} class="gap-4 flex flex-col">
+            <CompactPillTabs bind:value={activeView} class="h-full">
+                <Tab id="simplified" label="Form" icon={SvgFile} class="flex flex-col gap-4">
                     <!-- ═══ Simplified mode: structured form ═══ -->
 
                     <!-- ═══ Info: Dataset source & path ═══ -->
@@ -656,13 +668,18 @@
                             <TomlEditor value={previewContent} editable={false} />
                         </div>
                     </section>
+
+                    <div class="h-2"></div>
                 </Tab>
-                <Tab id="advanced" label="Raw TOML" icon={SvgEdit} class="min-h-75">
+                <Tab id="advanced" label="Advanced" icon={SvgEdit} class="h-full">
                     <TomlEditor
                         value={rawContent}
                         editable={true}
                         onchange={(v) => (rawContent = v)}
                     />
+                </Tab>
+                <Tab id="history" label="History" icon={SvgHistory} class="h-full">
+                    <ConfigHistory {datasetName} {configVersion} onsaved={handleConfigSaved} />
                 </Tab>
             </CompactPillTabs>
         {/if}

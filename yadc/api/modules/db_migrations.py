@@ -52,6 +52,7 @@ class DBMigrations(Service):
             self._run_migration(cursor, step=2, script=self._migration_settings)
             self._run_migration(cursor, step=3, script=self._migration_datasets)
             self._run_migration(cursor, step=4, script=self._migration_source)
+            self._run_migration(cursor, step=5, script=self._migration_config_history)
             # When adding new migrations, add them here with incrementing step numbers.
         except Exception as e:
             conn.rollback()
@@ -124,6 +125,22 @@ class DBMigrations(Service):
         BEGIN IMMEDIATE;
 
         ALTER TABLE datasets ADD COLUMN source TEXT NOT NULL DEFAULT 'import' CHECK(source IN ('import', 'create', 'upload'));
+
+        COMMIT;
+    """
+
+    _migration_config_history: str = """
+        BEGIN IMMEDIATE;
+
+        CREATE TABLE IF NOT EXISTS config_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dataset_name TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_t REAL NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_config_history_dataset
+            ON config_history (dataset_name, created_t DESC);
 
         COMMIT;
     """

@@ -161,6 +161,36 @@ async function _fetchConfig(name: string): Promise<DatasetConfigDetail> {
 
 export const fetchConfig = debounce(_fetchConfig);
 
+export interface ConfigHistoryEntry {
+    id: number;
+    dataset_name: string;
+    content: string;
+    created_t: number;
+}
+
+async function _fetchConfigHistory(
+    name: string,
+    options?: { limit?: number; before_id?: number }
+): Promise<ConfigHistoryEntry[]> {
+    const params = new URLSearchParams();
+    if (options?.limit) {
+        params.set('limit', String(options.limit));
+    }
+    if (options?.before_id) {
+        params.set('before_id', String(options.before_id));
+    }
+    const qs = params.toString();
+    const res = await fetch(
+        `${API_BASE}/api/configs/${encodeURIComponent(name)}/history${qs ? '?' + qs : ''}`
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+export const fetchConfigHistory = debounce(_fetchConfigHistory);
+
 export async function updateConfig(name: string, content: string): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {
         method: 'PUT',
@@ -197,6 +227,20 @@ export async function previewConfig(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch)
     });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+export async function restoreConfigHistory(
+    name: string,
+    entryId: number
+): Promise<DatasetConfigDetail> {
+    const res = await fetch(
+        `${API_BASE}/api/configs/${encodeURIComponent(name)}/history/${entryId}/restore`,
+        { method: 'POST' }
+    );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }

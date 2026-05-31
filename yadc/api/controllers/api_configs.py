@@ -4,6 +4,7 @@ import toml
 from pydantic import ValidationError
 from quart import jsonify, request
 
+from yadc.api.services.config_history import ConfigHistoryService
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
 from yadc.utils import deep_merge
@@ -16,7 +17,12 @@ from .utils_json import ErrorCode, jsonify_error
 
 
 @controller
-def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetService):
+def api_configs(
+    app: ApiBlueprint,
+    logging: LoggingFactory,
+    datasets: DatasetService,
+    config_history: ConfigHistoryService,
+):
     _logger = logging.get_logger(__name__)
 
     @app.get("/configs")
@@ -88,6 +94,14 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         if info is None or info.config_path is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
+        # Save current content to history before overwriting
+        try:
+            with open(info.config_path) as f:
+                old_content = f.read()
+            config_history.save_snapshot(name, old_content)
+        except FileNotFoundError:
+            pass  # No existing file — nothing to snapshot
+
         try:
             with open(info.config_path, "w") as f:
                 f.write(content)
@@ -158,6 +172,9 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         if dry_run:
             return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": merged})
 
+        # Save current content to history before overwriting
+        config_history.save_snapshot(name, content)
+
         try:
             with open(info.config_path, "w") as f:
                 f.write(new_content)
@@ -170,6 +187,69 @@ def api_configs(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetSer
         datasets.rescan_dataset(name)
 
         return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": merged})
+
+    @app.get("/configs/<name>/history")
+    def list_config_history(name: str):  # pyright: ignore[reportUnusedFunction]
+        """List config revision history for a dataset."""
+        info = datasets.get_dataset(name)
+        if info is None or info.config_path is None:
+            return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+
+        limit = request.args.get("limit", 50, type=int)
+        before_id = request.args.get("before_id", None, type=int)
+
+        entries = config_history.list_history(name, limit=limit, before_id=before_id)
+        return jsonify(
+            [
+                {
+                    "id": e.id,
+                    "dataset_name": e.dataset_name,
+                    "content": e.content,
+                    "created_t": e.created_t,
+                }
+                for e in entries
+            ]
+        )
+
+    @app.post("/configs/<name>/history/<int:entry_id>/restore")
+    async def restore_config_history(name: str, entry_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Restore a config from a history snapshot.
+
+        Saves the current config to history first, then overwrites with the
+        historical version.
+        """
+        info = datasets.get_dataset(name)
+        if info is None or info.config_path is None:
+            return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+
+        entry = config_history.get_entry(entry_id)
+        if entry is None or entry.dataset_name != name:
+            return jsonify_error(f"History entry {entry_id} not found for dataset '{name}'", status=404, code=ErrorCode.NOT_FOUND)
+
+        # Save current content to history before restoring
+        try:
+            with open(info.config_path) as f:
+                current_content = f.read()
+            config_history.save_snapshot(name, current_content)
+        except FileNotFoundError:
+            pass
+
+        # Write the historical content
+        try:
+            with open(info.config_path, "w") as f:
+                f.write(entry.content)
+        except PermissionError:
+            return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
+
+        _logger.info("Config for dataset '%s' restored from history entry %d.", name, entry_id)
+
+        # Rescan so the index picks up changes
+        datasets.rescan_dataset(name)
+
+        # Delete the restored entry so it doesn't clutter the list
+        config_history.delete_entry(entry_id)
+
+        return get_config(name)
 
     @app.delete("/configs/<name>")
     def delete_config(name: str):  # pyright: ignore[reportUnusedFunction]

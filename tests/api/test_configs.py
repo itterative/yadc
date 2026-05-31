@@ -18,8 +18,9 @@ def client():
     mock_logging = MagicMock()
     mock_logging.get_logger.return_value = MagicMock()
     mock_service = MagicMock()
+    mock_history = MagicMock()
 
-    api_configs(bp, mock_logging, mock_service)
+    api_configs(bp, mock_logging, mock_service, mock_history)
 
     app.register_blueprint(bp)
     return app.test_client(), mock_service
