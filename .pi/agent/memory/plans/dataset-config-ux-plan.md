@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
 status: In Progress
-last_history: 2
+last_history: 3
 category: meta
 ---
 
@@ -103,11 +103,18 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 
 ### Status
 
-- [ ] `<KeyValueEditor>` component
-- [ ] Dataset entries section in `DatasetConfig.svelte`
-- [ ] `buildPatch()` includes `dataset` array
-- [ ] Dirty tracking for dataset entries
-- [ ] Live preview updates for dataset entry changes
+- [x] `<KeyValueEditor>` component
+- [x] Dataset entries section in `DatasetConfig.svelte`
+- [x] `buildPatch()` includes `dataset` array
+- [x] Dirty tracking for dataset entries
+- [x] Live preview updates for dataset entry changes
+
+### Todos
+
+- [ ] **Relative paths for uploaded datasets**: When `source === 'upload'`, display dataset entry paths relative to the dataset's state directory instead of showing the absolute state-folder paths. The backend's `DatasetInfo` likely has enough context; may need to pass the dataset root through to the component or compute relative paths on the backend.
+- [ ] **Image/folder upload for managed datasets**: When `source === 'upload'`, allow uploading new images or folders to the dataset directly from the Paths & Variables section. Builds on the existing upload infrastructure (`DatasetUploadService`, `UploadDatasetTab`). Needs UX design — upload button per entry, or a shared upload action.
+- [ ] **Path editing for external datasets**: Verify that changing a dataset entry's path works correctly with the backend's `DatasetWatcherService` (watchdog). Changing the path triggers a rescan, but the watcher may still be watching the old directory. Need to check if `rescan_dataset` re-registers watchers or if the watcher needs explicit path update handling.
+- [ ] **Extras value type support**: Extras values can be strings, numbers, booleans, or nested objects. Currently all are treated as strings. Should: auto-detect types from the parsed config, render appropriate inputs (text for strings, number for numbers, checkbox for booleans), and show nested objects/arrays as read-only with a message to use the raw TOML editor.
 
 ---
 

@@ -1,9 +1,18 @@
 <script lang="ts">
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
+    import KeyValueEditor, { type KeyValueEntry } from '$lib/components/ui/KeyValueEditor.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
-    import { fetchConfig, patchConfig, previewConfig, type Config } from '$lib/stores/configs';
+    import SvgPlus from '$lib/icons/SvgPlus.svelte';
+    import SvgDelete from '$lib/icons/SvgDelete.svelte';
+    import {
+        fetchConfig,
+        patchConfig,
+        previewConfig,
+        type Config,
+        type ConfigDatasetEntry
+    } from '$lib/stores/configs';
     import { templates, refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
@@ -66,6 +75,15 @@
     // Environment
     let envName = $state('');
 
+    // Dataset entries
+    interface DatasetEntry {
+        path: string;
+        extras: KeyValueEntry[];
+        imageCount: number;
+    }
+
+    let datasetEntries: DatasetEntry[] = $state([]);
+
     // --- Snapshot of last-loaded values for dirty tracking ---
 
     let loadedApiUrl = $state('');
@@ -80,6 +98,25 @@
     let loadedReasoningEffort: 'low' | 'medium' | 'high' = $state('low');
     let loadedReasoningExcludeOutput = $state(true);
     let loadedEnvName = $state('');
+    let loadedDatasetEntries: DatasetEntry[] = $state([]);
+
+    /** Deep-compare two dataset entry arrays for equality. */
+    function entriesEqual(a: DatasetEntry[], b: DatasetEntry[]): boolean {
+        if (a.length !== b.length) {
+            return false;
+        }
+        return a.every((entry, i) => {
+            const other = b[i];
+            return (
+                entry.path === other.path &&
+                entry.imageCount === other.imageCount &&
+                entry.extras.length === other.extras.length &&
+                entry.extras.every(
+                    (e, j) => e.key === other.extras[j].key && e.value === other.extras[j].value
+                )
+            );
+        });
+    }
 
     let dirty = $derived(
         apiUrl !== loadedApiUrl ||
@@ -93,7 +130,8 @@
             reasoningEnabled !== loadedReasoningEnabled ||
             reasoningEffort !== loadedReasoningEffort ||
             reasoningExcludeOutput !== loadedReasoningExcludeOutput ||
-            envName !== loadedEnvName
+            envName !== loadedEnvName ||
+            !entriesEqual(datasetEntries, loadedDatasetEntries)
     );
 
     // --- Live preview ---
@@ -114,6 +152,26 @@
             settings.image_quality = imageQuality;
         }
 
+        // Build dataset entries, preserving inline images from original config
+        const dataset = datasetEntries.map((entry, i) => {
+            const obj: Record<string, unknown> = { path: entry.path };
+            const extras: Record<string, string> = {};
+            for (const { key, value } of entry.extras) {
+                if (key) {
+                    extras[key] = value;
+                }
+            }
+            if (Object.keys(extras).length > 0) {
+                obj.extras = extras;
+            }
+            // Preserve inline images from the original parsed config (read-only, not edited)
+            const raw = parsedDatasetRaw[i];
+            if (raw?.images && raw.images.length > 0) {
+                obj.images = raw.images;
+            }
+            return obj;
+        });
+
         const patch: Record<string, unknown> = {
             api: {
                 url: apiUrl,
@@ -129,7 +187,8 @@
                 thinking_effort: reasoningEffort,
                 exclude_from_output: reasoningExcludeOutput
             },
-            env: envName
+            env: envName,
+            dataset
         };
         if (rounds !== null) {
             patch.rounds = rounds;
@@ -152,6 +211,20 @@
                     /* preview failure is non-critical */
                 });
         }, DEBOUNCE_MS);
+    }
+
+    // --- Parsed dataset entries (for preserving images on save) ---
+
+    let parsedDatasetRaw: ConfigDatasetEntry[] = $state([]);
+
+    /** Convert extras dict to KeyValueEntry array (sorted by key for stable ordering). */
+    function extrasToEntries(extras?: Record<string, unknown>): KeyValueEntry[] {
+        if (!extras) {
+            return [];
+        }
+        return Object.entries(extras)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, value]) => ({ key, value: String(value) }));
     }
 
     // --- Load on mount / dataset change ---
@@ -190,6 +263,15 @@
             reasoningExcludeOutput = loadedReasoningExcludeOutput =
                 p.reasoning?.exclude_from_output ?? true;
             envName = loadedEnvName = p.env ?? '';
+
+            // Parse dataset entries
+            const rawEntries = p.dataset ?? [];
+            parsedDatasetRaw = rawEntries;
+            datasetEntries = loadedDatasetEntries = rawEntries.map((entry) => ({
+                path: entry.path ?? '',
+                extras: extrasToEntries(entry.extras as Record<string, unknown> | undefined),
+                imageCount: entry.images?.length ?? 0
+            }));
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load config');
         } finally {
@@ -214,6 +296,15 @@
         void reasoningExcludeOutput;
         void envName;
         void datasetName;
+        // Touch dataset entries (array + each entry's fields)
+        void datasetEntries;
+        for (const entry of datasetEntries) {
+            void entry.path;
+            for (const e of entry.extras) {
+                void e.key;
+                void e.value;
+            }
+        }
 
         if (!isLoading && !error) {
             schedulePreview();
@@ -221,6 +312,18 @@
     });
 
     // --- Save structured fields via PATCH ---
+
+    function addDatasetEntry() {
+        datasetEntries = [...datasetEntries, { path: '', extras: [], imageCount: 0 }];
+    }
+
+    function removeDatasetEntry(index: number) {
+        datasetEntries = datasetEntries.filter((_, i) => i !== index);
+    }
+
+    function updateEntryPath(index: number, newPath: string) {
+        datasetEntries = datasetEntries.map((e, i) => (i === index ? { ...e, path: newPath } : e));
+    }
 
     async function handleSave() {
         isSaving = true;
@@ -242,6 +345,10 @@
             loadedReasoningEffort = reasoningEffort;
             loadedReasoningExcludeOutput = reasoningExcludeOutput;
             loadedEnvName = envName;
+            loadedDatasetEntries = datasetEntries.map((e) => ({
+                ...e,
+                extras: e.extras.map((kv) => ({ ...kv }))
+            }));
             toast.success('Config saved');
             onsaved?.();
         } catch (e) {
@@ -300,6 +407,82 @@
                         </p>
                     {/if}
                 </div>
+            </section>
+
+            <!-- ═══ Section: Dataset Entries ═══ -->
+            <section class="space-y-3">
+                <h3 class="section-heading">Paths & Variables</h3>
+                <p class="help-text">
+                    Each entry is a directory of images with optional template variables.
+                </p>
+
+                {#each datasetEntries as entry, i (i)}
+                    <div class="card">
+                        <div class="card-body space-y-3">
+                            <!-- Entry header -->
+                            <div class="flex items-start gap-2">
+                                <div class="flex-1">
+                                    <label class="label" for="entry-path-{i}">Path</label>
+                                    <input
+                                        id="entry-path-{i}"
+                                        type="text"
+                                        class="input font-mono text-sm"
+                                        value={entry.path}
+                                        placeholder="/path/to/images"
+                                        oninput={(e) => updateEntryPath(i, e.currentTarget.value)}
+                                    />
+                                </div>
+                                {#if datasetEntries.length > 1}
+                                    <button
+                                        class="mt-6 cursor-pointer p-1 text-gray-500 transition-colors hover:text-error"
+                                        onclick={() => removeDatasetEntry(i)}
+                                        title="Remove entry"
+                                        aria-label="Remove entry"
+                                    >
+                                        <SvgDelete class="h-4 w-4" />
+                                    </button>
+                                {/if}
+                            </div>
+
+                            <!-- Inline images badge -->
+                            {#if entry.imageCount > 0}
+                                <p class="text-xs text-gray-500">
+                                    {entry.imageCount} inline image{entry.imageCount !== 1
+                                        ? 's'
+                                        : ''}
+                                    — edit in raw TOML view
+                                </p>
+                            {/if}
+
+                            <!-- Empty entry warning -->
+                            {#if !entry.path && entry.imageCount === 0}
+                                <p class="text-xs text-warning">
+                                    Empty entry — set a path or add images.
+                                </p>
+                            {/if}
+
+                            <!-- Extras -->
+                            <div>
+                                <div
+                                    class="mb-1.5 text-xs font-medium tracking-wide text-gray-300 uppercase"
+                                >
+                                    Variables
+                                </div>
+                                <KeyValueEditor
+                                    bind:entries={datasetEntries[i].extras}
+                                    idPrefix="entry-{i}-extras"
+                                    keyPlaceholder="variable name"
+                                    valuePlaceholder="value"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+
+                <button class="btn-secondary w-full" onclick={addDatasetEntry}>
+                    <SvgPlus class="mr-1 inline-block h-4 w-4" />
+                    Add Path
+                </button>
             </section>
 
             <!-- ═══ Section: API ═══ -->
