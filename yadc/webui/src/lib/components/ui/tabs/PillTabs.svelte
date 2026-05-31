@@ -5,14 +5,21 @@
     interface Props {
         class?: string;
         value?: string;
+        hideSingle?: boolean;
         end?: Snippet;
         children: Snippet;
     }
 
-    let { class: className = '', value = $bindable(''), end, children }: Props = $props();
+    let {
+        class: className = '',
+        value = $bindable(''),
+        hideSingle = false,
+        end,
+        children
+    }: Props = $props();
 </script>
 
-<Tabs class={className} bind:value {end}>
+<Tabs class={className} bind:value {hideSingle} {end}>
     {#snippet tab(t, isActive, onclick)}
         <button
             type="button"
