@@ -1,7 +1,8 @@
 <script lang="ts">
     import EnvSelector from '$lib/components/settings/EnvSelector.svelte';
+    import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
+    import type { CaptionOptionsDiffDefaults } from '$lib/components/settings/CaptionOptionsFields.svelte';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
-    import Checkbox from '$lib/components/ui/Checkbox.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
@@ -64,11 +65,11 @@
 
     // --- State: Options ---
 
-    let maxTokens = $state(512);
-    let imageQuality: 'auto' | 'high' | 'low' = $state('auto');
+    let maxTokens: number | null = $state(512);
+    let imageQuality: 'auto' | 'high' | 'low' | null = $state('auto');
     let draftName = $state('');
     let overwrite = $state(false);
-    let rounds = $state(1);
+    let rounds: number | null = $state(1);
 
     // --- State: Reasoning ---
 
@@ -82,29 +83,22 @@
 
     // --- Dataset config defaults ---
 
-    interface DatasetDefaults {
-        maxTokens: number;
-        imageQuality: 'auto' | 'high' | 'low';
-        draftName: string;
-        overwrite: boolean;
-        rounds: number;
-        reasoningEnabled: boolean;
-        reasoningEffort: 'low' | 'medium' | 'high';
-        selectedTemplate: string;
-    }
-
-    const HARDCODED_DEFAULTS: DatasetDefaults = {
-        maxTokens: 512,
-        imageQuality: 'auto',
+    const HARDCODED_DEFAULTS = {
+        maxTokens: 512 as number | null,
+        imageQuality: 'auto' as 'auto' | 'high' | 'low' | null,
         draftName: '',
         overwrite: false,
-        rounds: 1,
+        rounds: 1 as number | null,
         reasoningEnabled: false,
-        reasoningEffort: 'low',
+        reasoningEffort: 'low' as 'low' | 'medium' | 'high',
+        storeConversation: false,
+        reasoningExcludeOutput: true,
         selectedTemplate: ''
     };
 
-    let datasetDefaults: DatasetDefaults = $state({ ...HARDCODED_DEFAULTS });
+    let datasetDefaults: CaptionOptionsDiffDefaults & { selectedTemplate: string } = $state({
+        ...HARDCODED_DEFAULTS
+    });
 
     // --- Computed ---
 
@@ -112,23 +106,11 @@
     let templateDirty = $state(false);
     let effectiveTemplateName = $derived(isNewTemplate ? newTemplateName.trim() : selectedTemplate);
 
-    // --- Diff tracking ---
+    // --- Diff tracking (for overrides section) ---
 
-    let maxTokensOverridden = $derived(maxTokens !== datasetDefaults.maxTokens);
-    let imageQualityOverridden = $derived(imageQuality !== datasetDefaults.imageQuality);
-    let draftNameOverridden = $derived(draftName !== datasetDefaults.draftName);
-    let overwriteOverridden = $derived(overwrite !== datasetDefaults.overwrite);
-    let roundsOverridden = $derived(rounds !== datasetDefaults.rounds);
-    let reasoningEnabledOverridden = $derived(
-        reasoningEnabled !== datasetDefaults.reasoningEnabled
-    );
-    let reasoningEffortOverridden = $derived(
-        reasoningEnabled && reasoningEffort !== datasetDefaults.reasoningEffort
-    );
-    let templateOverridden = $derived(selectedTemplate !== datasetDefaults.selectedTemplate);
+    type OverrideableField = keyof CaptionOptionsDiffDefaults | 'selectedTemplate';
 
-    /** Human-readable labels for each overrideable field. */
-    const FIELD_LABELS: Record<keyof DatasetDefaults, string> = {
+    const FIELD_LABELS: Record<OverrideableField, string> = {
         maxTokens: 'Max Tokens',
         imageQuality: 'Image Quality',
         draftName: 'Draft Name',
@@ -136,33 +118,39 @@
         rounds: 'Rounds',
         reasoningEnabled: 'Reasoning',
         reasoningEffort: 'Thinking Effort',
+        storeConversation: 'Store Conversation',
+        reasoningExcludeOutput: 'Exclude Reasoning',
         selectedTemplate: 'Template'
     };
 
+    let templateOverridden = $derived(selectedTemplate !== datasetDefaults.selectedTemplate);
+
     /** List of currently overridden fields with labels and reset actions. */
     let overrides = $derived.by(() => {
-        const items: { field: keyof DatasetDefaults; label: string }[] = [];
-        if (maxTokensOverridden) {
+        const items: { field: OverrideableField; label: string }[] = [];
+        // Options fields
+        if (maxTokens !== datasetDefaults.maxTokens) {
             items.push({ field: 'maxTokens', label: FIELD_LABELS.maxTokens });
         }
-        if (imageQualityOverridden) {
+        if (imageQuality !== datasetDefaults.imageQuality) {
             items.push({ field: 'imageQuality', label: FIELD_LABELS.imageQuality });
         }
-        if (draftNameOverridden) {
+        if (draftName !== datasetDefaults.draftName) {
             items.push({ field: 'draftName', label: FIELD_LABELS.draftName });
         }
-        if (overwriteOverridden) {
+        if (overwrite !== datasetDefaults.overwrite) {
             items.push({ field: 'overwrite', label: FIELD_LABELS.overwrite });
         }
-        if (roundsOverridden) {
+        if (rounds !== datasetDefaults.rounds) {
             items.push({ field: 'rounds', label: FIELD_LABELS.rounds });
         }
-        if (reasoningEnabledOverridden) {
+        if (reasoningEnabled !== datasetDefaults.reasoningEnabled) {
             items.push({ field: 'reasoningEnabled', label: FIELD_LABELS.reasoningEnabled });
         }
-        if (reasoningEffortOverridden) {
+        if (reasoningEnabled && reasoningEffort !== datasetDefaults.reasoningEffort) {
             items.push({ field: 'reasoningEffort', label: FIELD_LABELS.reasoningEffort });
         }
+        // Template (managed here, not in CaptionOptionsFields)
         if (templateOverridden) {
             items.push({ field: 'selectedTemplate', label: FIELD_LABELS.selectedTemplate });
         }
@@ -226,11 +214,13 @@
             datasetDefaults = {
                 maxTokens: p.settings?.max_tokens ?? HARDCODED_DEFAULTS.maxTokens,
                 imageQuality: p.settings?.image_quality ?? HARDCODED_DEFAULTS.imageQuality,
-                draftName: HARDCODED_DEFAULTS.draftName,
+                draftName: '',
                 overwrite: p.overwrite_captions ?? HARDCODED_DEFAULTS.overwrite,
                 rounds: p.rounds ?? HARDCODED_DEFAULTS.rounds,
                 reasoningEnabled: p.reasoning?.enable ?? HARDCODED_DEFAULTS.reasoningEnabled,
                 reasoningEffort: p.reasoning?.thinking_effort ?? HARDCODED_DEFAULTS.reasoningEffort,
+                storeConversation: false,
+                reasoningExcludeOutput: true,
                 selectedTemplate: p.prompt?.name ?? HARDCODED_DEFAULTS.selectedTemplate
             };
 
@@ -271,14 +261,14 @@
 
     // --- Per-field reset ---
 
-    function resetField(field: keyof DatasetDefaults) {
+    function resetField(field: OverrideableField) {
         const val = datasetDefaults[field];
         switch (field) {
             case 'maxTokens':
-                maxTokens = val as number;
+                maxTokens = val as number | null;
                 break;
             case 'imageQuality':
-                imageQuality = val as 'auto' | 'high' | 'low';
+                imageQuality = val as 'auto' | 'high' | 'low' | null;
                 break;
             case 'draftName':
                 draftName = val as string;
@@ -287,7 +277,7 @@
                 overwrite = val as boolean;
                 break;
             case 'rounds':
-                rounds = val as number;
+                rounds = val as number | null;
                 break;
             case 'reasoningEnabled':
                 reasoningEnabled = val as boolean;
@@ -302,7 +292,7 @@
     }
 
     function resetAllOverrides() {
-        for (const field of Object.keys(HARDCODED_DEFAULTS) as (keyof DatasetDefaults)[]) {
+        for (const field of Object.keys(HARDCODED_DEFAULTS) as OverrideableField[]) {
             resetField(field);
         }
     }
@@ -424,9 +414,9 @@
         api_model_name: effectiveModelName || undefined,
         prompt_template: templateDirty ? templateContent : undefined,
         prompt_name: templateDirty ? undefined : effectiveTemplateName || undefined,
-        max_tokens: maxTokens,
-        image_quality: imageQuality,
-        rounds: rounds > 1 ? rounds : undefined,
+        max_tokens: maxTokens ?? undefined,
+        image_quality: imageQuality ?? undefined,
+        rounds: rounds && rounds > 1 ? rounds : undefined,
         draft: draftName.trim() || undefined,
         overwrite: overwrite || undefined,
         reasoning: reasoningEnabled || undefined,
@@ -443,11 +433,11 @@
         captionSettings.update((s) => ({
             ...s,
             env: selectedEnv,
-            maxTokens,
-            imageQuality,
+            maxTokens: maxTokens ?? 512,
+            imageQuality: imageQuality ?? 'auto',
             draftName,
             overwrite,
-            rounds,
+            rounds: rounds ?? 1,
             reasoningEnabled,
             reasoningEffort,
             selectedTemplate: effectiveTemplateName || selectedTemplate,
@@ -584,128 +574,21 @@
             {/if}
         </section>
 
-        <!-- ═══ Section: Options ═══ -->
-        <section class="space-y-3">
-            <h3 class="section-heading">Options</h3>
-
-            <div class="grid grid-cols-2 gap-3">
-                <!-- Max Tokens -->
-                <div>
-                    <div class="mb-1 flex items-center gap-1.5">
-                        <label class="label mb-0" for="caption-tokens">Max Tokens</label>
-                        {#if maxTokensOverridden}
-                            <span class="diff-dot" title="Differs from dataset config"></span>
-                        {/if}
-                    </div>
-                    <input
-                        id="caption-tokens"
-                        type="number"
-                        bind:value={maxTokens}
-                        min={100}
-                        max={16384}
-                        class="input"
-                    />
-                </div>
-
-                <!-- Image Quality -->
-                <div>
-                    <div class="mb-1 flex items-center gap-1.5">
-                        <label class="label mb-0" for="caption-quality">Image Quality</label>
-                        {#if imageQualityOverridden}
-                            <span class="diff-dot" title="Differs from dataset config"></span>
-                        {/if}
-                    </div>
-                    <select
-                        id="caption-quality"
-                        class="input cursor-pointer"
-                        bind:value={imageQuality}
-                    >
-                        <option value="auto">Auto</option>
-                        <option value="high">High</option>
-                        <option value="low">Low</option>
-                    </select>
-                </div>
-
-                <!-- Draft -->
-                <div>
-                    <div class="mb-1 flex items-center gap-1.5">
-                        <label class="label mb-0" for="caption-draft">Draft Name</label>
-                        {#if draftNameOverridden}
-                            <span class="diff-dot" title="Differs from dataset config"></span>
-                        {/if}
-                    </div>
-                    <input
-                        id="caption-draft"
-                        type="text"
-                        bind:value={draftName}
-                        class="input"
-                        placeholder="(none — write caption directly)"
-                    />
-                </div>
-
-                <!-- Rounds -->
-                <div>
-                    <div class="mb-1 flex items-center gap-1.5">
-                        <label class="label mb-0" for="caption-rounds">Rounds</label>
-                        {#if roundsOverridden}
-                            <span class="diff-dot" title="Differs from dataset config"></span>
-                        {/if}
-                    </div>
-                    <input
-                        id="caption-rounds"
-                        type="number"
-                        bind:value={rounds}
-                        min={1}
-                        max={10}
-                        class="input"
-                    />
-                </div>
-            </div>
-
-            <!-- Overwrite -->
-            <div class="flex items-center gap-2">
-                <Checkbox id="caption-overwrite" bind:checked={overwrite} />
-                <label class="cursor-pointer text-sm text-gray-300" for="caption-overwrite">
-                    Overwrite existing captions
-                </label>
-                {#if overwriteOverridden}
-                    <span class="diff-dot" title="Differs from dataset config"></span>
-                {/if}
-            </div>
-        </section>
-
-        <!-- ═══ Section: Reasoning ═══ -->
-        <section class="space-y-3">
-            <div class="flex items-center gap-2">
-                <Checkbox id="caption-reasoning" bind:checked={reasoningEnabled} />
-                <label class="section-heading cursor-pointer" for="caption-reasoning">
-                    Reasoning
-                </label>
-                {#if reasoningEnabledOverridden}
-                    <span class="diff-dot" title="Differs from dataset config"></span>
-                {/if}
-            </div>
-
-            {#if reasoningEnabled}
-                <div>
-                    <div class="mb-1 flex items-center gap-1.5">
-                        <label class="label mb-0" for="caption-effort">Thinking Effort</label>
-                        {#if reasoningEffortOverridden}
-                            <span class="diff-dot" title="Differs from dataset config"></span>
-                        {/if}
-                    </div>
-                    <select
-                        id="caption-effort"
-                        class="input cursor-pointer"
-                        bind:value={reasoningEffort}
-                    >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                    </select>
-                </div>
-            {/if}
-        </section>
+        <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
+        <CaptionOptionsFields
+            bind:maxTokens
+            bind:imageQuality
+            bind:rounds
+            bind:overwrite
+            bind:reasoningEnabled
+            bind:reasoningEffort
+            bind:draftName
+            display={{
+                idPrefix: 'caption',
+                showDraftName: true,
+                diffDefaults: datasetDefaults
+            }}
+        />
 
         <!-- ═══ Section: Overrides ═══ -->
         {#if overriddenCount > 0}

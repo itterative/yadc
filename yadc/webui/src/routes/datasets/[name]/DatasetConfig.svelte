@@ -1,6 +1,6 @@
 <script lang="ts">
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
-    import Checkbox from '$lib/components/ui/Checkbox.svelte';
+    import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import { fetchConfig, patchConfig, previewConfig, type Config } from '$lib/stores/configs';
@@ -376,171 +376,24 @@
                 </div>
             </section>
 
-            <!-- ═══ Section: Options ═══ -->
-            <section class="space-y-3">
-                <h3 class="section-heading">Options</h3>
-
-                <div class="grid grid-cols-2 gap-3">
-                    <!-- Max Tokens -->
-                    <div>
-                        <label class="label" for="config-tokens">Max Tokens</label>
-                        <input
-                            id="config-tokens"
-                            type="number"
-                            value={maxTokens ?? ''}
-                            min={100}
-                            max={16384}
-                            class="input"
-                            placeholder="512 (default)"
-                            oninput={(e) => {
-                                const val = e.currentTarget.value;
-                                maxTokens = val === '' ? null : Number(val);
-                            }}
-                        />
-                        <p class="help-text">
-                            Maximum tokens the model can output. Clear to use default (512).
-                        </p>
-                    </div>
-
-                    <!-- Image Quality -->
-                    <div>
-                        <label class="label" for="config-quality">Image Quality</label>
-                        <select
-                            id="config-quality"
-                            class="input cursor-pointer"
-                            value={imageQuality ?? ''}
-                            onchange={(e) => {
-                                const val = e.currentTarget.value;
-                                imageQuality = (val === '' ? null : val) as
-                                    | 'auto'
-                                    | 'high'
-                                    | 'low'
-                                    | null;
-                            }}
-                        >
-                            <option value="">Auto (default)</option>
-                            <option value="auto">Auto</option>
-                            <option value="high">High</option>
-                            <option value="low">Low</option>
-                        </select>
-                        <p class="help-text">
-                            Quality of images sent to the model. Higher quality uses more tokens.
-                        </p>
-                    </div>
-
-                    <!-- Rounds -->
-                    <div>
-                        <label class="label" for="config-rounds">Rounds</label>
-                        <input
-                            id="config-rounds"
-                            type="number"
-                            value={rounds ?? ''}
-                            min={1}
-                            max={10}
-                            class="input"
-                            placeholder="1 (default)"
-                            oninput={(e) => {
-                                const val = e.currentTarget.value;
-                                rounds = val === '' ? null : Number(val);
-                            }}
-                        />
-                        <p class="help-text">
-                            Multiple rounds generate captions, then a final round refines them.
-                            Clear to use default (1).
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Checkboxes -->
-                <div class="space-y-2">
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <Checkbox id="config-overwrite" bind:checked={overwrite} />
-                            <label
-                                class="cursor-pointer text-sm text-gray-300"
-                                for="config-overwrite"
-                            >
-                                Overwrite existing captions
-                            </label>
-                        </div>
-                        <p class="help-text ml-6">
-                            When disabled, images with existing captions are skipped.
-                        </p>
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <Checkbox
-                                id="config-store-conversation"
-                                bind:checked={storeConversation}
-                            />
-                            <label
-                                class="cursor-pointer text-sm text-gray-300"
-                                for="config-store-conversation"
-                            >
-                                Store conversation history
-                            </label>
-                        </div>
-                        <p class="help-text ml-6">
-                            Let the API provider store conversations for later review. Not
-                            recommended for large datasets.
-                        </p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ═══ Section: Reasoning ═══ -->
-            <section class="space-y-3">
-                <div class="flex items-center gap-2">
-                    <Checkbox id="config-reasoning" bind:checked={reasoningEnabled} />
-                    <label class="section-heading cursor-pointer" for="config-reasoning">
-                        Reasoning
-                    </label>
-                </div>
-                <p class="help-text">
-                    Enables chain-of-thought reasoning for models that support it. Improves output
-                    quality at the cost of inference time.
-                </p>
-
-                {#if reasoningEnabled}
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="label" for="config-effort">Thinking Effort</label>
-                            <select
-                                id="config-effort"
-                                class="input cursor-pointer"
-                                bind:value={reasoningEffort}
-                            >
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                            <p class="help-text">
-                                How much thinking the model does. Start with low and increase if
-                                needed.
-                            </p>
-                        </div>
-                        <div class="flex items-end pb-1">
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <Checkbox
-                                        id="config-exclude-output"
-                                        bind:checked={reasoningExcludeOutput}
-                                    />
-                                    <label
-                                        class="cursor-pointer text-sm text-gray-300"
-                                        for="config-exclude-output"
-                                    >
-                                        Exclude from output
-                                    </label>
-                                </div>
-                                <p class="help-text ml-6">
-                                    Hide the reasoning section from the caption output.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                {/if}
-            </section>
+            <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
+            <CaptionOptionsFields
+                bind:maxTokens
+                bind:imageQuality
+                bind:rounds
+                bind:overwrite
+                bind:reasoningEnabled
+                bind:reasoningEffort
+                bind:storeConversation
+                bind:reasoningExcludeOutput
+                display={{
+                    idPrefix: 'config',
+                    nullable: true,
+                    helpText: true,
+                    showStoreConversation: true,
+                    showReasoningExcludeOutput: true
+                }}
+            />
 
             <!-- ═══ Section: Preview ═══ -->
             <section class="space-y-3">
