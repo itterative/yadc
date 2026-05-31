@@ -95,7 +95,7 @@ yadc/webui/
       datasets/[name]/
         +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line)
         CaptionSettings.svelte    # Co-located: captioning settings side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides.
-        DatasetConfig.svelte      # Co-located: dataset config editor tab. Structured form for caption settings (max_tokens, image_quality, rounds, overwrite, reasoning, prompt) saved via PATCH /configs/<name>. Read-only raw TOML view at bottom.
+        DatasetConfig.svelte      # Co-located: dataset config editor tab. CompactPillTabs toggle between structured form (PATCH) and raw TOML editor (PUT). Uses CaptionOptionsFields, KeyValueEditor for dataset entries.
         SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.
 ```
 

@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
 status: In Progress
-last_history: 3
+last_history: 5
 category: meta
 ---
 
@@ -118,40 +118,11 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 
 ---
 
-## Phase 2: Advanced Settings Fields
+## Phase 2: ~~Advanced Settings Fields~~ Deferred to Advanced View
 
-Expose the `settings.advanced` and `reasoning.advanced` sub-fields in the structured form.
+~Expose the `settings.advanced` and `reasoning.advanced` sub-fields in the structured form.~
 
-### 2.1 Settings advanced section
-
-Collapsible "Advanced" section under the existing "Options" section:
-
-- **System role** — select: `system` / `developer`
-- **User role** — text (default: `user`, locked — informational only?)
-- **Assistant role** — select: `(empty)` / `assistant` / `model`
-- **Assistant prefill** — text input
-
-These correspond to `ConfigSettingsAdvanced` fields.
-
-### 2.2 Reasoning advanced section
-
-Collapsible under reasoning (only visible when reasoning is enabled):
-
-- **Thinking start** — text input (default: `沥水`)
-- **Thinking end** — text input (default: `(util`)
-
-These are niche power-user fields, so collapsible by default.
-
-### 2.3 Caption suffix field
-
-Add `caption_suffix` to the Options section. Text input, must start with `.`.
-
-### Status
-
-- [ ] Advanced settings section (system_role, user_role, assistant_role, assistant_prefill)
-- [ ] Reasoning advanced section (thinking_start, thinking_end)
-- [ ] Caption suffix field
-- [ ] Update `buildPatch()` and dirty tracking
+These are niche power-user fields. Rather than adding them to the structured form, they'll be editable through the advanced/raw TOML view (Phase 3). No separate implementation needed.
 
 ---
 
@@ -185,11 +156,12 @@ Recommendation: Keep both for now. The listing-page dialog is convenient for qui
 
 ### Status
 
-- [ ] View mode toggle UI (Simplified / Advanced)
-- [ ] Advanced mode: editable TomlEditor inline
-- [ ] Switch validation (Advanced → Simplified must parse)
-- [ ] Dirty tracking for raw TOML edits
-- [ ] Save via PUT in Advanced mode
+- [x] View mode toggle UI (Form / Raw TOML segmented control)
+- [x] Advanced mode: editable TomlEditor inline
+- [x] Switch validation (Advanced → Simplified reloads from server if raw had unsaved changes)
+- [x] Dirty tracking for raw TOML edits
+- [x] Save via PUT in Advanced mode
+- [x] `populateFields()` extracted for shared use between loadConfig and advanced save
 
 ---
 

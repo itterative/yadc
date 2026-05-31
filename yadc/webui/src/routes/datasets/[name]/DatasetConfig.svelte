@@ -6,10 +6,15 @@
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
+    import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import SvgFile from '$lib/icons/SvgFile.svelte';
+    import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
+    import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import {
         fetchConfig,
         patchConfig,
         previewConfig,
+        updateConfig,
         type Config,
         type ConfigDatasetEntry
     } from '$lib/stores/configs';
@@ -84,6 +89,19 @@
 
     let datasetEntries: DatasetEntry[] = $state([]);
 
+    // --- View mode ---
+
+    /** Current view mode — driven by CompactPillTabs. */
+    let activeView: 'simplified' | 'advanced' = $state('simplified');
+
+    /** Raw TOML content for Advanced mode editing. */
+    let rawContent = $state('');
+    /** Snapshot of raw content at load / last save, for Advanced mode dirty tracking. */
+    let loadedRawContent = $state('');
+
+    /** Whether the Advanced mode editor has unsaved changes. */
+    let rawDirty = $derived(rawContent !== loadedRawContent);
+
     // --- Snapshot of last-loaded values for dirty tracking ---
 
     let loadedApiUrl = $state('');
@@ -118,7 +136,7 @@
         });
     }
 
-    let dirty = $derived(
+    let simplifiedDirty = $derived(
         apiUrl !== loadedApiUrl ||
             apiModelName !== loadedApiModelName ||
             promptName !== loadedPromptName ||
@@ -133,6 +151,8 @@
             envName !== loadedEnvName ||
             !entriesEqual(datasetEntries, loadedDatasetEntries)
     );
+
+    let dirty = $derived(activeView === 'simplified' ? simplifiedDirty : rawDirty);
 
     // --- Live preview ---
 
@@ -237,41 +257,45 @@
         loadConfig();
     });
 
+    /** Populate structured fields from parsed config. */
+    function populateFields(p: Config, content: string, configPath: string) {
+        previewContent = content;
+        rawContent = loadedRawContent = content;
+        loadedConfigPath = configPath;
+
+        apiUrl = loadedApiUrl = p.api?.url ?? '';
+        apiModelName = loadedApiModelName = p.api?.model_name ?? '';
+        promptName = loadedPromptName = p.prompt?.name ?? '';
+        maxTokens = loadedMaxTokens = p.settings?.max_tokens ?? null;
+        imageQuality = loadedImageQuality = p.settings?.image_quality ?? null;
+        rounds = loadedRounds = p.rounds ?? null;
+        overwrite = loadedOverwrite = p.overwrite_captions ?? false;
+        storeConversation = loadedStoreConversation = p.settings?.store_conversation ?? false;
+        reasoningEnabled = loadedReasoningEnabled = p.reasoning?.enable ?? false;
+        reasoningEffort = loadedReasoningEffort = p.reasoning?.thinking_effort ?? 'low';
+        reasoningExcludeOutput = loadedReasoningExcludeOutput =
+            p.reasoning?.exclude_from_output ?? true;
+        envName = loadedEnvName = p.env ?? '';
+
+        // Parse dataset entries
+        const rawEntries = p.dataset ?? [];
+        parsedDatasetRaw = rawEntries;
+        datasetEntries = loadedDatasetEntries = rawEntries.map((entry) => ({
+            path: entry.path ?? '',
+            extras: extrasToEntries(entry.extras as Record<string, unknown> | undefined),
+            imageCount: entry.images?.length ?? 0
+        }));
+    }
+
     async function loadConfig() {
         isLoading = true;
         error = null;
 
         try {
             const templatesReady = $templates.loaded ? Promise.resolve() : refreshTemplates();
-
             const [config] = await Promise.all([fetchConfig(datasetName), templatesReady]);
-            previewContent = config.content;
-            loadedConfigPath = config.config_path;
             validationErrors = config.validation_error ?? [];
-            const p = config.parsed;
-
-            apiUrl = loadedApiUrl = p.api?.url ?? '';
-            apiModelName = loadedApiModelName = p.api?.model_name ?? '';
-            promptName = loadedPromptName = p.prompt?.name ?? '';
-            maxTokens = loadedMaxTokens = p.settings?.max_tokens ?? null;
-            imageQuality = loadedImageQuality = p.settings?.image_quality ?? null;
-            rounds = loadedRounds = p.rounds ?? null;
-            overwrite = loadedOverwrite = p.overwrite_captions ?? false;
-            storeConversation = loadedStoreConversation = p.settings?.store_conversation ?? false;
-            reasoningEnabled = loadedReasoningEnabled = p.reasoning?.enable ?? false;
-            reasoningEffort = loadedReasoningEffort = p.reasoning?.thinking_effort ?? 'low';
-            reasoningExcludeOutput = loadedReasoningExcludeOutput =
-                p.reasoning?.exclude_from_output ?? true;
-            envName = loadedEnvName = p.env ?? '';
-
-            // Parse dataset entries
-            const rawEntries = p.dataset ?? [];
-            parsedDatasetRaw = rawEntries;
-            datasetEntries = loadedDatasetEntries = rawEntries.map((entry) => ({
-                path: entry.path ?? '',
-                extras: extrasToEntries(entry.extras as Record<string, unknown> | undefined),
-                imageCount: entry.images?.length ?? 0
-            }));
+            populateFields(config.parsed, config.content, config.config_path);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load config');
         } finally {
@@ -325,30 +349,62 @@
         datasetEntries = datasetEntries.map((e, i) => (i === index ? { ...e, path: newPath } : e));
     }
 
+    // --- View mode switching ---
+
+    let previousView: 'simplified' | 'advanced' = $state('simplified');
+
+    $effect(() => {
+        if (activeView === previousView) {
+            return;
+        }
+        if (activeView === 'advanced') {
+            // Transfer current preview content (includes unsaved simplified changes)
+            rawContent = previewContent;
+            loadedRawContent = previewContent;
+        } else if (rawDirty) {
+            // Switching back with unsaved raw changes — reload from server
+            loadConfig();
+        }
+        previousView = activeView;
+    });
+
     async function handleSave() {
         isSaving = true;
         saveError = null;
 
         try {
-            const result = await patchConfig(datasetName, buildPatch());
-            previewContent = result.content;
-            // Update loaded snapshot so dirty resets
-            loadedApiUrl = apiUrl;
-            loadedApiModelName = apiModelName;
-            loadedPromptName = promptName;
-            loadedMaxTokens = maxTokens as number | null;
-            loadedImageQuality = imageQuality as 'auto' | 'high' | 'low' | null;
-            loadedRounds = rounds as number | null;
-            loadedOverwrite = overwrite;
-            loadedStoreConversation = storeConversation;
-            loadedReasoningEnabled = reasoningEnabled;
-            loadedReasoningEffort = reasoningEffort;
-            loadedReasoningExcludeOutput = reasoningExcludeOutput;
-            loadedEnvName = envName;
-            loadedDatasetEntries = datasetEntries.map((e) => ({
-                ...e,
-                extras: e.extras.map((kv) => ({ ...kv }))
-            }));
+            if (activeView === 'advanced') {
+                // PUT: full content replacement
+                const result = await updateConfig(datasetName, rawContent);
+                previewContent = result.content;
+                rawContent = loadedRawContent = result.content;
+                // Re-populate structured fields from the new content
+                populateFields(result.parsed, result.content, result.config_path);
+                validationErrors = result.validation_error ?? [];
+            } else {
+                // PATCH: merge structured fields
+                const result = await patchConfig(datasetName, buildPatch());
+                previewContent = result.content;
+                rawContent = loadedRawContent = result.content;
+                validationErrors = result.validation_error ?? [];
+                // Update loaded snapshot so dirty resets
+                loadedApiUrl = apiUrl;
+                loadedApiModelName = apiModelName;
+                loadedPromptName = promptName;
+                loadedMaxTokens = maxTokens as number | null;
+                loadedImageQuality = imageQuality as 'auto' | 'high' | 'low' | null;
+                loadedRounds = rounds as number | null;
+                loadedOverwrite = overwrite;
+                loadedStoreConversation = storeConversation;
+                loadedReasoningEnabled = reasoningEnabled;
+                loadedReasoningEffort = reasoningEffort;
+                loadedReasoningExcludeOutput = reasoningExcludeOutput;
+                loadedEnvName = envName;
+                loadedDatasetEntries = datasetEntries.map((e) => ({
+                    ...e,
+                    extras: e.extras.map((kv) => ({ ...kv }))
+                }));
+            }
             toast.success('Config saved');
             onsaved?.();
         } catch (e) {
@@ -381,215 +437,234 @@
                 </div>
             {/if}
 
-            <!-- ═══ Info: Dataset source & path ═══ -->
-            <section class="space-y-2">
-                <h3 class="section-heading">Dataset</h3>
-                <div class="space-y-1">
-                    <div class="flex items-center gap-2">
-                        {#if source === 'upload'}
-                            <span class="badge-muted badge-sm">Managed</span>
-                            <span class="text-xs text-gray-400"
-                                >Files stored in yadc state directory</span
-                            >
-                        {:else}
-                            <span class="badge-muted badge-sm">External</span>
-                            <span class="text-xs text-gray-400">References paths outside yadc</span>
-                        {/if}
-                    </div>
-                    {#if loadedConfigPath}
-                        <p
-                            class="truncate font-mono text-xs text-gray-500"
-                            title={source === 'upload' || source === 'create'
-                                ? loadedConfigPath
-                                : undefined}
-                        >
-                            {displayConfigPath(loadedConfigPath)}
-                        </p>
-                    {/if}
-                </div>
-            </section>
+            <!-- ═══ View mode toggle ═══ -->
+            <CompactPillTabs bind:value={activeView} class="">
+                <Tab id="simplified" label="Form" icon={SvgFile} class="gap-4 flex flex-col">
+                    <!-- ═══ Simplified mode: structured form ═══ -->
 
-            <!-- ═══ Section: Dataset Entries ═══ -->
-            <section class="space-y-3">
-                <h3 class="section-heading">Paths & Variables</h3>
-                <p class="help-text">
-                    Each entry is a directory of images with optional template variables.
-                </p>
-
-                {#each datasetEntries as entry, i (i)}
-                    <div class="card">
-                        <div class="card-body space-y-3">
-                            <!-- Entry header -->
-                            <div class="flex items-start gap-2">
-                                <div class="flex-1">
-                                    <label class="label" for="entry-path-{i}">Path</label>
-                                    <input
-                                        id="entry-path-{i}"
-                                        type="text"
-                                        class="input font-mono text-sm"
-                                        value={entry.path}
-                                        placeholder="/path/to/images"
-                                        oninput={(e) => updateEntryPath(i, e.currentTarget.value)}
-                                    />
-                                </div>
-                                {#if datasetEntries.length > 1}
-                                    <button
-                                        class="mt-6 cursor-pointer p-1 text-gray-500 transition-colors hover:text-error"
-                                        onclick={() => removeDatasetEntry(i)}
-                                        title="Remove entry"
-                                        aria-label="Remove entry"
+                    <!-- ═══ Info: Dataset source & path ═══ -->
+                    <section class="space-y-2">
+                        <h3 class="section-heading">Dataset</h3>
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-2">
+                                {#if source === 'upload'}
+                                    <span class="badge-muted badge-sm">Managed</span>
+                                    <span class="text-xs text-gray-400"
+                                        >Files stored in yadc state directory</span
                                     >
-                                        <SvgDelete class="h-4 w-4" />
-                                    </button>
+                                {:else}
+                                    <span class="badge-muted badge-sm">External</span>
+                                    <span class="text-xs text-gray-400"
+                                        >References paths outside yadc</span
+                                    >
                                 {/if}
                             </div>
-
-                            <!-- Inline images badge -->
-                            {#if entry.imageCount > 0}
-                                <p class="text-xs text-gray-500">
-                                    {entry.imageCount} inline image{entry.imageCount !== 1
-                                        ? 's'
-                                        : ''}
-                                    — edit in raw TOML view
-                                </p>
-                            {/if}
-
-                            <!-- Empty entry warning -->
-                            {#if !entry.path && entry.imageCount === 0}
-                                <p class="text-xs text-warning">
-                                    Empty entry — set a path or add images.
-                                </p>
-                            {/if}
-
-                            <!-- Extras -->
-                            <div>
-                                <div
-                                    class="mb-1.5 text-xs font-medium tracking-wide text-gray-300 uppercase"
+                            {#if loadedConfigPath}
+                                <p
+                                    class="truncate font-mono text-xs text-gray-500"
+                                    title={source === 'upload' || source === 'create'
+                                        ? loadedConfigPath
+                                        : undefined}
                                 >
-                                    Variables
+                                    {displayConfigPath(loadedConfigPath)}
+                                </p>
+                            {/if}
+                        </div>
+                    </section>
+
+                    <!-- ═══ Section: Dataset Entries ═══ -->
+                    <section class="space-y-3">
+                        <h3 class="section-heading">Paths & Variables</h3>
+                        <p class="help-text">
+                            Each entry is a directory of images with optional template variables.
+                        </p>
+
+                        {#each datasetEntries as entry, i (i)}
+                            <div class="card">
+                                <div class="card-body space-y-3">
+                                    <!-- Entry header -->
+                                    <div class="flex items-start gap-2">
+                                        <div class="flex-1">
+                                            <label class="label" for="entry-path-{i}">Path</label>
+                                            <input
+                                                id="entry-path-{i}"
+                                                type="text"
+                                                class="input font-mono text-sm"
+                                                value={entry.path}
+                                                placeholder="/path/to/images"
+                                                oninput={(e) =>
+                                                    updateEntryPath(i, e.currentTarget.value)}
+                                            />
+                                        </div>
+                                        {#if datasetEntries.length > 1}
+                                            <button
+                                                class="mt-6 cursor-pointer p-1 text-gray-500 transition-colors hover:text-error"
+                                                onclick={() => removeDatasetEntry(i)}
+                                                title="Remove entry"
+                                                aria-label="Remove entry"
+                                            >
+                                                <SvgDelete class="h-4 w-4" />
+                                            </button>
+                                        {/if}
+                                    </div>
+
+                                    <!-- Inline images badge -->
+                                    {#if entry.imageCount > 0}
+                                        <p class="text-xs text-gray-500">
+                                            {entry.imageCount} inline image{entry.imageCount !== 1
+                                                ? 's'
+                                                : ''}
+                                            — edit in raw TOML view
+                                        </p>
+                                    {/if}
+
+                                    <!-- Empty entry warning -->
+                                    {#if !entry.path && entry.imageCount === 0}
+                                        <p class="text-xs text-warning">
+                                            Empty entry — set a path or add images.
+                                        </p>
+                                    {/if}
+
+                                    <!-- Extras -->
+                                    <div>
+                                        <div
+                                            class="mb-1.5 text-xs font-medium tracking-wide text-gray-300 uppercase"
+                                        >
+                                            Variables
+                                        </div>
+                                        <KeyValueEditor
+                                            bind:entries={datasetEntries[i].extras}
+                                            idPrefix="entry-{i}-extras"
+                                            keyPlaceholder="variable name"
+                                            valuePlaceholder="value"
+                                        />
+                                    </div>
                                 </div>
-                                <KeyValueEditor
-                                    bind:entries={datasetEntries[i].extras}
-                                    idPrefix="entry-{i}-extras"
-                                    keyPlaceholder="variable name"
-                                    valuePlaceholder="value"
+                            </div>
+                        {/each}
+
+                        <button class="btn-secondary w-full" onclick={addDatasetEntry}>
+                            <SvgPlus class="mr-1 inline-block h-4 w-4" />
+                            Add Path
+                        </button>
+                    </section>
+
+                    <!-- ═══ Section: API ═══ -->
+                    <section class="space-y-3">
+                        <h3 class="section-heading">API</h3>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2">
+                                <label class="label" for="config-api-url">API URL</label>
+                                <input
+                                    id="config-api-url"
+                                    type="text"
+                                    bind:value={apiUrl}
+                                    class="input"
+                                    placeholder="http://localhost:11434"
+                                />
+                                <p class="help-text">
+                                    Hostname and port only — no additional path segments.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="label" for="config-model">Model Name</label>
+                                <input
+                                    id="config-model"
+                                    type="text"
+                                    bind:value={apiModelName}
+                                    class="input"
+                                    placeholder="gemma3"
                                 />
                             </div>
+
+                            <div>
+                                <label class="label" for="config-env">Environment</label>
+                                <input
+                                    id="config-env"
+                                    type="text"
+                                    bind:value={envName}
+                                    class="input"
+                                    placeholder="default"
+                                />
+                                <p class="help-text">
+                                    Set this to configure API settings outside the TOML file.
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                {/each}
+                    </section>
 
-                <button class="btn-secondary w-full" onclick={addDatasetEntry}>
-                    <SvgPlus class="mr-1 inline-block h-4 w-4" />
-                    Add Path
-                </button>
-            </section>
+                    <!-- ═══ Section: Prompt ═══ -->
+                    <section class="space-y-3">
+                        <h3 class="section-heading">Prompt</h3>
 
-            <!-- ═══ Section: API ═══ -->
-            <section class="space-y-3">
-                <h3 class="section-heading">API</h3>
-
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="col-span-2">
-                        <label class="label" for="config-api-url">API URL</label>
-                        <input
-                            id="config-api-url"
-                            type="text"
-                            bind:value={apiUrl}
-                            class="input"
-                            placeholder="http://localhost:11434"
-                        />
-                        <p class="help-text">
-                            Hostname and port only — no additional path segments.
-                        </p>
-                    </div>
-
-                    <div>
-                        <label class="label" for="config-model">Model Name</label>
-                        <input
-                            id="config-model"
-                            type="text"
-                            bind:value={apiModelName}
-                            class="input"
-                            placeholder="gemma3"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="label" for="config-env">Environment</label>
-                        <input
-                            id="config-env"
-                            type="text"
-                            bind:value={envName}
-                            class="input"
-                            placeholder="default"
-                        />
-                        <p class="help-text">
-                            Set this to configure API settings outside the TOML file.
-                        </p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ═══ Section: Prompt ═══ -->
-            <section class="space-y-3">
-                <h3 class="section-heading">Prompt</h3>
-
-                <div>
-                    <label class="label" for="config-prompt">Template</label>
-                    <select
-                        id="config-prompt"
-                        class="input cursor-pointer"
-                        value={promptName}
-                        onchange={(e) => {
-                            promptName = e.currentTarget.value;
-                        }}
-                    >
-                        <option value="">(default)</option>
-                        {#each $templates.items as t (t.name)}
-                            <option value={t.name}
-                                >{t.name}{t.source === 'builtin' ? ' (built-in)' : ''}</option
+                        <div>
+                            <label class="label" for="config-prompt">Template</label>
+                            <select
+                                id="config-prompt"
+                                class="input cursor-pointer"
+                                value={promptName}
+                                onchange={(e) => {
+                                    promptName = e.currentTarget.value;
+                                }}
                             >
-                        {/each}
-                    </select>
-                    <p class="help-text">
-                        Prompt template used during captioning. Leave empty for the default
-                        template.
-                    </p>
-                </div>
-            </section>
+                                <option value="">(default)</option>
+                                {#each $templates.items as t (t.name)}
+                                    <option value={t.name}
+                                        >{t.name}{t.source === 'builtin'
+                                            ? ' (built-in)'
+                                            : ''}</option
+                                    >
+                                {/each}
+                            </select>
+                            <p class="help-text">
+                                Prompt template used during captioning. Leave empty for the default
+                                template.
+                            </p>
+                        </div>
+                    </section>
 
-            <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
-            <CaptionOptionsFields
-                bind:maxTokens
-                bind:imageQuality
-                bind:rounds
-                bind:overwrite
-                bind:reasoningEnabled
-                bind:reasoningEffort
-                bind:storeConversation
-                bind:reasoningExcludeOutput
-                display={{
-                    idPrefix: 'config',
-                    nullable: true,
-                    helpText: true,
-                    showStoreConversation: true,
-                    showReasoningExcludeOutput: true
-                }}
-            />
+                    <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
+                    <CaptionOptionsFields
+                        bind:maxTokens
+                        bind:imageQuality
+                        bind:rounds
+                        bind:overwrite
+                        bind:reasoningEnabled
+                        bind:reasoningEffort
+                        bind:storeConversation
+                        bind:reasoningExcludeOutput
+                        display={{
+                            idPrefix: 'config',
+                            nullable: true,
+                            helpText: true,
+                            showStoreConversation: true,
+                            showReasoningExcludeOutput: true
+                        }}
+                    />
 
-            <!-- ═══ Section: Preview ═══ -->
-            <section class="space-y-3">
-                <h3 class="section-heading">Preview</h3>
-                {#if dirty}
-                    <p class="text-xs text-accent">Previewing unsaved changes.</p>
-                {:else}
-                    <p class="text-xs text-gray-500">Current config on disk.</p>
-                {/if}
-                <div class="max-h-[40vh] min-h-[120px] overflow-y-auto">
-                    <TomlEditor value={previewContent} editable={false} />
-                </div>
-            </section>
+                    <!-- ═══ Section: Preview ═══ -->
+                    <section class="space-y-3">
+                        <h3 class="section-heading">Preview</h3>
+                        {#if simplifiedDirty}
+                            <p class="text-xs text-accent">Previewing unsaved changes.</p>
+                        {:else}
+                            <p class="text-xs text-gray-500">Current config on disk.</p>
+                        {/if}
+                        <div class="max-h-[40vh] min-h-30 overflow-y-auto">
+                            <TomlEditor value={previewContent} editable={false} />
+                        </div>
+                    </section>
+                </Tab>
+                <Tab id="advanced" label="Raw TOML" icon={SvgEdit} class="min-h-75">
+                    <TomlEditor
+                        value={rawContent}
+                        editable={true}
+                        onchange={(v) => (rawContent = v)}
+                    />
+                </Tab>
+            </CompactPillTabs>
         {/if}
     </div>
 
