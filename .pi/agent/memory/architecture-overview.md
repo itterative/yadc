@@ -111,8 +111,8 @@ yadc/
   captioners/
     api/
       api_captioner.py  # APICaptioner — auto-detects API type, delegates to inner captioner
-      base.py           # BaseAPICaptioner — session, cache, response_logger setup
-      session.py        # HTTP Session with retries, caching, capture_response for debug logging
+      base.py           # BaseAPICaptioner — async_session, cache, response_logger setup
+      async_session.py  # Async HTTP Session with retries, caching, capture_response for debug logging
       openai.py         # OpenAI/OpenRouter/local backends (chat/completions)
       gemini.py         # Google Gemini backend (generateContent)
       koboldcpp.py      # KoboldCpp backend

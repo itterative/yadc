@@ -1,14 +1,15 @@
-from collections.abc import Generator
+import json
+from collections.abc import AsyncGenerator
 from enum import Enum
 from typing import Any
 from urllib.parse import urlparse
 
 import pydantic
-import requests
 from typing_extensions import override
 
 from yadc.core import DatasetImage
 
+from .async_session import AsyncSession
 from .base import BaseAPICaptioner
 from .gemini import GeminiCaptioner
 from .koboldcpp import KoboldcppCaptioner
@@ -39,17 +40,138 @@ class APITypes(str, Enum):
         return self.value
 
 
+async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes:
+    """Infer the backend API type by probing the remote server asynchronously."""
+    try:
+        parsed = urlparse(api_url)
+
+        if parsed.netloc == OPENAI_DOMAIN:
+            return APITypes.OPENAI
+
+        if parsed.netloc == OPENROUTER_DOMAIN:
+            return APITypes.OPENROUTER
+
+        if parsed.netloc == GEMINI_DOMAIN:
+            return APITypes.GEMINI
+
+        if parsed.netloc.endswith(VORTEX_DOMAIN):
+            return APITypes.GEMINI
+    except Exception:
+        pass
+
+    # infer based on models response initially
+    try:
+        async with session.get("models") as models_resp:
+            assert models_resp.status_code < 400, f"request failed with http {models_resp.status_code}"
+
+            models_json = models_resp.json()
+            assert isinstance(models_json, dict), f"bad models response type; expected dict, got {type(models_json)}"
+
+            models = OpenAIModelsResponse.model_validate(models_json)
+
+            for model in models.data:
+                if model.owned_by == "llamacpp":
+                    return APITypes.LLAMACPP
+
+                if model.owned_by == "koboldcpp":
+                    return APITypes.KOBOLDCPP
+
+                if model.owned_by == "vllm":
+                    return APITypes.VLLM
+    except AssertionError as e:
+        raise ValueError(f"failed to retrieve model list: {e}")
+
+    # fallback to specific api checks
+    try:
+        async with session.get("/health") as health_resp:
+            assert health_resp.status_code < 400
+
+            server = health_resp.headers.get("server", "unknown").lower()
+
+            if "llama.cpp" in server:
+                return APITypes.LLAMACPP
+    except Exception:
+        pass
+
+    try:
+        async with session.get("/.well-known/serviceinfo") as koboldcpp_resp:
+            assert koboldcpp_resp.status_code < 400
+
+            koboldcpp_json = koboldcpp_resp.json()
+            assert isinstance(koboldcpp_json, dict)
+
+            koboldcpp_service_info = KoboldServiceInfoResponse.model_validate(koboldcpp_json)
+
+            assert koboldcpp_service_info.software.name.lower() == "koboldcpp"
+
+            return APITypes.KOBOLDCPP
+    except AssertionError:
+        pass
+    except json.JSONDecodeError:
+        pass
+    except pydantic.ValidationError:
+        pass
+
+    try:
+        async with session.request("HEAD", "/") as models_resp:
+            assert models_resp.status_code < 400
+
+            ollama_resp_text = models_resp.text.lower()
+            if "ollama" in ollama_resp_text:
+                return APITypes.OLLAMA
+    except AssertionError:
+        pass
+
+    # last fallback
+    try:
+        async with session.get("/api/version") as models_resp:
+            assert models_resp.status_code < 400
+
+            ollama_json = models_resp.json()
+            assert isinstance(ollama_json, dict)
+            assert "version" in ollama_json
+
+        return APITypes.OLLAMA
+    except AssertionError:
+        pass
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        async with session.get("/ping") as vllm_resp:
+            assert vllm_resp.status_code < 400
+
+        async with session.post("/ping") as vllm_resp:
+            assert vllm_resp.status_code < 400
+
+        async with session.get("/version") as vllm_resp:
+            assert vllm_resp.status_code < 400
+
+            vllm_json = vllm_resp.json()
+            assert isinstance(vllm_json, dict)
+            assert "version" in vllm_json
+
+        return APITypes.VLLM
+    except AssertionError:
+        pass
+    except json.JSONDecodeError:
+        pass
+
+    return APITypes.OPENAI
+
+
 class APICaptioner(BaseAPICaptioner):
     api_type: APITypes
     inner_captioner: BaseAPICaptioner
 
-    def __init__(self, **kwargs: Any):
+    def __init__(self, *, api_type: APITypes, **kwargs: Any):
         """
         Initializes the APICaptioner with API and template configuration.
 
         Args:
             api_url (str): Base URL for the API endpoint.
             api_token (str): API key for authentication. (optional for local backend)
+            api_type (APITypes): The inferred or explicit API backend type.
 
             **kwargs: Optional keyword arguments:
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
@@ -57,7 +179,6 @@ class APICaptioner(BaseAPICaptioner):
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high').
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
-                - `session` (requests.Session, options): Override the session for the API calls
                 - `cache` (yadc.captioners.utils.cache.HTTPResponseCache, options): Sets the session cache
 
         Raises:
@@ -67,14 +188,7 @@ class APICaptioner(BaseAPICaptioner):
         super().__init__(**kwargs)
         kwargs["_warnings"] = False
 
-        try:
-            self.api_type = self._infer_api_type()
-        except requests.ConnectionError:
-            raise ValueError(f"failed to infer captioner by api url ({self._api_url}): api is down")
-        except Exception as e:
-            msg = f"failed to infer captioner by api url ({self._api_url}): "
-            msg += f"are you using the wrong url? (e.g. http://localhost:5001/v1): {e}"
-            raise ValueError(msg) from e
+        self.api_type = api_type
 
         match self.api_type:
             case APITypes.OPENAI:
@@ -110,158 +224,29 @@ class APICaptioner(BaseAPICaptioner):
 
         assert hasattr(self, "inner_captioner")
 
-    def _infer_api_type(self):
-        # early exit
-        try:
-            api_url = urlparse(self._api_url)
+    @classmethod
+    async def create(cls, **kwargs: Any) -> "APICaptioner":
+        """Async factory that infers the API type before construction.
 
-            if api_url.netloc == OPENAI_DOMAIN:
-                return APITypes.OPENAI
+        Requires ``async_session`` to be provided in *kwargs* so that the
+        inference probes are non-blocking.
+        """
+        api_url = kwargs.get("api_url", "")
+        async_session = kwargs.get("async_session")
+        if async_session is None:
+            raise ValueError("async_session is required for APICaptioner.create()")
 
-            if api_url.netloc == OPENROUTER_DOMAIN:
-                return APITypes.OPENROUTER
-
-            if api_url.netloc == GEMINI_DOMAIN:
-                return APITypes.GEMINI
-
-            if api_url.netloc.endswith(VORTEX_DOMAIN):
-                return APITypes.GEMINI
-        except Exception:
-            pass
-
-        # infer based on models response initially
-
-        # llamacpp: owned_by set to 'llamacpp'
-        # kobold: models are prefixed with 'koboldcpp/'
-        #         and owned_by set to 'koboldcpp'
-        # vllm: owned_by set to 'vllm'
-        # ollama: owned_by set to ollama user or 'library'
-
-        try:
-            with self._session.get("models") as models_resp:
-                assert models_resp.ok, f"request failed with http {models_resp.status_code}"
-
-                models_json = models_resp.json()
-                assert isinstance(models_json, dict), f"bad models response type; expected dict, got {type(models_json)}"
-
-                models = OpenAIModelsResponse.model_validate(models_json)
-
-                for model in models.data:
-                    if model.owned_by == "llamacpp":
-                        return APITypes.LLAMACPP
-
-                    if model.owned_by == "koboldcpp":
-                        return APITypes.KOBOLDCPP
-
-                    if model.owned_by == "vllm":
-                        return APITypes.VLLM
-        except AssertionError as e:
-            raise ValueError(f"failed to retrieve model list: {e}")
-
-        # fallback to specific api checks
-
-        try:
-            with self._session.get("/health") as health_resp:
-                assert health_resp.ok
-
-                server = health_resp.headers.get("server", "unknown").lower()
-
-                if "llama.cpp" in server:
-                    return APITypes.LLAMACPP
-        except Exception:
-            pass
-
-        try:
-            # koboldcpp has well defined endpoint
-            #
-            # reference: https://lite.koboldai.net/koboldcpp_api#/serviceinfo/get__well_known_serviceinfo
-
-            with self._session.get("/.well-known/serviceinfo") as koboldcpp_resp:
-                assert koboldcpp_resp.ok
-
-                koboldcpp_json = koboldcpp_resp.json()
-                assert isinstance(koboldcpp_json, dict)
-
-                koboldcpp_service_info = KoboldServiceInfoResponse.model_validate(koboldcpp_json)
-
-                assert koboldcpp_service_info.software.name.lower() == "koboldcpp"
-
-                return APITypes.KOBOLDCPP
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-        except pydantic.ValidationError:
-            pass
-
-        try:
-            # reference: https://github.com/ollama/ollama/blob/c23e6f4cae3cbf62db68c2c9bf993925626fbe7c/server/routes.go#L1413
-            # HEAD / returns "Ollama is running"
-            with self._session.request("HEAD", "/") as models_resp:
-                assert models_resp.ok
-
-                ollama_resp_text = models_resp.text.lower()
-                if "ollama" in ollama_resp_text:
-                    return APITypes.OLLAMA
-        except AssertionError:
-            pass
-
-        # last fallback
-        # the following aren't very good checks (might not work in the future)
-
-        try:
-            # reference: https://github.com/ollama/ollama/blob/main/docs/api.md#version
-            # GET /api/version will return the ollama version
-            # this is not really a good check, since this might be the same as other software
-
-            with self._session.get("/api/version") as models_resp:
-                assert models_resp.ok
-
-                ollama_json = models_resp.json()
-                assert isinstance(ollama_json, dict)
-                assert "version" in ollama_json
-
-            return APITypes.OLLAMA
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-
-        try:
-            # vllm doesn't list their apis clearly
-            # so, check for some found in their code
-            #
-            # /ping: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L365
-            # /version: https://github.com/vllm-project/vllm/blob/9fac6aa30b669de75d8718164cd99676d3530e7d/vllm/entrypoints/openai/api_server.py#L465
-
-            with self._session.get("/ping") as vllm_resp:
-                assert vllm_resp.ok
-
-            with self._session.post("/ping") as vllm_resp:
-                assert vllm_resp.ok
-
-            with self._session.get("/version") as vllm_resp:
-                assert vllm_resp.ok
-
-                vllm_json = vllm_resp.json()
-                assert isinstance(vllm_json, dict)
-                assert "version" in vllm_json
-
-            return APITypes.VLLM
-        except AssertionError:
-            pass
-        except requests.JSONDecodeError:
-            pass
-
-        return APITypes.OPENAI
+        inferred = await _infer_api_type_async(async_session, api_url)
+        kwargs["api_type"] = inferred
+        return cls(**kwargs)
 
     @override
     def log_usage(self):
         self.inner_captioner.log_usage()
 
     @override
-    def load_model(self, model_repo: str, **kwargs: Any) -> None:
-        return self.inner_captioner.load_model(model_repo, **kwargs)
+    async def load_model(self, model_repo: str, **kwargs: Any) -> None:
+        return await self.inner_captioner.load_model(model_repo, **kwargs)
 
     @override
     def unload_model(self) -> None:
@@ -272,9 +257,10 @@ class APICaptioner(BaseAPICaptioner):
         self.inner_captioner.offload_model()
 
     @override
-    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> "Generator[str, None, None]":
-        return self.inner_captioner.predict_stream(image, **kwargs)
+    async def predict(self, image: DatasetImage, **kwargs: Any) -> str:
+        return await self.inner_captioner.predict(image, **kwargs)
 
     @override
-    def predict(self, image: DatasetImage, **kwargs: Any) -> str:
-        return self.inner_captioner.predict(image, **kwargs)
+    async def predict_stream(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:
+        async for token in self.inner_captioner.predict_stream(image, **kwargs):
+            yield token

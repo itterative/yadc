@@ -29,6 +29,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | Plan | Description | Status |
 |------|-------------|--------|
 | [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Flask/waitress → Quart/uvicorn async migration | Complete |
+| [`captioner-async-migration-plan`](.pi/agent/memory/plans/captioner-async-migration-plan.md) | Migrate captioners and CaptioningService to asyncio for mid-flight cancellation | Complete |
 | [`api-request-consolidation-plan`](.pi/agent/memory/plans/api-request-consolidation-plan.md) | Consolidate redundant API requests — env list/details, dataset browser, SSE caption text | Complete |
 | [`captioning-status-bar-plan`](.pi/agent/memory/plans/captioning-status-bar-plan.md) | Refine captioning progress UI + consolidate caption logic into shared store | Complete |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |

@@ -2,69 +2,82 @@ import re
 
 import mock
 import pytest
-import requests
-import requests_mock
 
+from tests.captioners.api.conftest import MockAsyncSession
 from yadc.captioners.api import APICaptioner
+from yadc.captioners.api.api_captioner import APITypes
 from yadc.core import DatasetImage
 
 
 @pytest.fixture
-def llamacpp(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
+def llamacpp(load_test_data):
     def _llamacpp(case: str, model: str, base_url: str = "mock://llamacpp"):
+        session = MockAsyncSession()
+        session.register_uri(
+            "GET",
+            "models",
+            json={"data": [{"id": model, "object": "model", "owned_by": "llamacpp"}]},
+        )
+        session.register_uri("POST", "chat/completions", text=load_test_data(case))
 
-        request_mocker.register_uri("GET", f"{base_url}/v1/models", json=lambda r, c: {"data": [{"id": model, "object": "model", "owned_by": "llamacpp"}]})
-        request_mocker.register_uri("POST", f"{base_url}/v1/chat/completions", text=load_test_data(case))
-
-        captioner = APICaptioner(api_url=f"{base_url}/v1", session=session)
+        captioner = APICaptioner(
+            api_type=APITypes.LLAMACPP,
+            api_url=f"{base_url}/v1",
+            async_session=session,
+        )
 
         return captioner
 
     return _llamacpp
 
 
-def test_llamacpp(llamacpp, load_test_data):
+@pytest.mark.asyncio
+async def test_llamacpp(llamacpp, load_test_data):
     captioner: APICaptioner = llamacpp("nonstreaming/llamacpp.txt", "llamacpp/gemma-3-27b")
-    captioner.load_model("llamacpp/gemma-3-27b")
+    await captioner.load_model("llamacpp/gemma-3-27b")
 
     expected = load_test_data("nonstreaming/llamacpp_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
 
-def test_llamacpp_streaming(llamacpp, load_test_data):
+@pytest.mark.asyncio
+async def test_llamacpp_streaming(llamacpp, load_test_data):
     captioner: APICaptioner = llamacpp("streaming/llamacpp.txt", "llamacpp/gemma-3-27b")
-    captioner.load_model("llamacpp/gemma-3-27b")
+    await captioner.load_model("llamacpp/gemma-3-27b")
 
     expected = load_test_data("streaming/llamacpp_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
+    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
 
     assert got == expected, "bad prediction"
 
 
-def test_llamacpp_cot(llamacpp, load_test_data):
+@pytest.mark.asyncio
+async def test_llamacpp_cot(llamacpp, load_test_data):
     captioner: APICaptioner = llamacpp("nonstreaming/llamacpp_cot.txt", "llamacpp/gemma-3-27b")
-    captioner.load_model("llamacpp/gemma-3-27b")
+    await captioner.load_model("llamacpp/gemma-3-27b")
 
     expected = load_test_data("nonstreaming/llamacpp_cot_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
 
-def test_llamacpp_streaming_cot(llamacpp, load_test_data):
+@pytest.mark.asyncio
+async def test_llamacpp_streaming_cot(llamacpp, load_test_data):
     captioner: APICaptioner = llamacpp("streaming/llamacpp_cot.txt", "llamacpp/gemma-3-27b")
-    captioner.load_model("llamacpp/gemma-3-27b")
+    await captioner.load_model("llamacpp/gemma-3-27b")
 
     expected = load_test_data("streaming/llamacpp_cot_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
+    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
 
     assert got == expected, "bad prediction"
 
 
-def test_llamacpp_should_raise_error_on_bad_model(llamacpp):
+@pytest.mark.asyncio
+async def test_llamacpp_should_raise_error_on_bad_model(llamacpp):
     captioner: APICaptioner = llamacpp("nonstreaming/llamacpp.txt", "llamacpp/gemma-3-27b")
 
     with pytest.raises(ValueError, match=re.compile("model not found: .*")):
-        captioner.load_model("llamacpp/unknown")
+        await captioner.load_model("llamacpp/unknown")

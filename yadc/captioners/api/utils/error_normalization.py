@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+import httpx
 import requests
 
 from yadc.core import logging
@@ -81,7 +82,7 @@ class ErrorNormalizationMixin:
         error_code = -1
         error_message = ""
 
-        if isinstance(error, requests.HTTPError):
+        if isinstance(error, (requests.HTTPError, httpx.HTTPStatusError)):
             # FIXME: doesn't work for streaming content
 
             _logger.debug("HTTP error %d: headers %s", error.response.status_code, error.response.headers)

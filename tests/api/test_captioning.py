@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from quart import Quart
@@ -27,7 +27,7 @@ def client():
 @pytest.mark.asyncio
 async def test_get_captioning_status_idle(client):
     test_client, mock_service = client
-    mock_service.get_status.return_value = JobInfo(status="idle", dataset_name="test", job_id="", processed=0, total=0, errors=0, error=None)
+    mock_service.get_status_async = AsyncMock(return_value=JobInfo(status="idle", dataset_name="test", job_id="", processed=0, total=0, errors=0, error=None))
 
     resp = await test_client.get("/api/datasets/test/caption")
     assert resp.status_code == 200
@@ -42,7 +42,9 @@ async def test_get_captioning_status_idle(client):
 @pytest.mark.asyncio
 async def test_get_captioning_status_running(client):
     test_client, mock_service = client
-    mock_service.get_status.return_value = JobInfo(status="running", dataset_name="foo", job_id="abc123", processed=5, total=10, errors=1, error=None)
+    mock_service.get_status_async = AsyncMock(
+        return_value=JobInfo(status="running", dataset_name="foo", job_id="abc123", processed=5, total=10, errors=1, error=None)
+    )
 
     resp = await test_client.get("/api/datasets/foo/caption")
     assert resp.status_code == 200
@@ -68,7 +70,7 @@ async def test_start_captioning_password_required(client):
     data = await resp.get_json()
     assert data["error"] == "Password required to decrypt environment settings"
     assert data["code"] == "PASSWORD_REQUIRED"
-    mock_service.start_job.assert_not_called()
+    mock_service.start_job_async.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -85,14 +87,14 @@ async def test_caption_single_image_password_required(client):
     data = await resp.get_json()
     assert data["error"] == "Password required to decrypt environment settings"
     assert data["code"] == "PASSWORD_REQUIRED"
-    mock_service.caption_single.assert_not_called()
+    mock_service.caption_single_async.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_caption_single_image_returns_job_info(client):
     test_client, mock_service = client
-    mock_service.caption_single.return_value = JobInfo(
-        status="running", dataset_name="test", job_id="abc123", processed=0, total=1, errors=0, error=None
+    mock_service.caption_single_async = AsyncMock(
+        return_value=JobInfo(status="running", dataset_name="test", job_id="abc123", processed=0, total=1, errors=0, error=None)
     )
 
     with patch("yadc.api.controllers.api_captioning.cmd_envs") as mock_cmd_envs:
@@ -104,4 +106,4 @@ async def test_caption_single_image_returns_job_info(client):
     assert data["status"] == "running"
     assert data["job_id"] == "abc123"
     assert data["total"] == 1
-    mock_service.caption_single.assert_called_once()
+    mock_service.caption_single_async.assert_called_once()

@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
 from yadc.core import logging
@@ -83,6 +83,85 @@ class ThinkingMixin:
         buffer = ""
 
         for content in stream:
+            buffer += content
+
+            if not content or content.isspace():
+                continue
+
+            yield buffer
+            buffer = ""
+
+        yield buffer.rstrip()
+
+    async def _handle_thinking_streaming_async(self, stream: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+        is_thinking = False
+        did_think = False
+
+        thinking_buffer = ""
+        buffer = ""
+
+        with Timer() as timer:
+            async for content in stream:
+                buffer += content
+                buffer = buffer.lstrip()
+
+                if not buffer.startswith(self._reasoning_start_token[:1]):
+                    break
+
+                if len(buffer) < len(self._reasoning_start_token):
+                    continue
+
+                if not buffer.startswith(self._reasoning_start_token):
+                    break
+
+                if not is_thinking:
+                    _logger.debug("")
+                    _logger.info("Thinking...")
+                is_thinking = True
+
+                try:
+                    i_thinking_end = buffer.rindex(self._reasoning_end_token)
+                except ValueError:
+                    continue
+
+                did_think = True
+
+                thinking_buffer = buffer[len(self._reasoning_start_token) : i_thinking_end]
+                buffer = buffer[i_thinking_end + len(self._reasoning_end_token) :]
+
+                buffer = ""
+                break
+
+        if is_thinking and not did_think:
+            thinking_buffer = buffer.removeprefix(self._reasoning_start_token)
+            _logger.info(_indent_thinking(thinking_buffer))
+            _logger.warning("Warning: Thinking was not finished.")
+            return
+
+        if thinking_buffer:
+            _logger.info(_indent_thinking(thinking_buffer))
+
+        if did_think:
+            _logger.info("Thinking done (%.2f sec)\n", timer.elapsed)
+
+        if not FLAG_STRIP_CAPTION:
+            yield buffer
+            async for item in stream:
+                yield item
+            return
+
+        async for content in stream:
+            buffer += content
+
+            if not buffer or buffer.isspace():
+                continue
+
+            yield buffer.lstrip()
+            break
+
+        buffer = ""
+
+        async for content in stream:
             buffer += content
 
             if not content or content.isspace():

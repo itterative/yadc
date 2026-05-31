@@ -2,35 +2,52 @@ import re
 
 import mock
 import pytest
-import requests
-import requests_mock
 
+from tests.captioners.api.conftest import MockAsyncSession
 from yadc.captioners.api import APICaptioner
+from yadc.captioners.api.api_captioner import APITypes
 from yadc.core import DatasetImage
 
 
 @pytest.fixture
-def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, load_test_data):
-    def _gemini(case: str, model: str, base_url: str = "mock://generativelanguage.googleapis.com/v1beta", method: str = "generateContent"):
-        request_mocker.register_uri("GET", f"{base_url}/models/unknown", status_code=404)
-
-        request_mocker.register_uri(
+def gemini(load_test_data):
+    def _gemini(case: str, model: str, base_url: str = "mock://generativelanguage.googleapis.com/v1beta"):
+        session = MockAsyncSession()
+        session.register_uri(
             "GET",
-            f"{base_url}/models/{model}",
-            json={"name": model, "version": "1", "displayName": "Model", "supportedGenerationMethods": ["generateContent"], "thinking": True},
+            "models",
+            json={
+                "models": [
+                    {
+                        "name": model,
+                        "version": "1",
+                        "displayName": "Model",
+                        "supportedGenerationMethods": ["generateContent"],
+                        "thinking": True,
+                    }
+                ]
+            },
         )
-        request_mocker.register_uri(
+        session.register_uri(
             "GET",
-            f"{base_url}/models",
-            json={"models": [{"name": model, "version": "1", "displayName": "Model", "supportedGenerationMethods": ["generateContent"], "thinking": True}]},
+            f"models/{model}",
+            json={
+                "name": model,
+                "version": "1",
+                "displayName": "Model",
+                "supportedGenerationMethods": ["generateContent"],
+                "thinking": True,
+            },
         )
-
-        request_mocker.register_uri("POST", f"{base_url}/models/{model}:{method}", text=load_test_data(case))
+        session.register_uri("GET", "models/unknown", status_code=404, text="not found")
+        session.register_uri("POST", f"models/{model}:generateContent", text=load_test_data(case))
+        session.register_uri("POST", f"models/{model}:streamGenerateContent?alt=sse", text=load_test_data(case))
 
         captioner = APICaptioner(
+            api_type=APITypes.GEMINI,
             api_url=base_url,
             api_token="secret token",
-            session=session,
+            async_session=session,
         )
 
         return captioner
@@ -38,28 +55,31 @@ def gemini(session: requests.Session, request_mocker: requests_mock.Adapter, loa
     return _gemini
 
 
-def test_gemini(gemini, load_test_data):
-    captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash", method="generateContent")
-    captioner.load_model("gemini-2.5-flash")
+@pytest.mark.asyncio
+async def test_gemini(gemini, load_test_data):
+    captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
+    await captioner.load_model("gemini-2.5-flash")
 
     expected = load_test_data("nonstreaming/gemini_result.txt")
-    got = captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
     assert got == expected, "bad prediction"
 
 
-def test_gemini_streaming(gemini, load_test_data):
-    captioner: APICaptioner = gemini("streaming/gemini.txt", "gemini-2.5-flash", method="streamGenerateContent?alt=sse")
-    captioner.load_model("gemini-2.5-flash")
+@pytest.mark.asyncio
+async def test_gemini_streaming(gemini, load_test_data):
+    captioner: APICaptioner = gemini("streaming/gemini.txt", "gemini-2.5-flash")
+    await captioner.load_model("gemini-2.5-flash")
 
     expected = load_test_data("streaming/gemini_result.txt")
-    got = "".join(captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")))
+    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
 
     assert got == expected, "bad prediction"
 
 
-def test_gemini_raises_error_on_bad_model(gemini):
+@pytest.mark.asyncio
+async def test_gemini_raises_error_on_bad_model(gemini):
     captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
 
     with pytest.raises(ValueError, match=re.compile("model not found: .*")):
-        captioner.load_model("unknown")
+        await captioner.load_model("unknown")

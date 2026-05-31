@@ -1,7 +1,7 @@
 import abc
 import base64
 import io
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import jinja2
@@ -165,16 +165,16 @@ class Captioner(abc.ABC):
     Usage:
     ```
         class MyCaptioner(Captioner):
-            def load_model(self, model_repo, **kwargs):
+            async def load_model(self, model_repo, **kwargs):
                 ...
-            def predict_stream(self, image:, **kwargs)
+            async def predict_stream(self, image, **kwargs):
                 ...
-            def predict(self, image, **kwargs):
+            async def predict(self, image, **kwargs):
                 ...
 
         captioner = MyCaptioner(prompt_template_name="custom.jinja")
-        captioner.load_model("my-model-id")
-        caption = captioner.predict(dataset_image)
+        await captioner.load_model("my-model-id")
+        caption = await captioner.predict(dataset_image)
     ```
     """
 
@@ -187,7 +187,7 @@ class Captioner(abc.ABC):
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
         """
 
-        self._renderer = PromptRenderer(kwargs.pop("prompt_template", ""))
+        self._renderer: PromptRenderer = PromptRenderer(kwargs.pop("prompt_template", ""))
 
     def prompts_from_image(self, dataset_image: DatasetImage, **kwargs: Any) -> tuple[str, str]:
         """
@@ -290,16 +290,11 @@ class Captioner(abc.ABC):
         return f"image/{image_format.lower()}", base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     @abc.abstractmethod
-    def load_model(self, model_repo: str, **kwargs: Any) -> None:
-        """
-        Loads the captioning model through the API or from a repository or local path.
+    async def load_model(self, model_repo: str, **kwargs: Any) -> None:
+        """Async variant of :meth:`load_model`.
 
-        Args:
-            model_repo (str): Identifier or path to the model (e.g., Hugging Face repo ID).
-            **kwargs: Model-specific loading options (e.g., device, dtype, cache_dir).
-
-        Example:
-            captioner.load_model("nlpconnect/vit-gpt2-image-captioning", device="cuda")
+        Backends that natively support asyncio should override this for true
+        non-blocking model loading.
         """
 
         raise NotImplementedError
@@ -326,47 +321,13 @@ class Captioner(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> "Generator[str, None, None]":
-        """
-        Generates a caption incrementally and yields partial results.
-
-        Ideal for real-time interfaces where streaming output is desired.
-
-        Args:
-            image (DatasetImage): The input image to caption.
-            **kwargs: Model-specific inference parameters.
-
-        Yields:
-            str: Caption text chunk as it becomes available.
-
-        Raises:
-            ValueError: If the API returns an error.
-
-        Example:
-        ```
-            for token in captioner.predict_stream(img):
-                print(token, end='', flush=True)
-        ```
-        """
+    async def predict(self, image: DatasetImage, **kwargs: Any) -> str:
+        """Generate a complete caption asynchronously."""
 
         raise NotImplementedError
 
     @abc.abstractmethod
-    def predict(self, image: DatasetImage, **kwargs: Any) -> str:
-        """
-        Generates a complete caption for the given image.
-
-        Blocks until the full caption is generated.
-
-        Args:
-            image (DatasetImage): The input image to caption.
-            **kwargs: Model-specific inference parameters.
-
-        Raises:
-            ValueError: If the API returns an error.
-
-        Returns:
-            str: The final generated caption.
-        """
+    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:
+        """Generate a caption stream asynchronously."""
 
         raise NotImplementedError

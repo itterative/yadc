@@ -45,24 +45,24 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             )
 
         try:
-            info: JobInfo = captioning.start_job(name, options)
+            info: JobInfo = await captioning.start_job_async(name, options)
         except ValueError as e:
             return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
 
         return jsonify_dataclass(info), 202
 
     @app.delete("/datasets/<name>/caption")
-    def stop_captioning(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def stop_captioning(name: str):  # pyright: ignore[reportUnusedFunction]
         """Stop a running captioning run."""
-        stopped = captioning.stop_job(name)
+        stopped = await captioning.stop_job_async(name)
         if not stopped:
             return jsonify_error("No running captioning job for this dataset", status=404, code=ErrorCode.NOT_FOUND)
         return jsonify({"status": "stopping"})
 
     @app.get("/datasets/<name>/caption")
-    def get_captioning_status(name: str):  # pyright: ignore[reportUnusedFunction]
+    async def get_captioning_status(name: str):  # pyright: ignore[reportUnusedFunction]
         """Get the current captioning status for a dataset."""
-        info = captioning.get_status(name)
+        info = await captioning.get_status_async(name)
         return jsonify_dataclass(info), 200
 
     @app.post("/datasets/<name>/images/<int:image_id>/caption")
@@ -91,7 +91,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             )
 
         try:
-            info: JobInfo = captioning.caption_single(name, image_id, options)
+            info: JobInfo = await captioning.caption_single_async(name, image_id, options)
         except ValueError as e:
             return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
 

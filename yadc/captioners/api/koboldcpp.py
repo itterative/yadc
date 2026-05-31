@@ -1,7 +1,8 @@
+import asyncio
 import time
 from typing import Any
 
-import requests
+import httpx
 from typing_extensions import override
 
 from yadc.core import DatasetImage, logging
@@ -24,24 +25,19 @@ class KoboldcppCaptioner(OpenAICaptioner):
         self._current_model = None
 
     @override
-    def _load_model(self, model_repo: str, timeout: float = 60):
+    async def _load_model(self, model_repo: str, timeout: float = 60):
+        assert self._async_session is not None, "async session not available"
+
         if self._current_model == model_repo:
             return
-
-        # koboldcpp api doesn't expose enough information to make sure that the right settings are already loaded
-        # so we have to add some extra prefixes (e.g. koboldcpp/MODEL) and suffixes (e.g. MODEL.kcpps; assumes there is a matching kcpps file)
-
-        # the logic goes as following
-        #   1. if the openai endpoint shows the model is already loaded, use that
-        #   2. if the kobold endpoint shows the model is already loaded, use that
-        #   3. otherwise, unload the model, then wait for it to be loaded
 
         model_koboldcpp = "koboldcpp/" + model_repo
         model_kcpss = model_repo + ".kcpps"
 
         # early exit if already loaded
-        with self._session.get("/api/v1/model") as model_current_resp:
-            assert model_current_resp.ok
+        async with self._async_session.get("/api/v1/model") as model_current_resp:
+            assert isinstance(model_current_resp, httpx.Response)
+            assert model_current_resp.status_code < 400
 
             model_current_resp_json = model_current_resp.json()
             assert isinstance(model_current_resp_json, dict)
@@ -52,8 +48,9 @@ class KoboldcppCaptioner(OpenAICaptioner):
                 self._current_model = model_current.result
                 return
 
-        with self._session.get("/api/admin/list_options") as model_options_resp:
-            assert model_options_resp.ok
+        async with self._async_session.get("/api/admin/list_options") as model_options_resp:
+            assert isinstance(model_options_resp, httpx.Response)
+            assert model_options_resp.status_code < 400
 
             model_options_resp_json = model_options_resp.json()
             assert isinstance(model_options_resp_json, list)
@@ -76,8 +73,9 @@ class KoboldcppCaptioner(OpenAICaptioner):
 
                 raise ValueError(f"model not found: {model_repo}; no models available")
 
-        with self._session.post("/api/admin/reload_config", json={"filename": self._current_model}) as model_reload_resp:
-            assert model_reload_resp.ok
+        async with self._async_session.post("/api/admin/reload_config", json={"filename": self._current_model}) as model_reload_resp:
+            assert isinstance(model_reload_resp, httpx.Response)
+            assert model_reload_resp.status_code < 400
 
             model_reload_resp_json = model_reload_resp.json()
             assert isinstance(model_reload_resp_json, dict)
@@ -88,12 +86,11 @@ class KoboldcppCaptioner(OpenAICaptioner):
         start_t = time.time()
         end_t = start_t + timeout
 
-        # time.sleep(5) # NOTE: the api should be down within 5s; after that we keep checking which model is loaded
-
         while time.time() < end_t:
             try:
-                with self._session.get("/api/v1/model") as model_current_resp:
-                    assert model_current_resp.ok
+                async with self._async_session.get("/api/v1/model") as model_current_resp:
+                    assert isinstance(model_current_resp, httpx.Response)
+                    assert model_current_resp.status_code < 400
 
                     model_current_resp_json = model_current_resp.json()
                     assert isinstance(model_current_resp_json, dict)
@@ -101,24 +98,16 @@ class KoboldcppCaptioner(OpenAICaptioner):
                     model_current = KoboldAdminCurrentModelResponse.model_validate(model_current_resp_json)
 
                     if model_current.result == "inactive":
-                        time.sleep(0.5)
+                        await asyncio.sleep(0.5)
                         continue
 
                     self._current_model = model_current.result
                     break
-            except requests.exceptions.ConnectionError:
-                time.sleep(0.5)
+            except (httpx.ConnectError, httpx.TimeoutException):
+                await asyncio.sleep(0.5)
                 continue
         else:
             raise TimeoutError(f"failed to load model in time: {model_repo}")
-
-    @override
-    def unload_model(self):
-        try:
-            with self._session.post("/api/admin/reload_config", json={"filename": "unload_model"}) as unload_model_resp:
-                assert unload_model_resp.ok
-        except AssertionError as e:
-            raise ValueError("failed to unload model") from e
 
     @override
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:

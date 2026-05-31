@@ -163,11 +163,11 @@ Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-sca
 
 ## Clean up captioning server logs
 
-The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level code (`APICaptioner`, `cmd_envs`, `cmd_templates`, `resolve_dataset`, etc.) which logs verbosely to stdout/stderr using print statements and CLI-style formatters (progress bars, usage stats, interactive prompts). When captioning via the API/webui, these logs pollute the server output. The logging needs a pass to:
+The API captioning service (`CaptioningService` / `AsyncCaptionJob`) reuses CLI-level code (`APICaptioner`, `cmd_envs`, `cmd_templates`, `resolve_dataset`, etc.) which logs verbosely to stdout/stderr using print statements and CLI-style formatters (progress bars, usage stats, interactive prompts). When captioning via the API/webui, these logs pollute the server output. The logging needs a pass to:
 - Replace print/prompt output with proper `logger` calls at appropriate levels
 - Ensure `APICaptioner` and shared `cmd/` modules use structured logging instead of direct stdout
 - Suppress or quiet CLI-specific output (progress bars, interactive menus) when running in API mode
-- Review `CaptionJob._do_run()` and its callees for noisy output
+- Review `AsyncCaptionJob._ado_run()` and its callees for noisy output
 
 
 ## TOML config revision history

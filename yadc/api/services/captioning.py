@@ -1,17 +1,18 @@
 """Captioning service — manages background captioning jobs for datasets.
 
-Each dataset can have at most one active captioning job at a time. Jobs run in
-dedicated daemon threads and emit ``CaptioningStatusEvent`` via the
+Each dataset can have at most one active captioning job at a time. Jobs run as
+``asyncio.Task`` instances and emit ``CaptioningStatusEvent`` via the
 ``EventDispatcher`` as images are processed.
 
 Usage from the API layer::
 
-    svc.start_job("my_dataset", options)
-    svc.stop_job("my_dataset")
-    svc.get_status("my_dataset")
+    await svc.start_job_async("my_dataset", options)
+    await svc.stop_job_async("my_dataset")
+    await svc.get_status_async("my_dataset")
 """
 
-import threading
+import asyncio
+import inspect
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ import pydantic
 import toml
 
 from yadc.captioners.api import APICaptioner
+from yadc.captioners.api.async_session import AsyncSession
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd import templates as cmd_templates
 from yadc.core.config import ConfigSettings, parse_config
@@ -61,7 +63,7 @@ class JobInfo:
 class CaptionJobOptions(pydantic.BaseModel):
     """All configurable parameters for a single captioning run.
 
-    Extra keys in the input dict are silently ignored (``extra=\"ignore\"``).
+    Extra keys in the input dict are silently ignored (``extra="ignore"``).
     """
 
     # API connection
@@ -97,7 +99,7 @@ class CaptionJobOptions(pydantic.BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Config resolution helpers (shared by CaptionJob and CaptioningService)
+# Config resolution helpers
 # ---------------------------------------------------------------------------
 
 
@@ -168,12 +170,12 @@ def resolve_template(prompt_name: str, prompt_template: str, logger: Logger | No
 
 
 # ---------------------------------------------------------------------------
-# Job runner
+# Async job runner
 # ---------------------------------------------------------------------------
 
 
-class CaptionJob:
-    """Runs a single captioning pass over a dataset in a background thread."""
+class AsyncCaptionJob:
+    """Runs a single captioning pass over a dataset as an asyncio task."""
 
     def __init__(
         self,
@@ -182,7 +184,7 @@ class CaptionJob:
         event_dispatcher: EventDispatcher,
         logger: Logger,
         options: CaptionJobOptions,
-        on_done: Callable[[], None],
+        on_done: Callable[[], Any],
         job_id: str = "",
     ):
         self._dataset_name: str = dataset_name
@@ -190,42 +192,39 @@ class CaptionJob:
         self._event_dispatcher: EventDispatcher = event_dispatcher
         self._logger: Logger = logger
         self._opts: CaptionJobOptions = options
-        self._on_done: Callable[[], None] = on_done
+        self._on_done: Callable[[], Any] = on_done
         self._job_id: str = job_id
 
         # State (guarded by _state_lock)
-        self._state_lock: threading.Lock = threading.Lock()
+        self._state_lock: asyncio.Lock = asyncio.Lock()
         self._status: JobStatus = "running"
-        self._stop_requested: bool = False
+        self._stop_event: asyncio.Event = asyncio.Event()
         self._processed: int = 0
         self._total: int = 0
         self._errors: int = 0
         self._error: str | None = None
         self._error_messages: list[str] = []
 
-        self._thread: threading.Thread | None = None
+        self._task: asyncio.Task[Any] | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
     @property
     def alive(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return self._task is not None and not self._task.done()
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        self._task = asyncio.create_task(self._arun())
 
     def request_stop(self) -> None:
-        with self._state_lock:
-            self._stop_requested = True
-            self._status = "stopping"
-        self._emit_status()
+        self._stop_event.set()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
 
     # -- snapshot ------------------------------------------------------------
 
-    @property
-    def snapshot(self) -> JobInfo:
-        with self._state_lock:
+    async def snapshot(self) -> JobInfo:
+        async with self._state_lock:
             return JobInfo(
                 status=self._status,
                 dataset_name=self._dataset_name,
@@ -239,21 +238,28 @@ class CaptionJob:
 
     # -- main loop -----------------------------------------------------------
 
-    def _run(self) -> None:
-        """Entry point for the background thread."""
+    async def _arun(self) -> None:
+        """Entry point for the asyncio task."""
         try:
-            self._do_run()
+            await self._ado_run()
+        except asyncio.CancelledError:
+            self._logger.info("Captioning job for '%s' cancelled", self._dataset_name)
+            await self._set_state(status="done")
+            await self._emit_status()
         except Exception as exc:
             self._logger.exception("Captioning job for '%s' failed: %s", self._dataset_name, exc)
             msg = str(exc)
-            self._set_state(error=msg, status="error", set_error=True)
-            with self._state_lock:
+            await self._set_state(error=msg, status="error", set_error=True)
+            async with self._state_lock:
                 self._error_messages.append(msg)
-            self._emit_status()
+            await self._emit_status()
         finally:
-            self._on_done()
+            if inspect.iscoroutinefunction(self._on_done):
+                await self._on_done()
+            else:
+                self._on_done()
 
-    def _do_run(self) -> None:
+    async def _ado_run(self) -> None:
         # 1. Resolve the dataset config path
         ds_info = self._dataset_service.get_dataset(self._dataset_name)
         if ds_info is None or ds_info.config_path is None:
@@ -282,8 +288,8 @@ class CaptionJob:
         images = resolve_dataset(config.dataset, config.caption_suffix)
         if not images:
             self._logger.info("No images to caption for dataset '%s'.", self._dataset_name)
-            self._set_state(status="done")
-            self._emit_status()
+            await self._set_state(status="done")
+            await self._emit_status()
             return
 
         # 5b. Filter to specific image IDs if requested (single-image mode)
@@ -308,17 +314,21 @@ class CaptionJob:
                     continue
             to_do.append(img)
 
-        self._set_state(total=len(to_do))
-        self._emit_status()
+        await self._set_state(total=len(to_do))
+        await self._emit_status()
 
         if not to_do:
             self._logger.info("All images already captioned for dataset '%s'.", self._dataset_name)
-            self._set_state(status="done")
-            self._emit_status()
+            await self._set_state(status="done")
+            await self._emit_status()
             return
 
-        # 7. Create the captioner
-        model = APICaptioner(
+        # 7. Create the captioner with an async session
+        async_headers: dict[str, str] = {}
+        if config.api.token:
+            async_headers["Authorization"] = f"Bearer {config.api.token}"
+
+        model = await APICaptioner.create(
             api_url=config.api.url,
             api_token=config.api.token,
             prompt_template=config.prompt.template,
@@ -327,8 +337,9 @@ class CaptionJob:
             reasoning=config.reasoning.enable,
             reasoning_effort=config.reasoning.thinking_effort,
             reasoning_exclude_output=config.reasoning.exclude_from_output,
+            async_session=AsyncSession(config.api.url, headers=async_headers),
         )
-        model.load_model(config.api.model_name)
+        await model.load_model(config.api.model_name)
 
         # 8. Caption each image
         conversation_overrides = config.settings.advanced.model_dump()
@@ -337,28 +348,27 @@ class CaptionJob:
             if self._check_stop():
                 break
 
-            # Emit a started event so the frontend can show which image is actively being captioned.
             self._emit_image_started(img)
 
             try:
-                self._caption_one(model, img, config.settings, conversation_overrides)
+                await self._acaption_one(model, img, config.settings, conversation_overrides)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
                 self._logger.warning("Failed to caption %s: %s", img.path, exc)
-                self._record_error(str(exc))
-                self._emit_status()
+                await self._record_error(str(exc))
+                await self._emit_status()
                 self._emit_image_error(img, str(exc))
                 continue
 
-            self._increment_processed()
-            self._emit_status()
+            await self._increment_processed()
+            await self._emit_status()
             self._emit_image_captioned(img)
 
         model.log_usage()
 
-        # Final status — "done" regardless of whether stop was requested
-        # (the stop has been completed at this point)
-        self._set_state(status="done")
-        self._emit_status()
+        await self._set_state(status="done")
+        await self._emit_status()
 
         self._logger.info(
             "Captioning finished for '%s': %d/%d processed, %d errors.",
@@ -368,7 +378,7 @@ class CaptionJob:
             self._errors,
         )
 
-    def _caption_one(
+    async def _acaption_one(
         self,
         model: APICaptioner,
         dataset_image: DatasetImage,
@@ -376,14 +386,16 @@ class CaptionJob:
         conversation_overrides: dict[str, Any],
     ) -> str:
         """Caption a single image, saving the result."""
-        caption = model.predict(
-            dataset_image,
-            max_new_tokens=settings.max_tokens,
-            use_cache=True,
-            conversation_overrides=conversation_overrides,
-            prefill=settings.advanced.assistant_prefill,
-            drafts=dataset_image.read_all_drafts() or None,
-            prediction_context=PredictionContext(),
+        caption = (
+            await model.predict(
+                dataset_image,
+                max_new_tokens=settings.max_tokens,
+                use_cache=True,
+                conversation_overrides=conversation_overrides,
+                prefill=settings.advanced.assistant_prefill,
+                drafts=dataset_image.read_all_drafts() or None,
+                prediction_context=PredictionContext(),
+            )
         ).strip()
 
         if not caption:
@@ -392,7 +404,6 @@ class CaptionJob:
         if self._opts.draft:
             dataset_image.write_draft(self._opts.draft, caption)
         else:
-            # Save history of previous caption if present
             if dataset_image.caption:
                 dataset_image.save_history(when_not_exists=True)
             dataset_image.update_caption(caption)
@@ -410,7 +421,7 @@ class CaptionJob:
 
     # -- state helpers -------------------------------------------------------
 
-    def _set_state(
+    async def _set_state(
         self,
         *,
         status: JobStatus | None = None,
@@ -418,7 +429,7 @@ class CaptionJob:
         error: str | None | None = None,
         set_error: bool = False,
     ) -> None:
-        with self._state_lock:
+        async with self._state_lock:
             if status is not None:
                 self._status = status
             if total is not None:
@@ -426,21 +437,20 @@ class CaptionJob:
             if set_error:
                 self._error = error
 
-    def _increment_processed(self) -> None:
-        with self._state_lock:
+    async def _increment_processed(self) -> None:
+        async with self._state_lock:
             self._processed += 1
 
-    def _record_error(self, message: str) -> None:
-        with self._state_lock:
+    async def _record_error(self, message: str) -> None:
+        async with self._state_lock:
             self._errors += 1
             self._error_messages.append(message)
 
     def _check_stop(self) -> bool:
-        with self._state_lock:
-            return self._stop_requested
+        return self._stop_event.is_set()
 
-    def _emit_status(self) -> None:
-        snap = self.snapshot
+    async def _emit_status(self) -> None:
+        snap = await self.snapshot()
         event = CaptioningStatusEvent(
             status=snap.status,
             dataset_name=snap.dataset_name,
@@ -454,7 +464,6 @@ class CaptionJob:
         self._event_dispatcher.dispatch(event)
 
     def _emit_image_started(self, dataset_image: DatasetImage) -> None:
-        """Emit a per-image event before captioning starts."""
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         if info is None:
             return
@@ -468,12 +477,10 @@ class CaptionJob:
         )
 
     def _emit_image_captioned(self, dataset_image: DatasetImage) -> None:
-        """Emit a per-image event after successful captioning."""
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         if info is None:
             return
         self._dataset_service.refresh_image_index(self._dataset_name, info.id)
-        # Re-fetch to get updated has_caption/draft_names
         info = self._dataset_service.get_image(self._dataset_name, info.id)
         if info is None:
             return
@@ -495,7 +502,6 @@ class CaptionJob:
         )
 
     def _emit_image_error(self, dataset_image: DatasetImage, error: str) -> None:
-        """Emit a per-image event when captioning fails."""
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         image_id = info.id if info is not None else -1
         self._event_dispatcher.dispatch(
@@ -514,10 +520,7 @@ class CaptionJob:
 
 
 class CaptioningService(Service):
-    """Manages captioning jobs — start, stop, query status.
-
-    Thread-safety: all mutable state is guarded by ``_lock``.
-    """
+    """Manages async captioning jobs — start, stop, query status."""
 
     def __init__(
         self,
@@ -531,8 +534,8 @@ class CaptioningService(Service):
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._logger: Logger = logging.get_logger(__name__)
 
-        self._lock: threading.Lock = threading.Lock()
-        self._jobs: dict[str, CaptionJob] = {}
+        self._async_lock: asyncio.Lock = asyncio.Lock()
+        self._async_jobs: dict[str, AsyncCaptionJob] = {}
 
     # -- public API ----------------------------------------------------------
 
@@ -540,89 +543,66 @@ class CaptioningService(Service):
         """Tag the next watcher events for this dataset with the captioning job ID."""
         self._dataset_watcher.expect_changes(dataset_name, job_id)
 
-    def start_job(self, dataset_name: str, options: CaptionJobOptions) -> JobInfo:
-        """Start a captioning job for *dataset_name*.
-
-        Args:
-            dataset_name: Name of the dataset to caption.
-            options: Validated captioning options.
-
-        Raises:
-            ValueError: If the dataset is unknown or a job is already running.
-        """
+    async def start_job_async(self, dataset_name: str, options: CaptionJobOptions) -> JobInfo:
+        """Start an async captioning job for *dataset_name*."""
         job_id = uuid.uuid4().hex[:12]
 
-        with self._lock:
-            if dataset_name in self._jobs and self._jobs[dataset_name].alive:
+        async with self._async_lock:
+            if dataset_name in self._async_jobs and self._async_jobs[dataset_name].alive:
                 raise ValueError(f"A captioning job is already running for dataset '{dataset_name}'")
 
-            job = CaptionJob(
+            async def _on_done() -> None:
+                await self._cleanup_async(dataset_name)
+
+            job = AsyncCaptionJob(
                 dataset_name=dataset_name,
                 dataset_service=self._dataset_service,
                 event_dispatcher=self._event_dispatcher,
                 logger=self._logger,
                 options=options,
-                on_done=lambda: self._cleanup(dataset_name),
+                on_done=_on_done,
                 job_id=job_id,
             )
-            self._jobs[dataset_name] = job
+            self._async_jobs[dataset_name] = job
             self._mark_expected_changes(dataset_name, job_id)
             job.start()
 
-        return self.get_status(dataset_name)
+        return await self.get_status_async(dataset_name)
 
-    def stop_job(self, dataset_name: str) -> bool:
-        """Request cancellation of the running job for *dataset_name*.
-
-        Returns ``True`` if a job was running and cancellation was requested.
-        """
-        with self._lock:
-            job = self._jobs.get(dataset_name)
+    async def stop_job_async(self, dataset_name: str) -> bool:
+        """Request cancellation of the running async job for *dataset_name*."""
+        async with self._async_lock:
+            job = self._async_jobs.get(dataset_name)
             if job is None or not job.alive:
                 return False
             job.request_stop()
             return True
 
-    def get_status(self, dataset_name: str) -> JobInfo:
-        """Return a snapshot of the job status for *dataset_name*."""
-        with self._lock:
-            job = self._jobs.get(dataset_name)
+    async def get_status_async(self, dataset_name: str) -> JobInfo:
+        """Return a snapshot of the async job status for *dataset_name*."""
+        async with self._async_lock:
+            job = self._async_jobs.get(dataset_name)
             if job is None:
                 return JobInfo(status="idle", dataset_name=dataset_name)
-            return job.snapshot
+            return await job.snapshot()
 
-    def caption_single(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> JobInfo:
-        """Start a single-image captioning job for *dataset_name*.
-
-        Creates a background job constrained to *image_id* and returns
-        immediately with the initial job status.
-
-        Raises:
-            ValueError: If another operation is already running for this dataset.
-        """
+    async def caption_single_async(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> JobInfo:
+        """Start a single-image async captioning job for *dataset_name*."""
         single_opts = options.model_copy(update={"image_ids": [image_id]})
-        return self.start_job(dataset_name, single_opts)
+        return await self.start_job_async(dataset_name, single_opts)
 
     # -- private helpers -----------------------------------------------------
 
-    def _cleanup(self, dataset_name: str) -> None:
-        """Remove finished jobs after a short delay (so clients can read final status)."""
+    async def _cleanup_async(self, dataset_name: str) -> None:
+        """Remove finished async jobs after a short delay."""
+        async with self._async_lock:
+            job = self._async_jobs.get(dataset_name)
+            job_id = (await job.snapshot()).job_id if job is not None else ""
 
-        # Capture the job ID before the delay so a stale cleanup timer can't
-        # wipe a newer job's expected-changes tag.
-        with self._lock:
-            job = self._jobs.get(dataset_name)
-            job_id = job.snapshot.job_id if job is not None else ""
+        await asyncio.sleep(5)
 
-        def _delayed():
-            import time
-
-            time.sleep(5)
-            with self._lock:
-                job = self._jobs.get(dataset_name)
-                if job is not None and not job.alive:
-                    del self._jobs[dataset_name]
-            self._dataset_watcher.clear_expected_changes_for_job(dataset_name, job_id)
-
-        t = threading.Thread(target=_delayed, daemon=True)
-        t.start()
+        async with self._async_lock:
+            job = self._async_jobs.get(dataset_name)
+            if job is not None and not job.alive:
+                del self._async_jobs[dataset_name]
+        self._dataset_watcher.clear_expected_changes_for_job(dataset_name, job_id)

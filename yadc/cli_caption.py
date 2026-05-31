@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from typing import Any, TextIO, cast
 
@@ -6,6 +7,7 @@ import pydantic
 import toml
 
 from yadc.captioners.api import APICaptioner, APITypes
+from yadc.captioners.api.async_session import AsyncSession
 from yadc.captioners.api.utils.cache import HTTPResponseCache
 from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import cache as cmd_cache
@@ -179,7 +181,7 @@ def _print_dataset_image_meta(dataset_image: DatasetImage):
 # --- Captioning ---
 
 
-def _predict_caption_one_shot(
+async def _predict_caption_one_shot(
     model: APICaptioner,
     dataset_image: DatasetImage,
     settings: ConfigSettings,
@@ -195,7 +197,19 @@ def _predict_caption_one_shot(
     try:
         with utils.Timer() as timer:
             if do_stream:
-                tokens = model.predict_stream(
+                async for token in model.predict_stream(
+                    dataset_image,
+                    max_new_tokens=settings.max_tokens,
+                    conversation_overrides=conversation_overrides,
+                    prefill=settings.advanced.assistant_prefill,
+                    drafts=drafts,
+                    extra_messages=extra_messages,
+                    prediction_context=prediction_context,
+                ):
+                    caption_parts.append(token)
+                    click.echo(token, nl=False)
+            else:
+                caption = await model.predict(
                     dataset_image,
                     max_new_tokens=settings.max_tokens,
                     conversation_overrides=conversation_overrides,
@@ -204,22 +218,9 @@ def _predict_caption_one_shot(
                     extra_messages=extra_messages,
                     prediction_context=prediction_context,
                 )
-            else:
-                tokens = [
-                    model.predict(
-                        dataset_image,
-                        max_new_tokens=settings.max_tokens,
-                        conversation_overrides=conversation_overrides,
-                        prefill=settings.advanced.assistant_prefill,
-                        drafts=drafts,
-                        extra_messages=extra_messages,
-                        prediction_context=prediction_context,
-                    )
-                ]
+                caption_parts.append(caption)
+                click.echo(caption, nl=False)
 
-            for token in tokens:
-                caption_parts.append(token)
-                click.echo(token, nl=False)
     except ValueError as e:
         _logger.error("Error: %s", e)
         raise KeyboardInterrupt
@@ -235,7 +236,7 @@ def _predict_caption_one_shot(
     return "".join(caption_parts).strip()
 
 
-def _predict_caption_rounds(
+async def _predict_caption_rounds(
     model: APICaptioner,
     dataset_image: DatasetImage,
     settings: ConfigSettings,
@@ -260,13 +261,15 @@ def _predict_caption_rounds(
 
             if not new_caption:
                 with utils.Timer() as timer_round:
-                    new_caption = model.predict(
-                        dataset_image,
-                        max_new_tokens=settings.max_tokens,
-                        use_cache=True,
-                        conversation_overrides=conversation_overrides,
-                        prefill=settings.advanced.assistant_prefill,
-                        drafts=drafts,
+                    new_caption = (
+                        await model.predict(
+                            dataset_image,
+                            max_new_tokens=settings.max_tokens,
+                            use_cache=True,
+                            conversation_overrides=conversation_overrides,
+                            prefill=settings.advanced.assistant_prefill,
+                            drafts=drafts,
+                        )
                     ).strip()
 
                 if interactive:
@@ -297,13 +300,14 @@ def _predict_caption_rounds(
 
         with utils.Timer() as timer_end_round:
             if do_stream:
-                tokens = model.predict_stream(fresh_image, **predict_kwargs)
+                async for token in model.predict_stream(fresh_image, **predict_kwargs):
+                    caption_parts.append(token)
+                    click.echo(token, nl=False)
             else:
-                tokens = [model.predict(fresh_image, **predict_kwargs)]
+                caption = await model.predict(fresh_image, **predict_kwargs)
+                caption_parts.append(caption)
+                click.echo(caption, nl=False)
 
-            for token in tokens:
-                caption_parts.append(token)
-                click.echo(token, nl=False)
     except ValueError as e:
         _logger.error("Error: %s", e)
         raise KeyboardInterrupt
@@ -319,7 +323,7 @@ def _predict_caption_rounds(
     return "".join(caption_parts).strip()
 
 
-def _caption(
+async def _caption(
     dataset: list[DatasetImage],
     model: APICaptioner,
     settings: ConfigSettings,
@@ -490,7 +494,7 @@ def _caption(
                 prediction_context = PredictionContext()
 
                 if rounds <= 1 or extra_messages:
-                    caption = _predict_caption_one_shot(
+                    caption = await _predict_caption_one_shot(
                         model,
                         dataset_image_current,
                         settings,
@@ -501,7 +505,7 @@ def _caption(
                         prediction_context=prediction_context,
                     )
                 else:
-                    caption = _predict_caption_rounds(
+                    caption = await _predict_caption_rounds(
                         model,
                         dataset_image_current,
                         settings,
@@ -574,6 +578,10 @@ def _caption(
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
 @cli_common.log_level
 def caption(dataset: TextIO, **kwargs: Any):
+    return asyncio.run(_caption_async(dataset, **kwargs))
+
+
+async def _caption_async(dataset: TextIO, **kwargs: Any):
     _logger.info("Using python %d.%d.%d.", sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
     try:
@@ -648,8 +656,14 @@ def caption(dataset: TextIO, **kwargs: Any):
 
     _logger.info("Loading model...")
 
+    async_headers: dict[str, str] = {}
+    if dataset_toml.api.token:
+        async_headers["Authorization"] = f"Bearer {dataset_toml.api.token}"
+
+    async_session = AsyncSession(dataset_toml.api.url, headers=async_headers)
+
     try:
-        model = APICaptioner(
+        model = await APICaptioner.create(
             api_url=dataset_toml.api.url,
             api_token=dataset_toml.api.token,
             prompt_template=dataset_toml.prompt.template,
@@ -662,8 +676,9 @@ def caption(dataset: TextIO, **kwargs: Any):
             reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
             cache=cache,
             response_logger=response_logger,
+            async_session=async_session,
         )
-        model.load_model(dataset_toml.api.model_name)
+        await model.load_model(dataset_toml.api.model_name)
     except ValueError as e:
         _logger.error("Error: failed to load model: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
@@ -675,7 +690,7 @@ def caption(dataset: TextIO, **kwargs: Any):
         _logger.info("Saving captions as draft: %s", save_draft)
 
     with utils.Timer() as timer:
-        return_code = _caption(
+        return_code = await _caption(
             dataset=dataset_to_do,
             model=model,
             settings=dataset_toml.settings,
@@ -686,6 +701,7 @@ def caption(dataset: TextIO, **kwargs: Any):
         )
 
     model.log_usage()
+    await async_session.aclose()
     _logger.info("Done. (%.1f sec)", timer.elapsed)
 
     sys.exit(return_code)

@@ -1,12 +1,9 @@
 import abc
 from typing import Any
 
-import requests
-
 from yadc.core import Captioner, logging
 from yadc.core.prediction import PredictionContext
 
-from .session import Session
 from .utils.cache import HTTPResponseCache
 from .utils.response_logger import ResponseLogger
 
@@ -24,7 +21,6 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
             **kwargs: Optional keyword arguments:
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
-                - `session` (requests.Session, options): Override the session for the API calls
                 - `cache` (yadc.captioners.utils.cache.HTTPResponseCache, options): Sets the session cache
 
         Raises:
@@ -48,16 +44,18 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         elif warnings:
             _logger.warning("Warning: no api_token is set, requests will fail if api uses authentication")
 
-        session: requests.Session | None = kwargs.get("session", None)
-        assert session is None or isinstance(session, requests.Session)
-
         cache: HTTPResponseCache | None = kwargs.get("cache", None)
         assert cache is None or isinstance(cache, HTTPResponseCache)
 
         response_logger: ResponseLogger | None = kwargs.get("response_logger", None)
         assert response_logger is None or isinstance(response_logger, ResponseLogger)
 
-        self._session: Session = Session(self._api_url, headers=session_headers, session=session, cache=cache, response_logger=response_logger)
+        from .async_session import AsyncSession
+
+        async_session: AsyncSession | None = kwargs.get("async_session", None)
+        assert async_session is None or isinstance(async_session, AsyncSession)
+
+        self._async_session: AsyncSession | None = async_session
 
     @staticmethod
     def _before_predict(kwargs: dict[str, Any]):

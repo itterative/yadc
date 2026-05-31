@@ -1,12 +1,12 @@
 import copy
 import json
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pydantic
-import requests
 from typing_extensions import override
 
 from yadc.core import DatasetImage, logging
@@ -130,8 +130,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             api_url="https://generativelanguage.googleapis.com/v1beta",
             api_token="your-api-key"
         )
-        captioner.load_model("gemini-pro-vision")
-        caption = captioner.predict(dataset_image)
+        await captioner.load_model("gemini-pro-vision")
+        caption = await captioner.predict(dataset_image)
     ```
     """
 
@@ -152,7 +152,6 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 - `reasoning` (bool): Enable internal chain-of-thought / extra reasoning behavior.
                 - `reasoning_effort` (str, optional): Level of reasoning effort to request when `reasoning` is True ('low', 'medium', 'high').
                 - `reasoning_exclude_output` (bool, optional): When True, exclude internal reasoning output from the caption.
-                - `session` (requests.Session, options): Override the session for the API calls
 
         Raises:
             ValueError: If `api_token` is not provided.
@@ -175,7 +174,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         if not self._api_token:
             raise ValueError("no api_token")
 
-        self._session.headers = {"x-goog-api-key": self._api_token}
+        assert self._async_session is not None, "async session not available"
+        self._async_session.headers = {"x-goog-api-key": self._api_token}
+
         self._api_usage: dict[str, APIUsage] = {}
 
     @override
@@ -203,21 +204,24 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             )
 
     @override
-    def load_model(self, model_repo: str, **kwargs: Any) -> None:
+    async def load_model(self, model_repo: str, **kwargs: Any) -> None:
         try:
-            self._load_model(model_repo, **kwargs)
-        except requests.HTTPError as e:
+            await self._load_model(model_repo, **kwargs)
+        except httpx.HTTPStatusError as e:
             raise ValueError(self._normalize_error(e))
-        except requests.ConnectionError:
+        except (httpx.ConnectError, httpx.TimeoutException):
             raise ValueError(f"api unavailable: {self._api_url}")
         except AssertionError as e:
             raise ValueError(str(e))
 
-    def _load_model(self, model_repo: str, **_kwargs: Any) -> None:
+    async def _load_model(self, model_repo: str, **_kwargs: Any) -> None:
+        assert self._async_session is not None, "async session not available"
+
         model_repo = model_repo.removeprefix("models/")
 
-        with self._session.get(f"models/{model_repo}", cache_ttl=1800) as model_resp:
-            if model_resp.ok:
+        async with self._async_session.get(f"models/{model_repo}", cache_ttl=1800) as model_resp:
+            assert isinstance(model_resp, httpx.Response)
+            if model_resp.status_code < 400:
                 model_resp_json = model_resp.json()
                 model = GeminiModel.model_validate(model_resp_json)
 
@@ -243,7 +247,8 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             else:
                 models_url_path = "models"
 
-            with self._session.get(models_url_path, cache_ttl=1800) as models_resp:
+            async with self._async_session.get(models_url_path, cache_ttl=1800) as models_resp:
+                assert isinstance(models_resp, httpx.Response)
                 models_resp.raise_for_status()
 
                 models_resp_json = models_resp.json()
@@ -431,14 +436,99 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         return assistant_prefill
 
-    def _generate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
-        assert self._current_model, "no model loaded"
+    async def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
+        assert self._current_model, "model not loaded"
+        assert self._async_session is not None, "async session not available"
+
+        kwargs.pop("stream", None)
 
         conversation = self.conversation(image, **kwargs)
         assistant_prefill = self._extract_assistant_prefill(conversation)
 
-        with self._session.capture_response(image_name=Path(image.path).stem) as _ctx:
-            with self._session.post(
+        is_thinking = False
+
+        async with self._async_session.capture_response(image_name=Path(image.path).stem) as _ctx:
+            async with self._async_session.post(
+                f"models/{self._current_model}:generateContent",
+                stream=False,
+                json=conversation,
+                capture_ctx=_ctx,
+            ) as conversation_resp:
+                assert isinstance(conversation_resp, httpx.Response)
+                conversation_resp.raise_for_status()
+
+                try:
+                    conversation_json = json.loads(await conversation_resp.aread())
+                    assert isinstance(conversation_json, dict), "api did not return valid json"
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to json: %s", await conversation_resp.aread())
+                    raise ValueError(str(e))
+                except json.JSONDecodeError:
+                    _logger.debug("Failed to decode response to json: %s", await conversation_resp.aread())
+                    raise ValueError("api did not return json")
+
+                try:
+                    conversation_response = GeminiContentResponse.model_validate(conversation_json)
+                except AssertionError as e:
+                    _logger.debug("Failed to decode response to object: %s", await conversation_resp.aread())
+                    raise ValueError(str(e))
+                except pydantic.ValidationError:
+                    _logger.debug("Failed to decode response to object: %s", await conversation_resp.aread())
+                    raise ValueError("api did not return a valid response")
+
+                if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
+                    self._api_usage[conversation_response.responseId] = APIUsage(
+                        response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
+                        prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
+                        total_tokens=conversation_response.usageMetadata.totalTokenCount,
+                        thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
+                    )
+
+                thought_buffer = ""
+
+                for candidate in conversation_response.candidates:
+                    if candidate.finishReason and candidate.finishReason != "STOP":
+                        raise ValueError(self._normalize_error(conversation_response))
+
+                    for part in candidate.content.parts:
+                        if text := part.text:
+                            if not part.thought:
+                                continue
+
+                            if prediction_context is not None:
+                                prediction_context.reasoning = (prediction_context.reasoning or "") + text
+
+                            if not is_thinking:
+                                thought_buffer += self._reasoning_start_token
+                                is_thinking = True
+
+                            thought_buffer += text
+
+                    if is_thinking:
+                        thought_buffer += self._reasoning_end_token
+                        is_thinking = False
+
+                    for part in candidate.content.parts:
+                        if text := part.text:
+                            if part.thought:
+                                continue
+
+                            if assistant_prefill:
+                                text = assistant_prefill + text
+
+                            return thought_buffer + text
+
+                raise ValueError("api did not return text")
+
+    async def _agenerate_stream_prediction_inner(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
+        assert self._current_model, "model not loaded"
+        assert self._async_session is not None, "async session not available"
+
+        conversation = self.conversation(image, **kwargs)
+        assistant_prefill = self._extract_assistant_prefill(conversation)
+
+        async with self._async_session.capture_response(image_name=Path(image.path).stem) as _ctx:
+            async with self._async_session.post(
                 f"models/{self._current_model}:streamGenerateContent?alt=sse",
                 stream=True,
                 json=conversation,
@@ -447,8 +537,11 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 try:
                     conversation_resp.raise_for_status()
                 except Exception:
-                    # NOTE: consume the stream so error can be parsed
-                    conversation_error = "\n".join(conversation_resp.iter_lines(decode_unicode=True))
+                    lines: list[str] = []
+                    async for raw_line in conversation_resp.aiter_lines():
+                        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                        lines.append(line)
+                    conversation_error = "\n".join(lines)
                     conversation_error = conversation_error.strip()
 
                     raise ErrorNormalizationMixin.GenerationError(conversation_error)
@@ -456,22 +549,18 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 if assistant_prefill:
                     yield assistant_prefill
 
-                conversation_error = ""  # in some scenarios, gemini api will just send the error directly instead of as a sse data line
+                conversation_error = ""
                 conversation_stopped = False
 
-                is_thinking = False  # used to wrap the thoughts in <think>...</think>
-                is_prediction = False  # prevents the thoughts from being printed if the first thought is done
+                is_thinking = False
+                is_prediction = False
 
-                for line in conversation_resp.iter_lines():
-                    # NOTE: decode_unicode option doesn't seem to work properly for some characters
-                    assert isinstance(line, bytes)
-                    line = line.decode()
-
+                async for raw_line in conversation_resp.aiter_lines():
+                    line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
                     if not line or conversation_stopped:
                         continue
 
                     try:
-                        # skip keepalive comments (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
                         if line.startswith(":"):
                             continue
 
@@ -484,7 +573,6 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         line_json = json.loads(line)
                     except json.JSONDecodeError:
                         if line.startswith("{"):
-                            # likely json, try parsing outside
                             conversation_error = line + "\n"
                             break
 
@@ -546,112 +634,35 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         break
 
                 if conversation_error:
-                    conversation_error += "\n".join(conversation_resp.iter_lines(decode_unicode=True))
+                    error_lines: list[str] = []
+                    async for raw_line in conversation_resp.aiter_lines():
+                        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                        error_lines.append(line)
+                    conversation_error += "\n".join(error_lines)
                     conversation_error = conversation_error.strip()
 
                     raise ErrorNormalizationMixin.GenerationError(conversation_error)
 
-    def _generate_stream_prediction(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
+    async def _generate_stream_prediction(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:
         try:
-            yield from self._generate_stream_prediction_inner(image, **kwargs)
+            async for token in self._agenerate_stream_prediction_inner(image, **kwargs):
+                yield token
             return
-        except requests.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             raise ValueError(self._normalize_error(e))
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
 
-    def _generate_prediction(self, image: DatasetImage, prediction_context: PredictionContext | None = None, **kwargs: Any):
-        assert self._current_model, "model not loaded"
-
-        # make sure stream is not set in kwargs
-        kwargs.pop("stream", None)
-
-        conversation = self.conversation(image, **kwargs)
-        assistant_prefill = self._extract_assistant_prefill(conversation)
-
-        is_thinking = False  # used to wrap the thoughts in <think>...</think>
-
-        with self._session.capture_response(image_name=Path(image.path).stem) as _ctx:
-            with self._session.post(
-                f"models/{self._current_model}:generateContent",
-                stream=False,
-                json=conversation,
-                capture_ctx=_ctx,
-            ) as conversation_resp:
-                conversation_resp.raise_for_status()
-
-                try:
-                    conversation_json = json.loads(conversation_resp.text)
-                    assert isinstance(conversation_json, dict), "api did not return valid json"
-                except AssertionError as e:
-                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                    raise ValueError(str(e))
-                except json.JSONDecodeError:
-                    _logger.debug("Failed to decode response to json: %s", conversation_resp.text)
-                    raise ValueError("api did not return json")
-
-                try:
-                    conversation_response = GeminiContentResponse.model_validate(conversation_json)
-                except AssertionError as e:
-                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                    raise ValueError(str(e))
-                except pydantic.ValidationError:
-                    _logger.debug("Failed to decode response to object: %s", conversation_resp.text)
-                    raise ValueError("api did not return a valid response")
-
-                if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
-                    self._api_usage[conversation_response.responseId] = APIUsage(
-                        response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
-                        prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
-                        total_tokens=conversation_response.usageMetadata.totalTokenCount,
-                        thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
-                    )
-
-                thought_buffer = ""
-
-                for candidate in conversation_response.candidates:
-                    if candidate.finishReason and candidate.finishReason != "STOP":
-                        raise ValueError(self._normalize_error(conversation_response))
-
-                    for part in candidate.content.parts:
-                        if text := part.text:
-                            if not part.thought:
-                                continue
-
-                            if prediction_context is not None:
-                                prediction_context.reasoning = (prediction_context.reasoning or "") + text
-
-                            if not is_thinking:
-                                thought_buffer += self._reasoning_start_token
-                                is_thinking = True
-
-                            thought_buffer += text
-
-                    if is_thinking:
-                        thought_buffer += self._reasoning_end_token
-                        is_thinking = False
-
-                    for part in candidate.content.parts:
-                        if text := part.text:
-                            if part.thought:
-                                continue
-
-                            if assistant_prefill:
-                                text = assistant_prefill + text
-
-                            return thought_buffer + text
-
-                raise ValueError("api did not return text")
-
     @override
-    def predict(self, image: DatasetImage, **kwargs: Any):
+    async def predict(self, image: DatasetImage, **kwargs: Any) -> str:
         self._before_predict(kwargs)
         try:
-            return self._handle_thinking(self._generate_prediction(image, **kwargs))
-        except requests.HTTPError as e:
+            return self._handle_thinking(await self._generate_prediction(image, **kwargs))
+        except httpx.HTTPStatusError as e:
             raise ValueError(self._normalize_error(e))
 
     @override
-    def predict_stream(self, image: DatasetImage, **kwargs: Any) -> Generator[str, None, None]:
+    async def predict_stream(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:
         self._before_predict(kwargs)
-        yield from self._handle_thinking_streaming(self._generate_stream_prediction(image, **kwargs))
+        async for token in self._handle_thinking_streaming_async(self._generate_stream_prediction(image, **kwargs)):
+            yield token

@@ -3,6 +3,7 @@ import pathlib
 import time
 from typing import Any, cast
 
+import httpx
 import requests
 import requests.structures
 
@@ -12,6 +13,15 @@ _logger = logging.get_logger(__name__)
 
 
 class HTTPResponseCache:
+    """File-based HTTP response cache.
+
+    Stores responses keyed by URL path. Supports both ``requests.Response``
+    (sync) and ``httpx.Response`` (async) via separate getters.
+
+    Note: ``get`` / ``set`` operate synchronously on the filesystem. A future
+    async variant may be added when the whole stack moves to async I/O.
+    """
+
     def __init__(self, cache_dir: str | pathlib.Path):
         self.cache_dir: pathlib.Path = pathlib.Path(cache_dir)
         self.cache_dir.mkdir(mode=0o750, exist_ok=True)
@@ -33,7 +43,7 @@ class HTTPResponseCache:
 
         return True
 
-    def get(self, key: str) -> requests.Response | None:
+    def _read_entry(self, key: str) -> "_ResponseCacheEntry | None":
         cache_file = self.cache_dir / self._key(key)
 
         if not cache_file.exists():
@@ -51,26 +61,52 @@ class HTTPResponseCache:
                 return None
 
             _logger.debug("HTTP cache hit")
-
-            response = requests.Response()
-            response.status_code = 200
-            response._content = entry.content
-            response.headers = requests.structures.CaseInsensitiveDict([(key, value) for key, value in entry.headers.items()])
-            response.encoding = response.apparent_encoding
-
-            return response
+            return entry
 
         return None  # pyright: ignore[reportUnreachable]
 
-    def set(self, key: str, response: requests.Response, ttl: float | None = None):
+    def get(self, key: str) -> requests.Response | None:
+        """Return a cached response as ``requests.Response``."""
+        entry = self._read_entry(key)
+        if entry is None:
+            return None
+
+        response = requests.Response()
+        response.status_code = entry.status_code
+        response._content = entry.content
+        response.headers = requests.structures.CaseInsensitiveDict([(key, value) for key, value in entry.headers.items()])
+        response.encoding = response.apparent_encoding
+
+        return response
+
+    def get_httpx(self, key: str) -> httpx.Response | None:
+        """Return a cached response as ``httpx.Response``."""
+        entry = self._read_entry(key)
+        if entry is None:
+            return None
+
+        return httpx.Response(
+            status_code=entry.status_code,
+            headers=entry.headers,
+            content=entry.content,
+        )
+
+    def set(self, key: str, response: requests.Response | httpx.Response, ttl: float | None = None):
+        """Cache a response. Accepts either ``requests.Response`` or ``httpx.Response``."""
         cache_file = self.cache_dir / self._key(key)
+
+        content: bytes
+        if isinstance(response, requests.Response):
+            content = response.content
+        else:
+            content = response.content if response._content is not None else b""
 
         entry = _ResponseCacheEntry(
             key=key,
             expiry=0 if ttl is None else time.time() + ttl,
             status_code=response.status_code,
             headers=dict(response.headers),
-            content=response.content,
+            content=content,
         )
 
         with open(cache_file, "w") as f:
