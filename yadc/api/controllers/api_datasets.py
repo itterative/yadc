@@ -8,6 +8,7 @@ from quart import Response, jsonify, request, send_file
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from ..services.config_history import ConfigHistoryService
 from ..services.dataset_upload import DatasetUploadService
 from ..services.datasets import DatasetService
 from . import controller
@@ -33,6 +34,19 @@ def _generate_thumbnail(image_path: Path, cache_path: Path, size: int) -> Path:
     return cache_path
 
 
+def _snapshot_initial(config_history: ConfigHistoryService, datasets: DatasetService, name: str) -> None:
+    """Save an initial config snapshot for a newly created/imported dataset."""
+    info = datasets.get_dataset(name)
+    if info is None or info.config_path is None:
+        return
+    try:
+        with open(info.config_path) as f:
+            content = f.read()
+        config_history.save_snapshot(name, content)
+    except FileNotFoundError:
+        pass
+
+
 @controller
 def api_datasets(
     configuration: Configuration,
@@ -40,6 +54,7 @@ def api_datasets(
     logging: LoggingFactory,
     datasets: DatasetService,
     dataset_upload: DatasetUploadService,
+    config_history: ConfigHistoryService,
 ):
     _logger = logging.get_logger(__name__)
     _thumb_cache_dir = Path(configuration.cache_path) / "thumbnails"
@@ -61,8 +76,11 @@ def api_datasets(
         try:
             if "toml_path" in body:
                 result = datasets.import_dataset(name, body["toml_path"])
+                # Snapshot the initial config
+                _snapshot_initial(config_history, datasets, name)
             elif "image_paths" in body:
                 result = datasets.create_dataset(name, body["image_paths"])
+                _snapshot_initial(config_history, datasets, name)
             else:
                 return jsonify_error("Provide 'toml_path' to import or 'image_paths' to create", status=400)
 
@@ -111,6 +129,8 @@ def api_datasets(
             try:
                 async for event in dataset_upload.create_dataset_from_upload(name, file_tuples):
                     yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
+                    if event.phase == "complete":
+                        _snapshot_initial(config_history, datasets, name)
             except Exception as e:
                 yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
 

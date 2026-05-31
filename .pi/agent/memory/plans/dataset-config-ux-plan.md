@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
 status: In Progress
-last_history: 9
+last_history: 12
 category: meta
 ---
 
@@ -114,7 +114,7 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 - [ ] **Relative paths for uploaded datasets**: When `source === 'upload'`, display dataset entry paths relative to the dataset's state directory instead of showing the absolute state-folder paths. The backend's `DatasetInfo` likely has enough context; may need to pass the dataset root through to the component or compute relative paths on the backend.
 - [ ] **Image/folder upload for managed datasets**: When `source === 'upload'`, allow uploading new images or folders to the dataset directly from the Paths & Variables section. Builds on the existing upload infrastructure (`DatasetUploadService`, `UploadDatasetTab`). Needs UX design — upload button per entry, or a shared upload action.
 - [ ] **Path editing for external datasets**: Verify that changing a dataset entry's path works correctly with the backend's `DatasetWatcherService` (watchdog). Changing the path triggers a rescan, but the watcher may still be watching the old directory. Need to check if `rescan_dataset` re-registers watchers or if the watcher needs explicit path update handling.
-- [ ] **Extras value type support**: Extras values can be strings, numbers, booleans, or nested objects. Currently all are treated as strings. Should: auto-detect types from the parsed config, render appropriate inputs (text for strings, number for numbers, checkbox for booleans), and show nested objects/arrays as read-only with a message to use the raw TOML editor.
+- [x] **Extras value type support**: Extras values can be strings, numbers, booleans, or nested objects. Auto-detects types from parsed config, renders text input for strings, number input for numbers, checkbox for booleans, and read-only JSON preview for objects. Type selector dropdown (str/num/bool/obj) next to each key. Objects are not editable in the form — message prompts user to use Advanced view.
 
 ---
 
@@ -234,12 +234,76 @@ The `DatasetService` (or a new `ConfigHistoryService`) handles this via the exis
 
 ### 5.2 Frontend: History browser
 
-In the Config tab (both Simplified and Advanced modes), add a "History" section:
+In the Config tab, the History is implemented as a third tab in `CompactPillTabs` (`Form` / `Advanced` / `History`).
 
-- Collapsible, below the preview
-- List of entries with timestamps
-- Click to preview (diff against current, or just show the content)
-- "Restore" button with confirmation
+**Target design — Incremental diff sections:**
+
+Instead of a sidebar+preview split, each history entry is a section in a vertical stack. Sections are **always expanded** — no collapse/expand interaction. By default each section shows **only what changed in that save** (diff vs. the previous version). A toggle at the top of the section flips to the raw full snapshot.
+
+```
+┌─ Revision History ─────────────────────────────┐
+│                                              ↻ │
+├────────────────────────────────────────────────┤
+│ ┌─ 2h ago — model_name changed ──────────────┐ │
+│ │ May 30, 2026, 10:42 AM           [Restore] │ │
+│ │                                [Show full] │ │
+│ ├────────────────────────────────────────────┤ │
+│ │ - model_name = "old-model"                 │ │
+│ │ + model_name = "gemma3"                    │ │
+│ └────────────────────────────────────────────┘ │
+│ ─────────────────────────────────────────────  │
+│ ┌─ 5h ago — added dataset entry ─────────────┐ │
+│ │ May 30, 2026, 07:42 AM           [Restore] │ │
+│ │                                [Show diff] │ │
+│ ├────────────────────────────────────────────┤ │
+│ │ + [[dataset]]                              │ │
+│ │ + path = "/tmp/new_images"                 │ │
+│ └────────────────────────────────────────────┘ │
+│ ─────────────────────────────────────────────  │
+│ ┌─ 1d ago — Initial config ──────────────────┐ │
+│ │ May 29, 2026, 08:00 AM           [Restore] │ │
+│ │                                [Show full] │ │
+│ ├────────────────────────────────────────────┤ │
+│ │ api.url = "http://localhost:11434"         │ │
+│ │ model_name = "gemma3"                      │ │
+│ │ ...                                        │ │
+│ └────────────────────────────────────────────┘ │
+│                                                │
+│         [Show 5 older revisions]               │
+└────────────────────────────────────────────────┘
+```
+
+**How diffs map to entries:**
+
+History is saved pre-write, and the API returns newest-first. Each entry's default diff shows the changes introduced **by that save** (this version minus the one below it):
+
+| Entry | Represents | Diff shows |
+|-------|-----------|------------|
+| A (top) | State after latest save | Changes made in latest save (A vs B) |
+| B | State after previous save | Changes made in that save (B vs C) |
+| C (bottom) | Initial config | Raw snapshot only (no previous) |
+
+The current live config on disk is the same as the topmost history entry (both represent the state after the most recent save). No separate "Current" row is needed.
+
+**Pagination:**
+
+- Fetch 5 entries by default
+- "Show N older" fetches the next batch via `before_id` cursor, appends to the list
+- No page numbers — simple infinite-style loading
+
+**Implementation notes:**
+
+- Uses `@codemirror/merge` (`UnifiedMergeView`) for read-only diff rendering with green/red highlights and `+`/`-` gutter markers
+- Each diff is a lightweight read-only CodeMirror instance — no accept/reject UI
+- Restore button at the top of each section, styled as `.btn-secondary`, with `confirm()` dialog
+- "Show full" / "Show diff" toggle at the top of each section — keeping buttons at the top ensures scroll position stays consistent when switching views
+- Entry header shows relative time (primary) and absolute timestamp (secondary, muted)
+
+**Known issues (moved to Phase 7):**
+- Save/Reload footer visible and functional on History tab (7.3)
+
+**Deferred:**
+- Custom diff algorithm beyond `@codemirror/merge` (7.5)
 
 ### Status
 
@@ -248,8 +312,11 @@ In the Config tab (both Simplified and Advanced modes), add a "History" section:
 - [x] Backend: `GET /configs/<name>/history` endpoint
 - [x] Backend: `POST /configs/<name>/history/<id>/restore` endpoint
 - [x] Backend: pruning (max entries per dataset)
-- [ ] Frontend: history section in Config tab
-- [ ] Frontend: preview + restore UI
+- [x] Frontend: history section in Config tab
+- [x] Frontend: preview + restore UI
+- [x] `@codemirror/merge` dependency added, `UnifiedMergeView` wired into `TomlEditor`/`JinjaEditor`
+- [x] `autoHeight` + `compactDiff` props added to editor components
+- [x] Footer hidden on History tab; `activeView` type expanded to include `'history'`
 
 ---
 
@@ -294,53 +361,14 @@ Comments in TOML files are lost on parse → serialize because the TOML data mod
 
 Post-implementation polish for issues discovered during use.
 
-### 7.1 Extras editing doesn't trigger dirty / Save button
-
-**Problem:** Changing extras values in `KeyValueEditor` doesn't cause the "Save Config" button to enable.
-
-**Root cause:** `bind:entries={datasetEntries[i].extras}` mutates the inner array in-place via Svelte's binding. The `simplifiedDirty` check uses `entriesEqual()` which does deep comparison — but Svelte's `$derived` may not re-evaluate because the `datasetEntries` array reference doesn't change when only a nested extras entry's `value` changes. The `$effect` for live preview touches `e.key` and `e.value` inside a loop, but that's the preview trigger, not dirty tracking.
-
-**Fix:** The `KeyValueEditor` binding mutates `datasetEntries[i].extras` objects in-place. The dirty derivation needs to re-run when those nested values change. Options:
-- **Option A:** In `KeyValueEditor`, emit a new array on change (replace the `entries` array instead of mutating in place), so the `bind:entries` reference changes and triggers reactivity.
-- **Option B:** Add a manual "touch" — after KeyValueEditor changes, reassign `datasetEntries` to a new array (`datasetEntries = [...datasetEntries]`).
-- **Option C:** Track extras dirty separately with a version counter.
-
-Recommendation: **Option A** — fix `KeyValueEditor` to emit new arrays on every change, making it properly reactive.
-
-### 7.2 History snapshots should include the current state
-
-**Problem:** Currently, history only saves the *pre-write* state (the old content before overwriting). This means:
-1. On first config creation (import/create/upload), there's no history at all — the initial state is never snapshotted.
-2. If a user makes 3 saves (A→B→C→D), history contains A, B, C but NOT D. They can revert to C but not back to D without making another save.
-
-**Fix:** Change the snapshot strategy:
-- **On config creation** (initial import/create/upload): save a snapshot of the initial config content.
-- **On every save** (PATCH/PUT): save a snapshot of the *new* content (the result), not the old content. This means every state the config has ever been in is recorded.
-- Remove the pre-write snapshot in PUT/PATCH handlers.
-- Add post-write snapshot after successful write.
-- Alternatively: save both pre-write (already exists) AND post-write on each save. But that doubles entries. Better to just save the result.
-
-**Backend changes:**
-- `api_configs.py`: Move `save_snapshot` call to *after* the write in both PUT and PATCH.
-- Dataset creation endpoints (`api_datasets.py` or wherever import/create/upload happen): add initial snapshot after config is written.
-- `restoreConfigHistory`: currently deletes the restored entry. With post-write snapshots, the restore itself will create a new snapshot of the restored content, so deletion is fine.
-
-### 7.3 History tab UX improvements
-
-**Problem:** The history tab needs better UX — details TBD based on user feedback. Likely improvements:
-- Better visual hierarchy in the entry list
-- Diff view instead of full TOML content
-- Confirmation dialog before restore
-- Keyboard navigation
-- Loading states
-
-**Approach:** Iterate on `ConfigHistory.svelte` based on specific feedback from the user.
-
 ### Status
 
-- [ ] 7.1: Fix KeyValueEditor reactivity / dirty tracking for extras
-- [ ] 7.2: Snapshot current state on creation and post-save
-- [ ] 7.3: History tab UX improvements
+- [x] 7.1: Extras editing dirty tracking — `populateFields()` shared same array objects between `datasetEntries` and `loadedDatasetEntries`, so mutations were visible through both proxies. Fixed by deep-copying entries for the loaded snapshot.
+- [x] 7.2: Snapshot strategy — changed from pre-write (old content) to post-write (new content). Added `_snapshot_initial()` for import/create/upload. Restore only saves current state before restoring (no redundant post-restore snapshot).
+- [x] 7.3: Save/Reload footer visible on History tab — `activeView` expanded to `'simplified' | 'advanced' | 'history'`, footer conditionally hidden when on History.
+- [x] 7.4: History tab layout — implemented incremental diff sections design. Stacked sections with inline diff + full-snapshot toggle eliminates the cramped sidebar+preview split.
+- [x] 7.5: History diff view — `@codemirror/merge` (`UnifiedMergeView`) implemented for inline diff rendering. `collapseUnchanged` used with `minSize: 1` (not 0, which caused a RangeError).
+- [ ] 7.6: **Form/Advanced view sync divergence** — When switching between Form and Advanced tabs, unsaved edits in one view are not reflected in the other. Current behavior: switching Form→Advanced syncs `previewContent` into the editor, but switching back with `rawDirty` reloads from server (discarding advanced changes). After the fix: both views preserve their own drafts, but they can diverge silently. Options: (1) Add inline sync notices ("Form has unsaved changes [Apply] [Keep]"), (2) Re-parse raw TOML into structured fields when switching Advanced→Form (instead of server reload), (3) Unify the two drafts into a single source of truth. **Deferred** — not actively blocking, but will confuse users who expect changes to propagate between tabs.
 
 1. **Phase 1** (Dataset entries + extras) — highest user value
 2. **Phase 2** (Advanced settings fields) — fills gaps in the structured form

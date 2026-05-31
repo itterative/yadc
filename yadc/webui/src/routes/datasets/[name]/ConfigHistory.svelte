@@ -6,7 +6,7 @@
     } from '$lib/stores/configs';
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
-    import SvgFile from '$lib/icons/SvgFile.svelte';
+    import Alert from '$lib/components/ui/Alert.svelte';
 
     interface Props {
         datasetName: string;
@@ -20,12 +20,14 @@
     let entries: ConfigHistoryEntry[] = $state([]);
     let loading = $state(false);
     let error: string | null = $state(null);
-    let selectedId: number | null = $state(null);
-    let restoring = $state(false);
+    let restoringId: number | null = $state(null);
+    let hasMore = $state(false);
 
-    const selected = $derived(entries.find((e) => e.id === selectedId) ?? null);
+    /** Track which entries show full snapshot instead of diff (key = entry id). */
+    let showFullMap = $state<Record<number, boolean>>({});
 
-    // Relative time formatting
+    const PAGE_SIZE = 5;
+
     function relativeTime(epochSeconds: number): string {
         const now = Date.now() / 1000;
         const diff = now - epochSeconds;
@@ -41,15 +43,23 @@
         return `${Math.floor(diff / 86400)}d ago`;
     }
 
-    function tooltipTime(epochSeconds: number): string {
-        return new Date(epochSeconds * 1000).toLocaleString();
-    }
-
-    async function loadHistory() {
+    async function loadHistory(append = false) {
         loading = true;
         error = null;
         try {
-            entries = await fetchConfigHistory(datasetName);
+            const beforeId =
+                append && entries.length > 0 ? entries[entries.length - 1].id : undefined;
+            const newEntries = await fetchConfigHistory(datasetName, {
+                limit: PAGE_SIZE,
+                before_id: beforeId
+            });
+            hasMore = newEntries.length === PAGE_SIZE;
+            if (append) {
+                entries = [...entries, ...newEntries];
+            } else {
+                entries = newEntries;
+                showFullMap = {};
+            }
         } catch (e) {
             error = e instanceof Error ? e.message : 'Failed to load history';
         } finally {
@@ -58,37 +68,42 @@
     }
 
     async function handleRestore(entry: ConfigHistoryEntry) {
-        if (restoring) {
+        if (restoringId !== null) {
             return;
         }
-        restoring = true;
+        if (!confirm('Restore this revision? The current config will be saved to history first.')) {
+            return;
+        }
+        restoringId = entry.id;
         try {
             await restoreConfigHistory(datasetName, entry.id);
-            selectedId = null;
             onsaved?.();
             await loadHistory();
         } catch (e) {
             error = e instanceof Error ? e.message : 'Failed to restore';
         } finally {
-            restoring = false;
+            restoringId = null;
         }
     }
 
+    function toggleView(entryId: number) {
+        showFullMap = { ...showFullMap, [entryId]: !showFullMap[entryId] };
+    }
+
     $effect(() => {
-        // Re-fetch when datasetName or external config version changes
         void datasetName;
         void configVersion;
         loadHistory();
     });
 </script>
 
-<div class="flex h-full flex-col">
+<div class="space-y-3 pb-4">
     <!-- Header -->
-    <div class="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 class="text-sm font-medium text-gray-300">Revision History</h2>
+    <div class="flex items-center justify-between">
+        <h3 class="section-heading">Revision History</h3>
         <button
             class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-            onclick={loadHistory}
+            onclick={() => loadHistory()}
             title="Refresh"
             disabled={loading}
         >
@@ -97,74 +112,89 @@
     </div>
 
     {#if error}
-        <div class="mx-4 mt-3 rounded-md bg-red-900/30 px-3 py-2 text-sm text-red-300">
+        <Alert variant="error" class="text-sm" dismissable ondismiss={() => (error = null)}>
             {error}
-        </div>
+        </Alert>
     {/if}
 
-    <!-- Content -->
     {#if entries.length === 0 && !loading}
-        <div class="flex flex-1 items-center justify-center p-8 text-center text-sm text-gray-500">
-            <div>
-                <SvgFile class="mx-auto mb-2 h-8 w-8 text-gray-600" />
-                <p>No revision history yet.</p>
-                <p class="mt-1 text-xs text-gray-600">
-                    History is saved automatically when you make changes.
-                </p>
-            </div>
+        <div class="py-8 text-center text-sm text-gray-500">
+            <p>No revision history yet.</p>
+            <p class="mt-1 text-xs text-gray-600">
+                History is saved automatically when you make changes.
+            </p>
         </div>
     {:else}
-        <div class="flex min-h-0 flex-1">
-            <!-- Entry list -->
-            <div class="w-40 flex-shrink-0 overflow-y-auto border-r border-border">
-                {#if loading && entries.length === 0}
-                    <div class="flex items-center justify-center p-4">
-                        <SvgRefresh class="h-4 w-4 animate-spin text-gray-500" />
-                    </div>
-                {/if}
-                {#each entries as entry (entry.id)}
-                    <button
-                        class="flex w-full cursor-pointer flex-col px-3 py-2.5 text-left transition-colors
-                            {selectedId === entry.id
-                            ? 'bg-gray-700/60 text-white'
-                            : 'text-gray-300 hover:bg-gray-800/60'}"
-                        onclick={() => (selectedId = entry.id)}
+        <div class="space-y-3">
+            {#each entries as entry, i (entry.id)}
+                {@const isLast = i === entries.length - 1}
+                {@const showFull = isLast || showFullMap[entry.id]}
+                {@const prevEntry = isLast ? null : entries[i + 1]}
+                <div class="overflow-hidden rounded-lg border border-border">
+                    <!-- Section header -->
+                    <div
+                        class="flex items-center justify-between border-b border-border bg-gray-800/40 px-3 py-2"
                     >
-                        <span class="text-xs font-medium" title={tooltipTime(entry.created_t)}>
-                            {relativeTime(entry.created_t)}
-                        </span>
-                        <span class="mt-0.5 text-[11px] text-gray-500">
-                            {new Date(entry.created_t * 1000).toLocaleString()}
-                        </span>
-                    </button>
-                {/each}
-            </div>
-
-            <!-- Preview pane -->
-            <div class="flex min-w-0 flex-1 flex-col">
-                {#if selected}
-                    <div class="flex items-center justify-between border-b border-border px-3 py-2">
-                        <span class="text-xs text-gray-400">
-                            Snapshot from {new Date(selected.created_t * 1000).toLocaleString()}
-                        </span>
-                        <button
-                            class="flex cursor-pointer items-center gap-1.5 rounded bg-accent px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-                            onclick={() => handleRestore(selected)}
-                            disabled={restoring}
-                        >
-                            <SvgRefresh class="h-3 w-3" />
-                            {restoring ? 'Restoring…' : 'Restore'}
-                        </button>
+                        <div class="min-w-0">
+                            <div class="text-xs font-medium text-gray-300">
+                                {relativeTime(entry.created_t)}
+                            </div>
+                            <div class="text-[11px] text-gray-500">
+                                {new Date(entry.created_t * 1000).toLocaleString()}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {#if !isLast}
+                                <button
+                                    class="btn-secondary px-2 py-0.5 text-xs"
+                                    onclick={() => toggleView(entry.id)}
+                                >
+                                    {showFull ? 'Show diff' : 'Show full'}
+                                </button>
+                            {/if}
+                            <button
+                                class="btn-secondary px-2 py-0.5 text-xs"
+                                onclick={() => handleRestore(entry)}
+                                disabled={restoringId === entry.id}
+                            >
+                                {restoringId === entry.id ? 'Restoring…' : 'Restore'}
+                            </button>
+                        </div>
                     </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto">
-                        <TomlEditor value={selected.content} editable={false} class="h-full" />
+                    <!-- Section body -->
+                    <div>
+                        {#key showFull}
+                            {#if showFull}
+                                <TomlEditor
+                                    class="text-sm"
+                                    value={entry.content}
+                                    editable={false}
+                                    autoHeight
+                                />
+                            {:else if prevEntry}
+                                <TomlEditor
+                                    class="text-sm"
+                                    value={entry.content}
+                                    original={prevEntry.content}
+                                    editable={false}
+                                    autoHeight
+                                    compactDiff
+                                />
+                            {/if}
+                        {/key}
                     </div>
-                {:else}
-                    <div class="flex flex-1 items-center justify-center text-sm text-gray-500">
-                        Select a revision to preview
-                    </div>
-                {/if}
-            </div>
+                </div>
+            {/each}
         </div>
+
+        {#if hasMore}
+            <button
+                class="btn-secondary w-full text-xs"
+                onclick={() => loadHistory(true)}
+                disabled={loading}
+            >
+                {loading ? 'Loading…' : `Show ${PAGE_SIZE} older`}
+            </button>
+        {/if}
     {/if}
 </div>

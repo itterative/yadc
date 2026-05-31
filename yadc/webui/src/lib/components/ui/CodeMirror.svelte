@@ -24,6 +24,8 @@
         editable?: boolean;
         /** CSS class applied to the wrapper div. */
         class?: string;
+        /** When true, editor height auto-sizes to content instead of filling container. */
+        autoHeight?: boolean;
     }
 
     let {
@@ -31,7 +33,8 @@
         extensions = [minimalSetup],
         onchange,
         editable = true,
-        class: klazz = ''
+        class: klazz = '',
+        autoHeight = false
     }: Props = $props();
 
     let dom: HTMLDivElement | undefined = $state();
@@ -79,10 +82,6 @@
     // --- Base theme (dark background, uses Tailwind CSS variables) ---
 
     const baseTheme = EditorView.theme({
-        '&': {
-            borderRadius: '0.5rem',
-            border: '1px solid var(--color-border)'
-        },
         '.cm-content': {
             fontFamily: 'var(--font-mono)',
             padding: '0.5rem 0'
@@ -109,6 +108,27 @@
         },
         '&.cm-focused .cm-selectionBackground': {
             background: 'color-mix(in oklch, var(--color-accent) 50%, transparent) !important'
+        },
+        '.cm-collapsedLines': {
+            pointerEvents: 'none !important',
+            cursor: 'auto !important',
+            background: 'color-mix(in oklch, var(--color-accent) 10%, transparent) !important',
+            marginTop: '0.5rem !important',
+            marginBottom: '0.5rem !important'
+        },
+        '.cm-collapsedLines::before': {
+            content: '"(" !important',
+            marginInlineEnd: '0 !important'
+        },
+        '.cm-collapsedLines::after': {
+            content: '")" !important',
+            marginInlineStart: '0 !important'
+        },
+        '.cm-changedLine': {
+            background: 'color-mix(in oklch, var(--color-green-500) 20%, transparent) !important'
+        },
+        '.cm-deletedChunk': {
+            background: 'color-mix(in oklch, var(--color-red-500) 10%, transparent) !important'
         }
     });
 
@@ -160,8 +180,19 @@
 
     const darkHighlightExt = syntaxHighlighting(darkHighlightStyle);
 
+    // --- Auto-height theme override ---
+
+    const autoHeightTheme = EditorView.theme({
+        '&.cm-editor': { height: 'auto' },
+        '.cm-scroller': { overflow: 'visible' }
+    });
+
     $effect(() => {
-        const exts = [baseTheme, darkHighlightExt, ...extensions, EditorView.editable.of(editable)];
+        const exts: Extension[] = [baseTheme, darkHighlightExt];
+        if (autoHeight) {
+            exts.push(autoHeightTheme);
+        }
+        exts.push(...extensions, EditorView.editable.of(editable));
         if (view) {
             view.dispatch({
                 effects: StateEffect.reconfigure.of(exts)
@@ -185,4 +216,7 @@
     }
 </script>
 
-<div class="h-full overflow-hidden {klazz}" bind:this={dom}></div>
+<div
+    class="{autoHeight ? 'overflow-hidden' : 'h-full overflow-hidden'} {klazz}"
+    bind:this={dom}
+></div>

@@ -222,7 +222,11 @@
             <SpinnerBlock class="py-12" />
         {:else if selectedTemplateName || isNewTemplate}
             <div class="min-h-0 flex-1 overflow-hidden">
-                <JinjaEditor value={templateContent} onchange={handleTemplateContentChange} />
+                <JinjaEditor
+                    class="rounded-md border border-border"
+                    value={templateContent}
+                    onchange={handleTemplateContentChange}
+                />
             </div>
             {#if templateSource === 'builtin' && !templateDirty}
                 <p class="mt-2 text-xs text-gray-500">

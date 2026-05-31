@@ -94,7 +94,7 @@
     // --- View mode ---
 
     /** Current view mode — driven by CompactPillTabs. */
-    let activeView: 'simplified' | 'advanced' = $state('simplified');
+    let activeView: 'simplified' | 'advanced' | 'history' = $state('simplified');
 
     /** Raw TOML content for Advanced mode editing. */
     let rawContent = $state('');
@@ -132,7 +132,10 @@
                 entry.imageCount === other.imageCount &&
                 entry.extras.length === other.extras.length &&
                 entry.extras.every(
-                    (e, j) => e.key === other.extras[j].key && e.value === other.extras[j].value
+                    (e, j) =>
+                        e.key === other.extras[j].key &&
+                        e.type === other.extras[j].type &&
+                        JSON.stringify(e.value) === JSON.stringify(other.extras[j].value)
                 )
             );
         });
@@ -154,7 +157,9 @@
             !entriesEqual(datasetEntries, loadedDatasetEntries)
     );
 
-    let dirty = $derived(activeView === 'simplified' ? simplifiedDirty : rawDirty);
+    let dirty = $derived(
+        activeView === 'simplified' ? simplifiedDirty : activeView === 'advanced' ? rawDirty : false
+    );
 
     // --- Live preview ---
 
@@ -162,22 +167,71 @@
     let previewTimer: ReturnType<typeof setTimeout> | null = null;
     const DEBOUNCE_MS = 400;
 
-    /** Build the patch dict from current field values. Nullable fields are omitted when null. */
+    /** Build the patch dict from current field values.
+     *
+     * Nullable fields are omitted when null. Sections whose values are all
+     * empty/default are also omitted so the PATCH doesn't add meaningless
+     * empty tables to the TOML.
+     */
     function buildPatch(): Partial<Config> {
-        const settings: Record<string, unknown> = {
-            store_conversation: storeConversation
-        };
+        const patch: Record<string, unknown> = {};
+
+        // API — only include if at least one field is non-empty
+        if (apiUrl || apiModelName) {
+            patch.api = {
+                url: apiUrl,
+                model_name: apiModelName
+            };
+        }
+
+        // Prompt — only include if a template is selected
+        if (promptName) {
+            patch.prompt = { name: promptName };
+        }
+
+        // Settings — only include if at least one value is non-default
+        const settings: Record<string, unknown> = {};
         if (maxTokens !== null) {
             settings.max_tokens = maxTokens;
         }
         if (imageQuality !== null) {
             settings.image_quality = imageQuality;
         }
+        if (storeConversation) {
+            settings.store_conversation = true;
+        }
+        if (Object.keys(settings).length > 0) {
+            patch.settings = settings;
+        }
 
-        // Build dataset entries, preserving inline images from original config
-        const dataset = datasetEntries.map((entry, i) => {
+        // Overwrite — only include if true (default is false)
+        if (overwrite) {
+            patch.overwrite_captions = true;
+        }
+
+        // Reasoning — only include if enabled
+        if (reasoningEnabled) {
+            patch.reasoning = {
+                enable: true,
+                thinking_effort: reasoningEffort,
+                exclude_from_output: reasoningExcludeOutput
+            };
+        }
+
+        // Environment — only include if non-empty
+        if (envName) {
+            patch.env = envName;
+        }
+
+        // Rounds — only include when explicitly set
+        if (rounds !== null) {
+            patch.rounds = rounds;
+        }
+
+        // Dataset entries — always included since a config needs at least one
+        patch.dataset = datasetEntries.map((entry, i) => {
             const obj: Record<string, unknown> = { path: entry.path };
-            const extras: Record<string, string> = {};
+            const extras: Record<string, unknown> = {};
             for (const { key, value } of entry.extras) {
                 if (key) {
                     extras[key] = value;
@@ -194,27 +248,6 @@
             return obj;
         });
 
-        const patch: Record<string, unknown> = {
-            api: {
-                url: apiUrl,
-                model_name: apiModelName
-            },
-            prompt: {
-                name: promptName
-            },
-            settings,
-            overwrite_captions: overwrite,
-            reasoning: {
-                enable: reasoningEnabled,
-                thinking_effort: reasoningEffort,
-                exclude_from_output: reasoningExcludeOutput
-            },
-            env: envName,
-            dataset
-        };
-        if (rounds !== null) {
-            patch.rounds = rounds;
-        }
         return patch;
     }
 
@@ -239,6 +272,20 @@
 
     let parsedDatasetRaw: ConfigDatasetEntry[] = $state([]);
 
+    /** Detect the TOML type of a parsed extra value. */
+    function detectType(value: unknown): KeyValueEntry['type'] {
+        if (typeof value === 'boolean') {
+            return 'boolean';
+        }
+        if (typeof value === 'number') {
+            return 'number';
+        }
+        if (typeof value === 'object' && value !== null) {
+            return 'object';
+        }
+        return 'string';
+    }
+
     /** Convert extras dict to KeyValueEntry array (sorted by key for stable ordering). */
     function extrasToEntries(extras?: Record<string, unknown>): KeyValueEntry[] {
         if (!extras) {
@@ -246,7 +293,11 @@
         }
         return Object.entries(extras)
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([key, value]) => ({ key, value: String(value) }));
+            .map(([key, value]) => ({
+                key,
+                value: value as KeyValueEntry['value'],
+                type: detectType(value)
+            }));
     }
 
     // --- Load on mount / dataset change ---
@@ -282,10 +333,15 @@
         // Parse dataset entries
         const rawEntries = p.dataset ?? [];
         parsedDatasetRaw = rawEntries;
-        datasetEntries = loadedDatasetEntries = rawEntries.map((entry) => ({
+        const entries = rawEntries.map((entry) => ({
             path: entry.path ?? '',
             extras: extrasToEntries(entry.extras as Record<string, unknown> | undefined),
             imageCount: entry.images?.length ?? 0
+        }));
+        datasetEntries = entries;
+        loadedDatasetEntries = entries.map((e) => ({
+            ...e,
+            extras: e.extras.map((kv) => ({ ...kv, value: kv.value, type: kv.type }))
         }));
     }
 
@@ -353,24 +409,27 @@
 
     // --- View mode switching ---
 
-    let previousView: 'simplified' | 'advanced' = $state('simplified');
+    let previousView: 'simplified' | 'advanced' | 'history' = $state('simplified');
 
     $effect(() => {
         if (activeView === previousView) {
             return;
         }
         if (activeView === 'advanced') {
-            // Transfer current preview content (includes unsaved simplified changes)
-            rawContent = previewContent;
-            loadedRawContent = previewContent;
-        } else if (rawDirty) {
-            // Switching back with unsaved raw changes — reload from server
-            loadConfig();
+            // Only sync preview content if there are no unsaved advanced changes.
+            // Preserves in-progress raw edits when switching back from form/history.
+            if (!rawDirty) {
+                rawContent = previewContent;
+                loadedRawContent = previewContent;
+            }
         }
         previousView = activeView;
     });
 
     async function handleSave() {
+        if (activeView === 'history') {
+            return;
+        }
         isSaving = true;
         saveError = null;
 
@@ -404,7 +463,7 @@
                 loadedEnvName = envName;
                 loadedDatasetEntries = datasetEntries.map((e) => ({
                     ...e,
-                    extras: e.extras.map((kv) => ({ ...kv }))
+                    extras: e.extras.map((kv) => ({ ...kv, value: kv.value, type: kv.type }))
                 }));
             }
 
@@ -423,6 +482,9 @@
     function handleConfigSaved() {
         configVersion++;
         toast.success('Config saved');
+        // Re-fetch config so the form reflects the actual on-disk state
+        // (especially needed after a history restore, but harmless after normal saves)
+        loadConfig();
         onsaved?.();
     }
 </script>
@@ -548,7 +610,6 @@
                                             bind:entries={datasetEntries[i].extras}
                                             idPrefix="entry-{i}-extras"
                                             keyPlaceholder="variable name"
-                                            valuePlaceholder="value"
                                         />
                                     </div>
                                 </div>
@@ -665,7 +726,11 @@
                             <p class="text-xs text-gray-500">Current config on disk.</p>
                         {/if}
                         <div class="max-h-[40vh] min-h-30 overflow-y-auto">
-                            <TomlEditor value={previewContent} editable={false} />
+                            <TomlEditor
+                                class="rounded-md border border-border text-sm"
+                                value={previewContent}
+                                editable={false}
+                            />
                         </div>
                     </section>
 
@@ -673,6 +738,7 @@
                 </Tab>
                 <Tab id="advanced" label="Advanced" icon={SvgEdit} class="h-full">
                     <TomlEditor
+                        class="rounded-md border border-border text-sm"
                         value={rawContent}
                         editable={true}
                         onchange={(v) => (rawContent = v)}
@@ -686,7 +752,7 @@
     </div>
 
     <!-- Footer: sticky save button -->
-    {#if !isLoading && !error}
+    {#if !isLoading && !error && activeView !== 'history'}
         <div class="flex-shrink-0 border-t border-border p-4">
             <div class="flex gap-2">
                 <button class="btn-secondary flex-1" onclick={loadConfig} disabled={isSaving}>

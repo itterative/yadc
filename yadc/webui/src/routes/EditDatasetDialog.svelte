@@ -88,6 +88,7 @@
             <div class="space-y-4">
                 <div class="max-h-[50vh] min-h-[200px] overflow-y-auto">
                     <TomlEditor
+                        class="rounded-md border border-border"
                         value={rawContent}
                         editable={true}
                         onchange={(v) => (rawContent = v)}

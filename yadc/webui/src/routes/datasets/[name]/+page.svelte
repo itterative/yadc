@@ -451,7 +451,6 @@
             bind:activeTab={panelTab}
             bind:open={panelOpen}
             onpanelclose={handlePanelClose}
-            onconfigsaved={handleRefreshFromWatcher}
         />
     </div>
 </div>

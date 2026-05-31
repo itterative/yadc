@@ -94,14 +94,6 @@ def api_configs(
         if info is None or info.config_path is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
-        # Save current content to history before overwriting
-        try:
-            with open(info.config_path) as f:
-                old_content = f.read()
-            config_history.save_snapshot(name, old_content)
-        except FileNotFoundError:
-            pass  # No existing file — nothing to snapshot
-
         try:
             with open(info.config_path, "w") as f:
                 f.write(content)
@@ -109,6 +101,9 @@ def api_configs(
             return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
 
         _logger.info("Config for dataset '%s' updated.", name)
+
+        # Snapshot the new content so the current state is always recoverable
+        config_history.save_snapshot(name, content)
 
         # Rescan so the index picks up any path/data changes
         datasets.rescan_dataset(name)
@@ -173,9 +168,6 @@ def api_configs(
         if dry_run:
             return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
 
-        # Save current content to history before overwriting
-        config_history.save_snapshot(name, content)
-
         try:
             with open(info.config_path, "w") as f:
                 f.write(new_content)
@@ -183,6 +175,9 @@ def api_configs(
             return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
 
         _logger.info("Config for dataset '%s' patched (fields: %s).", name, ", ".join(body.keys()))
+
+        # Snapshot the new content so the current state is always recoverable
+        config_history.save_snapshot(name, new_content)
 
         # Rescan so the index picks up any changes
         datasets.rescan_dataset(name)

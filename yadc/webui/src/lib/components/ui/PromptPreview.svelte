@@ -141,7 +141,7 @@
                     >
                     <div class="mt-1">
                         <TomlEditor
-                            class="text-sm"
+                            class="rounded-md border border-border text-sm"
                             value={promptPreview.template_context_toml}
                             editable={false}
                         />
