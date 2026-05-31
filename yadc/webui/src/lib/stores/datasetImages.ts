@@ -29,6 +29,7 @@ export interface ImageInfo {
     last_modified_t: number | null;
     caption_error?: string;
     flash?: number;
+    delete_path?: string;
 }
 
 export interface ImagePage {
@@ -41,14 +42,22 @@ export interface DatasetUploadResult {
     warnings: string[];
 }
 
+export interface UploadConflict {
+    file: string;
+    existing_size: number;
+    new_size: number;
+}
+
 export interface UploadProgressEvent {
-    phase: 'validating' | 'writing' | 'complete' | 'error';
+    phase: 'validating' | 'writing' | 'conflicts' | 'complete' | 'error';
     file?: string;
     index?: number;
     total?: number;
     dataset?: DatasetInfo;
     warnings?: string[];
     message?: string;
+    staging_id?: string;
+    conflicts?: UploadConflict[];
 }
 
 export interface CaptionData {
@@ -164,6 +173,157 @@ export async function uploadDataset(
                 }
             });
     });
+}
+
+/** Upload files to append to an existing managed dataset.
+ *
+ *  Same streaming NDJSON contract as `uploadDataset`.
+ */
+export async function appendUploadDataset(
+    name: string,
+    files: File[],
+    onProgress?: (progress: UploadProgress) => void,
+    onEvent?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal
+): Promise<DatasetUploadResult> {
+    const formData = new FormData();
+    for (const file of files) {
+        const filename = file.webkitRelativePath || file.name;
+        formData.append('files', file, filename);
+    }
+
+    let settled = false;
+
+    return new Promise<DatasetUploadResult>((resolve, reject) => {
+        upload({
+            url: `/api/datasets/${encodeURIComponent(name)}/upload`,
+            body: formData,
+            onProgress,
+            signal,
+            onChunk: (line) => {
+                try {
+                    const event = JSON.parse(line) as UploadProgressEvent;
+                    if (event.phase === 'complete') {
+                        settled = true;
+                        resolve({ dataset: event.dataset!, warnings: event.warnings ?? [] });
+                    } else if (event.phase === 'error') {
+                        settled = true;
+                        reject(new Error(event.message));
+                    } else if (onEvent) {
+                        onEvent(event);
+                    }
+                } catch {
+                    // Ignore unparseable lines
+                }
+            }
+        })
+            .then(async (res) => {
+                if (settled) {
+                    return;
+                }
+                if (!res.ok) {
+                    reject(new Error(await apiErrorMessage(res)));
+                } else {
+                    reject(new Error('Upload completed without a result'));
+                }
+            })
+            .catch((e) => {
+                if (!settled) {
+                    reject(e);
+                }
+            });
+    });
+}
+
+/** Commit a staged upload after conflict resolution.
+ *
+ *  Streaming NDJSON response: committing → complete/error.
+ */
+export async function commitStagingUpload(
+    name: string,
+    stagingId: string,
+    resolutions: Record<string, string>,
+    onEvent?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal
+): Promise<DatasetUploadResult> {
+    const body = JSON.stringify({ staging_id: stagingId, resolutions });
+
+    let settled = false;
+
+    return new Promise<DatasetUploadResult>((resolve, reject) => {
+        upload({
+            url: `/api/datasets/${encodeURIComponent(name)}/staging/commit`,
+            body,
+            headers: { 'Content-Type': 'application/json' },
+            signal,
+            onChunk: (line) => {
+                try {
+                    const event = JSON.parse(line) as UploadProgressEvent;
+                    if (event.phase === 'complete') {
+                        settled = true;
+                        resolve({ dataset: event.dataset!, warnings: event.warnings ?? [] });
+                    } else if (event.phase === 'error') {
+                        settled = true;
+                        reject(new Error(event.message));
+                    } else if (onEvent) {
+                        onEvent(event);
+                    }
+                } catch {
+                    // Ignore unparseable lines
+                }
+            }
+        })
+            .then(async (res) => {
+                if (settled) {
+                    return;
+                }
+                if (!res.ok) {
+                    reject(new Error(await apiErrorMessage(res)));
+                } else {
+                    reject(new Error('Commit completed without a result'));
+                }
+            })
+            .catch((e) => {
+                if (!settled) {
+                    reject(e);
+                }
+            });
+    });
+}
+
+/** Delete files and/or folders from a managed dataset.
+ *
+ *  Only works for datasets with `source === 'upload'`.
+ */
+export async function deleteDatasetItems(
+    name: string,
+    paths: string[]
+): Promise<{ deleted: string[]; warnings: string[] }> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/items`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths })
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+export interface DatasetFolder {
+    name: string;
+    path: string;
+    image_count: number;
+    can_delete: boolean;
+}
+
+/** List folders for a managed dataset with image counts. */
+export async function fetchFolders(name: string): Promise<DatasetFolder[]> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/folders`);
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
 }
 
 /** Delete/unregister a dataset. */

@@ -258,6 +258,22 @@
         panelOpen = false;
     }
 
+    function handleImageDelete() {
+        focusedItem = null;
+        panelTab = 'caption';
+        panelOpen = false;
+        if (browser && datasetName) {
+            loadInitial(datasetName);
+            (async () => {
+                try {
+                    datasets = await fetchDatasets();
+                } catch {
+                    /* ignore */
+                }
+            })();
+        }
+    }
+
     function handleCaptioningDone() {
         const status = get(captioningStatus);
         if (status.dataset_name !== datasetName) {
@@ -451,6 +467,7 @@
             bind:activeTab={panelTab}
             bind:open={panelOpen}
             onpanelclose={handlePanelClose}
+            onimagedelete={handleImageDelete}
         />
     </div>
 </div>

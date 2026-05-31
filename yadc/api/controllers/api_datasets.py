@@ -139,6 +139,108 @@ def api_datasets(
         response.headers["X-Accel-Buffering"] = "no"
         return response
 
+    @app.post("/datasets/<name>/upload")
+    async def append_upload_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Stage files for appending to an existing managed dataset.
+
+        Returns a streaming NDJSON response with progress events:
+        - {"phase": "validating", "file": "...", "index": N, "total": M}
+        - {"phase": "writing", "file": "...", "index": N, "total": M}
+        - {"phase": "conflicts", "staging_id": "...", "conflicts": [...]}
+        - {"phase": "complete", "dataset": {...}, "warnings": [...]}
+        - {"phase": "error", "message": "..."}
+        """
+        files = await request.files
+        uploaded = files.getlist("files")
+        if not uploaded:
+            return jsonify_error("At least one file is required", status=400, code=ErrorCode.BAD_REQUEST)
+
+        if request.content_length and request.content_length > configuration.max_upload_size_bytes:
+            return jsonify_error(
+                f"Total upload size exceeds {configuration.max_upload_size_bytes} bytes limit",
+                status=413,
+                code=ErrorCode.PAYLOAD_TOO_LARGE,
+            )
+
+        file_tuples = [(f.filename, BytesIO(f.read())) for f in uploaded if f.filename]
+
+        async def _stream_append():
+            try:
+                async for event in dataset_upload.append_dataset_from_upload(name, file_tuples):
+                    yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
+            except Exception as e:
+                yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
+
+        response = Response(_stream_append(), mimetype="application/x-ndjson")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+
+    @app.post("/datasets/<name>/staging/commit")
+    async def commit_staged_upload(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Commit a staged upload after conflict resolution.
+
+        JSON body:
+            {"staging_id": "...", "resolutions": {"file.jpg": "overwrite", "folder/file.jpg": "skip"}}
+
+        Returns a streaming NDJSON response:
+        - {"phase": "complete", "dataset": {...}, "warnings": [...]}
+        - {"phase": "error", "message": "..."}
+        """
+        body = await request.get_json(silent=True) or {}
+        staging_id = body.get("staging_id", "")
+        resolutions = body.get("resolutions", {})
+
+        if not staging_id:
+            return jsonify_error("staging_id is required", status=400, code=ErrorCode.BAD_REQUEST)
+
+        async def _stream_commit():
+            try:
+                async for event in dataset_upload.commit_staged_upload(name, staging_id, resolutions):
+                    yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
+            except Exception as e:
+                yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
+
+        response = Response(_stream_commit(), mimetype="application/x-ndjson")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+
+    @app.delete("/datasets/<name>/items")
+    async def delete_dataset_items(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Delete files and/or folders from a managed dataset.
+
+        Only datasets with ``source == "upload"`` can be modified.
+
+        JSON body:
+            {"paths": ["foo.jpg", "train/img.jpg", "train"]}
+
+        Returns:
+            {"deleted": ["foo.jpg", "train"], "warnings": []}
+        """
+        body = await request.get_json(silent=True) or {}
+        paths = body.get("paths", [])
+        if not paths:
+            return jsonify_error("Request body must include 'paths' array", status=400, code=ErrorCode.BAD_REQUEST)
+
+        try:
+            deleted, warnings = datasets.delete_items(name, paths)
+            return jsonify({"deleted": deleted, "warnings": warnings})
+        except ValueError as e:
+            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+        except Exception as e:
+            _logger.exception("Failed to delete items from dataset '%s'", name)
+            return jsonify_error(str(e), status=500)
+
+    @app.get("/datasets/<name>/folders")
+    def list_dataset_folders(name: str):  # pyright: ignore[reportUnusedFunction]
+        """List folders for a managed dataset with image counts."""
+        try:
+            folders = datasets.list_folders(name)
+            return jsonify(folders)
+        except ValueError as e:
+            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]
         """List available datasets."""

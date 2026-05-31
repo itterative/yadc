@@ -52,7 +52,6 @@
     let isLoading = $state(false);
     let isSaving = $state(false);
     let error: string | null = $state(null);
-    let saveError: string | null = $state(null);
     let validationErrors: Array<{ loc: string[]; msg: string }> = $state([]);
     let loadedConfigPath: string = $state('');
 
@@ -431,7 +430,6 @@
             return;
         }
         isSaving = true;
-        saveError = null;
 
         try {
             if (activeView === 'advanced') {
@@ -469,7 +467,7 @@
 
             handleConfigSaved();
         } catch (e) {
-            saveError = friendlyErrorMessage(e, 'Failed to save config');
+            toast.error(friendlyErrorMessage(e, 'Failed to save config'));
         } finally {
             isSaving = false;
         }
@@ -497,9 +495,6 @@
         {:else if error}
             <div class="alert-error">{error}</div>
         {:else}
-            {#if saveError}
-                <div class="alert-error">{saveError}</div>
-            {/if}
             {#if validationErrors.length > 0}
                 <div class="alert-warning">
                     <p class="font-medium">Config validation issues:</p>
@@ -566,11 +561,15 @@
                                                 class="input font-mono text-sm"
                                                 value={entry.path}
                                                 placeholder="/path/to/images"
+                                                disabled={source === 'upload'}
+                                                title={source === 'upload'
+                                                    ? 'Managed dataset paths are set automatically via uploads'
+                                                    : undefined}
                                                 oninput={(e) =>
                                                     updateEntryPath(i, e.currentTarget.value)}
                                             />
                                         </div>
-                                        {#if datasetEntries.length > 1}
+                                        {#if datasetEntries.length > 1 && source !== 'upload'}
                                             <button
                                                 class="mt-6 cursor-pointer p-1 text-gray-500 transition-colors hover:text-error"
                                                 onclick={() => removeDatasetEntry(i)}
@@ -616,10 +615,12 @@
                             </div>
                         {/each}
 
-                        <button class="btn-secondary w-full" onclick={addDatasetEntry}>
-                            <SvgPlus class="mr-1 inline-block h-4 w-4" />
-                            Add Path
-                        </button>
+                        {#if source !== 'upload'}
+                            <button class="btn-secondary w-full" onclick={addDatasetEntry}>
+                                <SvgPlus class="mr-1 inline-block h-4 w-4" />
+                                Add Path
+                            </button>
+                        {/if}
                     </section>
 
                     <!-- ═══ Section: API ═══ -->
@@ -737,12 +738,21 @@
                     <div class="h-2"></div>
                 </Tab>
                 <Tab id="advanced" label="Advanced" icon={SvgEdit} class="h-full">
-                    <TomlEditor
-                        class="rounded-md border border-border text-sm"
-                        value={rawContent}
-                        editable={true}
-                        onchange={(v) => (rawContent = v)}
-                    />
+                    <div class="flex h-full flex-col gap-2">
+                        <TomlEditor
+                            class="rounded-md border border-border text-sm"
+                            value={rawContent}
+                            editable={true}
+                            onchange={(v) => (rawContent = v)}
+                        />
+                        {#if source === 'upload'}
+                            <p class="text-xs text-gray-500">
+                                Editing <code class="rounded bg-gray-800 px-1 py-0.5 text-gray-300">[[dataset]]</code>
+                                paths for managed datasets will be rejected by the server. Use the Upload tab to add or
+                                remove images.
+                            </p>
+                        {/if}
+                    </div>
                 </Tab>
                 <Tab id="history" label="History" icon={SvgHistory} class="h-full">
                     <ConfigHistory {datasetName} {configVersion} onsaved={handleConfigSaved} />

@@ -109,7 +109,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         except Exception as e:
             return jsonify_error(f"Invalid dataset config: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
-        images = resolve_dataset(config.dataset, config.caption_suffix)
+        images = resolve_dataset(config.dataset, config.caption_suffix, base_dir=str(config_path.parent))
         if not images:
             return jsonify_error("No images found in dataset", status=400, code=ErrorCode.BAD_REQUEST)
 

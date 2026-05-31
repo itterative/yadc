@@ -285,7 +285,7 @@ class AsyncCaptionJob:
         config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
 
         # 5. Resolve images
-        images = resolve_dataset(config.dataset, config.caption_suffix)
+        images = resolve_dataset(config.dataset, config.caption_suffix, base_dir=str(config_path.parent))
         if not images:
             self._logger.info("No images to caption for dataset '%s'.", self._dataset_name)
             await self._set_state(status="done")

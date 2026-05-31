@@ -1,6 +1,7 @@
 """Tests for DatasetUploadService — upload validation, writing, and registration."""
 
 import asyncio
+import time
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,7 @@ import toml
 
 from yadc.api.configuration import Configuration
 from yadc.api.services.dataset_upload import DatasetUploadResult, DatasetUploadService, UploadProgressEvent
-from yadc.api.services.datasets import DatasetInfo, DatasetService
+from yadc.api.services.datasets import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX, DatasetInfo, DatasetService
 
 # Path to the real test image shipped with the test suite.
 TEST_IMAGE_PATH = Path(__file__).parent / "test_data" / "valid_image.png"
@@ -57,6 +58,14 @@ def _error_from_events(events: list[UploadProgressEvent]) -> str | None:
     return errors[0].message if errors else None
 
 
+def _conflicts_from_events(events: list[UploadProgressEvent]) -> tuple[str, list[dict]] | None:
+    """Extract (staging_id, conflicts) from events, or None."""
+    conflicts = [e for e in events if e.phase == "conflicts"]
+    if not conflicts:
+        return None
+    return conflicts[0].staging_id, conflicts[0].conflicts
+
+
 def run(coro):
     """Run an async coroutine synchronously in tests."""
     with asyncio.Runner() as runner:
@@ -101,6 +110,7 @@ def patch_state_path(tmp_path):
     with (
         patch("yadc.api.services.dataset_upload._dataset_state_dir") as mock_dir,
         patch("yadc.api.services.dataset_upload._dataset_config_path") as mock_config,
+        patch("yadc.api.services.dataset_upload.STATE_PATH", state_path),
     ):
 
         def _dir(name: str) -> Path:
@@ -121,6 +131,64 @@ def patch_state_path(tmp_path):
 def patch_validate(upload_service):
     with patch.object(upload_service, "_validate_image", return_value=True), patch.object(upload_service, "_validate_toml", return_value=True):
         yield
+
+
+@pytest.fixture(autouse=True)
+def patch_validate_append(append_service):
+    with patch.object(append_service, "_validate_image", return_value=True), patch.object(append_service, "_validate_toml", return_value=True):
+        yield
+
+
+# --- Fixtures for append tests ---
+
+
+@pytest.fixture
+def managed_dataset(tmp_path):
+    """Create a real managed dataset directory and return its info."""
+    base = tmp_path / "state" / "managed"
+    base.mkdir(parents=True)
+    images_dir = base / "images"
+    folders_dir = base / "folders"
+    images_dir.mkdir()
+    folders_dir.mkdir()
+
+    # Create a config.toml (managed datasets use relative paths)
+    config_path = base / "config.toml"
+    config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}]}))
+
+    # Pre-populate with an existing image and its sidecar
+    (images_dir / "existing.jpg").write_bytes(b"existing image data")
+    (images_dir / "existing.toml").write_bytes(b"x = 1\n")
+
+    return {
+        "base": base,
+        "images_dir": images_dir,
+        "folders_dir": folders_dir,
+        "config_path": config_path,
+    }
+
+
+@pytest.fixture
+def mock_datasets_for_append(managed_dataset):
+    """Mock DatasetService that returns the real managed dataset info."""
+    svc = MagicMock(spec=DatasetService)
+    info = DatasetInfo(
+        name="managed",
+        source="upload",
+        config_path=str(managed_dataset["config_path"]),
+    )
+    svc.get_dataset.return_value = info
+    svc.rescan_dataset.return_value = None
+    return svc
+
+
+@pytest.fixture
+def append_service(mock_datasets_for_append, configuration, mock_logging):
+    return DatasetUploadService(
+        datasets=mock_datasets_for_append,
+        configuration=configuration,
+        logging=mock_logging,
+    )
 
 
 # --- Validation: name and file checks ---
@@ -538,3 +606,551 @@ def test_event_order(upload_service):
     phases = [e.phase for e in events]
     # validating events first, then writing events, then complete
     assert phases == ["validating", "validating", "writing", "writing", "complete"]
+
+
+# ============================================================
+#  Append / Staging Tests
+# ============================================================
+
+
+async def _collect_append(upload_service, *args, **kwargs) -> list[UploadProgressEvent]:
+    """Call append_dataset_from_upload and collect all progress events."""
+    events: list[UploadProgressEvent] = []
+    async for event in upload_service.append_dataset_from_upload(*args, **kwargs):
+        events.append(event)
+    return events
+
+
+async def _collect_commit(upload_service, *args, **kwargs) -> list[UploadProgressEvent]:
+    """Call commit_staged_upload and collect all progress events."""
+    events: list[UploadProgressEvent] = []
+    async for event in upload_service.commit_staged_upload(*args, **kwargs):
+        events.append(event)
+    return events
+
+
+# --- Append: basic flow ---
+
+
+def test_append_no_conflicts_auto_commits(append_service, managed_dataset):
+    """Uploading new files to a dataset with no conflicts auto-commits."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("new.jpg", _make_bytes(b"new image"))],
+        )
+    )
+    complete = [e for e in events if e.phase == "complete"]
+    assert len(complete) == 1
+
+    # File should be in live dir, not in staging
+    assert (managed_dataset["images_dir"] / "new.jpg").exists()
+    # Only the uuid subdir is removed; empty .staging/ may remain
+    staging_subdirs = list((managed_dataset["base"] / ".staging").glob("*"))
+    assert len(staging_subdirs) == 0
+
+
+def test_append_with_conflicts_emits_conflicts_phase(append_service, managed_dataset):
+    """Uploading files that already exist emits conflicts phase."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.jpg", _make_bytes(b"new content"))],
+        )
+    )
+    conflicts = _conflicts_from_events(events)
+    assert conflicts is not None
+    staging_id, conflict_list = conflicts
+    assert len(conflict_list) == 1
+    assert conflict_list[0]["file"] == "existing.jpg"
+
+    # Staging dir should still exist
+    staging_base = managed_dataset["base"] / ".staging" / staging_id
+    assert staging_base.exists()
+
+
+# --- Commit: resolutions ---
+
+
+def test_commit_skip_resolution(append_service, managed_dataset):
+    """Skip resolution leaves the original file unchanged."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.jpg", _make_bytes(b"new content"))],
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    original = (managed_dataset["images_dir"] / "existing.jpg").read_bytes()
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "skip"},
+        )
+    )
+    complete = [e for e in events if e.phase == "complete"]
+    assert len(complete) == 1 or any(e.phase == "complete" for e in commit_events)
+
+    # Original file unchanged
+    assert (managed_dataset["images_dir"] / "existing.jpg").read_bytes() == original
+    # Staging cleaned up
+    assert not (managed_dataset["base"] / ".staging" / staging_id).exists()
+
+
+def test_commit_overwrite_resolution(append_service, managed_dataset):
+    """Overwrite resolution replaces the original file."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.jpg", _make_bytes(b"new content"))],
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "overwrite"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+
+    # File overwritten
+    assert (managed_dataset["images_dir"] / "existing.jpg").read_bytes() == b"new content"
+
+
+def test_commit_keep_both_resolution(append_service, managed_dataset):
+    """Keep-both creates a renamed copy."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.jpg", _make_bytes(b"new content"))],
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "keep_both"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+
+    # Both files exist
+    assert (managed_dataset["images_dir"] / "existing.jpg").exists()
+    assert (managed_dataset["images_dir"] / "existing_1.jpg").exists()
+    assert (managed_dataset["images_dir"] / "existing_1.jpg").read_bytes() == b"new content"
+
+
+# --- Sidecar grouping ---
+
+
+def test_group_resolution_applies_to_sidecars(append_service, managed_dataset):
+    """When image + sidecar conflict, resolution applies to both."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [
+                _file("existing.jpg", _make_bytes(b"new image")),
+                _file("existing.toml", _make_bytes(b"y = 2\n")),
+            ],
+        )
+    )
+    staging_id, conflicts = _conflicts_from_events(events)
+    # Only image shown in conflict list
+    assert len(conflicts) == 1
+    assert conflicts[0]["file"] == "existing.jpg"
+
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "overwrite"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+
+    # Both overwritten
+    assert (managed_dataset["images_dir"] / "existing.jpg").read_bytes() == b"new image"
+    assert (managed_dataset["images_dir"] / "existing.toml").read_bytes() == b"y = 2\n"
+
+
+def test_group_skip_applies_to_sidecars(append_service, managed_dataset):
+    """Skip resolution on image also skips its sidecars."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [
+                _file("existing.jpg", _make_bytes(b"new image")),
+                _file("existing.toml", _make_bytes(b"y = 2\n")),
+            ],
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    original_img = (managed_dataset["images_dir"] / "existing.jpg").read_bytes()
+    original_toml = (managed_dataset["images_dir"] / "existing.toml").read_bytes()
+
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "skip"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+
+    # Both unchanged
+    assert (managed_dataset["images_dir"] / "existing.jpg").read_bytes() == original_img
+    assert (managed_dataset["images_dir"] / "existing.toml").read_bytes() == original_toml
+
+
+def test_group_keep_both_renames_sidecars(append_service, managed_dataset):
+    """Keep-both renames image and all sidecars in sync."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [
+                _file("existing.jpg", _make_bytes(b"new image")),
+                _file("existing.toml", _make_bytes(b"y = 2\n")),
+            ],
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "keep_both"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+
+    # Original preserved, renamed copies created
+    assert (managed_dataset["images_dir"] / "existing.jpg").exists()
+    assert (managed_dataset["images_dir"] / "existing_1.jpg").exists()
+    assert (managed_dataset["images_dir"] / "existing_1.jpg").read_bytes() == b"new image"
+    assert (managed_dataset["images_dir"] / "existing_1.toml").exists()
+    assert (managed_dataset["images_dir"] / "existing_1.toml").read_bytes() == b"y = 2\n"
+
+
+# --- Sidecar-only uploads ---
+
+
+def test_sidecar_only_for_existing_image_accepted(append_service, managed_dataset):
+    """Uploading just a sidecar for an existing image is accepted (orphan check passes)."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.toml", _make_bytes(b"z = 3\n"))],
+        )
+    )
+    # Should conflict since existing.toml already exists
+    conflicts = _conflicts_from_events(events)
+    if conflicts:
+        staging_id, conflict_list = conflicts
+        assert any(c["file"] == "existing.toml" for c in conflict_list)
+    else:
+        # No conflict if the original didn't have existing.toml (but we created it in fixture)
+        complete = [e for e in events if e.phase == "complete"]
+        assert len(complete) == 1
+
+
+def test_sidecar_only_for_missing_image_dropped(append_service, managed_dataset):
+    """Uploading just a sidecar with no matching image anywhere is dropped as orphan."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("nonexistent.toml", _make_bytes(b"z = 3\n"))],
+        )
+    )
+    error = _error_from_events(events)
+    assert error is not None
+    assert "No valid files" in error
+
+
+# --- Staging cleanup ---
+
+
+def test_cleanup_staging_dirs_removes_old(append_service, managed_dataset):
+    """Cleanup removes staging directories older than 24h."""
+    # Create an old staging dir
+    staging_base = managed_dataset["base"] / ".staging" / "old-staging"
+    staging_base.mkdir(parents=True)
+    (staging_base / "dummy.txt").write_text("x")
+
+    # Set its mtime to 25 hours ago
+    old_time = time.time() - (25 * 3600)
+    (staging_base / "dummy.txt").touch()
+    staging_base.touch()
+    import os
+
+    os.utime(staging_base, (old_time, old_time))
+
+    append_service._cleanup_staging_dirs()
+
+    assert not staging_base.exists()
+
+
+def test_cleanup_staging_dirs_keeps_recent(append_service, managed_dataset):
+    """Cleanup preserves staging directories newer than 24h."""
+    staging_base = managed_dataset["base"] / ".staging" / "fresh-staging"
+    staging_base.mkdir(parents=True)
+    (staging_base / "dummy.txt").write_text("x")
+
+    append_service._cleanup_staging_dirs()
+
+    assert staging_base.exists()
+
+
+# --- Folder append ---
+
+
+def test_append_new_folder_no_conflict(append_service, managed_dataset):
+    """Uploading files to a new folder auto-commits without conflict."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("train/new.jpg", _make_bytes(b"train image"))],
+        )
+    )
+    complete = [e for e in events if e.phase == "complete"]
+    assert len(complete) == 1
+
+    assert (managed_dataset["folders_dir"] / "train" / "new.jpg").exists()
+
+
+def test_append_existing_folder_file_conflicts(append_service, managed_dataset):
+    """Uploading a file to an existing folder with same name conflicts."""
+    # Pre-create a folder with a file
+    (managed_dataset["folders_dir"] / "train").mkdir()
+    (managed_dataset["folders_dir"] / "train" / "img.jpg").write_bytes(b"old train img")
+
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("train/img.jpg", _make_bytes(b"new train img"))],
+        )
+    )
+    conflicts = _conflicts_from_events(events)
+    assert conflicts is not None
+    staging_id, conflict_list = conflicts
+    assert any(c["file"] == "train/img.jpg" for c in conflict_list)
+
+    # Commit with overwrite
+    commit_events = run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"train/img.jpg": "overwrite"},
+        )
+    )
+    assert any(e.phase == "complete" for e in commit_events)
+    assert (managed_dataset["folders_dir"] / "train" / "img.jpg").read_bytes() == b"new train img"
+
+
+# ============================================================
+#  Delete Items Tests
+# ============================================================
+
+
+@pytest.fixture
+def dataset_service_for_delete(managed_dataset):
+    """Create a real DatasetService with mocked DB/watcher for delete tests."""
+    mock_db = MagicMock()
+    mock_watcher = MagicMock()
+    mock_logging = MagicMock()
+    mock_logging.get_logger.return_value = MagicMock()
+
+    svc = DatasetService.__new__(DatasetService)
+    svc._db = mock_db
+    svc._watcher = mock_watcher
+    svc._logger = mock_logging.get_logger()
+
+    info = DatasetInfo(
+        name="managed",
+        source="upload",
+        config_path=str(managed_dataset["config_path"]),
+    )
+    svc.get_dataset = MagicMock(return_value=info)
+    svc.rescan_dataset = MagicMock(return_value=True)
+
+    return svc
+
+
+def test_delete_image_and_sidecars(managed_dataset, dataset_service_for_delete):
+    """Deleting an image also removes its sidecars."""
+    # Add a sidecar
+    (managed_dataset["images_dir"] / "existing.txt").write_text("a caption")
+
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/existing.jpg"])
+    assert f"{MANAGED_IMAGES_PREFIX}/existing.jpg" in deleted
+    assert len(warnings) == 0
+
+    # Image and sidecar gone
+    assert not (managed_dataset["images_dir"] / "existing.jpg").exists()
+    assert not (managed_dataset["images_dir"] / "existing.txt").exists()
+    # TOML sidecar from fixture also gone
+    assert not (managed_dataset["images_dir"] / "existing.toml").exists()
+
+
+def test_delete_folder(managed_dataset, dataset_service_for_delete):
+    """Deleting a folder removes the entire directory and its config entry."""
+    # Pre-create a folder with files and add it to config
+    train_dir = managed_dataset["folders_dir"] / "train"
+    train_dir.mkdir()
+    (train_dir / "img.jpg").write_bytes(b"train img")
+    (train_dir / "img.txt").write_text("train caption")
+
+    config_path = managed_dataset["config_path"]
+    config_path.write_text(
+        toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]})
+    )
+
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/train"])
+    assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
+    assert len(warnings) == 0
+
+    assert not train_dir.exists()
+
+    # Config should no longer reference the deleted folder
+    config = toml.load(config_path)
+    paths = [e["path"] for e in config["dataset"]]
+    assert f"{MANAGED_FOLDERS_PREFIX}/train" not in paths
+    assert MANAGED_IMAGES_PREFIX in paths
+
+
+def test_delete_missing_path_warns(managed_dataset, dataset_service_for_delete):
+    """Deleting a non-existent path returns a warning."""
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/nonexistent.jpg"])
+    assert len(deleted) == 0
+    assert any("nonexistent.jpg" in w for w in warnings)
+
+
+def test_delete_non_managed_dataset_rejects(managed_dataset, dataset_service_for_delete):
+    """Delete is rejected for non-managed datasets."""
+    info = DatasetInfo(name="external", source="import", config_path="/tmp/fake/config.toml")
+    dataset_service_for_delete.get_dataset.return_value = info
+
+    with pytest.raises(ValueError, match="not a managed dataset"):
+        dataset_service_for_delete.delete_items("external", [f"{MANAGED_IMAGES_PREFIX}/foo.jpg"])
+
+
+def test_delete_mixed_batch(managed_dataset, dataset_service_for_delete):
+    """A batch can delete both files and folders."""
+    # Setup
+    (managed_dataset["images_dir"] / "extra.jpg").write_bytes(b"extra")
+    train_dir = managed_dataset["folders_dir"] / "train"
+    train_dir.mkdir()
+    (train_dir / "img.jpg").write_bytes(b"train")
+
+    deleted, warnings = dataset_service_for_delete.delete_items(
+        "managed", [f"{MANAGED_IMAGES_PREFIX}/extra.jpg", f"{MANAGED_FOLDERS_PREFIX}/train", f"{MANAGED_IMAGES_PREFIX}/missing.jpg"]
+    )
+
+    assert f"{MANAGED_IMAGES_PREFIX}/extra.jpg" in deleted
+    assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
+    assert f"{MANAGED_IMAGES_PREFIX}/missing.jpg" not in deleted
+    assert any("missing.jpg" in w for w in warnings)
+
+    assert not (managed_dataset["images_dir"] / "extra.jpg").exists()
+    assert not train_dir.exists()
+
+
+def test_delete_root_images_folder_rejected(managed_dataset, dataset_service_for_delete):
+    """Deleting the root images folder is explicitly rejected."""
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [MANAGED_IMAGES_PREFIX])
+    assert len(deleted) == 0
+    assert any("Cannot delete root images folder" in w for w in warnings)
+
+
+def test_delete_subfolder_named_images(managed_dataset, dataset_service_for_delete):
+    """A subfolder literally named 'images' can be deleted via prefixed path."""
+    images_subdir = managed_dataset["folders_dir"] / "images"
+    images_subdir.mkdir()
+    (images_subdir / "sub.jpg").write_bytes(b"sub")
+
+    config_path = managed_dataset["config_path"]
+    config_path.write_text(
+        toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]})
+    )
+
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/images"])
+    assert f"{MANAGED_FOLDERS_PREFIX}/images" in deleted
+    assert len(warnings) == 0
+    assert not images_subdir.exists()
+
+    config = toml.load(config_path)
+    paths = [e["path"] for e in config["dataset"]]
+    assert f"{MANAGED_FOLDERS_PREFIX}/images" not in paths
+    assert MANAGED_IMAGES_PREFIX in paths
+
+
+# --- Folder listing ---
+
+
+def test_list_folders(managed_dataset, dataset_service_for_delete):
+    """list_folders returns root images and subfolders with correct counts."""
+    # Setup: root image, subfolder with image
+    (managed_dataset["images_dir"] / "root.jpg").write_bytes(b"root")
+    sub_dir = managed_dataset["folders_dir"] / "train"
+    sub_dir.mkdir()
+    (sub_dir / "sub.jpg").write_bytes(b"sub")
+
+    folders = dataset_service_for_delete.list_folders("managed")
+    assert len(folders) == 2
+
+    # Root entry (fixture already has existing.jpg)
+    root = folders[0]
+    assert root["name"] == MANAGED_IMAGES_PREFIX
+    assert root["path"] == MANAGED_IMAGES_PREFIX
+    assert root["can_delete"] is False
+    assert root["image_count"] == 2  # existing.jpg + root.jpg
+
+    # Subfolder entry
+    sub = folders[1]
+    assert sub["name"] == "train"
+    assert sub["path"] == f"{MANAGED_FOLDERS_PREFIX}/train"
+    assert sub["can_delete"] is True
+    assert sub["image_count"] == 1
+
+
+def test_list_folders_paths_match_delete_items(managed_dataset, dataset_service_for_delete):
+    """Paths returned by list_folders work correctly with delete_items."""
+    sub_dir = managed_dataset["folders_dir"] / "train"
+    sub_dir.mkdir()
+    (sub_dir / "sub.jpg").write_bytes(b"sub")
+
+    folders = dataset_service_for_delete.list_folders("managed")
+    train_folder = next(f for f in folders if f["name"] == "train")
+
+    # Delete using the path from list_folders
+    deleted, warnings = dataset_service_for_delete.delete_items("managed", [train_folder["path"]])
+    assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
+    assert len(warnings) == 0
+    assert not sub_dir.exists()

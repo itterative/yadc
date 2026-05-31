@@ -22,12 +22,13 @@ from logging import Logger
 from pathlib import Path
 from typing import Any
 
-import toml
+import tomlkit
 from PIL import Image
 
 from yadc.cmd.app import STATE_PATH
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
+from yadc.utils.dict_utils import toml_to_plain
 
 from ..configuration import Configuration
 from ..events import DatasetChangedEvent
@@ -39,6 +40,10 @@ from ..modules.service import Service
 
 # Image extensions we recognize (matching what PIL can open).
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
+
+# Prefixes for managed dataset directory layout (used in config paths and deletion API).
+MANAGED_IMAGES_PREFIX: str = "images"
+MANAGED_FOLDERS_PREFIX: str = "folders"
 
 
 def _dataset_state_dir(name: str) -> Path:
@@ -78,6 +83,7 @@ class ImageInfo:
     height: int = 0
     draft_names: list[str] = field(default_factory=list)
     last_modified_t: float | None = None
+    delete_path: str | None = None
 
 
 @dataclass
@@ -231,21 +237,16 @@ class DatasetService(Service):
         """
         conn = self._db.connection()
         try:
-            dataset_row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
-            if dataset_row is None:
-                return ImagePage(images=[])
-
-            dataset_id: int = dataset_row[0]
-
             rows = conn.execute(
                 """
-                SELECT id, file_name, path, has_caption, has_toml, width, height, draft_names, last_modified_t
-                FROM dataset_images
-                WHERE dataset_id = ? AND id > ?
-                ORDER BY id
+                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t, d.config_path
+                FROM dataset_images di
+                JOIN datasets d ON d.id = di.dataset_id
+                WHERE d.name = ? AND di.id > ?
+                ORDER BY di.id
                 LIMIT ?
                 """,
-                (dataset_id, after_id, limit + 1),
+                (dataset_name, after_id, limit + 1),
             ).fetchall()
 
             images = [
@@ -259,6 +260,7 @@ class DatasetService(Service):
                     height=row[6] or 0,
                     draft_names=row[7].split(",") if row[7] else [],
                     last_modified_t=row[8],
+                    delete_path=self._compute_delete_path(row[2], row[9]),
                 )
                 for row in rows[:limit]
             ]
@@ -277,7 +279,7 @@ class DatasetService(Service):
         try:
             row = conn.execute(
                 """
-                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t
+                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t, d.config_path
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
                 WHERE d.name = ? AND di.id = ?
@@ -298,6 +300,7 @@ class DatasetService(Service):
                 height=row[6] or 0,
                 draft_names=row[7].split(",") if row[7] else [],
                 last_modified_t=row[8],
+                delete_path=self._compute_delete_path(row[2], row[9]),
             )
         finally:
             conn.close()
@@ -391,7 +394,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras_raw = f.read()
                     f.seek(0)
-                    extras = toml.loads(extras_raw)
+                    extras = tomlkit.loads(extras_raw)
             except Exception:
                 pass
 
@@ -425,7 +428,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = toml.loads(f.read())
+                    extras = tomlkit.loads(f.read())
             except Exception:
                 pass
 
@@ -455,7 +458,7 @@ class DatasetService(Service):
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
             "template_context": template_context,
-            "template_context_toml": toml.dumps(template_context),
+            "template_context_toml": tomlkit.dumps(template_context),
         }
 
     def get_history(self, dataset_name: str, image_id: int, limit: int = 3) -> list[HistoryEntry] | None:
@@ -510,7 +513,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = toml.loads(f.read())
+                    extras = tomlkit.loads(f.read())
                 if extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
             except Exception:
@@ -535,7 +538,7 @@ class DatasetService(Service):
         # Restore extras
         target_extras = dict(target.__pydantic_extra__ or {})
         if target_extras:
-            dataset_image.toml_path.write_text(toml.dumps(target_extras))
+            dataset_image.toml_path.write_text(tomlkit.dumps(target_extras))
             self._update_image_index(image_id, has_toml=True)
         else:
             # Clear extras if the history entry had none
@@ -562,7 +565,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = toml.loads(f.read())
+                    extras = tomlkit.loads(f.read())
                 if extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
             except Exception:
@@ -590,7 +593,7 @@ class DatasetService(Service):
 
         # Validate TOML before writing
         try:
-            toml.loads(extras_raw)
+            tomlkit.loads(extras_raw)
         except Exception as e:
             raise ValueError(f"Invalid TOML: {e}") from e
 
@@ -601,7 +604,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    current_extras = toml.loads(f.read())
+                    current_extras = tomlkit.loads(f.read())
                 if current_extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **current_extras})
             except Exception:
@@ -614,6 +617,235 @@ class DatasetService(Service):
 
         self._update_image_index(image_id, has_toml=bool(extras_raw.strip()))
         return True
+
+    def delete_items(self, name: str, paths: list[str]) -> tuple[list[str], list[str]]:
+        """Delete files and/or folders from a managed dataset.
+
+        Only works for datasets with ``source == "upload"``. For each
+        path in ``paths``:
+        - If it resolves to a file in ``images/`` or ``folders/``,
+          the file and all its sidecars are deleted.
+        - If it resolves to a directory in ``folders/``, the entire
+          directory is removed recursively.
+
+        Returns ``(deleted, warnings)`` where ``deleted`` is the list of
+        paths that were removed and ``warnings`` contains messages for
+        paths that could not be found.
+        """
+        info = self.get_dataset(name)
+        if info is None:
+            raise ValueError(f"Dataset '{name}' not found")
+        if info.source != "upload":
+            raise ValueError(f"Dataset '{name}' is not a managed dataset")
+        if not info.config_path:
+            raise ValueError(f"Dataset '{name}' has no config path")
+
+        base_dir = Path(info.config_path).parent
+        images_dir = base_dir / MANAGED_IMAGES_PREFIX
+        folders_dir = base_dir / MANAGED_FOLDERS_PREFIX
+
+        deleted: list[str] = []
+        deleted_folder_names: list[str] = []
+        warnings: list[str] = []
+
+        images_prefix = f"{MANAGED_IMAGES_PREFIX}/"
+        folders_prefix = f"{MANAGED_FOLDERS_PREFIX}/"
+
+        for rel_path in paths:
+            if not rel_path:
+                warnings.append("Empty path")
+                continue
+
+            rel = rel_path.strip("/")
+            found = False
+
+            # Explicit prefixed paths (preferred)
+            if rel.startswith(images_prefix):
+                file_path = images_dir / rel[len(images_prefix):]
+                if file_path.exists() and file_path.is_file():
+                    self._delete_file_with_sidecars(file_path)
+                    deleted.append(rel_path)
+                    found = True
+                else:
+                    warnings.append(f"Not found: {rel_path}")
+                    continue
+
+            elif rel.startswith(folders_prefix):
+                target = folders_dir / rel[len(folders_prefix):]
+                if target.exists() and target.is_file():
+                    self._delete_file_with_sidecars(target)
+                    deleted.append(rel_path)
+                    found = True
+                elif target.exists() and target.is_dir():
+                    shutil.rmtree(target)
+                    deleted.append(rel_path)
+                    deleted_folder_names.append(rel[len(folders_prefix):])
+                    found = True
+                else:
+                    warnings.append(f"Not found: {rel_path}")
+                    continue
+
+            elif rel == MANAGED_IMAGES_PREFIX:
+                warnings.append(f"Cannot delete root images folder: {rel_path}")
+                continue
+
+            # Bare paths (backward compat — individual images only)
+            if not found:
+                file_path = images_dir / rel
+                if file_path.exists() and file_path.is_file():
+                    self._delete_file_with_sidecars(file_path)
+                    deleted.append(rel_path)
+                    found = True
+
+            if not found:
+                file_path = folders_dir / rel
+                if file_path.exists() and file_path.is_file():
+                    self._delete_file_with_sidecars(file_path)
+                    deleted.append(rel_path)
+                    found = True
+
+            if not found:
+                folder_path = folders_dir / rel
+                if folder_path.exists() and folder_path.is_dir():
+                    shutil.rmtree(folder_path)
+                    deleted.append(rel_path)
+                    deleted_folder_names.append(rel)
+                    found = True
+
+            if not found:
+                warnings.append(f"Not found: {rel_path}")
+
+        if deleted_folder_names:
+            self._remove_folder_dataset_entries(info.config_path, deleted_folder_names)
+
+        # Rescan so the SQLite index reflects the deletions
+        self.rescan_dataset(name)
+        return deleted, warnings
+
+    def _compute_delete_path(self, image_path: str, config_path: str | None) -> str | None:
+        """Compute the API-facing delete path for an image based on its location.
+
+        Returns ``images/foo.jpg`` for root files, ``folders/train/foo.jpg`` for
+        folder files, or ``None`` if the image is not under a managed layout.
+        """
+        if not config_path:
+            return None
+        config_file = Path(config_path)
+        base_dir = config_file.parent
+        images_dir = base_dir / MANAGED_IMAGES_PREFIX
+        folders_dir = base_dir / MANAGED_FOLDERS_PREFIX
+        p = Path(image_path)
+        try:
+            rel = p.relative_to(images_dir)
+            return f"{MANAGED_IMAGES_PREFIX}/{rel}"
+        except ValueError:
+            pass
+        try:
+            rel = p.relative_to(folders_dir)
+            return f"{MANAGED_FOLDERS_PREFIX}/{rel}"
+        except ValueError:
+            pass
+        return None
+
+    def _remove_folder_dataset_entries(self, config_path_str: str, folder_names: list[str]) -> None:
+        """Remove ``[[dataset]]`` entries for deleted folders from config TOML."""
+        if not folder_names:
+            return
+        config_path = Path(config_path_str)
+        if not config_path.exists():
+            return
+
+
+        with open(config_path) as f:
+            doc = tomlkit.parse(f.read())
+
+        entries = doc.get("dataset")
+        if not isinstance(entries, list):
+            return
+
+        targets = {f"{MANAGED_FOLDERS_PREFIX}/{fn}" for fn in folder_names}
+        new_entries = [e for e in entries if not (isinstance(e, dict) and e.get("path") in targets)]
+
+        if len(new_entries) != len(entries):
+            doc["dataset"] = new_entries
+            with open(config_path, "w") as f:
+                f.write(tomlkit.dumps(doc))
+
+    def _delete_file_with_sidecars(self, file_path: Path) -> None:
+        """Delete an image file and all known sidecars in the same directory."""
+        parent = file_path.parent
+        stem = file_path.stem
+
+        # Delete the image itself
+        file_path.unlink(missing_ok=True)
+
+        # Delete sidecars: .txt, .toml, .history~, and .*.draft~
+        for sibling in parent.iterdir():
+            if sibling.name == f"{stem}.txt":
+                sibling.unlink(missing_ok=True)
+            elif sibling.name == f"{stem}.toml":
+                sibling.unlink(missing_ok=True)
+            elif sibling.name == f"{stem}.history~":
+                sibling.unlink(missing_ok=True)
+            elif sibling.name.startswith(f"{stem}.") and sibling.name.endswith(".draft~"):
+                sibling.unlink(missing_ok=True)
+
+    def list_folders(self, name: str) -> list[dict[str, Any]]:
+        """List folders for a managed dataset with image counts.
+
+        Returns a list of dicts with keys: name, path, image_count.
+        The root ``images/`` folder is always listed first (if it exists).
+
+        ``path`` is the value to pass to :meth:`delete_items` to remove
+        the folder (e.g. ``"train"`` deletes ``folders/train/``).
+        """
+        info = self.get_dataset(name)
+        if info is None:
+            raise ValueError(f"Dataset '{name}' not found")
+        if info.source != "upload":
+            raise ValueError(f"Dataset '{name}' is not a managed dataset")
+        if not info.config_path:
+            raise ValueError(f"Dataset '{name}' has no config path")
+
+        base_dir = Path(info.config_path).parent
+        images_dir = base_dir / "images"
+        folders_dir = base_dir / "folders"
+
+        result: list[dict[str, Any]] = []
+
+        def _count_images(dir_path: Path) -> int:
+            if not dir_path.exists():
+                return 0
+            return sum(
+                1
+                for f in dir_path.iterdir()
+                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+            )
+
+        if images_dir.exists() and images_dir.is_dir():
+            result.append(
+                {
+                    "name": MANAGED_IMAGES_PREFIX,
+                    "path": MANAGED_IMAGES_PREFIX,
+                    "image_count": _count_images(images_dir),
+                    "can_delete": False,
+                }
+            )
+
+        if folders_dir.exists() and folders_dir.is_dir():
+            for folder_path in sorted(folders_dir.iterdir()):
+                if not folder_path.is_dir():
+                    continue
+                result.append(
+                    {
+                        "name": folder_path.name,
+                        "path": f"{MANAGED_FOLDERS_PREFIX}/{folder_path.name}",
+                        "image_count": _count_images(folder_path),
+                        "can_delete": True,
+                    }
+                )
+
+        return result
 
     # --- Dataset registration ---
 
@@ -634,7 +866,7 @@ class DatasetService(Service):
 
         # Write resolved paths back to the original file
         with open(source, "w") as f:
-            toml.dump(raw, f)
+            tomlkit.dump(raw, f)
 
         return self.register(name, str(source), source="import")
 
@@ -663,7 +895,7 @@ class DatasetService(Service):
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = _dataset_config_path(name)
         with open(dest, "w") as f:
-            toml.dump(raw, f)
+            tomlkit.dump(raw, f)
 
         return self.register(name, str(dest), source="create")
 
@@ -678,6 +910,14 @@ class DatasetService(Service):
             dataset_id, config_path = row[0], row[1]
             self._scan_dataset(conn, dataset_id, config_path)
             conn.commit()
+
+            # Re-register filesystem watcher with current paths (picks up path changes)
+            if config_path:
+                config_path_obj = Path(config_path)
+                config = self._load_config(config_path_obj)
+                paths = self._get_dataset_paths(config, config_path_obj)
+                self._watcher.watch_dataset(name, paths)
+
             return True
         finally:
             conn.close()
@@ -730,7 +970,7 @@ class DatasetService(Service):
             conn.close()
 
         # Start watching the dataset's directories
-        paths = self._get_dataset_paths(config)
+        paths = self._get_dataset_paths(config, Path(config_path))
         if paths:
             self._watcher.watch_dataset(name, paths)
 
@@ -743,7 +983,7 @@ class DatasetService(Service):
     def _load_raw_config(self, config_path: Path) -> dict[str, Any]:
         """Load a TOML config as a raw dict."""
         with open(config_path) as f:
-            return toml.load(f)
+            return tomlkit.load(f)
 
     def _resolve_relative_paths(self, raw: dict[str, Any], base_dir: Path) -> dict[str, Any]:
         """Resolve relative dataset paths in a raw config dict to absolute paths."""
@@ -778,8 +1018,8 @@ class DatasetService(Service):
         """
         try:
             with open(config_path) as f:
-                raw = toml.load(f)
-            return parse_config(raw, strict=False)
+                raw = tomlkit.load(f)
+            return parse_config(toml_to_plain(raw), strict=False)
         except Exception as e:
             self._logger.warning("Failed to parse config at %s: %s", config_path, e)
             return None
@@ -813,6 +1053,8 @@ class DatasetService(Service):
         for entry in config.dataset:
             if entry.path:
                 p = Path(entry.path)
+                if not p.is_absolute():
+                    p = config_file.parent / p
                 if p.is_dir():
                     image_dirs.append(p.resolve())
                     extras_per_dir[str(p.resolve())] = entry.extras
@@ -984,27 +1226,40 @@ class DatasetService(Service):
         try:
             cutoff = time.time() - max_age_seconds
             stale = conn.execute(
-                "SELECT id, config_path FROM datasets WHERE last_scanned_t IS NULL OR last_scanned_t < ?",
+                "SELECT id, name, config_path FROM datasets WHERE last_scanned_t IS NULL OR last_scanned_t < ?",
                 (cutoff,),
             ).fetchall()
 
-            for dataset_id, config_path in stale:
+            for dataset_id, name, config_path in stale:
                 try:
                     self._scan_dataset(conn, dataset_id, config_path)
                     conn.commit()
+
+                    # Re-register filesystem watcher so path changes are tracked
+                    if config_path:
+                        config_path_obj = Path(config_path)
+                        config = self._load_config(config_path_obj)
+                        paths = self._get_dataset_paths(config, config_path_obj)
+                        self._watcher.watch_dataset(name, paths)
                 except Exception as e:
                     self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
         finally:
             conn.close()
 
-    def _get_dataset_paths(self, config: Config | None) -> list[str]:
-        """Extract image directory paths from a parsed config."""
+    def _get_dataset_paths(self, config: Config | None, config_path: Path | None = None) -> list[str]:
+        """Extract image directory paths from a parsed config.
+
+        Relative paths are resolved against ``config_path.parent`` if provided.
+        """
         if config is None:
             return []
         paths: list[str] = []
         for entry in config.dataset:
             if entry.path:
-                p = Path(entry.path).resolve()
+                p = Path(entry.path)
+                if not p.is_absolute() and config_path is not None:
+                    p = config_path.parent / p
+                p = p.resolve()
                 if p.is_dir():
                     paths.append(str(p))
         return paths
@@ -1020,8 +1275,9 @@ class DatasetService(Service):
         for name, config_path in rows:
             if not config_path:
                 continue
-            config = self._load_config(Path(config_path))
-            paths = self._get_dataset_paths(config)
+            config_path_obj = Path(config_path)
+            config = self._load_config(config_path_obj)
+            paths = self._get_dataset_paths(config, config_path_obj)
             if paths:
                 self._watcher.watch_dataset(name, paths)
                 self._logger.debug("Watching existing dataset. [dataset=%s, paths=%d]", name, len(paths))

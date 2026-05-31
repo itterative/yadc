@@ -198,6 +198,7 @@
         <EditDatasetDialog
             open={true}
             datasetName={editingDataset.name}
+            source={editingDataset.source}
             onclose={() => (editingDataset = null)}
             onsaved={loadDatasets}
         />

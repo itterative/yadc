@@ -1,5 +1,7 @@
 """Dataset config CRUD endpoints — view and edit the TOML configs stored in STATE_PATH."""
 
+from typing import Any
+
 import tomlkit
 from pydantic import ValidationError
 from quart import jsonify, request
@@ -14,6 +16,14 @@ from . import controller
 from .blueprints import ApiBlueprint
 from .models_errors import APIErrorDetail
 from .utils_json import ErrorCode, jsonify_error
+
+
+def _extract_dataset_paths(doc: dict[str, Any]) -> set[str]:
+    """Extract path values from [[dataset]] entries."""
+    entries = doc.get("dataset")
+    if not isinstance(entries, list):
+        return set()
+    return {str(entry.get("path", "")) for entry in entries if isinstance(entry, dict)}
 
 
 @controller
@@ -86,13 +96,29 @@ def api_configs(
 
         # Validate it parses as TOML
         try:
-            tomlkit.loads(content)
+            new_doc = tomlkit.loads(content)
         except Exception as e:
             return jsonify_error(f"Invalid TOML: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+
+        # Managed datasets: prevent path changes
+        if info.source == "upload":
+            try:
+                with open(info.config_path) as f:
+                    original_doc = tomlkit.loads(f.read())
+            except Exception:
+                original_doc = {}
+            original_paths = _extract_dataset_paths(toml_to_plain(original_doc))
+            new_paths = _extract_dataset_paths(toml_to_plain(new_doc))
+            if original_paths != new_paths:
+                return jsonify_error(
+                    "Managed dataset paths cannot be changed. Use the upload panel to add or remove images.",
+                    status=400,
+                    code=ErrorCode.BAD_REQUEST,
+                )
 
         try:
             with open(info.config_path, "w") as f:
@@ -157,6 +183,17 @@ def api_configs(
         except ValidationError as e:
             details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
             return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
+
+        # Managed datasets: prevent path changes (check before writing, including dry_run)
+        if info.source == "upload":
+            original_paths = _extract_dataset_paths(toml_to_plain(parsed))
+            new_paths = _extract_dataset_paths(toml_to_plain(merged_doc))
+            if original_paths != new_paths:
+                return jsonify_error(
+                    "Managed dataset paths cannot be changed. Use the upload panel to add or remove images.",
+                    status=400,
+                    code=ErrorCode.BAD_REQUEST,
+                )
 
         # Serialize and validate round-trip
         try:

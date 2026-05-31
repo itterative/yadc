@@ -115,6 +115,12 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 - [ ] **Image/folder upload for managed datasets**: When `source === 'upload'`, allow uploading new images or folders to the dataset directly from the Paths & Variables section. Builds on the existing upload infrastructure (`DatasetUploadService`, `UploadDatasetTab`). Needs UX design — upload button per entry, or a shared upload action.
 - [ ] **Path editing for external datasets**: Verify that changing a dataset entry's path works correctly with the backend's `DatasetWatcherService` (watchdog). Changing the path triggers a rescan, but the watcher may still be watching the old directory. Need to check if `rescan_dataset` re-registers watchers or if the watcher needs explicit path update handling.
 - [x] **Extras value type support**: Extras values can be strings, numbers, booleans, or nested objects. Auto-detects types from parsed config, renders text input for strings, number input for numbers, checkbox for booleans, and read-only JSON preview for objects. Type selector dropdown (str/num/bool/obj) next to each key. Objects are not editable in the form — message prompts user to use Advanced view.
+- [ ] **TomlEditor (and JinjaEditor) doesn't use bindable for value**: should refactor to use that instead of callback
+- [ ] **JinjaEditor should expose the template variables**: should refactor parents to display the variables instead
+- [ ] **Managed datasets should live in `STATE_PATH/datasets/` subfolder**: Currently managed datasets are placed directly in `STATE_PATH/<name>/`, but the state folder also contains templates, configs, and public-private keys. Need to move them to `STATE_PATH/datasets/<name>/` to avoid collisions and keep the state directory organized. Must be done before merging this feature branch to main.
+- [ ] **History restore should wait for confirmation**: The restore button in the config history calls the confirmation dialog, but we still get a toast that the history was changed before we approve or not. Need to check if this actually reverts it.
+- [ ] **Dataset deletion doesn't drop config revision history**: When we delete a dataset, the history entries aren't deleted. Should use a foreign key with cascade delete, or enable foreign key constraints in the database connection setup.
+- [ ] **Deletion button for individual images lives next to the caption**: It's confusing for the users when they see a delete button next to the caption part, since they would assume this deletes the caption, not the image itself.
 
 ---
 

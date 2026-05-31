@@ -1,76 +1,36 @@
 <script lang="ts">
     import Dialog from '$lib/components/ui/Dialog.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
-    import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
-    import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
-    import { fetchConfig, updateConfig } from '$lib/stores/configs';
-    import { friendlyErrorMessage } from '$lib/api';
+    import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
+    import Tab from '$lib/components/ui/tabs/Tab.svelte';
+    import DatasetConfig from '$lib/components/datasets/DatasetConfig.svelte';
+    import DatasetManageTab from '$lib/components/datasets/DatasetManageTab.svelte';
+    import DatasetUploadPanel from '$lib/components/datasets/DatasetUploadPanel.svelte';
 
     interface Props {
         open: boolean;
         datasetName: string;
+        source?: 'upload' | 'import' | 'create';
         onclose: () => void;
         onsaved: () => void;
     }
 
-    let { open, datasetName, onclose, onsaved }: Props = $props();
+    let { open, datasetName, source, onclose, onsaved }: Props = $props();
 
-    let rawContent = $state('');
-    let isLoading = $state(false);
-    let isSaving = $state(false);
-    let error: string | null = $state(null);
+    let mode: 'config' | 'manage' | 'upload' = $state('config');
 
-    $effect(() => {
-        if (!open) {
-            return;
-        }
-        let cancelled = false;
-        isLoading = true;
-        error = null;
-        rawContent = '';
+    function handleConfigSaved() {
+        onsaved();
+    }
 
-        (async () => {
-            try {
-                const config = await fetchConfig(datasetName);
-                if (cancelled) {
-                    return;
-                }
-                rawContent = config.content;
-            } catch (e) {
-                if (cancelled) {
-                    return;
-                }
-                error = friendlyErrorMessage(e, 'Failed to load config');
-            } finally {
-                if (!cancelled) {
-                    isLoading = false;
-                }
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    });
-
-    async function handleSave() {
-        isSaving = true;
-        error = null;
-        try {
-            await updateConfig(datasetName, rawContent);
-            onsaved();
-            onclose();
-        } catch (e) {
-            error = friendlyErrorMessage(e, 'Failed to save config');
-        } finally {
-            isSaving = false;
-        }
+    function handleUploadComplete() {
+        onsaved();
+        onclose();
     }
 </script>
 
-<Dialog class="dialog-panel max-h-[80vh] max-w-lg overflow-y-auto" {open} {onclose}>
+<Dialog class="dialog-panel max-h-[85vh] max-w-2xl overflow-y-auto" {open} {onclose}>
     <div class="p-5">
-        <!-- Header -->
         <div class="dialog-header">
             <h2 class="dialog-title">Edit {datasetName}</h2>
             <button class="btn-close" onclick={onclose}>
@@ -78,32 +38,23 @@
             </button>
         </div>
 
-        {#if error}
-            <div class="alert-error mb-4">{error}</div>
-        {/if}
-
-        {#if isLoading}
-            <SpinnerBlock class="py-4" size="h-5 w-5" label="Loading config..." />
-        {:else}
-            <div class="space-y-4">
-                <div class="max-h-[50vh] min-h-[200px] overflow-y-auto">
-                    <TomlEditor
-                        class="rounded-md border border-border"
-                        value={rawContent}
-                        editable={true}
-                        onchange={(v) => (rawContent = v)}
+        <PillTabs bind:value={mode} hideSingle>
+            <Tab id="config" label="Config" class="h-full">
+                <DatasetConfig {datasetName} {source} onsaved={handleConfigSaved} />
+            </Tab>
+            {#if source === 'upload'}
+                <Tab id="manage" label="Manage" class="h-full">
+                    <DatasetManageTab {datasetName} onchanged={handleConfigSaved} />
+                </Tab>
+                <Tab id="upload" label="Upload" class="h-full">
+                    <DatasetUploadPanel
+                        mode="append"
+                        {datasetName}
+                        oncomplete={handleUploadComplete}
+                        {onclose}
                     />
-                </div>
-
-                <div class="btn-bar">
-                    <button class="btn-secondary" onclick={onclose} disabled={isSaving}
-                        >Cancel</button
-                    >
-                    <button class="btn-primary" onclick={handleSave} disabled={isSaving}>
-                        {isSaving ? 'Saving...' : 'Save & Rescan'}
-                    </button>
-                </div>
-            </div>
-        {/if}
+                </Tab>
+            {/if}
+        </PillTabs>
     </div>
 </Dialog>

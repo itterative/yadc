@@ -78,6 +78,7 @@ def reapply_dataset_extras(dataset_image: DatasetImage):
 def resolve_dataset(
     entries: list[ConfigDatasetEntry],
     caption_suffix: str,
+    base_dir: str | None = None,
     read_image: ReadImageFn = read_image_from_disk,
 ) -> list[DatasetImage]:
     """Resolve all dataset entries into a flat list of DatasetImages.
@@ -90,6 +91,8 @@ def resolve_dataset(
     Args:
         entries: The dataset entries from the parsed config.
         caption_suffix: File extension for caption files.
+        base_dir: Directory to resolve relative paths against. If None,
+            relative paths are treated as-is (from the current working directory).
         read_image: Function used to read an image from disk. Defaults to
             read_image_from_disk. Can be overridden for testing.
 
@@ -103,6 +106,8 @@ def resolve_dataset(
         # scan path directory for images
         if entry.path:
             path = pathlib.Path(entry.path)
+            if not path.is_absolute() and base_dir is not None:
+                path = pathlib.Path(base_dir) / path
 
             if path.is_dir():
                 for file_path in path.iterdir():

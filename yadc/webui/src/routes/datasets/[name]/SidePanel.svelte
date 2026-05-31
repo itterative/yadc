@@ -1,6 +1,6 @@
 <script lang="ts">
     import CaptionSettings from './CaptionSettings.svelte';
-    import DatasetConfig from './DatasetConfig.svelte';
+    import DatasetConfig from '$lib/components/datasets/DatasetConfig.svelte';
     import ImageDetail from '$lib/components/dataset/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
@@ -17,6 +17,7 @@
         activeTab?: PanelTab;
         open?: boolean;
         onpanelclose?: () => void;
+        onimagedelete?: () => void;
     }
 
     let {
@@ -25,7 +26,8 @@
         focusedItem,
         activeTab: panelTab = $bindable('caption'),
         open = $bindable(false),
-        onpanelclose
+        onpanelclose,
+        onimagedelete
     }: Props = $props();
 </script>
 
@@ -76,7 +78,7 @@
             </Tab>
             <Tab id="details" label="Details" class="h-full overflow-y-auto">
                 {#if focusedItem !== null}
-                    <ImageDetail {datasetName} item={focusedItem} {source} />
+                    <ImageDetail {datasetName} item={focusedItem} {source} ondelete={onimagedelete} />
                 {:else}
                     <div class="flex h-full items-center justify-center py-4 text-sm text-gray-500">
                         Select an image to view details

@@ -7,6 +7,7 @@
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
+    import { confirmDialog } from '$lib/stores/confirm';
 
     interface Props {
         datasetName: string;
@@ -71,7 +72,7 @@
         if (restoringId !== null) {
             return;
         }
-        if (!confirm('Restore this revision? The current config will be saved to history first.')) {
+        if (!confirmDialog.danger('Restore this revision? The current config will be saved to history first.')) {
             return;
         }
         restoringId = entry.id;

@@ -3,6 +3,7 @@
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import PromptPreview from '$lib/components/ui/PromptPreview.svelte';
     import {
+        deleteDatasetItems,
         fetchCaption,
         fetchHistory,
         mediaUrl,
@@ -24,9 +25,10 @@
         datasetName: string;
         item: ImageInfo | null;
         source?: 'upload' | 'import' | 'create';
+        ondelete?: () => void;
     }
 
-    let { datasetName, item, source }: Props = $props();
+    let { datasetName, item, source, ondelete }: Props = $props();
 
     let captionData: CaptionData | null = $state(null);
     let isLoadingCaption = $state(false);
@@ -181,6 +183,29 @@
         wasCaptioning = current;
     });
 
+    let isDeleting = $state(false);
+
+    async function handleDeleteImage() {
+        if (item === null || source !== 'upload' || !item.delete_path) {
+            return;
+        }
+        const ok = await confirmDialog.danger(
+            `Delete "${item.file_name}" and its sidecars? This cannot be undone.`
+        );
+        if (!ok) {
+            return;
+        }
+        isDeleting = true;
+        try {
+            await deleteDatasetItems(datasetName, [item.delete_path]);
+            ondelete?.();
+        } catch (e) {
+            captionError = friendlyErrorMessage(e, 'Failed to delete image');
+        } finally {
+            isDeleting = false;
+        }
+    }
+
     let isSavingExtras = $state(false);
 
     async function handleSaveExtras() {
@@ -286,6 +311,15 @@
                             >
                                 Edit
                             </button>
+                            {#if source === 'upload'}
+                                <button
+                                    class="cursor-pointer text-xs text-error hover:text-error/80"
+                                    onclick={handleDeleteImage}
+                                    disabled={isDeleting}
+                                >
+                                    {isDeleting ? 'Deleting…' : 'Delete'}
+                                </button>
+                            {/if}
                         </div>
                     {/if}
                 </div>
