@@ -11,7 +11,7 @@
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import AddDatasetDialog from './AddDatasetDialog.svelte';
     import EditDatasetDialog from './EditDatasetDialog.svelte';
-    import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
+    import { confirmDialog } from '$lib/stores/confirm';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgPhoto from '$lib/icons/SvgPhoto.svelte';
@@ -22,9 +22,6 @@
     let loading = $state(true);
     let error = $state('');
     let showAddDataset = $state(false);
-
-    // Delete state
-    let deletingDataset: DatasetInfo | null = $state(null);
 
     // Edit state
     let editingDataset: DatasetInfo | null = $state(null);
@@ -59,17 +56,18 @@
         datasets = [...datasets, dataset];
     }
 
-    async function handleDeleteConfirm() {
-        if (!deletingDataset) {
+    async function handleDelete(dataset: DatasetInfo) {
+        const ok = await confirmDialog.danger(
+            `Delete dataset "${dataset.name}"? This will unregister it and delete its state. Image files will not be removed.`
+        );
+        if (!ok) {
             return;
         }
         try {
-            await deleteDataset(deletingDataset.name);
-            datasets = datasets.filter((d) => d.name !== deletingDataset!.name);
+            await deleteDataset(dataset.name);
+            datasets = datasets.filter((d) => d.name !== dataset.name);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to delete dataset');
-        } finally {
-            deletingDataset = null;
         }
     }
 </script>
@@ -178,7 +176,7 @@
                         onclick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            deletingDataset = dataset;
+                            handleDelete(dataset);
                         }}
                     >
                         <SvgDelete class="h-4 w-4" />
@@ -194,18 +192,6 @@
             <span class="text-sm text-gray-400">+ Add Dataset</span>
         </button>
     </div>
-
-    <!-- Delete confirmation -->
-    {#if deletingDataset}
-        <ConfirmDelete
-            open={true}
-            oncancel={() => (deletingDataset = null)}
-            onconfirm={handleDeleteConfirm}
-        >
-            Delete dataset "{deletingDataset.name}"? This will unregister it and delete its state.
-            Image files will not be removed.
-        </ConfirmDelete>
-    {/if}
 
     <!-- Edit dialog -->
     {#if editingDataset}

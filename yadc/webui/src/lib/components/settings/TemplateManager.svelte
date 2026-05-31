@@ -1,6 +1,6 @@
 <script lang="ts">
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
-    import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
+    import { confirmDialog } from '$lib/stores/confirm';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
@@ -27,7 +27,6 @@
     let templateDirty = $state(false);
     let isSavingTemplate = $state(false);
     let templateError: string | null = $state(null);
-    let confirmDeleteTemplate: string | null = $state(null);
     let isNewTemplate = $state(false);
     let newTemplateName = $state('');
 
@@ -35,7 +34,6 @@
         if (open) {
             templateError = null;
             templateDirty = false;
-            confirmDeleteTemplate = null;
             isNewTemplate = false;
             loadTemplates();
         }
@@ -54,7 +52,6 @@
         isLoadingTemplate = true;
         templateError = null;
         templateDirty = false;
-        confirmDeleteTemplate = null;
         isNewTemplate = false;
         try {
             const info = await fetchTemplate(name);
@@ -98,9 +95,12 @@
     }
 
     async function handleDeleteTemplate(name: string) {
+        const ok = await confirmDialog.danger(`Delete template "${name}"?`);
+        if (!ok) {
+            return;
+        }
         try {
             await deleteTemplate(name);
-            confirmDeleteTemplate = null;
             if (selectedTemplateName === name) {
                 selectedTemplateName = '';
                 templateContent = '';
@@ -163,7 +163,7 @@
                                 title="Delete template"
                                 onclick={(e) => {
                                     e.stopPropagation();
-                                    confirmDeleteTemplate = t.name;
+                                    handleDeleteTemplate(t.name);
                                 }}
                             >
                                 <SvgDelete class="h-3 w-3" />
@@ -236,11 +236,3 @@
         {/if}
     </div>
 </div>
-
-<ConfirmDelete
-    open={confirmDeleteTemplate !== null}
-    oncancel={() => (confirmDeleteTemplate = null)}
-    onconfirm={() => handleDeleteTemplate(confirmDeleteTemplate!)}
->
-    Delete template <strong>{confirmDeleteTemplate}</strong>?
-</ConfirmDelete>

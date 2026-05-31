@@ -14,6 +14,7 @@
     import type { ExportResult } from '$lib/stores/configs';
     import { getTopbarContent } from '$lib/stores/topbar.svelte';
     import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
+    import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
     import { toast } from '$lib/stores/toasts';
     import { captioningStatus, resumptionFailed } from '$lib/stores/events';
     import { sendNotification } from '$lib/notifications';
@@ -199,4 +200,5 @@
     onsubmit={submitPassword}
     oncancel={cancelPassword}
 />
+<ConfirmDialog />
 <ToastContainer />

@@ -58,7 +58,7 @@ yadc/webui/
             CompactPillTabs.svelte  # Compact segmented control variant (bg-gray-800/50 container, rounded-md buttons, icon support)
             Tab.svelte              # Child that auto-registers via context, shows/hides content. Supports optional icon prop.
             TabsContext.svelte.ts   # Symbol key + state factory + typed helpers. TabItem has optional icon (Component).
-          ConfirmDelete.svelte        # Delete confirmation block (cancel/confirm buttons)
+          ConfirmDialog.svelte        # Global confirmation dialog (Promise-based, mounted in layout, supports string + snippet body, variant: danger/warning/info)
           SpinnerBlock.svelte         # Centered spinner with optional label and size
           PromptPreview.svelte        # Self-contained prompt preview (template selector + system/user prompt display)
           Tooltip.svelte              # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
@@ -122,6 +122,7 @@ yadc/webui/
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning". Priority: localStorage override → dataset config default → hardcoded default. |
+| `confirm.ts` | Promise-based confirmation dialog store — manages dialog state with `confirm()` → `Promise<boolean>`. Exports `confirmState` readable store, `confirmDialog.danger/warning/info()` convenience helpers. Supports string messages and Svelte snippet bodies. |
 | `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`). `settingsDialog` store tracks open state + active tab (`general`/`environments`/`security`). |
 | `passwordPrompt.ts` | Global password prompt store — `requestPassword()` returns `Promise<string>`, `withPasswordRetry(action)` catches `PasswordRequiredError` and retries once after dialog. Module-level `pendingPromise` deduplicates concurrent callers. |
 | `sessionPassword.ts` | Tab-scoped in-memory password store (Svelte writable, never persisted to localStorage). Captioning requests read from it automatically. |

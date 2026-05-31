@@ -8,7 +8,7 @@
         type TemplateListItem
     } from '$lib/stores/templates';
     import EditTemplateDialog from './EditTemplateDialog.svelte';
-    import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
+    import { confirmDialog } from '$lib/stores/confirm';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgFile from '$lib/icons/SvgFile.svelte';
@@ -19,8 +19,6 @@
     let loading = $state(true);
     let error = $state('');
     let showAddTemplate = $state(false);
-
-    let deletingTemplate: TemplateListItem | null = $state(null);
 
     // Edit state
     let editingTemplate: TemplateListItem | null = $state(null);
@@ -42,17 +40,18 @@
         }
     }
 
-    async function handleDeleteConfirm() {
-        if (!deletingTemplate) {
+    async function handleDelete(template: TemplateListItem) {
+        const ok = await confirmDialog.danger(
+            `Delete template "${template.name}"? This action cannot be undone.`
+        );
+        if (!ok) {
             return;
         }
         try {
-            await deleteTemplate(deletingTemplate.name);
+            await deleteTemplate(template.name);
             await refreshTemplates();
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to delete template');
-        } finally {
-            deletingTemplate = null;
         }
     }
 
@@ -145,7 +144,7 @@
                             onclick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                deletingTemplate = template;
+                                handleDelete(template);
                             }}
                         >
                             <SvgDelete class="h-4 w-4" />
@@ -165,17 +164,6 @@
             </span>
         </button>
     </div>
-
-    <!-- Delete confirmation -->
-    {#if deletingTemplate}
-        <ConfirmDelete
-            open={true}
-            oncancel={() => (deletingTemplate = null)}
-            onconfirm={handleDeleteConfirm}
-        >
-            Delete template "{deletingTemplate.name}"? This action cannot be undone.
-        </ConfirmDelete>
-    {/if}
 {/if}
 
 <!-- Edit dialog -->

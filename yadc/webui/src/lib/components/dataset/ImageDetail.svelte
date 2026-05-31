@@ -18,6 +18,7 @@
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
+    import { confirmDialog } from '$lib/stores/confirm';
 
     interface Props {
         datasetName: string;
@@ -397,11 +398,10 @@
                                             <button
                                                 class="btn-secondary px-2 py-0.5 text-xs"
                                                 onclick={async () => {
-                                                    if (
-                                                        !confirm(
-                                                            'Restore this revision? The current caption and extras will be saved to history first.'
-                                                        )
-                                                    ) {
+                                                    const ok = await confirmDialog.warning(
+                                                        'Restore this revision? The current caption and extras will be saved to history first.'
+                                                    );
+                                                    if (!ok) {
                                                         return;
                                                     }
                                                     isRestoring = true;

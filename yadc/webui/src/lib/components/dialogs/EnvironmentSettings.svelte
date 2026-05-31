@@ -4,7 +4,7 @@
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgVisibility from '$lib/icons/SvgVisibility.svelte';
     import SvgVisibilityOff from '$lib/icons/SvgVisibilityOff.svelte';
-    import ConfirmDelete from '$lib/components/ui/ConfirmDelete.svelte';
+    import { confirmDialog } from '$lib/stores/confirm';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import {
         deleteEnv,
@@ -31,7 +31,6 @@
     let editModelName = $state('');
     let isSavingEnv = $state(false);
     let saveEnvError: string | null = $state(null);
-    let confirmDelete: string | null = $state(null);
 
     let showToken = $state(false);
     let revealedToken = $state('');
@@ -115,9 +114,12 @@
     }
 
     async function handleDeleteEnv(name: string) {
+        const ok = await confirmDialog.danger(`Delete environment "${name}"?`);
+        if (!ok) {
+            return;
+        }
         try {
             await deleteEnv(name);
-            confirmDelete = null;
             await loadEnvs();
         } catch (e) {
             envError = friendlyErrorMessage(e, 'Failed to delete environment');
@@ -225,7 +227,7 @@
                                 <button
                                     class="cursor-pointer rounded p-1.5 text-gray-400 transition-colors hover:text-error"
                                     title="Delete"
-                                    onclick={() => (confirmDelete = env.name)}
+                                    onclick={() => handleDeleteEnv(env.name)}
                                 >
                                     <SvgDelete class="h-4 w-4" />
                                 </button>
@@ -243,14 +245,6 @@
             <SvgPlus class="h-4 w-4" />
             New Environment
         </button>
-
-        <ConfirmDelete
-            open={confirmDelete !== null}
-            oncancel={() => (confirmDelete = null)}
-            onconfirm={() => handleDeleteEnv(confirmDelete!)}
-        >
-            Delete environment <strong>{confirmDelete}</strong>?
-        </ConfirmDelete>
     {:else}
         <div class="space-y-4">
             {#if saveEnvError}
