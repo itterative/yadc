@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, and TOML serialization.
 status: In Progress
-last_history: 7
+last_history: 9
 category: meta
 ---
 
@@ -280,13 +280,67 @@ Comments in TOML files are lost on parse → serialize because the TOML data mod
 
 ### Status
 
-- [ ] Evaluate `tomlkit` as a `toml` replacement
-- [ ] Multiline string serialization
-- [ ] Comment preservation
+- [x] Add `tomlkit` dependency
+- [x] Swap `api_configs.py` to use `tomlkit.loads`/`tomlkit.dumps`
+- [x] Create `toml_merge()` in `dict_utils.py` — tomlkit-aware deep merge preserving comments
+- [x] PATCH uses `toml_merge` (preserves comments on untouched sections)
+- [x] PUT validates with `tomlkit.loads` (comments pass through verbatim)
+- [x] All tests pass (168 passed)
+- [ ] Post-completion: migrate CLI and other API services from `toml` to `tomlkit`
 
 ---
 
-## Implementation Order
+## Phase 7: Refinements
+
+Post-implementation polish for issues discovered during use.
+
+### 7.1 Extras editing doesn't trigger dirty / Save button
+
+**Problem:** Changing extras values in `KeyValueEditor` doesn't cause the "Save Config" button to enable.
+
+**Root cause:** `bind:entries={datasetEntries[i].extras}` mutates the inner array in-place via Svelte's binding. The `simplifiedDirty` check uses `entriesEqual()` which does deep comparison — but Svelte's `$derived` may not re-evaluate because the `datasetEntries` array reference doesn't change when only a nested extras entry's `value` changes. The `$effect` for live preview touches `e.key` and `e.value` inside a loop, but that's the preview trigger, not dirty tracking.
+
+**Fix:** The `KeyValueEditor` binding mutates `datasetEntries[i].extras` objects in-place. The dirty derivation needs to re-run when those nested values change. Options:
+- **Option A:** In `KeyValueEditor`, emit a new array on change (replace the `entries` array instead of mutating in place), so the `bind:entries` reference changes and triggers reactivity.
+- **Option B:** Add a manual "touch" — after KeyValueEditor changes, reassign `datasetEntries` to a new array (`datasetEntries = [...datasetEntries]`).
+- **Option C:** Track extras dirty separately with a version counter.
+
+Recommendation: **Option A** — fix `KeyValueEditor` to emit new arrays on every change, making it properly reactive.
+
+### 7.2 History snapshots should include the current state
+
+**Problem:** Currently, history only saves the *pre-write* state (the old content before overwriting). This means:
+1. On first config creation (import/create/upload), there's no history at all — the initial state is never snapshotted.
+2. If a user makes 3 saves (A→B→C→D), history contains A, B, C but NOT D. They can revert to C but not back to D without making another save.
+
+**Fix:** Change the snapshot strategy:
+- **On config creation** (initial import/create/upload): save a snapshot of the initial config content.
+- **On every save** (PATCH/PUT): save a snapshot of the *new* content (the result), not the old content. This means every state the config has ever been in is recorded.
+- Remove the pre-write snapshot in PUT/PATCH handlers.
+- Add post-write snapshot after successful write.
+- Alternatively: save both pre-write (already exists) AND post-write on each save. But that doubles entries. Better to just save the result.
+
+**Backend changes:**
+- `api_configs.py`: Move `save_snapshot` call to *after* the write in both PUT and PATCH.
+- Dataset creation endpoints (`api_datasets.py` or wherever import/create/upload happen): add initial snapshot after config is written.
+- `restoreConfigHistory`: currently deletes the restored entry. With post-write snapshots, the restore itself will create a new snapshot of the restored content, so deletion is fine.
+
+### 7.3 History tab UX improvements
+
+**Problem:** The history tab needs better UX — details TBD based on user feedback. Likely improvements:
+- Better visual hierarchy in the entry list
+- Diff view instead of full TOML content
+- Confirmation dialog before restore
+- Keyboard navigation
+- Loading states
+
+**Approach:** Iterate on `ConfigHistory.svelte` based on specific feedback from the user.
+
+### Status
+
+- [ ] 7.1: Fix KeyValueEditor reactivity / dirty tracking for extras
+- [ ] 7.2: Snapshot current state on creation and post-save
+- [ ] 7.3: History tab UX improvements
 
 1. **Phase 1** (Dataset entries + extras) — highest user value
 2. **Phase 2** (Advanced settings fields) — fills gaps in the structured form

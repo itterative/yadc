@@ -24,6 +24,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "injector>=0.22.0",
     "watchdog>=4.0",
+    "tomlkit>=0.15.0",
 ]
 
 [project.optional-dependencies]

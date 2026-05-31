@@ -87,13 +87,13 @@ async def test_caption_single_image_password_required(client):
     data = await resp.get_json()
     assert data["error"] == "Password required to decrypt environment settings"
     assert data["code"] == "PASSWORD_REQUIRED"
-    mock_service.caption_single_async.assert_not_called()
+    mock_service.start_job_async.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_caption_single_image_returns_job_info(client):
     test_client, mock_service = client
-    mock_service.caption_single_async = AsyncMock(
+    mock_service.start_job_async = AsyncMock(
         return_value=JobInfo(status="running", dataset_name="test", job_id="abc123", processed=0, total=1, errors=0, error=None)
     )
 
@@ -106,4 +106,7 @@ async def test_caption_single_image_returns_job_info(client):
     assert data["status"] == "running"
     assert data["job_id"] == "abc123"
     assert data["total"] == 1
-    mock_service.caption_single_async.assert_called_once()
+    mock_service.start_job_async.assert_awaited_once()
+    call_args = mock_service.start_job_async.call_args
+    assert call_args[0][0] == "test"
+    assert call_args[0][1].image_ids == [1]

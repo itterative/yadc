@@ -145,15 +145,9 @@ def cli():
             result = _run_yadc(cmd, cwd=test_data_cwd, env=merged_env, stdin=stdin)
 
             if should_fail:
-                assert result.returncode != 0, (
-                    f"command succeeded but was expected to fail: yadc {cmd}\n"
-                    f"stdout: {result.stdout}\nstderr: {result.stderr}"
-                )
+                assert result.returncode != 0, f"command succeeded but was expected to fail: yadc {cmd}\nstdout: {result.stdout}\nstderr: {result.stderr}"
             else:
-                assert result.returncode == 0, (
-                    f"command failed but was expected to succeed: yadc {cmd}\n"
-                    f"stdout: {result.stdout}\nstderr: {result.stderr}"
-                )
+                assert result.returncode == 0, f"command failed but was expected to succeed: yadc {cmd}\nstdout: {result.stdout}\nstderr: {result.stderr}"
             return result
 
         return _isolated_cmd

@@ -91,7 +91,8 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
             )
 
         try:
-            info: JobInfo = await captioning.caption_single_async(name, image_id, options)
+            single_opts = options.model_copy(update={"image_ids": [image_id]})
+            info: JobInfo = await captioning.start_job_async(name, single_opts)
         except ValueError as e:
             return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
 

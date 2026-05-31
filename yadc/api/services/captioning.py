@@ -586,11 +586,6 @@ class CaptioningService(Service):
                 return JobInfo(status="idle", dataset_name=dataset_name)
             return await job.snapshot()
 
-    async def caption_single_async(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> JobInfo:
-        """Start a single-image async captioning job for *dataset_name*."""
-        single_opts = options.model_copy(update={"image_ids": [image_id]})
-        return await self.start_job_async(dataset_name, single_opts)
-
     # -- private helpers -----------------------------------------------------
 
     async def _cleanup_async(self, dataset_name: str) -> None:

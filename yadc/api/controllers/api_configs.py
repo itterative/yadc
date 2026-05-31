@@ -1,13 +1,13 @@
 """Dataset config CRUD endpoints — view and edit the TOML configs stored in STATE_PATH."""
 
-import toml
+import tomlkit
 from pydantic import ValidationError
 from quart import jsonify, request
 
 from yadc.api.services.config_history import ConfigHistoryService
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
-from yadc.utils import deep_merge
+from yadc.utils.dict_utils import toml_merge, toml_to_plain
 
 from ..modules.logging_factory import LoggingFactory
 from . import controller
@@ -48,14 +48,14 @@ def api_configs(
 
         # Parse to get structured fields alongside the raw text
         try:
-            parsed = toml.loads(content)
+            parsed = tomlkit.loads(content)
         except Exception:
             parsed = {}
 
         validation_error = None
         if parsed:
             try:
-                parse_config(parsed, strict=False)
+                parse_config(toml_to_plain(parsed), strict=False)
             except ValidationError as e:
                 validation_error = [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()]
 
@@ -86,7 +86,7 @@ def api_configs(
 
         # Validate it parses as TOML
         try:
-            toml.loads(content)
+            tomlkit.loads(content)
         except Exception as e:
             return jsonify_error(f"Invalid TOML: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
@@ -148,29 +148,30 @@ def api_configs(
             return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
 
         try:
-            parsed = toml.loads(content)
+            parsed = tomlkit.loads(content)
         except Exception as e:
             return jsonify_error(f"Existing config is invalid TOML: {e}", status=500, code=ErrorCode.INTERNAL_ERROR)
 
-        # Deep-merge patch into existing config
-        merged = deep_merge(parsed, body)
+        # Deep-merge patch into existing config (preserves comments/formatting)
+        merged_doc = toml_merge(parsed, body)
 
         # Validate merged result against the Config schema
+        # Use plain dict conversion — Pydantic rejects tomlkit wrapper types
         try:
-            parse_config(merged, strict=False)
+            parse_config(toml_to_plain(merged_doc), strict=False)
         except ValidationError as e:
             details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
             return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
 
         # Serialize and validate round-trip
         try:
-            new_content = toml.dumps(merged)
-            toml.loads(new_content)  # round-trip validation
+            new_content = tomlkit.dumps(merged_doc)
+            tomlkit.loads(new_content)  # round-trip validation
         except Exception as e:
             return jsonify_error(f"Failed to serialize config: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
         if dry_run:
-            return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": merged})
+            return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
 
         # Save current content to history before overwriting
         config_history.save_snapshot(name, content)
@@ -186,7 +187,7 @@ def api_configs(
         # Rescan so the index picks up any changes
         datasets.rescan_dataset(name)
 
-        return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": merged})
+        return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
 
     @app.get("/configs/<name>/history")
     def list_config_history(name: str):  # pyright: ignore[reportUnusedFunction]
