@@ -18,9 +18,12 @@
     import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
     import { captionOptions } from '$lib/stores/captionActions';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import SvgCopy from '$lib/icons/SvgCopy.svelte';
+    import SvgCheck from '$lib/icons/SvgCheck.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
     import { confirmDialog } from '$lib/stores/confirm';
+    import { toast } from '$lib/stores/toasts';
 
     interface Props {
         datasetName: string;
@@ -252,6 +255,29 @@
         resize();
         return { update: resize };
     }
+
+    // Copy-to-clipboard state — tracks which box is currently showing the
+    // "copied" feedback so the icon can briefly swap to a check mark in place.
+    let copiedKey: string | null = $state(null);
+    let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    async function copyToClipboard(text: string, key: string) {
+        if (!text) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            copiedKey = key;
+            if (copyTimeout !== null) {
+                clearTimeout(copyTimeout);
+            }
+            copyTimeout = setTimeout(() => {
+                copiedKey = null;
+            }, 1500);
+        } catch {
+            toast.warning('Failed to copy to clipboard');
+        }
+    }
 </script>
 
 {#if item !== null}
@@ -388,7 +414,23 @@
                         {:else if captionData}
                             {#if captionData.caption}
                                 <pre
-                                    class="max-h-60 overflow-y-auto rounded-lg bg-gray-800 p-3 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
+                                    class="max-h-60 overflow-y-auto rounded-lg bg-gray-800 p-3 pr-10 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
+                                {#if !isEditing && !isCaptioning}
+                                    <button
+                                        type="button"
+                                        class="absolute top-2 right-2 cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                        aria-label="Copy caption"
+                                        title="Copy caption"
+                                        onclick={() =>
+                                            copyToClipboard(captionData!.caption!, 'caption')}
+                                    >
+                                        {#if copiedKey === 'caption'}
+                                            <SvgCheck class="h-4 w-4 text-success" />
+                                        {:else}
+                                            <SvgCopy class="h-4 w-4" />
+                                        {/if}
+                                    </button>
+                                {/if}
                             {:else}
                                 <pre
                                     class="rounded-lg bg-gray-800 p-3 text-sm whitespace-pre-wrap text-gray-500 italic">No caption</pre>
@@ -558,10 +600,26 @@
                     <h3 class="mb-2 text-sm font-medium text-gray-300">Drafts</h3>
                     <div class="space-y-2">
                         {#each Object.entries(captionData.drafts) as [name, text] (name)}
-                            <div class="rounded-lg bg-gray-800 p-3">
+                            {@const draftKey = `draft:${name}`}
+                            <div class="relative rounded-lg bg-gray-800 p-3">
                                 <p class="mb-1 text-xs font-medium text-accent">{name}</p>
                                 <pre
-                                    class="max-h-40 overflow-y-auto font-mono text-sm whitespace-pre-wrap text-gray-200">{text}</pre>
+                                    class="max-h-40 overflow-y-auto pr-9 font-mono text-sm whitespace-pre-wrap text-gray-200">{text}</pre>
+                                {#if text}
+                                    <button
+                                        type="button"
+                                        class="absolute top-2 right-2 cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                        aria-label={`Copy draft "${name}"`}
+                                        title={`Copy draft "${name}"`}
+                                        onclick={() => copyToClipboard(text, draftKey)}
+                                    >
+                                        {#if copiedKey === draftKey}
+                                            <SvgCheck class="h-4 w-4 text-success" />
+                                        {:else}
+                                            <SvgCopy class="h-4 w-4" />
+                                        {/if}
+                                    </button>
+                                {/if}
                             </div>
                         {/each}
                     </div>
