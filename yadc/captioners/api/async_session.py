@@ -77,11 +77,22 @@ class AsyncSession:
         client: httpx.AsyncClient | None = None,
         cache: HTTPResponseCache | None = None,
         response_logger: ResponseLogger | None = None,
+        connect_timeout: float = 30.0,
+        read_timeout: float | None = None,
+        write_timeout: float = 30.0,
+        pool_timeout: float = 30.0,
     ):
         self.base_url: ParseResult = urlparse(base_url.rstrip("/"))
         self.headers: dict[str, str] = headers or {}
         self.headers["User-Agent"] = self.user_agent
-        self._client: httpx.AsyncClient = client or httpx.AsyncClient()
+        self._client: httpx.AsyncClient = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=connect_timeout,
+                read=read_timeout,
+                write=write_timeout,
+                pool=pool_timeout,
+            )
+        )
         self._max_retries: int = max_retries
         self._backoff_factor: float = backoff_factor
         self._status_forcelist: tuple[int, ...] = status_forcelist

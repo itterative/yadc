@@ -29,6 +29,7 @@ def job(tmp_path):
         options=opts,
         on_done=lambda: None,
         job_id="abc123",
+        configuration=MagicMock(),
     )
 
 
@@ -41,9 +42,13 @@ def image_with_file(tmp_path):
     return DatasetImage(path=str(img_path))
 
 
+async def _fake_stream(caption: str):
+    yield caption
+
+
 def _mock_model(caption: str = "a red square"):
     model = MagicMock()
-    model.predict = AsyncMock(return_value=caption)
+    model.predict_stream = MagicMock(side_effect=lambda *args, **kwargs: _fake_stream(caption))
     return model
 
 
@@ -190,12 +195,12 @@ class TestCaptioningServiceCleanupRescan:
         mock_job.alive = False
         mock_job.snapshot = AsyncMock(return_value=MagicMock(job_id="abc123"))
         captioning_service._async_jobs["test_ds"] = mock_job
-        captioning_service._dataset_service.rescan_dataset = AsyncMock()
+        captioning_service._dataset_service.rescan_dataset = MagicMock()
 
         with patch("asyncio.sleep"):
             await captioning_service._cleanup_async("test_ds")
 
-        captioning_service._dataset_service.rescan_dataset.assert_awaited_once_with("test_ds")
+        captioning_service._dataset_service.rescan_dataset.assert_called_once_with("test_ds")
 
     @pytest.mark.asyncio
     async def test_cleanup_clears_expected_changes_before_rescan(self, captioning_service):
@@ -209,7 +214,7 @@ class TestCaptioningServiceCleanupRescan:
         captioning_service._dataset_watcher.clear_expected_changes_for_job = MagicMock(
             side_effect=lambda ds, jid: call_order.append(("clear", jid))
         )
-        captioning_service._dataset_service.rescan_dataset = AsyncMock(
+        captioning_service._dataset_service.rescan_dataset = MagicMock(
             side_effect=lambda ds: call_order.append(("rescan", ds))
         )
 

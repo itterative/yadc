@@ -25,6 +25,8 @@ import toml
 
 from yadc.captioners.api import APICaptioner
 from yadc.captioners.api.async_session import AsyncSession
+
+from ..configuration import Configuration
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd import templates as cmd_templates
 from yadc.core.config import ConfigSettings, parse_config
@@ -180,6 +182,7 @@ class AsyncCaptionJob:
     def __init__(
         self,
         dataset_name: str,
+        configuration: Configuration,
         dataset_service: DatasetService,
         dataset_watcher: DatasetWatcherService,
         event_dispatcher: EventDispatcher,
@@ -189,6 +192,7 @@ class AsyncCaptionJob:
         job_id: str = "",
     ):
         self._dataset_name: str = dataset_name
+        self._configuration: Configuration = configuration
         self._dataset_service: DatasetService = dataset_service
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._event_dispatcher: EventDispatcher = event_dispatcher
@@ -223,6 +227,16 @@ class AsyncCaptionJob:
         if self._task is not None and not self._task.done():
             self._task.cancel()
 
+    async def wait(self, timeout: float | None = None) -> None:
+        """Wait for the underlying task to finish."""
+        if self._task is not None:
+            try:
+                await asyncio.wait_for(self._task, timeout=timeout)
+            except asyncio.TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                pass
+
     # -- snapshot ------------------------------------------------------------
 
     async def snapshot(self) -> JobInfo:
@@ -256,8 +270,11 @@ class AsyncCaptionJob:
                 self._error_messages.append(msg)
             await self._emit_status()
         finally:
+            # Schedule cleanup as a background task so _arun returns
+            # promptly and alive becomes False — this lets callers start
+            # a new job immediately after cancellation.
             if inspect.iscoroutinefunction(self._on_done):
-                await self._on_done()
+                asyncio.create_task(self._on_done())
             else:
                 self._on_done()
 
@@ -339,7 +356,14 @@ class AsyncCaptionJob:
             reasoning=config.reasoning.enable,
             reasoning_effort=config.reasoning.thinking_effort,
             reasoning_exclude_output=config.reasoning.exclude_from_output,
-            async_session=AsyncSession(config.api.url, headers=async_headers),
+            async_session=AsyncSession(
+                config.api.url,
+                headers=async_headers,
+                connect_timeout=self._configuration.http_timeout_connect,
+                read_timeout=self._configuration.http_timeout_read,
+                write_timeout=self._configuration.http_timeout_write,
+                pool_timeout=self._configuration.http_timeout_pool,
+            ),
         )
         await model.load_model(config.api.model_name)
 
@@ -388,17 +412,22 @@ class AsyncCaptionJob:
         conversation_overrides: dict[str, Any],
     ) -> str:
         """Caption a single image, saving the result."""
-        caption = (
-            await model.predict(
+        caption_parts: list[str] = []
+        try:
+            async for token in model.predict_stream(
                 dataset_image,
                 max_new_tokens=settings.max_tokens,
-                use_cache=True,
                 conversation_overrides=conversation_overrides,
                 prefill=settings.advanced.assistant_prefill,
                 drafts=dataset_image.read_all_drafts() or None,
                 prediction_context=PredictionContext(),
-            )
-        ).strip()
+            ):
+                caption_parts.append(token)
+        except asyncio.CancelledError:
+            self._logger.debug("Captioning of %s was cancelled", dataset_image.path)
+            raise
+
+        caption = "".join(caption_parts).strip()
 
         if not caption:
             return ""
@@ -538,11 +567,13 @@ class CaptioningService(Service):
         event_dispatcher: EventDispatcher,
         dataset_watcher: DatasetWatcherService,
         logging: LoggingFactory,
+        configuration: Configuration,
     ):
         self._dataset_service: DatasetService = dataset_service
         self._event_dispatcher: EventDispatcher = event_dispatcher
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._logger: Logger = logging.get_logger(__name__)
+        self._configuration: Configuration = configuration
 
         self._async_lock: asyncio.Lock = asyncio.Lock()
         self._async_jobs: dict[str, AsyncCaptionJob] = {}
@@ -566,6 +597,7 @@ class CaptioningService(Service):
 
             job = AsyncCaptionJob(
                 dataset_name=dataset_name,
+                configuration=self._configuration,
                 dataset_service=self._dataset_service,
                 dataset_watcher=self._dataset_watcher,
                 event_dispatcher=self._event_dispatcher,
@@ -581,13 +613,22 @@ class CaptioningService(Service):
         return await self.get_status_async(dataset_name)
 
     async def stop_job_async(self, dataset_name: str) -> bool:
-        """Request cancellation of the running async job for *dataset_name*."""
+        """Request cancellation of the running async job for *dataset_name*.
+
+        Waits for the task to actually finish (up to 30 s) so that the
+        caller can safely start a new job immediately afterwards.
+        """
         async with self._async_lock:
             job = self._async_jobs.get(dataset_name)
             if job is None or not job.alive:
                 return False
             job.request_stop()
-            return True
+
+        # Wait for the task to finish so start_job_async won't reject
+        # with "already running".  30 s is a generous ceiling for the
+        # current API request to be aborted by the cancellation.
+        await job.wait(timeout=30.0)
+        return True
 
     def is_captioning(self, dataset_name: str) -> bool:
         """Return ``True`` if a captioning job is actively running for *dataset_name*."""
@@ -622,4 +663,4 @@ class CaptioningService(Service):
         # other processes during captioning). Per-image refresh_image_index
         # calls already handled the captioning writes, so this is cheap
         # when there are no external changes.
-        await self._dataset_service.rescan_dataset(dataset_name)
+        self._dataset_service.rescan_dataset(dataset_name)

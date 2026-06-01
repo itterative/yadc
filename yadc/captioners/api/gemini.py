@@ -652,6 +652,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             raise ValueError(self._normalize_error(e))
         except ErrorNormalizationMixin.GenerationError as e:
             raise ValueError(self._normalize_error(e))
+        except (httpx.RemoteProtocolError, httpx.ReadError) as e:
+            _logger.warning("Stream connection closed unexpectedly: %s", e)
+            raise ValueError(
+                "Connection closed unexpectedly by the server. "
+                "The API may have shut down or become unreachable."
+            ) from e
 
     @override
     async def predict(self, image: DatasetImage, **kwargs: Any) -> str:
@@ -660,6 +666,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
             return self._handle_thinking(await self._generate_prediction(image, **kwargs))
         except httpx.HTTPStatusError as e:
             raise ValueError(self._normalize_error(e))
+        except (httpx.RemoteProtocolError, httpx.ReadError) as e:
+            _logger.warning("Connection closed unexpectedly: %s", e)
+            raise ValueError(
+                "Connection closed unexpectedly by the server. "
+                "The API may have shut down or become unreachable."
+            ) from e
 
     @override
     async def predict_stream(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:

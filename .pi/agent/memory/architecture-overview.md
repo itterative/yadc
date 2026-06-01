@@ -68,7 +68,7 @@ yadc/
       db_connection_factory.py # SQLite WAL, foreign keys, background init
     services/
       __init__.py           # re-exports CaptioningService, DatasetService, DatasetUploadService, DatasetUploadResult, SettingsService
-      captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher
+      captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher. Depends on `Configuration` (for HTTP timeouts). `AsyncCaptionJob` consumes `model.predict_stream()` token-by-token (CancelledError re-raises), registers expected file changes via `DatasetWatcherService.expect_file_change()` before writes, exposes `wait()` for proper job cancellation before restart, schedules `_cleanup_async` (final rescan) as a background task so `_arun` returns promptly.
       dataset_upload.py     # DatasetUploadService — file upload validation, writing, and dataset registration (extracted from DatasetService)
       datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
@@ -112,9 +112,9 @@ yadc/
     api/
       api_captioner.py  # APICaptioner — auto-detects API type, delegates to inner captioner
       base.py           # BaseAPICaptioner — async_session, cache, response_logger setup
-      async_session.py  # Async HTTP Session with retries, caching, capture_response for debug logging
-      openai.py         # OpenAI/OpenRouter/local backends (chat/completions)
-      gemini.py         # Google Gemini backend (generateContent)
+      async_session.py  # Async HTTP Session with retries, caching, capture_response for debug logging. Configurable connect/read/write/pool timeouts (defaults: 30s connect, None read, 30s write/pool) threaded through from `Configuration.http_timeout_*`.
+      openai.py         # OpenAI/OpenRouter/local backends (chat/completions). Both `predict` and `predict_stream` catch `httpx.RemoteProtocolError`/`ReadError` and surface a friendly "Connection closed unexpectedly" error.
+      gemini.py         # Google Gemini backend (generateContent). Same stream error handling as OpenAI.
       koboldcpp.py      # KoboldCpp backend
       llamacpp.py       # llama.cpp backend
       ollama.py         # Ollama backend
@@ -139,6 +139,7 @@ yadc/
 
 - **API type auto-detection**: `APICaptioner` infers the backend from URL domain and `/models` response, then delegates to the appropriate inner captioner
 - **Mixin composition**: OpenAI/Gemini captioners use `ErrorNormalizationMixin` + `ThinkingMixin`
+- **Streaming captioning**: `AsyncCaptionJob._acaption_one()` consumes `model.predict_stream()` token-by-token via `async for` (re-raises `CancelledError` to support mid-flight cancellation). `CaptioningService.stop_job_async()` calls `job.wait(timeout=30)` after `request_stop()` so a new job can be started immediately. `_cleanup_async` is scheduled as a background task so `_arun` returns promptly. `predict`/`predict_stream` on both OpenAI and Gemini backends catch `httpx.RemoteProtocolError`/`ReadError` and raise a friendly "Connection closed unexpectedly" error.
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history (TOML entries separated by `----------` markers), `.<name>.draft~` for named drafts. History is saved on every caption update (both captioning jobs and manual webui edits) and extras updates. History entries can be browsed and restored via `GET /images/<id>/history` and `PUT /images/<id>/history/<index>/restore`.
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
@@ -153,4 +154,5 @@ yadc/
 - **WebUI frontend**: See `frontend-architecture` memory for full directory structure, stores, components, and frontend-specific patterns.
 - **Config validation is strict by default, relaxable**: `parse_config(raw)` enforces CLI-level checks (api url/model_name must exist, prompt must be specified). `parse_config(raw, strict=False)` skips those checks (used by webui, which provides these at caption time). Uses Pydantic validation context to thread the flag — no fields on the model. The `ConfigV1.to_v2()` uses `model_construct()` to avoid re-running validators on already-validated data.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.
+- **Stream-level error normalization**: OpenAI and Gemini captioners catch `httpx.RemoteProtocolError` / `httpx.ReadError` in both `predict` and `predict_stream`, log a warning, and raise a friendly `ValueError("Connection closed unexpectedly by the server. The API may have shut down or become unreachable.")` so the webui can surface a useful toast.
 - **WebUI CLI**: `yadc webui serve` — defaults to host `127.0.0.1`, port `7860`. Run in tmux for background dev: `tmux new-session -d -s yadc-webui "uv run yadc webui serve --host 127.0.0.1"`

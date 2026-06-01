@@ -43,6 +43,12 @@ class Configuration:
     # Upload
     max_upload_size_bytes: int = 524_288_000  # ~500 MB
 
+    # HTTP client timeouts
+    http_timeout_connect: float = 30.0
+    http_timeout_read: float | None = None
+    http_timeout_write: float = 30.0
+    http_timeout_pool: float = 30.0
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))
