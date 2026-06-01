@@ -50,7 +50,7 @@ Three mechanisms track "expected" changes to suppress self-originated events:
 ### 1. `_expected_files` — File-level (webui edits + captioning)
 
 - **Set by**: `expect_file_change(dataset_name, file_path, *, source=SELF_JOB_ID)` — called **before** writing/deleting a file
-- **Currently used by**: `DatasetService` (webui caption saves, extras updates, history restores, image deletes) and `AsyncCaptionJob._acaption_one()` (captioning writes)
+- **Currently used by**: `DatasetService` (webui caption saves, extras updates, history restores, image deletes), `AsyncCaptionJob._acaption_one()` (captioning writes), and `DatasetUploadService` (create + append + commit, which call `expect_file_change` before each file write/move into the live managed dirs). The upload service accepts the same `?source=` query parameter as the other endpoints and threads it through the create / append / commit flow so the originating tab suppresses its own `DatasetChangedEvent` instead of seeing a "files have changed" refresh banner.
 - **Storage**: `dict[str, deque[ExpectedFileEntry]]` — bounded deque per dataset (max 256 entries). Each `ExpectedFileEntry` is a NamedTuple with `path`, `registered_at`, and `source`.
 - **`source`**: A client identifier that flows through to the dispatched `DatasetChangedEvent.job_id`. Frontend passes `"ui:<tab-uuid>"`; backend-only callers use the default `SELF_JOB_ID` ("self").
 - **Matching**: In `_on_fs_change`, each event checks if the file path matches a registered entry **within TTL** (default 1.0s). Entries are NOT consumed on match — a single write can produce multiple inotify events.
@@ -145,7 +145,7 @@ In `events.ts`, the `dataset_changed` SSE listener:
 3. If `job_id === "self"` → suppress (legacy, older backend versions)
 4. Otherwise → add to `_pendingDatasetChanges` → show refresh toast
 
-Each frontend tab generates a unique `clientId` on module load (stored in `events.ts`, format `"ui:<random>"`). This ID is sent as a `?source=` query parameter with API requests that cause expected file changes (caption save, extras update, history restore, delete). The backend tags the `DatasetChangedEvent` with this source, allowing only the originating tab to suppress it.
+Each frontend tab generates a unique `clientId` on module load (stored in `events.ts`, format `"ui:<random>"`). This ID is sent as a `?source=` query parameter with API requests that cause expected file changes (caption save, extras update, history restore, delete, upload create / append / commit). The backend tags the `DatasetChangedEvent` with this source, allowing only the originating tab to suppress it.
 
 ## Files
 

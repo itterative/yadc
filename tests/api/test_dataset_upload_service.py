@@ -10,6 +10,7 @@ import pytest
 import toml
 
 from yadc.api.configuration import Configuration
+from yadc.api.modules.dataset_watcher import DatasetWatcherService
 from yadc.api.services.dataset_upload import DatasetUploadResult, DatasetUploadService, UploadProgressEvent
 from yadc.api.services.datasets import DatasetInfo, DatasetService
 from yadc.api.services.managed_datasets import ManagedDatasetsService
@@ -96,9 +97,15 @@ def mock_logging():
 
 
 @pytest.fixture
-def upload_service(mock_datasets, configuration, mock_logging):
+def mock_watcher():
+    return MagicMock(spec=DatasetWatcherService)
+
+
+@pytest.fixture
+def upload_service(mock_datasets, mock_watcher, configuration, mock_logging):
     return DatasetUploadService(
         datasets=mock_datasets,
+        watcher=mock_watcher,
         configuration=configuration,
         logging=mock_logging,
     )
@@ -182,9 +189,10 @@ def mock_datasets_for_append(managed_dataset):
 
 
 @pytest.fixture
-def append_service(mock_datasets_for_append, configuration, mock_logging):
+def append_service(mock_datasets_for_append, mock_watcher, configuration, mock_logging):
     return DatasetUploadService(
         datasets=mock_datasets_for_append,
+        watcher=mock_watcher,
         configuration=configuration,
         logging=mock_logging,
     )
@@ -528,6 +536,108 @@ def test_returns_dataset_upload_result(upload_service):
 def test_upload_passes_source_to_register(upload_service):
     run(_collect(upload_service, "ds", [_file("cat.jpg", _make_bytes())]))
     assert upload_service._datasets.register.call_args.kwargs["source"] == "upload"
+
+
+# --- Source propagation (clientId-based event suppression) ---
+
+
+def test_create_upload_registers_expected_file_changes_with_source(upload_service):
+    """A non-empty source is forwarded to watcher.expect_file_change for each file."""
+    run(
+        _collect(
+            upload_service,
+            "ds",
+            [
+                _file("cat.jpg", _make_bytes()),
+                _file("train/dog.jpg", _make_bytes()),
+            ],
+            source="ui:tab-1",
+        )
+    )
+    # Two files => two expect_file_change calls
+    assert upload_service._watcher.expect_file_change.call_count == 2
+    for call in upload_service._watcher.expect_file_change.call_args_list:
+        # Each call tags the dataset name and the originating source
+        assert call.args[0] == "ds"
+        assert call.kwargs["source"] == "ui:tab-1"
+
+
+def test_create_upload_registers_no_expected_file_changes_without_source(upload_service):
+    """With an empty source we skip expect_file_change to avoid suppressing
+    notifications for unrelated callers (legacy behavior)."""
+    run(_collect(upload_service, "ds", [_file("cat.jpg", _make_bytes())]))
+    upload_service._watcher.expect_file_change.assert_not_called()
+
+
+def test_append_registers_expected_file_changes_with_source(append_service, managed_dataset):
+    """Append stages files and registers them with the source."""
+    run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("new.jpg", _make_bytes(b"new image"))],
+            source="ui:tab-2",
+        )
+    )
+    # At least one expect_file_change for the staging write
+    assert upload_service_watcher_calls(append_service) >= 1
+    for call in append_service._watcher.expect_file_change.call_args_list:
+        assert call.kwargs["source"] == "ui:tab-2"
+
+
+def test_commit_passes_source_to_rescan(append_service, managed_dataset):
+    """After a no-conflict auto-commit, the rescan is tagged with the source."""
+    run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("new.jpg", _make_bytes(b"new image"))],
+            source="ui:tab-3",
+        )
+    )
+    append_service._datasets.rescan_dataset.assert_called_with("managed", source="ui:tab-3")
+
+
+def test_commit_explicit_passes_source_to_rescan(append_service, managed_dataset):
+    """An explicit commit_staged_upload after conflict resolution tags rescan with source."""
+    events = run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("existing.jpg", _make_bytes(b"new content"))],
+            source="ui:tab-4",
+        )
+    )
+    staging_id, _ = _conflicts_from_events(events)
+
+    append_service._datasets.rescan_dataset.reset_mock()
+    run(
+        _collect_commit(
+            append_service,
+            "managed",
+            staging_id,
+            {"existing.jpg": "overwrite"},
+            source="ui:tab-4",
+        )
+    )
+    append_service._datasets.rescan_dataset.assert_called_with("managed", source="ui:tab-4")
+
+
+def test_commit_no_source_omits_rescan_source(append_service, managed_dataset):
+    """An empty source flows through as the default empty rescan source."""
+    run(
+        _collect_append(
+            append_service,
+            "managed",
+            [_file("new.jpg", _make_bytes(b"new image"))],
+        )
+    )
+    append_service._datasets.rescan_dataset.assert_called_with("managed", source="")
+
+
+def upload_service_watcher_calls(svc: DatasetUploadService) -> int:
+    """Return number of expect_file_change calls on the service's watcher mock."""
+    return svc._watcher.expect_file_change.call_count
 
 
 # --- Windows-style paths ---

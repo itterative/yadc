@@ -123,6 +123,12 @@ def api_datasets(
         if datasets.get_dataset(name) is not None:
             return jsonify_error(f"Dataset '{name}' already exists", status=409, code=ErrorCode.CONFLICT)
 
+        # ``source`` is the originating client identifier (``"ui:<uuid>"`` from
+        # a frontend tab). It is propagated to the upload service so the
+        # resulting DatasetChangedEvent can be suppressed by the originating
+        # tab.
+        source = request.args.get("source", "")
+
         # Read all file contents into BytesIO buffers before streaming the response.
         # Quart closes the SpooledTemporaryFile handles after the multipart body is
         # consumed, so accessing .stream during the async generator would fail with
@@ -131,7 +137,7 @@ def api_datasets(
 
         async def _stream_upload():
             try:
-                async for event in dataset_upload.create_dataset_from_upload(name, file_tuples):
+                async for event in dataset_upload.create_dataset_from_upload(name, file_tuples, source=source):
                     yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
                     if event.phase == "complete":
                         _snapshot_initial(config_history, datasets, name)
@@ -157,6 +163,9 @@ def api_datasets(
         if captioning.is_captioning(name):
             return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
 
+        # See upload_dataset() for the rationale behind ``source``.
+        source = request.args.get("source", "")
+
         files = await request.files
         uploaded = files.getlist("files")
         if not uploaded:
@@ -173,7 +182,7 @@ def api_datasets(
 
         async def _stream_append():
             try:
-                async for event in dataset_upload.append_dataset_from_upload(name, file_tuples):
+                async for event in dataset_upload.append_dataset_from_upload(name, file_tuples, source=source):
                     yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
             except Exception as e:
                 yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
@@ -197,6 +206,9 @@ def api_datasets(
         if captioning.is_captioning(name):
             return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
 
+        # See upload_dataset() for the rationale behind ``source``.
+        source = request.args.get("source", "")
+
         body = await request.get_json(silent=True) or {}
         staging_id = body.get("staging_id", "")
         resolutions = body.get("resolutions", {})
@@ -206,7 +218,7 @@ def api_datasets(
 
         async def _stream_commit():
             try:
-                async for event in dataset_upload.commit_staged_upload(name, staging_id, resolutions):
+                async for event in dataset_upload.commit_staged_upload(name, staging_id, resolutions, source=source):
                     yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
             except Exception as e:
                 yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"

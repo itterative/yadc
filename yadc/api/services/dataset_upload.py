@@ -19,7 +19,7 @@ from typing import Any, BinaryIO
 import tomlkit
 
 from yadc.api.configuration import Configuration
-from yadc.api.modules.dataset_watcher import SIDECAR_EXTENSIONS
+from yadc.api.modules.dataset_watcher import SIDECAR_EXTENSIONS, DatasetWatcherService
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.modules.service import Service
@@ -71,11 +71,13 @@ class DatasetUploadService(Service):
     def __init__(
         self,
         datasets: DatasetService,
+        watcher: DatasetWatcherService,
         configuration: Configuration,
         logging: LoggingFactory,
         job_scheduler: JobScheduler | None = None,
     ):
         self._datasets: DatasetService = datasets
+        self._watcher: DatasetWatcherService = watcher
         self._configuration: Configuration = configuration
         self._logger: Logger = logging.get_logger(__name__)
         if job_scheduler is not None:
@@ -99,7 +101,13 @@ class DatasetUploadService(Service):
         """Thin wrapper around :func:`validate_toml_stream` for test patching."""
         return validate_toml_stream(stream)
 
-    async def create_dataset_from_upload(self, name: str, files: list[tuple[str, BinaryIO]]) -> AsyncGenerator[UploadProgressEvent, None]:
+    async def create_dataset_from_upload(
+        self,
+        name: str,
+        files: list[tuple[str, BinaryIO]],
+        *,
+        source: str = "",
+    ) -> AsyncGenerator[UploadProgressEvent, None]:
         """Create a new dataset from uploaded image files.
 
         Root files (no directory component) are written flat to
@@ -114,6 +122,13 @@ class DatasetUploadService(Service):
         - Images are verified with PIL.
         - TOML sidecars are parsed to ensure valid syntax.
         - Orphan sidecars (no matching image with the same stem) are skipped.
+
+        *source* is the originating client identifier (typically a frontend
+        tab's ``"ui:<uuid>"``). It is registered with the dataset watcher
+        before each file write so the resulting ``DatasetChangedEvent`` is
+        tagged with the same source and can be suppressed by the originating
+        tab. Defaults to an empty string (no client association) for
+        callers that don't supply one.
         """
         if not name or not name.strip():
             raise ValueError("Dataset name is required")
@@ -209,6 +224,12 @@ class DatasetUploadService(Service):
                 else:
                     folder_names.add(pure.parts[0])
 
+                # Register the upcoming write so the watcher tags the
+                # resulting DatasetChangedEvent with our source (if any)
+                # and the originating frontend tab can suppress it.
+                if source:
+                    self._watcher.expect_file_change(name, str(dest_path), source=source)
+
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(dest_path, "wb") as f:
                     chunk = stream.read(8192)
@@ -242,7 +263,13 @@ class DatasetUploadService(Service):
             shutil.rmtree(base_dir, ignore_errors=True)
             yield UploadProgressEvent(phase="error", message=str(e))
 
-    async def append_dataset_from_upload(self, name: str, files: list[tuple[str, BinaryIO]]) -> AsyncGenerator[UploadProgressEvent, None]:
+    async def append_dataset_from_upload(
+        self,
+        name: str,
+        files: list[tuple[str, BinaryIO]],
+        *,
+        source: str = "",
+    ) -> AsyncGenerator[UploadProgressEvent, None]:
         """Stage uploaded files for appending to an existing managed dataset.
 
         Files are written to a staging directory first
@@ -253,6 +280,12 @@ class DatasetUploadService(Service):
         call :meth:`commit_staged_upload` to resolve conflicts and
         complete the append. If no conflicts exist, the upload is
         committed automatically.
+
+        *source* is the originating client identifier (typically a frontend
+        tab's ``"ui:<uuid>"``). It is registered with the watcher before
+        each staging write and is passed through to
+        :meth:`commit_staged_upload` for the eventual move from staging
+        to the live dataset directories.
         """
         info = self._datasets.get_dataset(name)
         if info is None:
@@ -358,6 +391,15 @@ class DatasetUploadService(Service):
         # --- Phase 3: write files to staging ---
         total_writing = len(final_files)
         for i, (filename, stream, pure, dest_path) in enumerate(final_files):
+            # Register the staging write so the watcher treats subsequent
+            # inotify events on this path as expected (and tags them with
+            # our source). Note: staging files are inside .staging/ and
+            # are not under the dataset's watched images/folders dirs, so
+            # this mainly matters when they are later moved into place by
+            # commit_staged_upload (which re-registers with the same source).
+            if source:
+                self._watcher.expect_file_change(name, str(dest_path), source=source)
+
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             with open(dest_path, "wb") as f:
                 chunk = stream.read(8192)
@@ -384,8 +426,9 @@ class DatasetUploadService(Service):
             )
             return
 
-        # No conflicts — commit immediately
-        async for event in self.commit_staged_upload(name, staging_id, {}, warnings):
+        # No conflicts — commit immediately. Pass the source through so
+        # the resulting DatasetChangedEvent is tagged for the originating tab.
+        async for event in self.commit_staged_upload(name, staging_id, {}, warnings, source=source):
             yield event
 
     async def commit_staged_upload(
@@ -394,6 +437,8 @@ class DatasetUploadService(Service):
         staging_id: str,
         resolutions: dict[str, str],
         warnings: list[str] | None = None,
+        *,
+        source: str = "",
     ) -> AsyncGenerator[UploadProgressEvent, None]:
         """Commit a staged upload to the live dataset directories.
 
@@ -404,6 +449,12 @@ class DatasetUploadService(Service):
         its filename is the resolution key; for sidecar-only groups,
         the first sidecar's filename is the key. The action applies to
         all files in the group (image + all sidecars).
+
+        *source* is the originating client identifier (typically a frontend
+        tab's ``"ui:<uuid>"``). It is registered with the watcher before
+        each move from staging into the live directories and is passed
+        to the final ``rescan_dataset`` call so the resulting
+        ``DatasetChangedEvent`` can be suppressed by the originating tab.
         """
         info = self._datasets.get_dataset(name)
         if info is None or not info.config_path:
@@ -462,6 +513,11 @@ class DatasetUploadService(Service):
                 if resolution == "keep_both":
                     dest_path = unique_path(dest_path)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
+                # Register the upcoming move so the watcher tags the
+                # resulting DatasetChangedEvent with our source (if any)
+                # and the originating frontend tab can suppress it.
+                if source:
+                    self._watcher.expect_file_change(name, str(dest_path), source=source)
                 shutil.move(str(src_path), str(dest_path))
 
             # Move sidecars
@@ -476,6 +532,8 @@ class DatasetUploadService(Service):
                 if resolution == "keep_both":
                     dest_path = unique_path(dest_path)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
+                if source:
+                    self._watcher.expect_file_change(name, str(dest_path), source=source)
                 shutil.move(str(src_path), str(dest_path))
 
         # Update config TOML with new folder entries
@@ -511,8 +569,11 @@ class DatasetUploadService(Service):
         # Clean up staging
         shutil.rmtree(staging_base, ignore_errors=True)
 
-        # Rescan
-        self._datasets.rescan_dataset(name)
+        # Rescan. Pass the source through so the resulting
+        # DatasetChangedEvent (if anything changed) is tagged for the
+        # originating tab. Other clients still get a refresh notification
+        # because the rescan is a real change to the dataset.
+        self._datasets.rescan_dataset(name, source=source)
         updated_info = self._datasets.get_dataset(name)
 
         yield UploadProgressEvent(

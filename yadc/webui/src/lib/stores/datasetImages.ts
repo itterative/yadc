@@ -137,7 +137,7 @@ export async function uploadDataset(
 
     return new Promise<DatasetUploadResult>((resolve, reject) => {
         upload({
-            url: '/api/datasets/upload',
+            url: `/api/datasets/upload?source=${encodeURIComponent(clientId)}`,
             body: formData,
             onProgress,
             signal,
@@ -197,7 +197,7 @@ export async function appendUploadDataset(
 
     return new Promise<DatasetUploadResult>((resolve, reject) => {
         upload({
-            url: `/api/datasets/${encodeURIComponent(name)}/upload`,
+            url: `/api/datasets/${encodeURIComponent(name)}/upload?source=${encodeURIComponent(clientId)}`,
             body: formData,
             onProgress,
             signal,
@@ -253,7 +253,7 @@ export async function commitStagingUpload(
 
     return new Promise<DatasetUploadResult>((resolve, reject) => {
         upload({
-            url: `/api/datasets/${encodeURIComponent(name)}/staging/commit`,
+            url: `/api/datasets/${encodeURIComponent(name)}/staging/commit?source=${encodeURIComponent(clientId)}`,
             body,
             headers: { 'Content-Type': 'application/json' },
             signal,
