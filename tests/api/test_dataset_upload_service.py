@@ -11,7 +11,9 @@ import toml
 
 from yadc.api.configuration import Configuration
 from yadc.api.services.dataset_upload import DatasetUploadResult, DatasetUploadService, UploadProgressEvent
-from yadc.api.services.datasets import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX, DatasetInfo, DatasetService
+from yadc.api.services.datasets import DatasetInfo, DatasetService
+from yadc.api.services.managed_datasets import ManagedDatasetsService
+from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
 
 # Path to the real test image shipped with the test suite.
 TEST_IMAGE_PATH = Path(__file__).parent / "test_data" / "valid_image.png"
@@ -1000,12 +1002,22 @@ def dataset_service_for_delete(managed_dataset):
     return svc
 
 
-def test_delete_image_and_sidecars(managed_dataset, dataset_service_for_delete):
+@pytest.fixture
+def managed_datasets_service(dataset_service_for_delete, mock_logging):
+    """Create a real ManagedDatasetsService wired to the test's DatasetService."""
+    svc = ManagedDatasetsService.__new__(ManagedDatasetsService)
+    svc._datasets = dataset_service_for_delete
+    svc._watcher = dataset_service_for_delete._watcher
+    svc._logger = mock_logging.get_logger()
+    return svc
+
+
+def test_delete_image_and_sidecars(managed_dataset, managed_datasets_service):
     """Deleting an image also removes its sidecars."""
     # Add a sidecar
     (managed_dataset["images_dir"] / "existing.txt").write_text("a caption")
 
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/existing.jpg"])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/existing.jpg"])
     assert f"{MANAGED_IMAGES_PREFIX}/existing.jpg" in deleted
     assert len(warnings) == 0
 
@@ -1016,7 +1028,7 @@ def test_delete_image_and_sidecars(managed_dataset, dataset_service_for_delete):
     assert not (managed_dataset["images_dir"] / "existing.toml").exists()
 
 
-def test_delete_folder(managed_dataset, dataset_service_for_delete):
+def test_delete_folder(managed_dataset, managed_datasets_service):
     """Deleting a folder removes the entire directory and its config entry."""
     # Pre-create a folder with files and add it to config
     train_dir = managed_dataset["folders_dir"] / "train"
@@ -1027,7 +1039,7 @@ def test_delete_folder(managed_dataset, dataset_service_for_delete):
     config_path = managed_dataset["config_path"]
     config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]}))
 
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/train"])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/train"])
     assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
     assert len(warnings) == 0
 
@@ -1040,23 +1052,23 @@ def test_delete_folder(managed_dataset, dataset_service_for_delete):
     assert MANAGED_IMAGES_PREFIX in paths
 
 
-def test_delete_missing_path_warns(managed_dataset, dataset_service_for_delete):
+def test_delete_missing_path_warns(managed_dataset, managed_datasets_service):
     """Deleting a non-existent path returns a warning."""
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/nonexistent.jpg"])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_IMAGES_PREFIX}/nonexistent.jpg"])
     assert len(deleted) == 0
     assert any("nonexistent.jpg" in w for w in warnings)
 
 
-def test_delete_non_managed_dataset_rejects(managed_dataset, dataset_service_for_delete):
+def test_delete_non_managed_dataset_rejects(managed_dataset, managed_datasets_service):
     """Delete is rejected for non-managed datasets."""
     info = DatasetInfo(name="external", source="import", config_path="/tmp/fake/config.toml")
-    dataset_service_for_delete.get_dataset.return_value = info
+    managed_datasets_service._datasets.get_dataset.return_value = info
 
     with pytest.raises(ValueError, match="not a managed dataset"):
-        dataset_service_for_delete.delete_items("external", [f"{MANAGED_IMAGES_PREFIX}/foo.jpg"])
+        managed_datasets_service.delete_items("external", [f"{MANAGED_IMAGES_PREFIX}/foo.jpg"])
 
 
-def test_delete_mixed_batch(managed_dataset, dataset_service_for_delete):
+def test_delete_mixed_batch(managed_dataset, managed_datasets_service):
     """A batch can delete both files and folders."""
     # Setup
     (managed_dataset["images_dir"] / "extra.jpg").write_bytes(b"extra")
@@ -1064,7 +1076,7 @@ def test_delete_mixed_batch(managed_dataset, dataset_service_for_delete):
     train_dir.mkdir()
     (train_dir / "img.jpg").write_bytes(b"train")
 
-    deleted, warnings = dataset_service_for_delete.delete_items(
+    deleted, warnings = managed_datasets_service.delete_items(
         "managed", [f"{MANAGED_IMAGES_PREFIX}/extra.jpg", f"{MANAGED_FOLDERS_PREFIX}/train", f"{MANAGED_IMAGES_PREFIX}/missing.jpg"]
     )
 
@@ -1077,14 +1089,14 @@ def test_delete_mixed_batch(managed_dataset, dataset_service_for_delete):
     assert not train_dir.exists()
 
 
-def test_delete_root_images_folder_rejected(managed_dataset, dataset_service_for_delete):
+def test_delete_root_images_folder_rejected(managed_dataset, managed_datasets_service):
     """Deleting the root images folder is explicitly rejected."""
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [MANAGED_IMAGES_PREFIX])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [MANAGED_IMAGES_PREFIX])
     assert len(deleted) == 0
     assert any("Cannot delete root images folder" in w for w in warnings)
 
 
-def test_delete_subfolder_named_images(managed_dataset, dataset_service_for_delete):
+def test_delete_subfolder_named_images(managed_dataset, managed_datasets_service):
     """A subfolder literally named 'images' can be deleted via prefixed path."""
     images_subdir = managed_dataset["folders_dir"] / "images"
     images_subdir.mkdir()
@@ -1093,7 +1105,7 @@ def test_delete_subfolder_named_images(managed_dataset, dataset_service_for_dele
     config_path = managed_dataset["config_path"]
     config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]}))
 
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/images"])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/images"])
     assert f"{MANAGED_FOLDERS_PREFIX}/images" in deleted
     assert len(warnings) == 0
     assert not images_subdir.exists()
@@ -1107,7 +1119,7 @@ def test_delete_subfolder_named_images(managed_dataset, dataset_service_for_dele
 # --- Folder listing ---
 
 
-def test_list_folders(managed_dataset, dataset_service_for_delete):
+def test_list_folders(managed_dataset, managed_datasets_service):
     """list_folders returns root images and subfolders with correct counts."""
     # Setup: root image, subfolder with image
     (managed_dataset["images_dir"] / "root.jpg").write_bytes(b"root")
@@ -1115,7 +1127,7 @@ def test_list_folders(managed_dataset, dataset_service_for_delete):
     sub_dir.mkdir()
     (sub_dir / "sub.jpg").write_bytes(b"sub")
 
-    folders = dataset_service_for_delete.list_folders("managed")
+    folders = managed_datasets_service.list_folders("managed")
     assert len(folders) == 2
 
     # Root entry (fixture already has existing.jpg)
@@ -1133,17 +1145,17 @@ def test_list_folders(managed_dataset, dataset_service_for_delete):
     assert sub["image_count"] == 1
 
 
-def test_list_folders_paths_match_delete_items(managed_dataset, dataset_service_for_delete):
+def test_list_folders_paths_match_delete_items(managed_dataset, managed_datasets_service):
     """Paths returned by list_folders work correctly with delete_items."""
     sub_dir = managed_dataset["folders_dir"] / "train"
     sub_dir.mkdir()
     (sub_dir / "sub.jpg").write_bytes(b"sub")
 
-    folders = dataset_service_for_delete.list_folders("managed")
+    folders = managed_datasets_service.list_folders("managed")
     train_folder = next(f for f in folders if f["name"] == "train")
 
     # Delete using the path from list_folders
-    deleted, warnings = dataset_service_for_delete.delete_items("managed", [train_folder["path"]])
+    deleted, warnings = managed_datasets_service.delete_items("managed", [train_folder["path"]])
     assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
     assert len(warnings) == 0
     assert not sub_dir.exists()

@@ -25,8 +25,6 @@ import toml
 
 from yadc.captioners.api import APICaptioner
 from yadc.captioners.api.async_session import AsyncSession
-
-from ..configuration import Configuration
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd import templates as cmd_templates
 from yadc.core.config import ConfigSettings, parse_config
@@ -34,6 +32,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.prediction import PredictionContext
 
+from ..configuration import Configuration
 from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent, ImageCaptionStartedEvent
 from ..modules.dataset_watcher import DatasetWatcherService
 from ..modules.event_dispatcher import EventDispatcher

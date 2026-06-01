@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, and managed dataset lifecycle.
 status: In Progress
-last_history: 27
+last_history: 30
 category: meta
 ---
 

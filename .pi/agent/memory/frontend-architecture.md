@@ -72,6 +72,15 @@ yadc/webui/
         datasets/                       # Dataset creation/management components
           UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
           CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
+          DatasetConfig.svelte         # Co-located config editor tab. CompactPillTabs toggle between structured form (PATCH) and raw TOML editor (PUT). Uses CaptionOptionsFields, KeyValueEditor for dataset entries.
+          DatasetConfigForm.svelte     # Structured form view of the config — fields are bound to a `configState` Svelte 5 `$state` rune exported from `datasetConfig/state.svelte.ts`.
+          DatasetConfigAdvanced.svelte # Raw TOML editor view of the config (one tab of the CompactPillTabs in DatasetConfig). Binds to `configState.rawContent`; shows a warning when the structured form has unsaved changes.
+          ConfigHistory.svelte         # Config revision history browser (list, view, restore entries). Reads from `ConfigHistoryRepository` on the backend.
+          DatasetManageTab.svelte      # "Manage" tab inside the dataset creation dialog — list managed (upload-sourced) datasets with folder/image counts and delete actions.
+          DatasetUploadPanel.svelte    # Shared upload panel (create + append modes). When `mode="append"`, accepts an `initialFiles` prop (consumed once via `untrack()`) to pre-populate the file list from a drop event on the page.
+          datasetConfig/              # Helpers split out from DatasetConfig.svelte during the structural refactor
+            patch.ts                  # Pure TOML patch helpers (e.g. `assemblePatchFromForm`) — no Svelte/DOM dependencies, testable in isolation.
+            state.svelte.ts           # Svelte 5 `$state` rune module holding the form / raw content state shared between `DatasetConfigForm` and `DatasetConfigAdvanced`. Exposes `simplifiedDirty` flag.
         dialogs/                        # Dialog-shaped components
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
           SettingsDialog.svelte       # App settings dialog (tab container)

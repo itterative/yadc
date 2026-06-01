@@ -2,10 +2,13 @@
 
 Validates, writes, and indexes uploaded image files (plus sidecars) into
 a new dataset under ``STATE_PATH/datasets/<name>/``.
+
+This module is the public orchestration layer. Pure validation helpers
+live in :mod:`dataset_upload_validation`, and staging/conflict helpers
+live in :mod:`dataset_upload_staging`.
 """
 
 import shutil
-import time
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -14,14 +17,26 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
 import tomlkit
-from PIL import Image
 
 from yadc.api.configuration import Configuration
 from yadc.api.modules.dataset_watcher import SIDECAR_EXTENSIONS
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.modules.service import Service
+from yadc.api.services.dataset_upload_staging import (
+    build_staged_groups,
+    cleanup_staging_dirs,
+    detect_conflicts,
+    filter_orphan_sidecars,
+    find_live_image_stems,
+)
+from yadc.api.services.dataset_upload_validation import (
+    unique_path,
+    validate_image_stream,
+    validate_toml_stream,
+)
 from yadc.api.services.datasets import DATASETS_DIR, IMAGE_EXTENSIONS, DatasetService, _dataset_config_path
+from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
 
 # Extensions allowed for uploaded files (images + sidecars).
 UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
@@ -50,21 +65,6 @@ class UploadProgressEvent:
     conflicts: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _unique_path(path: Path) -> Path:
-    """Return a unique path by appending a number before the extension."""
-    if not path.exists():
-        return path
-    stem = path.stem
-    suffix = path.suffix
-    parent = path.parent
-    counter = 1
-    while True:
-        new_path = parent / f"{stem}_{counter}{suffix}"
-        if not new_path.exists():
-            return new_path
-        counter += 1
-
-
 class DatasetUploadService(Service):
     """Handles validation, writing, and registration of uploaded dataset files."""
 
@@ -81,59 +81,23 @@ class DatasetUploadService(Service):
         if job_scheduler is not None:
             job_scheduler.new_scheduled_job(3600, self._cleanup_staging_dirs)
 
+    # --- Thin wrappers around module-level helpers (kept for test compat) ---
+
     def _cleanup_staging_dirs(self) -> None:
-        """Remove stale staging directories older than 24 hours."""
-        now = time.time()
-        max_age = 24 * 3600  # 24 hours
-        if not DATASETS_DIR.exists():
-            return
-        for base_dir in DATASETS_DIR.iterdir():
-            if not base_dir.is_dir():
-                continue
-            staging_dir = base_dir / ".staging"
-            if not staging_dir.exists():
-                continue
-            for subdir in staging_dir.iterdir():
-                try:
-                    mtime = subdir.stat().st_mtime
-                    if now - mtime > max_age:
-                        shutil.rmtree(subdir, ignore_errors=True)
-                        self._logger.debug("Cleaned up stale staging dir: %s", subdir)
-                except Exception:
-                    pass
-            # Remove empty .staging dirs
-            try:
-                if not any(staging_dir.iterdir()):
-                    staging_dir.rmdir()
-            except Exception:
-                pass
+        """Remove stale staging directories older than 24 hours.
+
+        Thin wrapper around :func:`dataset_upload_staging.cleanup_staging_dirs`
+        — kept on the service for direct test invocation.
+        """
+        cleanup_staging_dirs(DATASETS_DIR, self._logger)
 
     def _validate_image(self, stream: BinaryIO, filename: str) -> bool:
-        """Validate an image stream with PIL. Returns True if valid."""
-        try:
-            with Image.open(stream) as img:
-                img.verify()
-        except Exception:
-            # verify() is overly strict with some valid images;
-            # fall back to the slower but more reliable load() check.
-            stream.seek(0)
-            try:
-                with Image.open(stream) as img:
-                    img.load()
-            except Exception as e:
-                self._logger.debug("Image validation failed: %s — %s", filename, e)
-                return False
-        return True
+        """Thin wrapper around :func:`validate_image_stream` for test patching."""
+        return validate_image_stream(stream, filename, self._logger)
 
     def _validate_toml(self, stream: BinaryIO, filename: str) -> bool:
-        """Validate a TOML stream. Returns True if valid."""
-        content = stream.read()
-        stream.seek(0)
-        try:
-            tomlkit.loads(content.decode("utf-8"))
-            return True
-        except Exception:
-            return False
+        """Thin wrapper around :func:`validate_toml_stream` for test patching."""
+        return validate_toml_stream(stream)
 
     async def create_dataset_from_upload(self, name: str, files: list[tuple[str, BinaryIO]]) -> AsyncGenerator[UploadProgressEvent, None]:
         """Create a new dataset from uploaded image files.
@@ -160,8 +124,8 @@ class DatasetUploadService(Service):
             raise ValueError("At least one file is required")
 
         base_dir = DATASETS_DIR / name
-        images_dir = base_dir / "images"
-        folders_dir = base_dir / "folders"
+        images_dir = base_dir / MANAGED_IMAGES_PREFIX
+        folders_dir = base_dir / MANAGED_FOLDERS_PREFIX
         images_dir.mkdir(parents=True, exist_ok=True)
         folders_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,9 +137,6 @@ class DatasetUploadService(Service):
         image_stems: set[tuple[str, str]] = set()
         # Files to write after validation: (filename, stream, pure, dest_path)
         files_to_write: list[tuple[str, BinaryIO, PurePosixPath, Path]] = []
-
-        total_written = 0
-        max_size = self._configuration.max_upload_size_bytes
 
         # --- Phase 1: validate and filter ---
         total_files = len(files)
@@ -226,32 +187,8 @@ class DatasetUploadService(Service):
             files_to_write.append((filename, stream, pure, dest_path))
             yield UploadProgressEvent(phase="validating", file=filename, index=i + 1, total=total_files)
 
-        # --- Phase 2: orphan sidecar check ---
-        final_files: list[tuple[str, BinaryIO, PurePosixPath, Path]] = []
-        for filename, stream, pure, dest_path in files_to_write:
-            ext = pure.suffix.lower()
-            if ext in IMAGE_EXTENSIONS:
-                final_files.append((filename, stream, pure, dest_path))
-                continue
-
-            dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
-
-            if ext == ".draft~":
-                # Draft format: IMAGE_STEM.DRAFT_NAME.draft~
-                # Try each known image stem as a prefix.
-                matched = False
-                for known_dir, known_stem in image_stems:
-                    if known_dir == dir_key and pure.name.startswith(known_stem + ".") and pure.name.endswith(".draft~"):
-                        matched = True
-                        break
-                if not matched:
-                    warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                    continue
-            elif (dir_key, pure.stem) not in image_stems:
-                warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                continue
-
-            final_files.append((filename, stream, pure, dest_path))
+        # --- Phase 2: orphan sidecar check (shared with append) ---
+        final_files = filter_orphan_sidecars(files_to_write, image_stems, warnings)
 
         if not final_files:
             shutil.rmtree(base_dir, ignore_errors=True)
@@ -263,6 +200,8 @@ class DatasetUploadService(Service):
         folder_names: set[str] = set()
 
         total_writing = len(final_files)
+        total_written = 0
+        max_size = self._configuration.max_upload_size_bytes
         try:
             for i, (filename, stream, pure, dest_path) in enumerate(final_files):
                 if len(pure.parts) == 1:
@@ -284,9 +223,9 @@ class DatasetUploadService(Service):
 
             dataset_entries: list[dict[str, str]] = []
             if has_root_files:
-                dataset_entries.append({"path": "images"})
+                dataset_entries.append({"path": MANAGED_IMAGES_PREFIX})
             for folder_name in sorted(folder_names):
-                dataset_entries.append({"path": f"folders/{folder_name}"})
+                dataset_entries.append({"path": f"{MANAGED_FOLDERS_PREFIX}/{folder_name}"})
 
             # Managed datasets use relative paths (e.g. "images", "folders/train")
             # for portability. Paths are resolved against config.toml's directory
@@ -329,12 +268,12 @@ class DatasetUploadService(Service):
         staging_id = str(uuid.uuid4())
         base_dir = Path(info.config_path).parent
         base_dir.mkdir(parents=True, exist_ok=True)
-        images_dir = base_dir / "images"
-        folders_dir = base_dir / "folders"
+        images_dir = base_dir / MANAGED_IMAGES_PREFIX
+        folders_dir = base_dir / MANAGED_FOLDERS_PREFIX
         staging_base = base_dir / ".staging" / staging_id
         staging_base.mkdir(parents=True, exist_ok=True)
-        staging_images = staging_base / "images"
-        staging_folders = staging_base / "folders"
+        staging_images = staging_base / MANAGED_IMAGES_PREFIX
+        staging_folders = staging_base / MANAGED_FOLDERS_PREFIX
         staging_images.mkdir(parents=True, exist_ok=True)
         staging_folders.mkdir(parents=True, exist_ok=True)
 
@@ -401,48 +340,15 @@ class DatasetUploadService(Service):
             files_to_write.append((filename, stream, pure, dest_path))
             yield UploadProgressEvent(phase="validating", file=filename, index=i + 1, total=total_files)
 
-        # --- Phase 2: build live image stems + orphan sidecar check ---
-        live_image_stems: set[tuple[str, str]] = set()
-        if images_dir.exists():
-            for f in images_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
-                    live_image_stems.add(("", f.stem))
-        if folders_dir.exists():
-            for folder_path in folders_dir.iterdir():
-                if not folder_path.is_dir():
-                    continue
-                for f in folder_path.iterdir():
-                    if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
-                        live_image_stems.add((folder_path.name, f.stem))
-
-        final_files: list[tuple[str, BinaryIO, PurePosixPath, Path]] = []
+        # --- Phase 2: build live image stems + orphan sidecar check (shared with create) ---
+        live_image_stems = find_live_image_stems(images_dir, folders_dir, IMAGE_EXTENSIONS)
         new_folder_names: set[str] = set()
-        for filename, stream, pure, dest_path in files_to_write:
-            ext = pure.suffix.lower()
-            if ext in IMAGE_EXTENSIONS:
-                final_files.append((filename, stream, pure, dest_path))
-                if len(pure.parts) > 1:
-                    new_folder_names.add(pure.parts[0])
-                continue
-
-            dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
-
-            if ext == ".draft~":
-                matched = False
-                for known_dir, known_stem in image_stems | live_image_stems:
-                    if known_dir == dir_key and pure.name.startswith(known_stem + ".") and pure.name.endswith(".draft~"):
-                        matched = True
-                        break
-                if not matched:
-                    warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                    continue
-            elif (dir_key, pure.stem) not in image_stems and (dir_key, pure.stem) not in live_image_stems:
-                warnings.append(f"Skipped orphan sidecar (no matching image): {filename}")
-                continue
-
-            final_files.append((filename, stream, pure, dest_path))
-            if len(pure.parts) > 1:
-                new_folder_names.add(pure.parts[0])
+        final_files = filter_orphan_sidecars(
+            files_to_write,
+            image_stems | live_image_stems,
+            warnings,
+            new_folder_names,
+        )
 
         if not final_files:
             _abort_staging()
@@ -466,57 +372,8 @@ class DatasetUploadService(Service):
             yield UploadProgressEvent(phase="writing", file=filename, index=i + 1, total=total_writing)
 
         # --- Phase 4: detect conflicts (grouped by stem) ---
-        # Build groups: group_key -> { "image": Path|None, "sidecars": [Path] }
-        from collections import defaultdict
-
-        staged_groups: dict[tuple[str, str], dict[str, Any]] = defaultdict(lambda: {"image": None, "sidecars": []})
-        for _filename, _stream, pure, dest_path in final_files:
-            dir_key = pure.parts[0] if len(pure.parts) > 1 else ""
-            stem = pure.stem
-            if pure.suffix.lower() in IMAGE_EXTENSIONS:
-                staged_groups[(dir_key, stem)]["image"] = dest_path
-            else:
-                staged_groups[(dir_key, stem)]["sidecars"].append(dest_path)
-
-        conflicts: list[dict[str, Any]] = []
-        for (dir_key, stem), group in staged_groups.items():
-            # Find any conflicting file in the group
-            conflict_live_path: Path | None = None
-            conflict_staged_path: Path | None = None
-
-            if group["image"] is not None:
-                pure = PurePosixPath(group["image"].relative_to(staging_base).as_posix().replace("images/", "").replace("folders/", ""))
-                if len(pure.parts) == 1:
-                    live_path = images_dir / pure.name
-                else:
-                    live_path = folders_dir / pure.parts[0] / pure.name
-                if live_path.exists():
-                    conflict_live_path = live_path
-                    conflict_staged_path = group["image"]
-            else:
-                # Sidecar-only group — check if any sidecar conflicts
-                for sidecar_path in group["sidecars"]:
-                    pure = PurePosixPath(sidecar_path.relative_to(staging_base).as_posix().replace("images/", "").replace("folders/", ""))
-                    if len(pure.parts) == 1:
-                        live_path = images_dir / pure.name
-                    else:
-                        live_path = folders_dir / pure.parts[0] / pure.name
-                    if live_path.exists():
-                        conflict_live_path = live_path
-                        conflict_staged_path = sidecar_path
-                        break
-
-            if conflict_live_path is not None and conflict_staged_path is not None:
-                # Representative file: image if present, else first sidecar
-                rep_path = group["image"] if group["image"] is not None else group["sidecars"][0]
-                rep_pure = PurePosixPath(rep_path.relative_to(staging_base).as_posix().replace("images/", "").replace("folders/", ""))
-                conflicts.append(
-                    {
-                        "file": str(rep_pure),
-                        "existing_size": conflict_live_path.stat().st_size,
-                        "new_size": conflict_staged_path.stat().st_size,
-                    }
-                )
+        staged_groups = build_staged_groups(staging_base, IMAGE_EXTENSIONS)
+        conflicts = detect_conflicts(staged_groups, staging_base, images_dir, folders_dir)
 
         if conflicts:
             yield UploadProgressEvent(
@@ -559,39 +416,11 @@ class DatasetUploadService(Service):
         if not staging_base.exists():
             raise ValueError(f"Staging upload '{staging_id}' not found")
 
-        staging_images = staging_base / "images"
-        staging_folders = staging_base / "folders"
-        images_dir = base_dir / "images"
-        folders_dir = base_dir / "folders"
+        images_dir = base_dir / MANAGED_IMAGES_PREFIX
+        folders_dir = base_dir / MANAGED_FOLDERS_PREFIX
 
         # Build groups from staged files
-        from collections import defaultdict
-
-        staged_groups: dict[tuple[str, str], dict[str, Any]] = defaultdict(lambda: {"image": None, "sidecars": []})
-        all_staged_files: list[Path] = []
-
-        if staging_images.exists():
-            for src_path in staging_images.iterdir():
-                if src_path.is_file():
-                    all_staged_files.append(src_path)
-                    ext = src_path.suffix.lower()
-                    if ext in IMAGE_EXTENSIONS:
-                        staged_groups[("", src_path.stem)]["image"] = src_path
-                    else:
-                        staged_groups[("", src_path.stem)]["sidecars"].append(src_path)
-
-        if staging_folders.exists():
-            for folder_path in staging_folders.iterdir():
-                if not folder_path.is_dir():
-                    continue
-                for src_path in folder_path.iterdir():
-                    if src_path.is_file():
-                        all_staged_files.append(src_path)
-                        ext = src_path.suffix.lower()
-                        if ext in IMAGE_EXTENSIONS:
-                            staged_groups[(folder_path.name, src_path.stem)]["image"] = src_path
-                        else:
-                            staged_groups[(folder_path.name, src_path.stem)]["sidecars"].append(src_path)
+        staged_groups = build_staged_groups(staging_base, IMAGE_EXTENSIONS)
 
         # Determine resolution key for each group
         group_resolutions: dict[tuple[str, str], str] = {}
@@ -631,7 +460,7 @@ class DatasetUploadService(Service):
                     has_root_files = True
 
                 if resolution == "keep_both":
-                    dest_path = _unique_path(dest_path)
+                    dest_path = unique_path(dest_path)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src_path), str(dest_path))
 
@@ -645,7 +474,7 @@ class DatasetUploadService(Service):
                     has_root_files = True
 
                 if resolution == "keep_both":
-                    dest_path = _unique_path(dest_path)
+                    dest_path = unique_path(dest_path)
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src_path), str(dest_path))
 
@@ -662,7 +491,7 @@ class DatasetUploadService(Service):
 
             existing_paths = {entry.get("path", "") for entry in doc["dataset"] if isinstance(entry, dict)}
 
-            root_rel = "images"
+            root_rel = MANAGED_IMAGES_PREFIX
             root_abs = str(images_dir.resolve())
             if has_root_files and root_rel not in existing_paths and root_abs not in existing_paths:
                 entry = tomlkit.table()
@@ -670,7 +499,7 @@ class DatasetUploadService(Service):
                 doc["dataset"].append(entry)
 
             for folder_name in sorted(new_folder_names):
-                folder_rel = f"folders/{folder_name}"
+                folder_rel = f"{MANAGED_FOLDERS_PREFIX}/{folder_name}"
                 folder_abs = str((folders_dir / folder_name).resolve())
                 if folder_rel not in existing_paths and folder_abs not in existing_paths:
                     entry = tomlkit.table()

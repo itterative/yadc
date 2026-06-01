@@ -1,28 +1,25 @@
 <script lang="ts">
-    import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
-    import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
-    import KeyValueEditor, { type KeyValueEntry } from '$lib/components/ui/KeyValueEditor.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
-    import SvgPlus from '$lib/icons/SvgPlus.svelte';
-    import SvgDelete from '$lib/icons/SvgDelete.svelte';
-    import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgFile from '$lib/icons/SvgFile.svelte';
+    import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import SvgHistory from '$lib/icons/SvgHistory.svelte';
     import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import {
         fetchConfig,
         patchConfig,
-        previewConfig,
         updateConfig,
-        type Config,
-        type ConfigDatasetEntry
+        type ConfigValidationError
     } from '$lib/stores/configs';
-    import { templates, refreshTemplates } from '$lib/stores/templates';
+    import { refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
+    import { buildPatch, createPreviewScheduler } from './datasetConfig/patch';
+    import { configState } from './datasetConfig/state.svelte';
     import ConfigHistory from './ConfigHistory.svelte';
-    import SvgHistory from '$lib/icons/SvgHistory.svelte';
+    import DatasetConfigAdvanced from './DatasetConfigAdvanced.svelte';
+    import DatasetConfigForm from './DatasetConfigForm.svelte';
 
     // --- Props ---
 
@@ -37,267 +34,54 @@
 
     let { datasetName, source, onsaved }: Props = $props();
 
-    function displayConfigPath(configPath: string | undefined): string {
-        if (!configPath) {
-            return '';
-        }
-        if (source === 'upload' || source === 'create') {
-            return `${datasetName}/config.toml`;
-        }
-        return configPath;
-    }
-
-    // --- State ---
+    // --- Container-only state (data fetching + UI) ---
 
     let isLoading = $state(false);
     let isSaving = $state(false);
     let error: string | null = $state(null);
-    let validationErrors: Array<{ loc: string[]; msg: string }> = $state([]);
+    let validationErrors: ConfigValidationError[] = $state([]);
     let loadedConfigPath: string = $state('');
-
-    // (template list comes from the shared store)
-
-    // --- Structured fields (parsed from config) ---
-
-    // API
-    let apiUrl = $state('');
-    let apiModelName = $state('');
-
-    // Prompt
-    let promptName = $state('');
-
-    // Options (nullable fields: maxTokens, imageQuality, rounds — null means "not in TOML")
-    let maxTokens: number | null = $state(null);
-    let imageQuality: 'auto' | 'high' | 'low' | null = $state(null);
-    let rounds: number | null = $state(null);
-    let overwrite = $state(false);
-    let storeConversation = $state(false);
-
-    // Reasoning
-    let reasoningEnabled = $state(false);
-    let reasoningEffort: 'low' | 'medium' | 'high' = $state('low');
-    let reasoningExcludeOutput = $state(true);
-
-    // Environment
-    let envName = $state('');
-
-    // Dataset entries
-    interface DatasetEntry {
-        path: string;
-        extras: KeyValueEntry[];
-        imageCount: number;
-    }
-
-    let datasetEntries: DatasetEntry[] = $state([]);
 
     // --- View mode ---
 
-    /** Current view mode — driven by CompactPillTabs. */
     let activeView: 'simplified' | 'advanced' | 'history' = $state('simplified');
-
-    /** Raw TOML content for Advanced mode editing. */
-    let rawContent = $state('');
-    /** Snapshot of raw content at load / last save, for Advanced mode dirty tracking. */
-    let loadedRawContent = $state('');
-
-    /** Whether the Advanced mode editor has unsaved changes. */
-    let rawDirty = $derived(rawContent !== loadedRawContent);
-
-    // --- Snapshot of last-loaded values for dirty tracking ---
-
-    let loadedApiUrl = $state('');
-    let loadedApiModelName = $state('');
-    let loadedPromptName = $state('');
-    let loadedMaxTokens: number | null = $state(null);
-    let loadedImageQuality: 'auto' | 'high' | 'low' | null = $state(null);
-    let loadedRounds: number | null = $state(null);
-    let loadedOverwrite = $state(false);
-    let loadedStoreConversation = $state(false);
-    let loadedReasoningEnabled = $state(false);
-    let loadedReasoningEffort: 'low' | 'medium' | 'high' = $state('low');
-    let loadedReasoningExcludeOutput = $state(true);
-    let loadedEnvName = $state('');
-    let loadedDatasetEntries: DatasetEntry[] = $state([]);
-
-    /** Deep-compare two dataset entry arrays for equality. */
-    function entriesEqual(a: DatasetEntry[], b: DatasetEntry[]): boolean {
-        if (a.length !== b.length) {
-            return false;
-        }
-        return a.every((entry, i) => {
-            const other = b[i];
-            return (
-                entry.path === other.path &&
-                entry.imageCount === other.imageCount &&
-                entry.extras.length === other.extras.length &&
-                entry.extras.every(
-                    (e, j) =>
-                        e.key === other.extras[j].key &&
-                        e.type === other.extras[j].type &&
-                        JSON.stringify(e.value) === JSON.stringify(other.extras[j].value)
-                )
-            );
-        });
-    }
-
-    let simplifiedDirty = $derived(
-        apiUrl !== loadedApiUrl ||
-            apiModelName !== loadedApiModelName ||
-            promptName !== loadedPromptName ||
-            maxTokens !== loadedMaxTokens ||
-            imageQuality !== loadedImageQuality ||
-            rounds !== loadedRounds ||
-            overwrite !== loadedOverwrite ||
-            storeConversation !== loadedStoreConversation ||
-            reasoningEnabled !== loadedReasoningEnabled ||
-            reasoningEffort !== loadedReasoningEffort ||
-            reasoningExcludeOutput !== loadedReasoningExcludeOutput ||
-            envName !== loadedEnvName ||
-            !entriesEqual(datasetEntries, loadedDatasetEntries)
-    );
-
-    let dirty = $derived(
-        activeView === 'simplified' ? simplifiedDirty : activeView === 'advanced' ? rawDirty : false
-    );
 
     // --- Live preview ---
 
     let previewContent = $state('');
-    let previewTimer: ReturnType<typeof setTimeout> | null = null;
-    const DEBOUNCE_MS = 400;
-
-    /** Build the patch dict from current field values.
-     *
-     * Nullable fields are omitted when null. Sections whose values are all
-     * empty/default are also omitted so the PATCH doesn't add meaningless
-     * empty tables to the TOML.
-     */
-    function buildPatch(): Partial<Config> {
-        const patch: Record<string, unknown> = {};
-
-        // API — only include if at least one field is non-empty
-        if (apiUrl || apiModelName) {
-            patch.api = {
-                url: apiUrl,
-                model_name: apiModelName
-            };
+    const preview = createPreviewScheduler(
+        () => datasetName,
+        (content) => {
+            previewContent = content;
         }
+    );
 
-        // Prompt — only include if a template is selected
-        if (promptName) {
-            patch.prompt = { name: promptName };
-        }
+    // --- Dirty tracking: pick the right one for the active view ---
 
-        // Settings — only include if at least one value is non-default
-        const settings: Record<string, unknown> = {};
-        if (maxTokens !== null) {
-            settings.max_tokens = maxTokens;
-        }
-        if (imageQuality !== null) {
-            settings.image_quality = imageQuality;
-        }
-        if (storeConversation) {
-            settings.store_conversation = true;
-        }
-        if (Object.keys(settings).length > 0) {
-            patch.settings = settings;
-        }
+    let dirty = $derived(
+        activeView === 'simplified'
+            ? configState.simplifiedDirty
+            : activeView === 'advanced'
+              ? configState.rawDirty
+              : false
+    );
 
-        // Overwrite — only include if true (default is false)
-        if (overwrite) {
-            patch.overwrite_captions = true;
+    // --- View mode switching: sync raw content from preview when not dirty ---
+
+    let previousView: 'simplified' | 'advanced' | 'history' = $state('simplified');
+
+    $effect(() => {
+        if (activeView === previousView) {
+            return;
         }
-
-        // Reasoning — only include if enabled
-        if (reasoningEnabled) {
-            patch.reasoning = {
-                enable: true,
-                thinking_effort: reasoningEffort,
-                exclude_from_output: reasoningExcludeOutput
-            };
+        if (activeView === 'advanced' && !configState.rawDirty) {
+            // Only sync preview content if there are no unsaved advanced changes.
+            // Preserves in-progress raw edits when switching back from form/history.
+            configState.rawContent = previewContent;
+            configState.loadedRawContent = previewContent;
         }
-
-        // Environment — only include if non-empty
-        if (envName) {
-            patch.env = envName;
-        }
-
-        // Rounds — only include when explicitly set
-        if (rounds !== null) {
-            patch.rounds = rounds;
-        }
-
-        // Dataset entries — always included since a config needs at least one
-        patch.dataset = datasetEntries.map((entry, i) => {
-            const obj: Record<string, unknown> = { path: entry.path };
-            const extras: Record<string, unknown> = {};
-            for (const { key, value } of entry.extras) {
-                if (key) {
-                    extras[key] = value;
-                }
-            }
-            if (Object.keys(extras).length > 0) {
-                obj.extras = extras;
-            }
-            // Preserve inline images from the original parsed config (read-only, not edited)
-            const raw = parsedDatasetRaw[i];
-            if (raw?.images && raw.images.length > 0) {
-                obj.images = raw.images;
-            }
-            return obj;
-        });
-
-        return patch;
-    }
-
-    /** Debounced: request a dry-run preview from the backend. */
-    function schedulePreview() {
-        if (previewTimer !== null) {
-            clearTimeout(previewTimer);
-        }
-        previewTimer = setTimeout(() => {
-            previewTimer = null;
-            previewConfig(datasetName, buildPatch())
-                .then((result) => {
-                    previewContent = result.content;
-                })
-                .catch(() => {
-                    /* preview failure is non-critical */
-                });
-        }, DEBOUNCE_MS);
-    }
-
-    // --- Parsed dataset entries (for preserving images on save) ---
-
-    let parsedDatasetRaw: ConfigDatasetEntry[] = $state([]);
-
-    /** Detect the TOML type of a parsed extra value. */
-    function detectType(value: unknown): KeyValueEntry['type'] {
-        if (typeof value === 'boolean') {
-            return 'boolean';
-        }
-        if (typeof value === 'number') {
-            return 'number';
-        }
-        if (typeof value === 'object' && value !== null) {
-            return 'object';
-        }
-        return 'string';
-    }
-
-    /** Convert extras dict to KeyValueEntry array (sorted by key for stable ordering). */
-    function extrasToEntries(extras?: Record<string, unknown>): KeyValueEntry[] {
-        if (!extras) {
-            return [];
-        }
-        return Object.entries(extras)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([key, value]) => ({
-                key,
-                value: value as KeyValueEntry['value'],
-                type: detectType(value)
-            }));
-    }
+        previousView = activeView;
+    });
 
     // --- Load on mount / dataset change ---
 
@@ -309,50 +93,17 @@
         loadConfig();
     });
 
-    /** Populate structured fields from parsed config. */
-    function populateFields(p: Config, content: string, configPath: string) {
-        previewContent = content;
-        rawContent = loadedRawContent = content;
-        loadedConfigPath = configPath;
-
-        apiUrl = loadedApiUrl = p.api?.url ?? '';
-        apiModelName = loadedApiModelName = p.api?.model_name ?? '';
-        promptName = loadedPromptName = p.prompt?.name ?? '';
-        maxTokens = loadedMaxTokens = p.settings?.max_tokens ?? null;
-        imageQuality = loadedImageQuality = p.settings?.image_quality ?? null;
-        rounds = loadedRounds = p.rounds ?? null;
-        overwrite = loadedOverwrite = p.overwrite_captions ?? false;
-        storeConversation = loadedStoreConversation = p.settings?.store_conversation ?? false;
-        reasoningEnabled = loadedReasoningEnabled = p.reasoning?.enable ?? false;
-        reasoningEffort = loadedReasoningEffort = p.reasoning?.thinking_effort ?? 'low';
-        reasoningExcludeOutput = loadedReasoningExcludeOutput =
-            p.reasoning?.exclude_from_output ?? true;
-        envName = loadedEnvName = p.env ?? '';
-
-        // Parse dataset entries
-        const rawEntries = p.dataset ?? [];
-        parsedDatasetRaw = rawEntries;
-        const entries = rawEntries.map((entry) => ({
-            path: entry.path ?? '',
-            extras: extrasToEntries(entry.extras as Record<string, unknown> | undefined),
-            imageCount: entry.images?.length ?? 0
-        }));
-        datasetEntries = entries;
-        loadedDatasetEntries = entries.map((e) => ({
-            ...e,
-            extras: e.extras.map((kv) => ({ ...kv, value: kv.value, type: kv.type }))
-        }));
-    }
-
     async function loadConfig() {
         isLoading = true;
         error = null;
 
         try {
-            const templatesReady = $templates.loaded ? Promise.resolve() : refreshTemplates();
+            const templatesReady = refreshTemplates();
             const [config] = await Promise.all([fetchConfig(datasetName), templatesReady]);
             validationErrors = config.validation_error ?? [];
-            populateFields(config.parsed, config.content, config.config_path);
+            previewContent = config.content;
+            loadedConfigPath = config.config_path;
+            configState.populateFields(config.parsed, config.content);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load config');
         } finally {
@@ -364,22 +115,22 @@
 
     $effect(() => {
         // Touch all reactive values so Svelte tracks them
-        void apiUrl;
-        void apiModelName;
-        void promptName;
-        void maxTokens;
-        void imageQuality;
-        void rounds;
-        void overwrite;
-        void storeConversation;
-        void reasoningEnabled;
-        void reasoningEffort;
-        void reasoningExcludeOutput;
-        void envName;
+        void configState.apiUrl;
+        void configState.apiModelName;
+        void configState.promptName;
+        void configState.maxTokens;
+        void configState.imageQuality;
+        void configState.rounds;
+        void configState.overwrite;
+        void configState.storeConversation;
+        void configState.reasoningEnabled;
+        void configState.reasoningEffort;
+        void configState.reasoningExcludeOutput;
+        void configState.envName;
         void datasetName;
         // Touch dataset entries (array + each entry's fields)
-        void datasetEntries;
-        for (const entry of datasetEntries) {
+        void configState.datasetEntries;
+        for (const entry of configState.datasetEntries) {
             void entry.path;
             for (const e of entry.extras) {
                 void e.key;
@@ -388,92 +139,11 @@
         }
 
         if (!isLoading && !error) {
-            schedulePreview();
+            preview.schedule();
         }
     });
 
-    // --- Save structured fields via PATCH ---
-
-    function addDatasetEntry() {
-        datasetEntries = [...datasetEntries, { path: '', extras: [], imageCount: 0 }];
-    }
-
-    function removeDatasetEntry(index: number) {
-        datasetEntries = datasetEntries.filter((_, i) => i !== index);
-    }
-
-    function updateEntryPath(index: number, newPath: string) {
-        datasetEntries = datasetEntries.map((e, i) => (i === index ? { ...e, path: newPath } : e));
-    }
-
-    // --- View mode switching ---
-
-    let previousView: 'simplified' | 'advanced' | 'history' = $state('simplified');
-
-    $effect(() => {
-        if (activeView === previousView) {
-            return;
-        }
-        if (activeView === 'advanced') {
-            // Only sync preview content if there are no unsaved advanced changes.
-            // Preserves in-progress raw edits when switching back from form/history.
-            if (!rawDirty) {
-                rawContent = previewContent;
-                loadedRawContent = previewContent;
-            }
-        }
-        previousView = activeView;
-    });
-
-    async function handleSave() {
-        if (activeView === 'history') {
-            return;
-        }
-        isSaving = true;
-
-        try {
-            if (activeView === 'advanced') {
-                // PUT: full content replacement
-                const result = await updateConfig(datasetName, rawContent);
-                previewContent = result.content;
-                rawContent = loadedRawContent = result.content;
-                // Re-populate structured fields from the new content
-                populateFields(result.parsed, result.content, result.config_path);
-                validationErrors = result.validation_error ?? [];
-            } else {
-                // PATCH: merge structured fields
-                const result = await patchConfig(datasetName, buildPatch());
-                previewContent = result.content;
-                rawContent = loadedRawContent = result.content;
-                validationErrors = result.validation_error ?? [];
-                // Update loaded snapshot so dirty resets
-                loadedApiUrl = apiUrl;
-                loadedApiModelName = apiModelName;
-                loadedPromptName = promptName;
-                loadedMaxTokens = maxTokens as number | null;
-                loadedImageQuality = imageQuality as 'auto' | 'high' | 'low' | null;
-                loadedRounds = rounds as number | null;
-                loadedOverwrite = overwrite;
-                loadedStoreConversation = storeConversation;
-                loadedReasoningEnabled = reasoningEnabled;
-                loadedReasoningEffort = reasoningEffort;
-                loadedReasoningExcludeOutput = reasoningExcludeOutput;
-                loadedEnvName = envName;
-                loadedDatasetEntries = datasetEntries.map((e) => ({
-                    ...e,
-                    extras: e.extras.map((kv) => ({ ...kv, value: kv.value, type: kv.type }))
-                }));
-            }
-
-            handleConfigSaved();
-        } catch (e) {
-            toast.error(friendlyErrorMessage(e, 'Failed to save config'));
-        } finally {
-            isSaving = false;
-        }
-    }
-
-    // --- Config history ---
+    // --- Save (PATCH for simplified, PUT for advanced) ---
 
     let configVersion = $state(0);
 
@@ -489,6 +159,37 @@
         // Re-fetch config so the form reflects the restored on-disk state
         loadConfig();
         onsaved?.();
+    }
+
+    async function handleSave() {
+        if (activeView === 'history') {
+            return;
+        }
+        isSaving = true;
+
+        try {
+            if (activeView === 'advanced') {
+                // PUT: full content replacement
+                const result = await updateConfig(datasetName, configState.rawContent);
+                previewContent = result.content;
+                configState.rawContent = configState.loadedRawContent = result.content;
+                configState.populateFields(result.parsed, result.content);
+                validationErrors = result.validation_error ?? [];
+            } else {
+                // PATCH: merge structured fields
+                const result = await patchConfig(datasetName, buildPatch());
+                previewContent = result.content;
+                configState.rawContent = configState.loadedRawContent = result.content;
+                validationErrors = result.validation_error ?? [];
+                configState.resetSimplifiedDirty();
+            }
+
+            handleConfigSaved();
+        } catch (e) {
+            toast.error(friendlyErrorMessage(e, 'Failed to save config'));
+        } finally {
+            isSaving = false;
+        }
     }
 </script>
 
@@ -514,259 +215,10 @@
             <!-- ═══ View mode toggle ═══ -->
             <CompactPillTabs bind:value={activeView} class="h-full">
                 <Tab id="simplified" label="Form" icon={SvgFile} class="flex flex-col gap-4">
-                    {#if rawDirty}
-                        <div class="alert-info text-xs">
-                            Advanced view has unsaved changes that are not reflected here.
-                        </div>
-                    {/if}
-                    <!-- ═══ Simplified mode: structured form ═══ -->
-
-                    <!-- ═══ Info: Dataset source & path ═══ -->
-                    <section class="space-y-2">
-                        <h3 class="section-heading">Dataset</h3>
-                        <div class="space-y-1">
-                            <div class="flex items-center gap-2">
-                                {#if source === 'upload'}
-                                    <span class="badge-muted badge-sm">Managed</span>
-                                    <span class="text-xs text-gray-400"
-                                        >Files stored in yadc state directory</span
-                                    >
-                                {:else}
-                                    <span class="badge-muted badge-sm">External</span>
-                                    <span class="text-xs text-gray-400"
-                                        >References paths outside yadc</span
-                                    >
-                                {/if}
-                            </div>
-                            {#if loadedConfigPath}
-                                <p
-                                    class="truncate font-mono text-xs text-gray-500"
-                                    title={source === 'upload' || source === 'create'
-                                        ? loadedConfigPath
-                                        : undefined}
-                                >
-                                    {displayConfigPath(loadedConfigPath)}
-                                </p>
-                            {/if}
-                        </div>
-                    </section>
-
-                    <!-- ═══ Section: Dataset Entries ═══ -->
-                    <section class="space-y-3">
-                        <h3 class="section-heading">Paths & Variables</h3>
-                        <p class="help-text">
-                            Each entry is a directory of images with optional template variables.
-                        </p>
-
-                        {#each datasetEntries as entry, i (i)}
-                            <div class="card">
-                                <div class="card-body space-y-3">
-                                    <!-- Entry header -->
-                                    <div class="flex items-start gap-2">
-                                        <div class="flex-1">
-                                            <label class="label" for="entry-path-{i}">Path</label>
-                                            <input
-                                                id="entry-path-{i}"
-                                                type="text"
-                                                class="input font-mono text-sm"
-                                                value={entry.path}
-                                                placeholder="/path/to/images"
-                                                disabled={source === 'upload'}
-                                                title={source === 'upload'
-                                                    ? 'Managed dataset paths are set automatically via uploads'
-                                                    : undefined}
-                                                oninput={(e) =>
-                                                    updateEntryPath(i, e.currentTarget.value)}
-                                            />
-                                        </div>
-                                        {#if datasetEntries.length > 1 && source !== 'upload'}
-                                            <button
-                                                class="mt-6 cursor-pointer p-1 text-gray-500 transition-colors hover:text-error"
-                                                onclick={() => removeDatasetEntry(i)}
-                                                title="Remove entry"
-                                                aria-label="Remove entry"
-                                            >
-                                                <SvgDelete class="h-4 w-4" />
-                                            </button>
-                                        {/if}
-                                    </div>
-
-                                    <!-- Inline images badge -->
-                                    {#if entry.imageCount > 0}
-                                        <p class="text-xs text-gray-500">
-                                            {entry.imageCount} inline image{entry.imageCount !== 1
-                                                ? 's'
-                                                : ''}
-                                            — edit in raw TOML view
-                                        </p>
-                                    {/if}
-
-                                    <!-- Empty entry warning -->
-                                    {#if !entry.path && entry.imageCount === 0}
-                                        <p class="text-xs text-warning">
-                                            Empty entry — set a path or add images.
-                                        </p>
-                                    {/if}
-
-                                    <!-- Extras -->
-                                    <div>
-                                        <div
-                                            class="mb-1.5 text-xs font-medium tracking-wide text-gray-300 uppercase"
-                                        >
-                                            Variables
-                                        </div>
-                                        <KeyValueEditor
-                                            bind:entries={datasetEntries[i].extras}
-                                            idPrefix="entry-{i}-extras"
-                                            keyPlaceholder="variable name"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        {/each}
-
-                        {#if source !== 'upload'}
-                            <button class="btn-secondary w-full" onclick={addDatasetEntry}>
-                                <SvgPlus class="mr-1 inline-block h-4 w-4" />
-                                Add Path
-                            </button>
-                        {/if}
-                    </section>
-
-                    <!-- ═══ Section: API ═══ -->
-                    <section class="space-y-3">
-                        <h3 class="section-heading">API</h3>
-
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="col-span-2">
-                                <label class="label" for="config-api-url">API URL</label>
-                                <input
-                                    id="config-api-url"
-                                    type="text"
-                                    bind:value={apiUrl}
-                                    class="input"
-                                    placeholder="http://localhost:11434"
-                                />
-                                <p class="help-text">
-                                    Hostname and port only — no additional path segments.
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="label" for="config-model">Model Name</label>
-                                <input
-                                    id="config-model"
-                                    type="text"
-                                    bind:value={apiModelName}
-                                    class="input"
-                                    placeholder="gemma3"
-                                />
-                            </div>
-
-                            <div>
-                                <label class="label" for="config-env">Environment</label>
-                                <input
-                                    id="config-env"
-                                    type="text"
-                                    bind:value={envName}
-                                    class="input"
-                                    placeholder="default"
-                                />
-                                <p class="help-text">
-                                    Set this to configure API settings outside the TOML file.
-                                </p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <!-- ═══ Section: Prompt ═══ -->
-                    <section class="space-y-3">
-                        <h3 class="section-heading">Prompt</h3>
-
-                        <div>
-                            <label class="label" for="config-prompt">Template</label>
-                            <select
-                                id="config-prompt"
-                                class="input cursor-pointer"
-                                value={promptName}
-                                onchange={(e) => {
-                                    promptName = e.currentTarget.value;
-                                }}
-                            >
-                                <option value="">(default)</option>
-                                {#each $templates.items as t (t.name)}
-                                    <option value={t.name}
-                                        >{t.name}{t.source === 'builtin'
-                                            ? ' (built-in)'
-                                            : ''}</option
-                                    >
-                                {/each}
-                            </select>
-                            <p class="help-text">
-                                Prompt template used during captioning. Leave empty for the default
-                                template.
-                            </p>
-                        </div>
-                    </section>
-
-                    <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
-                    <CaptionOptionsFields
-                        bind:maxTokens
-                        bind:imageQuality
-                        bind:rounds
-                        bind:overwrite
-                        bind:reasoningEnabled
-                        bind:reasoningEffort
-                        bind:storeConversation
-                        bind:reasoningExcludeOutput
-                        display={{
-                            idPrefix: 'config',
-                            nullable: true,
-                            helpText: true,
-                            showStoreConversation: true,
-                            showReasoningExcludeOutput: true
-                        }}
-                    />
-
-                    <!-- ═══ Section: Preview ═══ -->
-                    <section class="space-y-3">
-                        <h3 class="section-heading">Preview</h3>
-                        {#if simplifiedDirty}
-                            <p class="text-xs text-accent">Previewing unsaved changes.</p>
-                        {:else}
-                            <p class="text-xs text-gray-500">Current config on disk.</p>
-                        {/if}
-                        <div class="max-h-[40vh] min-h-30 overflow-y-auto">
-                            <TomlEditor
-                                class="rounded-md border border-border text-sm"
-                                value={previewContent}
-                                editable={false}
-                            />
-                        </div>
-                    </section>
-
-                    <div class="h-2"></div>
+                    <DatasetConfigForm {source} {datasetName} {loadedConfigPath} {previewContent} />
                 </Tab>
                 <Tab id="advanced" label="Advanced" icon={SvgEdit} class="h-full">
-                    <div class="flex h-full flex-col gap-2">
-                        {#if simplifiedDirty}
-                            <div class="alert-info text-xs">
-                                Form view has unsaved changes that are not reflected here.
-                            </div>
-                        {/if}
-                        <TomlEditor
-                            class="rounded-md border border-border text-sm"
-                            bind:value={rawContent}
-                            editable={true}
-                        />
-                        {#if source === 'upload'}
-                            <p class="text-xs text-gray-500">
-                                Editing <code>[[dataset]]</code>
-                                paths for managed datasets will be rejected by the server. Use the Upload
-                                tab to add or remove images.
-                            </p>
-                        {/if}
-                    </div>
+                    <DatasetConfigAdvanced {source} />
                 </Tab>
                 <Tab id="history" label="History" icon={SvgHistory} class="h-full">
                     <ConfigHistory {datasetName} {configVersion} onsaved={handleHistoryRestored} />

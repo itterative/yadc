@@ -12,6 +12,7 @@ from ..services.captioning import CaptioningService
 from ..services.config_history import ConfigHistoryService
 from ..services.dataset_upload import DatasetUploadService
 from ..services.datasets import DatasetService
+from ..services.managed_datasets import ManagedDatasetsService
 from . import controller
 from .blueprints import ApiBlueprint
 from .utils_json import DataclassJSONEncoder, ErrorCode, jsonify_dataclass, jsonify_error
@@ -54,6 +55,7 @@ def api_datasets(
     app: ApiBlueprint,
     logging: LoggingFactory,
     datasets: DatasetService,
+    managed_datasets: ManagedDatasetsService,
     dataset_upload: DatasetUploadService,
     config_history: ConfigHistoryService,
     captioning: CaptioningService,
@@ -235,7 +237,7 @@ def api_datasets(
             return jsonify_error("Request body must include 'paths' array", status=400, code=ErrorCode.BAD_REQUEST)
 
         try:
-            deleted, warnings = datasets.delete_items(name, paths, source=request.args.get("source", ""))
+            deleted, warnings = managed_datasets.delete_items(name, paths, source=request.args.get("source", ""))
             return jsonify({"deleted": deleted, "warnings": warnings})
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
@@ -247,7 +249,7 @@ def api_datasets(
     def list_dataset_folders(name: str):  # pyright: ignore[reportUnusedFunction]
         """List folders for a managed dataset with image counts."""
         try:
-            folders = datasets.list_folders(name)
+            folders = managed_datasets.list_folders(name)
             return jsonify(folders)
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
