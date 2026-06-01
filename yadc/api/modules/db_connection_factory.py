@@ -79,17 +79,34 @@ class DBConnectionFactory(Service):
 
         return conn
 
-    def connection(self) -> sqlite3.Connection:
-        """Returns a connection.
+    @contextmanager
+    def connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield a connection, auto-enrolling in any active transaction.
 
-        If there is an active transaction in the current context (thread or
-        asyncio task), returns the transaction's connection.  Otherwise creates
-        a new standalone connection (legacy behaviour).
+        If a transaction is active in the current context (thread or
+        asyncio task), yields the transaction's connection (the
+        transaction manager owns its lifetime). Otherwise opens a new
+        connection, commits any pending writes on successful exit, and
+        closes it (a raised exception triggers an implicit rollback via
+        ``close()``).
+
+        Use this for read-only or single-statement work, and for any
+        call that should join an outer ``with transaction():`` block.
         """
         txn = self._active_transaction.get()
         if txn is not None:
-            return txn.connection
-        return self._connection()
+            yield txn.connection
+            return
+
+        conn = self._connection()
+        try:
+            yield conn
+        except BaseException:
+            conn.close()
+            raise
+        else:
+            conn.commit()
+            conn.close()
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection, None, None]:

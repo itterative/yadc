@@ -24,6 +24,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** inside the agent memory 
 | [`debug-api-logging`](.pi/agent/memory/docs/debug-api-logging.md) | `YADC_DEBUG_CAPTION_RESPONSES=1` feature for logging caption API request/response pairs to JSONL files. |
 | [`export-system`](.pi/agent/memory/docs/export-system.md) | How the export system works — backends, formats, and the draft/caption source selection. |
 | [`paths-and-storage`](.pi/agent/memory/docs/paths-and-storage.md) | File system paths used by yadc (platformdirs) and file storage conventions for `DatasetImage` persistence. |
+| [`repository-pattern`](.pi/agent/memory/docs/repository-pattern.md) | Repository pattern for API services — repos own SQL + data model, services own transactions + business logic. Covers the `DBConnectionFactory.connection`/`transaction` contract, the auto-enrollment mechanism, and what belongs in which layer. |
 | [`template-system`](.pi/agent/memory/docs/template-system.md) | Jinja2 prompt template system — template resolution, loading, and variable context. |
 | [`yadc-config-v2`](.pi/agent/memory/docs/yadc-config-v2.md) | v2 dataset config format — `[[dataset]]` array-of-tables structure and v1 auto-conversion. |
 | [`webui-frontend`](.pi/agent/memory/docs/webui-frontend.md) | yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues. |

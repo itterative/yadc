@@ -11,6 +11,13 @@ priority: 3
 
 Tests live under `tests/` and mirror `yadc/` structure (`api/`, `captioners/api/`, `cli/`, `core/`). Each subdirectory may have a `conftest.py` for shared fixtures. Individual test files follow the `test_*.py` naming convention.
 
+`tests/api/conftest.py` provides shared fixtures for the API test suite:
+- `test_configuration` — `Configuration` populated with paths under `tmp_path` (so tests don't touch real user data and the DB is recreated fresh for each test).
+- `logging_factory` — `LoggingFactory` wired to the test configuration.
+- `db_connection_factory` — a real `DBConnectionFactory` with a temp-file DB and migrations run synchronously.
+
+Repository tests live next to their service tests under `tests/api/` (e.g. `test_dataset_repository.py`, `test_settings_repository.py`). Services are tested via in-memory mock repositories where possible, with a smaller number of integration tests using the real SQLite DB via the `db_connection_factory` fixture.
+
 ## Test Dependencies
 
 In `pyproject.toml` under `[project.optional-dependencies].test`:

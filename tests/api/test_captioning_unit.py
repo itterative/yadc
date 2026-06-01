@@ -1,13 +1,12 @@
 """Tests for AsyncCaptionJob._acaption_one — verifying expect_file_change calls before writes."""
 
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from PIL import Image
 
-from yadc.api.services.captioning import AsyncCaptionJob, CaptionJobOptions, CaptioningService
+from yadc.api.services.captioning import AsyncCaptionJob, CaptioningService, CaptionJobOptions
 from yadc.core.dataset import DatasetImage
 
 
@@ -162,9 +161,7 @@ class TestCaptionOneRegistersExpectedFiles:
 
         assert len(expect_indices) == 3, f"Expected 3 expect calls, got: {call_order}"
         assert len(write_indices) == 1, f"Expected 1 write call, got: {call_order}"
-        assert max(expect_indices) < write_indices[0], (
-            f"expect_file_change calls should precede writes. Order: {call_order}"
-        )
+        assert max(expect_indices) < write_indices[0], f"expect_file_change calls should precede writes. Order: {call_order}"
 
 
 class TestCaptioningServiceCleanupRescan:
@@ -211,12 +208,8 @@ class TestCaptioningServiceCleanupRescan:
         captioning_service._async_jobs["test_ds"] = mock_job
 
         call_order = []
-        captioning_service._dataset_watcher.clear_expected_changes_for_job = MagicMock(
-            side_effect=lambda ds, jid: call_order.append(("clear", jid))
-        )
-        captioning_service._dataset_service.rescan_dataset = MagicMock(
-            side_effect=lambda ds: call_order.append(("rescan", ds))
-        )
+        captioning_service._dataset_watcher.clear_expected_changes_for_job = MagicMock(side_effect=lambda ds, jid: call_order.append(("clear", jid)))
+        captioning_service._dataset_service.rescan_dataset = MagicMock(side_effect=lambda ds: call_order.append(("rescan", ds)))
 
         with patch("asyncio.sleep"):
             await captioning_service._cleanup_async("test_ds")

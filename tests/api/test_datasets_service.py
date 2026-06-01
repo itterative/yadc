@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from yadc.api.events import DatasetChangedEvent
+from yadc.api.services.dataset_repository import DatasetRepository
 from yadc.api.services.datasets import DatasetService, ImageInfo
 
 
@@ -176,3 +177,124 @@ class TestOnDatasetChangedSkipsSelfOriginated:
         service._on_dataset_changed(event)
 
         service.rescan_dataset.assert_called_once_with("test_ds")
+
+
+class TestApplyDiskScanOrchestration:
+    """Verify the service composes repo calls inside a single transaction.
+
+    The repo's public methods each use ``self._db.connection()`` which
+    auto-enrolls in the active transaction. The service owns the
+    ``with self._db.transaction():`` boundary. These tests exercise
+    the orchestration end-to-end with a real factory and real repo.
+    """
+
+    @pytest.fixture
+    def service(
+        self,
+        db_connection_factory,
+        test_configuration,
+        logging_factory,
+    ):
+        """A real DatasetService with a real repo, factory, and stubbed watcher / event dispatcher."""
+        from yadc.api.modules.dataset_watcher import DatasetWatcherService
+        from yadc.api.modules.event_dispatcher import EventDispatcher
+
+        repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
+        watcher = MagicMock(spec=DatasetWatcherService)
+        event_dispatcher = MagicMock(spec=EventDispatcher)
+        svc = DatasetService(
+            db=db_connection_factory,
+            watcher=watcher,
+            configuration=test_configuration,
+            event_dispatcher=event_dispatcher,
+            logging=logging_factory,
+            repo=repo,
+        )
+        return svc
+
+    def _make_image_dir(self, tmp_path: Path) -> Path:
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        # Two real images so the scan has something to find.
+        from PIL import Image
+
+        for name in ("a.jpg", "b.png"):
+            Image.new("RGB", (1, 1), color="red").save(img_dir / name)
+        return img_dir
+
+    def _write_config(self, tmp_path: Path, img_dir: Path) -> Path:
+        config = tmp_path / "config.toml"
+        config.write_text(f'[[dataset]]\npath = "{img_dir}"\n')
+        return config
+
+    def test_register_inserts_images(self, service, tmp_path):
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+
+        result = service.register("alpha", str(config_path), source="import")
+
+        assert result.name == "alpha"
+        assert result.source == "import"
+        # Both images were indexed.
+        assert result.image_count == 2
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "b.png")) is not None
+
+    def test_rescan_drops_removed_images(self, service, tmp_path):
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+
+        service.register("alpha", str(config_path), source="import")
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
+
+        # Remove one image from disk and re-scan.
+        (img_dir / "a.jpg").unlink()
+        assert service.rescan_dataset("alpha") is True
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is None
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "b.png")) is not None
+        assert service._repo.get_dataset("alpha").image_count == 1
+
+    def test_rescan_picks_up_new_images(self, service, tmp_path):
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+        service.register("alpha", str(config_path), source="import")
+
+        # Add a new image to disk and re-scan.
+        from PIL import Image
+
+        Image.new("RGB", (1, 1), color="blue").save(img_dir / "c.jpg")
+        assert service.rescan_dataset("alpha") is True
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "c.jpg")) is not None
+        assert service._repo.get_dataset("alpha").image_count == 3
+
+    def test_atomicity_on_failure(self, service, tmp_path, db_connection_factory):
+        """If a write inside the scan transaction fails, no partial state is applied.
+
+        Verifies that the ``with self._db.transaction():`` boundary in
+        the service correctly rolls back the repo's writes when one of
+        them fails. The test drops the ``datasets`` table mid-scan to
+        force the second repo call to fail; the pre-populated image
+        must still be there after the rollback.
+        """
+        import sqlite3
+
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+
+        # Register normally first.
+        service.register("alpha", str(config_path), source="import")
+        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
+
+        # Drop the dataset_images table to force the next scan's
+        # ``list_image_paths`` read to fail mid-transaction. Anything
+        # the transaction wrote (nothing in this case, since the
+        # read fails first) should be rolled back.
+        with db_connection_factory.connection() as conn:
+            conn.execute("DROP TABLE dataset_images")
+            conn.commit()
+
+        with pytest.raises(sqlite3.OperationalError):
+            service._apply_disk_scan(
+                dataset_id=service._repo.get_dataset_row("alpha")[0],
+                config_path=str(config_path),
+            )

@@ -1,4 +1,12 @@
-"""Settings service — simple key-value store backed by the SQLite settings table."""
+"""Settings service — JSON-typed KV store backed by SQLite.
+
+The SQL lives in :class:`SettingsRepository`. This service owns:
+
+- Public Python types (decoded JSON values)
+- Error handling and logging
+"""
+
+from __future__ import annotations
 
 import json
 import sqlite3
@@ -8,6 +16,7 @@ from typing import Any
 from ..modules.db_connection_factory import DBConnectionFactory
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
+from .settings_repository import SettingsRepository
 
 
 class SettingsService(Service):
@@ -16,62 +25,56 @@ class SettingsService(Service):
     Values are stored as JSON strings to preserve types (bools, ints, lists, etc.).
     """
 
-    def __init__(self, db: DBConnectionFactory, logging: LoggingFactory):
+    def __init__(
+        self,
+        db: DBConnectionFactory,
+        logging: LoggingFactory,
+        repo: SettingsRepository,
+    ) -> None:
         self._db: DBConnectionFactory = db
         self._logger: Logger = logging.get_logger(__name__)
+        self._repo: SettingsRepository = repo
 
     def get(self, key: str, default: Any = None) -> Any:
-        conn = self._db.connection()
         try:
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-            if row is None:
-                return default
-            return json.loads(row[0])
-        except (json.JSONDecodeError, sqlite3.Error) as e:
+            value_json = self._repo.get(key)
+        except sqlite3.Error as e:
             self._logger.warning("Failed to read setting %s: %s", key, e)
             return default
-        finally:
-            conn.close()
+
+        if value_json is None:
+            return default
+        try:
+            return json.loads(value_json)
+        except json.JSONDecodeError:
+            # Preserve the previous behaviour: corrupted JSON falls back to
+            # the default rather than raising.
+            return default
 
     def set(self, key: str, value: Any) -> None:
-        conn = self._db.connection()
         try:
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_t) VALUES (?, ?, unixepoch()) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_t = excluded.updated_t",
-                (key, json.dumps(value)),
-            )
-            conn.commit()
+            self._repo.upsert(key, json.dumps(value))
         except sqlite3.Error as e:
             self._logger.error("Failed to write setting %s: %s", key, e)
-        finally:
-            conn.close()
 
     def delete(self, key: str) -> bool:
-        conn = self._db.connection()
         try:
-            cursor = conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-            conn.commit()
-            return cursor.rowcount > 0
+            return self._repo.delete(key) > 0
         except sqlite3.Error as e:
             self._logger.error("Failed to delete setting %s: %s", key, e)
             return False
-        finally:
-            conn.close()
 
     def list_all(self) -> dict[str, Any]:
-        conn = self._db.connection()
         try:
-            rows = conn.execute("SELECT key, value FROM settings ORDER BY key").fetchall()
-            result: dict[str, Any] = {}
-            for key, value_json in rows:
-                try:
-                    result[key] = json.loads(value_json)
-                except json.JSONDecodeError:
-                    result[key] = value_json
-            return result
+            rows = self._repo.list_all()
         except sqlite3.Error as e:
             self._logger.error("Failed to list settings: %s", e)
             return {}
-        finally:
-            conn.close()
+
+        result: dict[str, Any] = {}
+        for key, value_json in rows:
+            try:
+                result[key] = json.loads(value_json)
+            except json.JSONDecodeError:
+                result[key] = value_json
+        return result

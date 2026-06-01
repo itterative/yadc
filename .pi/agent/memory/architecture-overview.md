@@ -65,17 +65,21 @@ yadc/
       template_watcher.py  # TemplateWatcherService — watchdog-based watcher for *.jinja files, emits TemplatesChangedEvent (extends SinglePathWatcherService)
       dataset_watcher.py    # DatasetWatcherService — watchdog-based filesystem watcher for dataset dirs, debounced DatasetChangedEvent emission
       db_migrations.py      # Step-based SQLite migration runner
-      db_connection_factory.py # SQLite WAL, foreign keys, background init
+      db_connection_factory.py # SQLite WAL, foreign keys, background init. `connection()` is a context manager that auto-enrolls in any active `transaction()`; standalone calls commit on success and close on exit. `transaction()` supports nested savepoints and is async/task-safe via `ContextVar`.
     services/
-      __init__.py           # re-exports CaptioningService, DatasetService, DatasetUploadService, DatasetUploadResult, SettingsService
+      __init__.py           # re-exports all services + repositories (CaptioningService, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ManagedDatasetsService, SettingsService, SettingsRepository, UploadProgressEvent)
       captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher. Depends on `Configuration` (for HTTP timeouts). `AsyncCaptionJob` consumes `model.predict_stream()` token-by-token (CancelledError re-raises), registers expected file changes via `DatasetWatcherService.expect_file_change()` before writes, exposes `wait()` for proper job cancellation before restart, schedules `_cleanup_async` (final rescan) as a background task so `_arun` returns promptly.
+      config_history.py            # ConfigHistoryService — high-level config revision operations; delegates SQL to `ConfigHistoryRepository`
+      config_history_repository.py # ConfigHistoryRepository — owns `ConfigHistoryEntry` dataclass + all SQL for the `config_history` table (reads + writes + pruning)
+      dataset_repository.py        # DatasetRepository — owns `DatasetInfo` + `ImageInfo` dataclasses + all SQL for `datasets` / `dataset_images` tables (list, get, upsert, delete, scan diff)
       dataset_upload.py            # DatasetUploadService — orchestration layer for uploads; thin wrappers around helpers in `dataset_upload_validation` (image/TOML validation, unique paths) and `dataset_upload_staging` (staging dir cleanup, conflict detection, grouped-build, orphan sidecar filtering)
       dataset_upload_staging.py    # Stateless staging helpers: `cleanup_staging_dirs`, `build_staged_groups`, `detect_conflicts`, `filter_orphan_sidecars`, `find_live_image_stems`. Constants: `STAGING_DIR_NAME = ".staging"`, `STAGING_MAX_AGE_SECONDS`.
       dataset_upload_validation.py # Stateless validation helpers: `validate_image_stream`, `validate_toml_stream`, `unique_path`.
-      datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService
+      datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService. Injects `DatasetRepository` (no SQL in this file).
       managed_datasets.py          # ManagedDatasetsService — operations specific to managed (upload-sourced) datasets: `list_folders` (images/ + folders/* with image counts + can_delete flag) and `delete_items` (file + sidecars, or folder, with `expect_file_change`/`expect_pattern_change` for self-suppression)
       managed_paths.py             # Layout constants and path builders for managed datasets: `MANAGED_IMAGES_PREFIX = "images"`, `MANAGED_FOLDERS_PREFIX = "folders"`, plus `managed_base_dir`/`managed_images_dir`/`managed_folders_dir` builders and `compute_delete_path` resolver. Single source of truth for the `<config_dir>/{images,folders}/...` layout — safe to import from anywhere (no service deps).
-      settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
+      settings.py           # SettingsService — KV store over SQLite settings table (JSON encode/decode + business policy); delegates SQL to `SettingsRepository`
+      settings_repository.py       # SettingsRepository — owns all SQL for the `settings` table (get, upsert, delete, list_all). Values are stored as raw JSON strings.
 
   webui/             # SvelteKit frontend — see `frontend-architecture` memory for full details
     …
@@ -147,7 +151,8 @@ yadc/
 - **Jinja2 template system**: Templates define `{% set system_prompt %}`, `{% set user_prompt %}`, `{% set user_prompt_multiple_rounds %}` blocks. User templates override defaults.
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history (TOML entries separated by `----------` markers), `.<name>.draft~` for named drafts. History is saved on every caption update (both captioning jobs and manual webui edits) and extras updates. History entries can be browsed and restored via `GET /images/<id>/history` and `PUT /images/<id>/history/<index>/restore`.
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
-- **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
+- **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** (which includes both services and repositories) and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
+- **Repository pattern for SQL**: See `docs/repository-pattern.md` for the full design. Short version: services own business logic + the `with db.transaction():` boundary; repositories own the data model (`DatasetInfo`/`ImageInfo`/`ConfigHistoryEntry` live in the repo) + all SQL + the `db.connection()` context manager (which auto-enrolls in any active transaction). Repos are leaf nodes in the dependency graph — services depend on them, never the other way around.
 - **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/datasets/<name>/config.toml` (for created/uploaded datasets) or at an external path (for imported datasets). Three creation flows:
   - `import_dataset(name, toml_path)` — copies existing TOML to state dir (resolving relative paths).
   - `create_dataset(name, image_paths)` — generates a new TOML at `STATE_PATH/datasets/<name>/config.toml` pointing to external directories.

@@ -1,4 +1,4 @@
-"""Dataset service — filesystem scanning, SQLite indexing, and image queries.
+"""Dataset service — filesystem scanning, indexing orchestration, image queries.
 
 A "dataset" is a named yadc config TOML stored in the XDG state directory
 (``STATE_PATH/datasets/<name>/config.toml``). The TOML is the
@@ -12,10 +12,23 @@ Two registration flows:
 - **Create**: write a fresh TOML with the given image paths.
 
 Both end up as ``STATE_PATH/datasets/<name>/config.toml``.
+
+This service owns:
+
+- The watcher integration (auto-rescan on external changes)
+- The file-system side of every operation (TOML parsing, caption
+  read/write, draft files, history files)
+- The disk-walking side of the dataset scan (the SQL side lives in
+  :class:`DatasetRepository.apply_scan_diff`)
+
+The :class:`DatasetRepository` owns the SQL, the data model
+(``DatasetInfo``, ``ImageInfo``), and connection / transaction
+management.
 """
 
+from __future__ import annotations
+
 import shutil
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from logging import Logger
@@ -44,10 +57,13 @@ IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", "
 # Base directory for all dataset state directories.
 DATASETS_DIR: Path = STATE_PATH / "datasets"
 
-# Managed-dataset path layout and resolution live in
-# :mod:`yadc.api.services.managed_paths`. ``DatasetService`` is a consumer,
-# not the source of truth for those constants/helpers.
-from .managed_paths import compute_delete_path  # noqa: E402
+# Data models — re-exported from the repository so the public service
+# API still references ``DatasetInfo`` / ``ImageInfo`` from this module.
+from .dataset_repository import (  # noqa: E402
+    DatasetInfo,
+    DatasetRepository,  # noqa: E402
+    ImageInfo,
+)
 
 
 def _dataset_config_path(name: str) -> Path:
@@ -56,38 +72,12 @@ def _dataset_config_path(name: str) -> Path:
 
 
 @dataclass
-class DatasetInfo:
-    """Summary of a dataset as returned by the listing API."""
-
-    name: str
-    source: str = "import"
-    config_path: str | None = None
-    image_count: int = 0
-    has_caption: int = 0
-    has_toml: int = 0
-    last_scanned_t: float | None = None
-    first_image_id: int | None = None
-
-
-@dataclass
-class ImageInfo:
-    """Summary of a single image within a dataset."""
-
-    id: int
-    file_name: str
-    path: str
-    has_caption: bool = False
-    has_toml: bool = False
-    width: int = 0
-    height: int = 0
-    draft_names: list[str] = field(default_factory=list)
-    last_modified_t: float | None = None
-    delete_path: str | None = None
-
-
-@dataclass
 class HistoryEntry:
-    """A single history snapshot for an image."""
+    """A single history snapshot for an image.
+
+    Service-level type: the underlying data is read from a file
+    (``.history~`` sidecar), not a SQL row.
+    """
 
     index: int
     caption: str = ""
@@ -96,7 +86,7 @@ class HistoryEntry:
 
 @dataclass
 class ImagePage:
-    """A paginated page of images."""
+    """A paginated page of images. Service-level type (the repo returns a flat list)."""
 
     images: list[ImageInfo]
     next_token: str | None = None
@@ -118,10 +108,12 @@ class DatasetService(Service):
         configuration: Configuration,
         event_dispatcher: EventDispatcher,
         logging: LoggingFactory,
+        repo: DatasetRepository,
     ):
         self._db: DBConnectionFactory = db
         self._watcher: DatasetWatcherService = watcher
         self._configuration: Configuration = configuration
+        self._repo: DatasetRepository = repo
         self._logger: Logger = logging.get_logger(__name__)
         # Ensure state dir exists
         DATASETS_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,88 +129,12 @@ class DatasetService(Service):
     def list_datasets(self) -> list[DatasetInfo]:
         """Return all indexed datasets, refreshing stale entries first."""
         self._refresh_stale_datasets()
-
-        conn = self._db.connection()
-        try:
-            rows = conn.execute(
-                """
-                SELECT d.name, d.source, d.config_path,
-                       d.image_count,
-                       COALESCE(ci.has_caption, 0),
-                       COALESCE(ci.has_toml, 0),
-                       d.last_scanned_t,
-                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
-                FROM datasets d
-                LEFT JOIN (
-                    SELECT dataset_id,
-                           SUM(has_caption) AS has_caption,
-                           SUM(has_toml) AS has_toml
-                    FROM dataset_images
-                    GROUP BY dataset_id
-                ) ci ON ci.dataset_id = d.id
-                ORDER BY d.name
-                """
-            ).fetchall()
-
-            return [
-                DatasetInfo(
-                    name=row[0],
-                    source=row[1],
-                    config_path=row[2],
-                    image_count=row[3],
-                    has_caption=row[4],
-                    has_toml=row[5],
-                    last_scanned_t=row[6],
-                    first_image_id=row[7],
-                )
-                for row in rows
-            ]
-        finally:
-            conn.close()
+        return self._repo.list_datasets()
 
     def get_dataset(self, name: str) -> DatasetInfo | None:
         """Get a single dataset by name, refreshing if stale."""
         self._refresh_stale_datasets()
-
-        conn = self._db.connection()
-        try:
-            row = conn.execute(
-                """
-                SELECT d.name, d.source, d.config_path,
-                       d.image_count,
-                       COALESCE(ci.has_caption, 0),
-                       COALESCE(ci.has_toml, 0),
-                       d.last_scanned_t,
-                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
-                FROM datasets d
-                LEFT JOIN (
-                    SELECT dataset_id,
-                           SUM(has_caption) AS has_caption,
-                           SUM(has_toml) AS has_toml
-                    FROM dataset_images
-                    WHERE dataset_id = (SELECT id FROM datasets WHERE name = ?)
-                    GROUP BY dataset_id
-                ) ci ON ci.dataset_id = d.id
-                WHERE d.name = ?
-                """,
-                (name, name),
-            ).fetchone()
-
-            if row is None:
-                return None
-
-            return DatasetInfo(
-                name=row[0],
-                source=row[1],
-                config_path=row[2],
-                image_count=row[3],
-                has_caption=row[4],
-                has_toml=row[5],
-                last_scanned_t=row[6],
-                first_image_id=row[7],
-            )
-        finally:
-            conn.close()
+        return self._repo.get_dataset(name)
 
     # --- Image listing (paginated) ---
 
@@ -233,75 +149,17 @@ class DatasetService(Service):
         Returns:
             An ImagePage with images and optional next_token.
         """
-        conn = self._db.connection()
-        try:
-            rows = conn.execute(
-                """
-                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t, d.config_path
-                FROM dataset_images di
-                JOIN datasets d ON d.id = di.dataset_id
-                WHERE d.name = ? AND di.id > ?
-                ORDER BY di.id
-                LIMIT ?
-                """,
-                (dataset_name, after_id, limit + 1),
-            ).fetchall()
-
-            images = [
-                ImageInfo(
-                    id=row[0],
-                    file_name=row[1],
-                    path=row[2],
-                    has_caption=bool(row[3]),
-                    has_toml=bool(row[4]),
-                    width=row[5] or 0,
-                    height=row[6] or 0,
-                    draft_names=row[7].split(",") if row[7] else [],
-                    last_modified_t=row[8],
-                    delete_path=compute_delete_path(row[2], row[9]),
-                )
-                for row in rows[:limit]
-            ]
-
-            next_token = None
-            if len(rows) > limit:
-                next_token = str(images[-1].id)
-
-            return ImagePage(images=images, next_token=next_token)
-        finally:
-            conn.close()
+        # Fetch limit+1 to detect "is there a next page".
+        rows = self._repo.list_images(dataset_name, after_id=after_id, limit=limit + 1)
+        images = rows[:limit]
+        next_token = None
+        if len(rows) > limit:
+            next_token = str(images[-1].id)
+        return ImagePage(images=images, next_token=next_token)
 
     def get_image(self, dataset_name: str, image_id: int) -> ImageInfo | None:
         """Get a single image by ID within a dataset."""
-        conn = self._db.connection()
-        try:
-            row = conn.execute(
-                """
-                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t, d.config_path
-                FROM dataset_images di
-                JOIN datasets d ON d.id = di.dataset_id
-                WHERE d.name = ? AND di.id = ?
-                """,
-                (dataset_name, image_id),
-            ).fetchone()
-
-            if row is None:
-                return None
-
-            return ImageInfo(
-                id=row[0],
-                file_name=row[1],
-                path=row[2],
-                has_caption=bool(row[3]),
-                has_toml=bool(row[4]),
-                width=row[5] or 0,
-                height=row[6] or 0,
-                draft_names=row[7].split(",") if row[7] else [],
-                last_modified_t=row[8],
-                delete_path=compute_delete_path(row[2], row[9]),
-            )
-        finally:
-            conn.close()
+        return self._repo.get_image(dataset_name, image_id)
 
     # --- Image content access ---
 
@@ -315,59 +173,18 @@ class DatasetService(Service):
 
     def get_image_by_path(self, dataset_name: str, image_path: str | Path) -> ImageInfo | None:
         """Look up an image by its filesystem path within a dataset."""
-        conn = self._db.connection()
-        try:
-            row = conn.execute(
-                """
-                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t
-                FROM dataset_images di
-                JOIN datasets d ON d.id = di.dataset_id
-                WHERE d.name = ? AND di.path = ?
-                """,
-                (dataset_name, str(image_path)),
-            ).fetchone()
-
-            if row is None:
-                return None
-
-            return ImageInfo(
-                id=row[0],
-                file_name=row[1],
-                path=row[2],
-                has_caption=bool(row[3]),
-                has_toml=bool(row[4]),
-                width=row[5] or 0,
-                height=row[6] or 0,
-                draft_names=row[7].split(",") if row[7] else [],
-                last_modified_t=row[8],
-            )
-        finally:
-            conn.close()
+        return self._repo.get_image_by_path(dataset_name, str(image_path))
 
     def get_draft_names(self, dataset_name: str) -> list[str]:
         """Return sorted list of unique draft names across all images in a dataset."""
-        conn = self._db.connection()
-        try:
-            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
-            if row is None:
-                return []
-            dataset_id: int = row[0]
-            raw = conn.execute(
-                """
-                SELECT DISTINCT draft_names FROM dataset_images
-                WHERE dataset_id = ? AND draft_names != ''
-                """,
-                (dataset_id,),
-            ).fetchall()
-            names: set[str] = set()
-            for (csv,) in raw:
-                for part in csv.split(","):
-                    part = part.strip()
-                    if part:
-                        names.add(part)
-            return sorted(names)
-        finally:
-            conn.close()
+        csvs = self._repo.list_draft_names_csv(dataset_name)
+        names: set[str] = set()
+        for csv in csvs:
+            for part in csv.split(","):
+                part = part.strip()
+                if part:
+                    names.add(part)
+        return sorted(names)
 
     def get_caption(self, dataset_name: str, image_id: int) -> dict[str, Any] | None:
         """Read the caption text and TOML extras for an image.
@@ -684,39 +501,25 @@ class DatasetService(Service):
 
     def rescan_dataset(self, name: str) -> bool:
         """Force a rescan of a dataset by name. Returns True if dataset was found."""
-        conn = self._db.connection()
-        try:
-            row = conn.execute("SELECT id, config_path FROM datasets WHERE name = ?", (name,)).fetchone()
-            if row is None:
-                return False
+        row = self._repo.get_dataset_row(name)
+        if row is None:
+            return False
+        dataset_id, config_path = row
+        self._apply_disk_scan(dataset_id, config_path)
 
-            dataset_id, config_path = row[0], row[1]
-            self._scan_dataset(conn, dataset_id, config_path)
-            conn.commit()
+        # Re-register filesystem watcher with current paths (picks up path changes)
+        if config_path:
+            config_path_obj = Path(config_path)
+            config = self._load_config(config_path_obj)
+            paths = self._get_dataset_paths(config, config_path_obj)
+            self._watcher.watch_dataset(name, paths)
 
-            # Re-register filesystem watcher with current paths (picks up path changes)
-            if config_path:
-                config_path_obj = Path(config_path)
-                config = self._load_config(config_path_obj)
-                paths = self._get_dataset_paths(config, config_path_obj)
-                self._watcher.watch_dataset(name, paths)
-
-            return True
-        finally:
-            conn.close()
+        return True
 
     def unregister_dataset(self, name: str) -> bool:
         """Remove a dataset, its images from the index, and its state dir."""
-
         self._watcher.unwatch_dataset(name)
-
-        conn = self._db.connection()
-        try:
-            cursor = conn.execute("DELETE FROM datasets WHERE name = ?", (name,))
-            conn.commit()
-            found = cursor.rowcount > 0
-        finally:
-            conn.close()
+        found = self._repo.delete_dataset(name)
 
         if found:
             state_dir = DATASETS_DIR / name
@@ -729,28 +532,29 @@ class DatasetService(Service):
         """Upsert a dataset record and scan its images."""
         config = self._load_config(Path(config_path))
 
-        conn = self._db.connection()
-        try:
-            conn.execute(
-                """
-                INSERT INTO datasets (name, source, config_path, last_scanned_t, updated_t)
-                VALUES (?, ?, ?, unixepoch(), unixepoch())
-                ON CONFLICT(name) DO UPDATE SET
-                    config_path = excluded.config_path,
-                    source = excluded.source,
-                    updated_t = unixepoch()
-                """,
-                (name, source, config_path),
-            )
+        # Walk the disk outside the transaction: file I/O is unrelated to
+        # the DB and shouldn't hold a transaction open.
+        disk_images = self._scan_disk(config_path, config=config)
 
-            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (name,)).fetchone()
-            assert row is not None
-            dataset_id = row[0]
-
-            self._scan_dataset(conn, dataset_id, config_path, config=config)
-            conn.commit()
-        finally:
-            conn.close()
+        with self._db.transaction():
+            dataset_id = self._repo.upsert_dataset(name, config_path, source)
+            existing_by_path = self._repo.list_image_paths(dataset_id)
+            for path, meta in disk_images.items():
+                self._repo.upsert_image(
+                    dataset_id=dataset_id,
+                    path=path,
+                    file_name=meta["file_name"],
+                    has_caption=meta["has_caption"],
+                    has_toml=meta["has_toml"],
+                    width=meta["width"],
+                    height=meta["height"],
+                    draft_names=meta["draft_names"],
+                    last_modified_t=meta["last_modified_t"],
+                )
+            for path, img_id in existing_by_path.items():
+                if path not in disk_images:
+                    self._repo.delete_image(img_id)
+            self._repo.update_dataset_stats(dataset_id, len(disk_images))
 
         # Start watching the dataset's directories
         paths = self._get_dataset_paths(config, Path(config_path))
@@ -807,32 +611,25 @@ class DatasetService(Service):
             self._logger.warning("Failed to parse config at %s: %s", config_path, e)
             return None
 
-    def _scan_dataset(
-        self,
-        conn: sqlite3.Connection,
-        dataset_id: int,
-        config_path: str | None,
-        config: Config | None = None,
-    ) -> None:
-        """Scan a dataset's config and update the image index."""
+    def _scan_disk(self, config_path: str | None, config: Config | None = None) -> dict[str, dict[str, Any]]:
+        """Walk the image directories for a dataset and return scanned metadata.
+
+        Returns a dict mapping each on-disk image path to its metadata.
+        Empty dict if the config is missing or has no image directories.
+        """
         if not config_path:
-            return
+            return {}
 
         config_file = Path(config_path)
         if not config_file.exists():
-            return
+            return {}
 
-        # Load config if not provided
         if config is None:
             config = self._load_config(config_file)
-
-        # Determine image directories from config (paths are already absolute)
-        image_dirs: list[Path] = []
-        extras_per_dir: dict[str, dict[str, object]] = {}
-
         if config is None:
-            return
+            return {}
 
+        image_dirs: list[Path] = []
         for entry in config.dataset:
             if entry.path:
                 p = Path(entry.path)
@@ -840,12 +637,10 @@ class DatasetService(Service):
                     p = config_file.parent / p
                 if p.is_dir():
                     image_dirs.append(p.resolve())
-                    extras_per_dir[str(p.resolve())] = entry.extras
 
         if not image_dirs:
-            return
+            return {}
 
-        # Collect current files from disk
         disk_images: dict[str, dict[str, Any]] = {}
         for img_dir in image_dirs:
             for child in sorted(img_dir.iterdir()):
@@ -889,87 +684,43 @@ class DatasetService(Service):
                     "draft_names": ",".join(sorted(draft_names)),
                     "last_modified_t": mod_time,
                 }
+        return disk_images
 
-        # Get existing indexed images
-        existing_rows = conn.execute(
-            "SELECT id, path FROM dataset_images WHERE dataset_id = ?",
-            (dataset_id,),
-        ).fetchall()
-        existing_by_path: dict[str, int] = {row[1]: row[0] for row in existing_rows}
+    def _apply_disk_scan(
+        self,
+        dataset_id: int,
+        config_path: str | None,
+        config: Config | None = None,
+    ) -> None:
+        """Walk the disk for a dataset and reconcile the index in one transaction.
 
-        # Upsert disk images
-        for img_path, meta in disk_images.items():
-            if img_path in existing_by_path:
-                conn.execute(
-                    """
-                    UPDATE dataset_images
-                    SET file_name = ?, has_caption = ?, has_toml = ?, width = ?, height = ?, draft_names = ?, last_modified_t = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        meta["file_name"],
-                        int(meta["has_caption"]),
-                        int(meta["has_toml"]),
-                        meta["width"],
-                        meta["height"],
-                        meta["draft_names"],
-                        meta["last_modified_t"],
-                        existing_by_path[img_path],
-                    ),
+        The disk walk happens outside the transaction (it's file I/O, not
+        SQL). The DB reconciliation runs inside a single transaction so
+        the index never reflects a half-applied scan.
+        """
+        disk_images = self._scan_disk(config_path, config=config)
+        with self._db.transaction():
+            existing_by_path = self._repo.list_image_paths(dataset_id)
+            for path, meta in disk_images.items():
+                self._repo.upsert_image(
+                    dataset_id=dataset_id,
+                    path=path,
+                    file_name=meta["file_name"],
+                    has_caption=meta["has_caption"],
+                    has_toml=meta["has_toml"],
+                    width=meta["width"],
+                    height=meta["height"],
+                    draft_names=meta["draft_names"],
+                    last_modified_t=meta["last_modified_t"],
                 )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO dataset_images (dataset_id, path, file_name, has_caption, has_toml, width, height, draft_names, last_modified_t)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        dataset_id,
-                        img_path,
-                        meta["file_name"],
-                        int(meta["has_caption"]),
-                        int(meta["has_toml"]),
-                        meta["width"],
-                        meta["height"],
-                        meta["draft_names"],
-                        meta["last_modified_t"],
-                    ),
-                )
-
-        # Remove images that no longer exist on disk
-        for img_path, img_id in existing_by_path.items():
-            if img_path not in disk_images:
-                conn.execute("DELETE FROM dataset_images WHERE id = ?", (img_id,))
-
-        # Update dataset metadata
-        conn.execute(
-            """
-            UPDATE datasets
-            SET image_count = ?, last_scanned_t = unixepoch(), updated_t = unixepoch()
-            WHERE id = ?
-            """,
-            (len(disk_images), dataset_id),
-        )
+            for path, img_id in existing_by_path.items():
+                if path not in disk_images:
+                    self._repo.delete_image(img_id)
+            self._repo.update_dataset_stats(dataset_id, len(disk_images))
 
     def _update_image_index(self, image_id: int, *, has_caption: bool | None = None, has_toml: bool | None = None) -> None:
         """Update specific fields on an indexed image."""
-        conn = self._db.connection()
-        try:
-            sets: list[str] = []
-            params: list[Any] = []
-            if has_caption is not None:
-                sets.append("has_caption = ?")
-                params.append(int(has_caption))
-            if has_toml is not None:
-                sets.append("has_toml = ?")
-                params.append(int(has_toml))
-            if not sets:
-                return
-            params.append(image_id)
-            conn.execute(f"UPDATE dataset_images SET {', '.join(sets)} WHERE id = ?", params)
-            conn.commit()
-        finally:
-            conn.close()
+        self._repo.update_image_flags(image_id, has_caption=has_caption, has_toml=has_toml)
 
     def refresh_image_index(self, dataset_name: str, image_id: int) -> None:
         """Re-read a single image's disk state and update its index row."""
@@ -993,41 +744,34 @@ class DatasetService(Service):
                 if draft_name:
                     draft_names.append(draft_name)
 
-        conn = self._db.connection()
-        try:
-            conn.execute(
-                "UPDATE dataset_images SET has_caption = ?, has_toml = ?, draft_names = ? WHERE id = ?",
-                (int(caption_path.exists()), int(toml_path.exists()), ",".join(sorted(draft_names)), image_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        self._repo.refresh_image_disk_state(
+            image_id,
+            has_caption=caption_path.exists(),
+            has_toml=toml_path.exists(),
+            draft_names=",".join(sorted(draft_names)),
+        )
 
     def _refresh_stale_datasets(self, max_age_seconds: float = 60.0) -> None:
         """Rescan datasets that haven't been scanned recently."""
-        conn = self._db.connection()
-        try:
-            cutoff = time.time() - max_age_seconds
-            stale = conn.execute(
-                "SELECT id, name, config_path FROM datasets WHERE last_scanned_t IS NULL OR last_scanned_t < ?",
-                (cutoff,),
-            ).fetchall()
+        cutoff = time.time() - max_age_seconds
+        stale = self._repo.list_stale(cutoff)
 
-            for dataset_id, name, config_path in stale:
-                try:
-                    self._scan_dataset(conn, dataset_id, config_path)
-                    conn.commit()
+        for dataset_id, name, config_path in stale:
+            try:
+                self._apply_disk_scan(dataset_id, config_path)
+            except Exception as e:
+                self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
+                continue
 
-                    # Re-register filesystem watcher so path changes are tracked
-                    if config_path:
-                        config_path_obj = Path(config_path)
-                        config = self._load_config(config_path_obj)
-                        paths = self._get_dataset_paths(config, config_path_obj)
-                        self._watcher.watch_dataset(name, paths)
-                except Exception as e:
-                    self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
-        finally:
-            conn.close()
+            # Re-register filesystem watcher so path changes are tracked.
+            # Done outside the scan transaction because watcher IO is unrelated.
+            if not config_path:
+                continue
+            config_path_obj = Path(config_path)
+            config = self._load_config(config_path_obj)
+            paths = self._get_dataset_paths(config, config_path_obj)
+            if paths:
+                self._watcher.watch_dataset(name, paths)
 
     def _get_dataset_paths(self, config: Config | None, config_path: Path | None = None) -> list[str]:
         """Extract image directory paths from a parsed config.
@@ -1049,13 +793,7 @@ class DatasetService(Service):
 
     def _watch_existing_datasets(self) -> None:
         """Watch all existing datasets' directories. Called during startup."""
-        conn = self._db.connection()
-        try:
-            rows = conn.execute("SELECT name, config_path FROM datasets").fetchall()
-        finally:
-            conn.close()
-
-        for name, config_path in rows:
+        for name, config_path in self._repo.list_all_for_watcher():
             if not config_path:
                 continue
             config_path_obj = Path(config_path)

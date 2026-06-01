@@ -990,6 +990,7 @@ def dataset_service_for_delete(managed_dataset):
     svc._db = mock_db
     svc._watcher = mock_watcher
     svc._logger = mock_logging.get_logger()
+    svc._repo = MagicMock()
 
     info = DatasetInfo(
         name="managed",
