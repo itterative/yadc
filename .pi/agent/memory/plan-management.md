@@ -38,6 +38,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`selective-image-refresh-plan`](.pi/agent/memory/plans/selective-image-refresh-plan.md) | Per-image SSE events during captioning for live grid tile updates | Complete |
 | [`dataset-config-ux-plan`](.pi/agent/memory/plans/dataset-config-ux-plan.md) | Dataset config editing UX — structured form, entries/extras, simplified/advanced toggle, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, managed dataset lifecycle | In Progress (review pass done) |
 | [`repository-pattern-proposal`](.pi/agent/memory/plans/repository-pattern-proposal.md) | Introduce repository pattern for `DatasetService` and `SettingsService` SQL. Rebased onto `feature/svelte-frontend` so the `DBConnectionFactory.transaction()` infrastructure is already in place. | Complete (2026-06-01) |
+| [`drop-to-upload-dataset-browser-plan`](.pi/agent/memory/plans/drop-to-upload-dataset-browser-plan.md) | Drop-to-upload UX in the dataset browser — drag files onto the image grid to open an upload modal that appends to the current managed dataset. Extracted `DropUploadZone` component + warning overlay for blocked uploads + topbar upload icon + empty-state button. | Complete |
 
 ## When to Read Plans
 

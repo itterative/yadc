@@ -5,9 +5,12 @@
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/DatasetBrowser.svelte';
     import SidePanel from './SidePanel.svelte';
+    import AddFilesDialog from './AddFilesDialog.svelte';
+    import DropUploadZone from './DropUploadZone.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import SvgUpload from '$lib/icons/SvgUpload.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import {
@@ -74,6 +77,26 @@
             ? Math.round(($captioningStatus.processed / $captioningStatus.total) * 100)
             : 0
     );
+
+    // --- Drop-to-upload state (page-level) ---
+
+    // Files captured by a drop event, used to pre-populate AddFilesDialog.
+    let droppedFiles: File[] = $state([]);
+    let addFilesDialogOpen = $state(false);
+
+    // Whether uploads are allowed for the current dataset state.
+    let canUpload = $derived.by(() => currentDataset?.source === 'upload' && !isBatchCaptioning);
+
+    // Why uploads are blocked (drives the warning overlay text).
+    let uploadBlockedReason = $derived.by(() => {
+        if (isBatchCaptioning) {
+            return 'Captioning in progress — uploads are disabled until it finishes';
+        }
+        if (currentDataset && currentDataset.source !== 'upload') {
+            return 'External datasets do not support file uploads';
+        }
+        return null;
+    });
 
     // Register job_id from incoming status events so dataset_changed events
     // from our own captioning are suppressed
@@ -389,6 +412,46 @@
             }
         })();
     }
+
+    // --- Drop-to-upload handlers ---
+
+    function handleFilesDropped(files: File[]) {
+        droppedFiles = files;
+        addFilesDialogOpen = true;
+    }
+
+    function handleAddFilesClose() {
+        addFilesDialogOpen = false;
+        droppedFiles = [];
+    }
+
+    async function handleAddFilesComplete() {
+        addFilesDialogOpen = false;
+        droppedFiles = [];
+        if (!browser || !datasetName) {
+            return;
+        }
+        // Re-fetch images + dataset stats so the new files show up immediately.
+        // The DatasetChangedEvent watcher will normally trigger a refresh toast,
+        // but we already know the upload succeeded so we go straight to the
+        // load path without showing the user an extra "files have changed" prompt.
+        await loadInitial(datasetName);
+        clearPendingDatasetChange(datasetName);
+        if (watcherToastId) {
+            dismissToast(watcherToastId);
+            watcherToastId = null;
+        }
+        try {
+            datasets = await fetchDatasets();
+        } catch {
+            /* ignore */
+        }
+    }
+
+    function handleAddFilesClick() {
+        droppedFiles = [];
+        addFilesDialogOpen = true;
+    }
 </script>
 
 <svelte:head>
@@ -449,6 +512,15 @@
             {/if}
         </div>
     </div>
+    {#if canUpload}
+        <button
+            class="shrink-0 cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+            title="Add files to this dataset"
+            onclick={handleAddFilesClick}
+        >
+            <SvgUpload class="h-5 w-5" />
+        </button>
+    {/if}
     <button
         class="shrink-0 cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         title="Refresh dataset from disk"
@@ -491,8 +563,15 @@
         {#if error}
             <p class="text-error">Error: {error}</p>
         {:else}
-            <!-- Image grid (full width on mobile, flex-1 on desktop) -->
-            <div class="min-w-0 flex-1 overflow-y-auto">
+            <!-- Image grid (full width on mobile, flex-1 on desktop).
+                 DropUploadZone wraps the grid and handles drag/drop upload. -->
+            <DropUploadZone
+                {canUpload}
+                blockedReason={uploadBlockedReason}
+                {datasetName}
+                ondrop={handleFilesDropped}
+                onblockeddrop={(reason) => toast.warning(reason)}
+            >
                 <DatasetBrowser
                     class="mx-auto"
                     {datasetName}
@@ -509,9 +588,20 @@
                     <div class="empty-state">
                         <p class="text-lg">No images found</p>
                         <p class="mt-1 text-sm">This dataset may be empty or not yet scanned.</p>
+                        {#if currentDataset?.source === 'upload'}
+                            <button
+                                class="btn-primary mt-4"
+                                onclick={handleAddFilesClick}
+                                type="button"
+                            >
+                                <SvgUpload class="h-4 w-4" />
+                                Add Files
+                            </button>
+                            <p class="mt-2 text-xs text-muted">Or drop files onto the image grid</p>
+                        {/if}
                     </div>
                 {/if}
-            </div>
+            </DropUploadZone>
         {/if}
 
         <SidePanel
@@ -525,3 +615,15 @@
         />
     </div>
 </div>
+
+<!-- Add Files dialog (mounted only when open). Pre-populated with dropped
+     files, or empty when opened from the empty-state button. -->
+{#if addFilesDialogOpen}
+    <AddFilesDialog
+        open={addFilesDialogOpen}
+        {datasetName}
+        files={droppedFiles}
+        onclose={handleAddFilesClose}
+        oncomplete={handleAddFilesComplete}
+    />
+{/if}

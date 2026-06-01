@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { untrack } from 'svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
     import FileDropZone from '$lib/components/ui/FileDropZone.svelte';
     import { formatBytes } from '$lib/format';
@@ -36,14 +37,21 @@
         mode: 'create' | 'append';
         /** Required when mode === 'append'. */
         datasetName?: string;
+        /** One-time seed for the file list (e.g. from a drop event). Defaults to empty. */
+        initialFiles?: File[];
         oncomplete: (dataset: DatasetInfo) => void;
         onclose: () => void;
     }
 
-    let { mode, datasetName, oncomplete, onclose }: Props = $props();
+    let { mode, datasetName, initialFiles, oncomplete, onclose }: Props = $props();
 
     let name = $state('');
-    let selectedFiles: File[] = $state([]);
+    // One-time seed from `initialFiles` (e.g. files dropped on the page before
+    // the dialog opened). Re-seeding on prop changes is intentionally NOT
+    // supported — the dialog is expected to be re-mounted for new file lists,
+    // and updates after mount would be confusing. Use the FileDropZone inside
+    // the panel to add more files after the dialog is open.
+    let selectedFiles: File[] = $state(untrack(() => initialFiles ?? []));
     let isSubmitting = $state(false);
     let error: string | null = $state(null);
     let uploadAbortController: AbortController | null = $state(null);
