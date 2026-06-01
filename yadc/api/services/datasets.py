@@ -29,6 +29,7 @@ management.
 from __future__ import annotations
 
 import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from logging import Logger
@@ -48,6 +49,7 @@ from ..events import DatasetChangedEvent
 from ..modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService
 from ..modules.db_connection_factory import DBConnectionFactory
 from ..modules.event_dispatcher import EventDispatcher, event_handler
+from ..modules.job_scheduler import JobScheduler
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 
@@ -109,12 +111,20 @@ class DatasetService(Service):
         event_dispatcher: EventDispatcher,
         logging: LoggingFactory,
         repo: DatasetRepository,
+        job_scheduler: JobScheduler | None = None,
     ):
         self._db: DBConnectionFactory = db
         self._watcher: DatasetWatcherService = watcher
         self._configuration: Configuration = configuration
         self._repo: DatasetRepository = repo
         self._logger: Logger = logging.get_logger(__name__)
+        self._event_dispatcher: EventDispatcher = event_dispatcher
+        # Serialize the stale-refresh pass so the background thread and a
+        # future manual refresh (see dataset-config-ux-plan todo) don't
+        # collide on the SQLite write lock. Without this, the two callers
+        # would race and the second would fail with "database is locked"
+        # once it exceeded ``busy_timeout`` (5s).
+        self._refresh_lock: threading.Lock = threading.Lock()
         # Ensure state dir exists
         DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -124,16 +134,31 @@ class DatasetService(Service):
         # Register for DatasetChangedEvent to auto-rescan
         event_dispatcher.register_service(self)
 
+        # Stale-dataset refresh runs in a background thread so parallel
+        # API requests don't all try to scan the disk at once. The watcher
+        # handles inotify-driven updates; this is the fallback for
+        # changes the watcher can't see (e.g. external edits to a
+        # dataset's config.toml that add new image paths, where no
+        # inotify event fires).
+        if job_scheduler is not None:
+            job_scheduler.new_scheduled_job(self._configuration.dataset_refresh_interval_seconds, self._refresh_stale_datasets)
+
     # --- Dataset listing ---
 
     def list_datasets(self) -> list[DatasetInfo]:
-        """Return all indexed datasets, refreshing stale entries first."""
-        self._refresh_stale_datasets()
+        """Return all indexed datasets.
+
+        Stale entries are refreshed by a background thread (scheduled in
+        ``__init__``); this method reads the current index state.
+        """
         return self._repo.list_datasets()
 
     def get_dataset(self, name: str) -> DatasetInfo | None:
-        """Get a single dataset by name, refreshing if stale."""
-        self._refresh_stale_datasets()
+        """Get a single dataset by name.
+
+        Stale entries are refreshed by a background thread (scheduled in
+        ``__init__``); this method reads the current index state.
+        """
         return self._repo.get_dataset(name)
 
     # --- Image listing (paginated) ---
@@ -499,13 +524,13 @@ class DatasetService(Service):
 
         return self.register(name, str(dest), source="create")
 
-    def rescan_dataset(self, name: str) -> bool:
+    def rescan_dataset(self, name: str, *, source: str = "") -> bool:
         """Force a rescan of a dataset by name. Returns True if dataset was found."""
         row = self._repo.get_dataset_row(name)
         if row is None:
             return False
         dataset_id, config_path = row
-        self._apply_disk_scan(dataset_id, config_path)
+        changed = self._apply_disk_scan(dataset_id, config_path)
 
         # Re-register filesystem watcher with current paths (picks up path changes)
         if config_path:
@@ -513,6 +538,10 @@ class DatasetService(Service):
             config = self._load_config(config_path_obj)
             paths = self._get_dataset_paths(config, config_path_obj)
             self._watcher.watch_dataset(name, paths)
+
+        if changed:
+            job_id = source or None
+            self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=name, job_id=job_id))
 
         return True
 
@@ -691,17 +720,54 @@ class DatasetService(Service):
         dataset_id: int,
         config_path: str | None,
         config: Config | None = None,
-    ) -> None:
+    ) -> bool:
         """Walk the disk for a dataset and reconcile the index in one transaction.
 
         The disk walk happens outside the transaction (it's file I/O, not
         SQL). The DB reconciliation runs inside a single transaction so
         the index never reflects a half-applied scan.
+
+        Only writes SQL for rows that actually changed. The watcher
+        keeps the index in sync in the common case, so most passes
+        (including the periodic background refresh) find no diff and
+        skip every per-image ``upsert_image`` / ``delete_image`` call.
+        ``update_dataset_stats`` still runs to bump ``last_scanned_t``,
+        so the next pass can skip a recently-checked dataset.
+
+        Returns ``True`` if any rows were upserted or deleted (i.e. the
+        index changed).
         """
         disk_images = self._scan_disk(config_path, config=config)
+        self._logger.debug(
+            "Disk scan started. [dataset_id=%d, config_path=%s, disk_images=%d]",
+            dataset_id,
+            config_path,
+            len(disk_images),
+        )
         with self._db.transaction():
-            existing_by_path = self._repo.list_image_paths(dataset_id)
+            existing = self._repo.list_image_infos(dataset_id)
+            to_upsert: dict[str, dict[str, Any]] = {}
             for path, meta in disk_images.items():
+                current = existing.get(path)
+                if current is None or self._image_meta_differs(current, meta):
+                    to_upsert[path] = meta
+            to_delete: list[int] = [img.id for path, img in existing.items() if path not in disk_images]
+            if to_upsert or to_delete:
+                self._logger.debug(
+                    "Disk scan diff. [dataset_id=%d, existing=%d, disk=%d, to_upsert=%d, to_delete=%d]",
+                    dataset_id,
+                    len(existing),
+                    len(disk_images),
+                    len(to_upsert),
+                    len(to_delete),
+                )
+            else:
+                self._logger.debug(
+                    "Disk scan in sync (no diff). [dataset_id=%d, images=%d]",
+                    dataset_id,
+                    len(existing),
+                )
+            for path, meta in to_upsert.items():
                 self._repo.upsert_image(
                     dataset_id=dataset_id,
                     path=path,
@@ -713,10 +779,41 @@ class DatasetService(Service):
                     draft_names=meta["draft_names"],
                     last_modified_t=meta["last_modified_t"],
                 )
-            for path, img_id in existing_by_path.items():
-                if path not in disk_images:
-                    self._repo.delete_image(img_id)
+            for image_id in to_delete:
+                self._repo.delete_image(image_id)
             self._repo.update_dataset_stats(dataset_id, len(disk_images))
+
+        return bool(to_upsert or to_delete)
+
+    @staticmethod
+    def _image_meta_differs(info: ImageInfo, meta: dict[str, Any]) -> bool:
+        """Return True if the disk-read ``meta`` for an image differs from the stored :class:`ImageInfo`.
+
+        Used by :meth:`_apply_disk_scan` to filter out images that
+        haven't actually changed since the last index pass. The
+        comparison covers every field the upsert would write: caption
+        / toml / draft presence, image dimensions, and the file's
+        ``last_modified_t``. ``id``, ``file_name``, ``path``, and the
+        derived ``delete_path`` are excluded — they're either
+        identifiers or computed from the path.
+        """
+        if info.has_caption != meta["has_caption"]:
+            return True
+        if info.has_toml != meta["has_toml"]:
+            return True
+        if info.width != meta["width"]:
+            return True
+        if info.height != meta["height"]:
+            return True
+        if info.last_modified_t != meta["last_modified_t"]:
+            return True
+        # ``draft_names`` is stored as a sorted CSV; the in-memory
+        # ImageInfo parses it into a list. Sort-compare the lists so the
+        # two representations are equivalent.
+        disk_drafts: list[str] = meta["draft_names"].split(",") if meta["draft_names"] else []
+        if sorted(info.draft_names) != sorted(disk_drafts):
+            return True
+        return False
 
     def _update_image_index(self, image_id: int, *, has_caption: bool | None = None, has_toml: bool | None = None) -> None:
         """Update specific fields on an indexed image."""
@@ -751,27 +848,43 @@ class DatasetService(Service):
             draft_names=",".join(sorted(draft_names)),
         )
 
-    def _refresh_stale_datasets(self, max_age_seconds: float = 60.0) -> None:
-        """Rescan datasets that haven't been scanned recently."""
-        cutoff = time.time() - max_age_seconds
-        stale = self._repo.list_stale(cutoff)
+    def _refresh_stale_datasets(self, max_age_seconds: float | None = None) -> None:
+        """Rescan datasets that haven't been scanned recently.
 
-        for dataset_id, name, config_path in stale:
-            try:
-                self._apply_disk_scan(dataset_id, config_path)
-            except Exception as e:
-                self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
-                continue
+        Serialized via ``self._refresh_lock`` so the background thread and
+        a future manual refresh (see dataset-config-ux-plan todo) can't
+        race for the SQLite write lock. Callers block until the in-flight
+        refresh finishes; the cost is one disk walk, not a long wait.
 
-            # Re-register filesystem watcher so path changes are tracked.
-            # Done outside the scan transaction because watcher IO is unrelated.
-            if not config_path:
-                continue
-            config_path_obj = Path(config_path)
-            config = self._load_config(config_path_obj)
-            paths = self._get_dataset_paths(config, config_path_obj)
-            if paths:
-                self._watcher.watch_dataset(name, paths)
+        ``max_age_seconds`` defaults to the configured refresh interval
+        when called by the background job, but tests pass a smaller value
+        to make freshly-registered datasets immediately eligible.
+        """
+        if max_age_seconds is None:
+            max_age_seconds = self._configuration.dataset_refresh_interval_seconds
+        with self._refresh_lock:
+            cutoff = time.time() - max_age_seconds
+            stale = self._repo.list_stale(cutoff)
+
+            for dataset_id, name, config_path in stale:
+                try:
+                    changed = self._apply_disk_scan(dataset_id, config_path)
+                except Exception as e:
+                    self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
+                    continue
+
+                if changed:
+                    self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=name))
+
+                # Re-register filesystem watcher so path changes are tracked.
+                # Done outside the scan transaction because watcher IO is unrelated.
+                if not config_path:
+                    continue
+                config_path_obj = Path(config_path)
+                config = self._load_config(config_path_obj)
+                paths = self._get_dataset_paths(config, config_path_obj)
+                if paths:
+                    self._watcher.watch_dataset(name, paths)
 
     def _get_dataset_paths(self, config: Config | None, config_path: Path | None = None) -> list[str]:
         """Extract image directory paths from a parsed config.

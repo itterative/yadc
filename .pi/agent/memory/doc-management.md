@@ -40,6 +40,7 @@ The following docs are kept at the `.pi/agent/memory/` root because they are con
 | `dev-tools` | Dev tooling — ruff (linting & formatting) and basedpyright (type checking). |
 | `git-conventions` | Git commit message conventions used in the yadc project. |
 | `gitignored-files` | Files and directories ignored by git — must not be modified or included in changes. |
+| `logging-format` | Log message format used across the yadc API — sentence-style message + optional `[key=value, ...]` block, positional `%`-formatting. |
 | `pydantic-conventions` | Pydantic conventions used in the yadc project. |
 | `running-python` | When running python in the yadc project, use `uv`. |
 | `testing-conventions` | Test structure, patterns, and how to run tests in the yadc project. |

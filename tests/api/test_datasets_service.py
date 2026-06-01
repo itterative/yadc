@@ -267,6 +267,43 @@ class TestApplyDiskScanOrchestration:
         assert service._repo.get_image_by_path("alpha", str(img_dir / "c.jpg")) is not None
         assert service._repo.get_dataset("alpha").image_count == 3
 
+    def test_rescan_skips_unchanged_images(self, service, tmp_path):
+        """Re-scanning a dataset whose disk state matches the index should not issue per-image SQL writes.
+
+        Verifies the staleness filter: ``_apply_disk_scan`` should
+        detect that every row's stored metadata matches the freshly
+        walked disk and skip the upsert loop entirely. The test
+        patches the repo's ``upsert_image`` to count invocations; on
+        a no-op rescan, it should be called zero times.
+        """
+        from unittest.mock import patch
+
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+        service.register("alpha", str(config_path), source="import")
+
+        with patch.object(service._repo, "upsert_image") as mock_upsert:
+            assert service.rescan_dataset("alpha") is True
+            assert mock_upsert.call_count == 0
+
+    def test_rescan_only_upserts_changed_images(self, service, tmp_path):
+        """Re-scanning a dataset with one new sidecar should only upsert the changed image, not all of them."""
+        from unittest.mock import patch
+
+        img_dir = self._make_image_dir(tmp_path)
+        config_path = self._write_config(tmp_path, img_dir)
+        service.register("alpha", str(config_path), source="import")
+
+        # Add a sidecar to one image; that image's has_caption flips to True.
+        (img_dir / "a.jpg").with_suffix(".txt").write_text("a red square")
+
+        with patch.object(service._repo, "upsert_image") as mock_upsert:
+            assert service.rescan_dataset("alpha") is True
+            assert mock_upsert.call_count == 1
+            upserted_path = mock_upsert.call_args.kwargs["path"]
+            assert upserted_path == str(img_dir / "a.jpg")
+            assert mock_upsert.call_args.kwargs["has_caption"] is True
+
     def test_atomicity_on_failure(self, service, tmp_path, db_connection_factory):
         """If a write inside the scan transaction fails, no partial state is applied.
 

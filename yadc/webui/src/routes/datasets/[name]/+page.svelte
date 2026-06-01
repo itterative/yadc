@@ -6,6 +6,7 @@
     import DatasetBrowser from '$lib/components/dataset/DatasetBrowser.svelte';
     import SidePanel from './SidePanel.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
+    import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
     import Topbar from '$lib/components/ui/Topbar.svelte';
@@ -28,6 +29,7 @@
         fetchDatasets,
         fetchImages,
         fetchCaptioningStatus,
+        rescanDataset,
         type DatasetInfo,
         type ImageInfo
     } from '$lib/stores/datasetImages';
@@ -109,6 +111,7 @@
     // --- Filesystem watcher state ---
 
     let watcherToastId: string | null = $state(null);
+    let isRefreshing = $state(false);
 
     // Show a toast when external filesystem changes are detected.
     // Re-use the same toast id so rapid changes don't stack duplicates.
@@ -341,6 +344,32 @@
         }
     }
 
+    async function handleManualRefresh() {
+        if (!browser || !datasetName || isRefreshing) {
+            return;
+        }
+        isRefreshing = true;
+        try {
+            await rescanDataset(datasetName);
+            // Dismiss any pending watcher toast since we've just refreshed
+            if (watcherToastId) {
+                dismissToast(watcherToastId);
+                watcherToastId = null;
+            }
+            clearPendingDatasetChange(datasetName);
+            await loadInitial(datasetName);
+            try {
+                datasets = await fetchDatasets();
+            } catch {
+                /* ignore */
+            }
+        } catch (e) {
+            toast.error(`Failed to refresh: ${friendlyErrorMessage(e, 'Unknown error')}`);
+        } finally {
+            isRefreshing = false;
+        }
+    }
+
     function handleRefreshFromWatcher() {
         if (!browser || !datasetName) {
             return;
@@ -420,6 +449,18 @@
             {/if}
         </div>
     </div>
+    <button
+        class="shrink-0 cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        title="Refresh dataset from disk"
+        disabled={isRefreshing}
+        onclick={handleManualRefresh}
+    >
+        {#if isRefreshing}
+            <SvgSpinner class="h-5 w-5 animate-spin" />
+        {:else}
+            <SvgRefresh class="h-5 w-5" />
+        {/if}
+    </button>
 </Topbar>
 
 <div class="flex h-full flex-col gap-4">

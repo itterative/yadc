@@ -274,7 +274,8 @@ def api_datasets(
     @app.post("/datasets/<name>/rescan")
     def rescan_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
         """Force a rescan of a dataset's images."""
-        found = datasets.rescan_dataset(name)
+        source = request.args.get("source", "")
+        found = datasets.rescan_dataset(name, source=source)
         if not found:
             return jsonify_error("Dataset not found", status=404)
         result = datasets.get_dataset(name)

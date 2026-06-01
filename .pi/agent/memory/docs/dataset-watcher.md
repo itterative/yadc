@@ -126,6 +126,16 @@ FS change (external) → _on_fs_change → debounce → _dispatch_change → Dat
 
 Self-originated changes (job_id set) short-circuit at `_on_dataset_changed`. The path-diff in `watch_dataset` prevents redundant unwatch→rewatch when paths haven't changed.
 
+### Manual Refresh and Event Dispatch
+
+`rescan_dataset` (called by the API endpoint `POST /datasets/<name>/rescan`) accepts a `source` parameter (sent as `?source=` by the frontend). When the scan detects changes (`_apply_disk_scan` returns `True`), it dispatches a `DatasetChangedEvent` with `job_id=source` (or `None` if no source was provided). This means:
+
+- The originating tab suppresses the SSE event (its `clientId` matches `job_id`).
+- Other tabs see the event and get the refresh toast.
+- `_on_dataset_changed` also skips the redundant rescan because `job_id` is truthy.
+
+The same pattern applies to `_refresh_stale_datasets` (background job), except it always dispatches with `job_id=None` since there's no originating client.
+
 ## Frontend Suppression
 
 In `events.ts`, the `dataset_changed` SSE listener:
@@ -146,7 +156,7 @@ Each frontend tab generates a unique `clientId` on module load (stored in `event
 | `yadc/api/services/datasets.py` | `DatasetService` — calls `watch_dataset`, `expect_file_change` for webui edits, handles `DatasetChangedEvent` |
 | `yadc/api/configuration.py` | `watcher_debounce_seconds`, `watcher_expected_file_max`, `watcher_expected_file_ttl` |
 | `yadc/webui/src/lib/stores/events.ts` | Frontend SSE listener — per-tab clientId generation, job_id-based suppression |
-| `yadc/webui/src/lib/stores/datasetImages.ts` | Frontend API helpers — sends `?source=clientId` with mutating requests |
+| `yadc/webui/src/lib/stores/datasetImages.ts` | Frontend API helpers — sends `?source=clientId` with mutating requests (including rescan) |
 
 ## Known Issues / Future Work
 

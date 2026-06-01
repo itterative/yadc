@@ -145,6 +145,54 @@ The service also owns:
 - Business policy (e.g. when to rescan, what counts as a "stale"
   dataset)
 
+## Background scans
+
+Long-running disk scans (`_apply_disk_scan` and friends) are
+**scheduled as a background job** in `DatasetService.__init__` via the
+optional `JobScheduler` dependency, not triggered on every API
+request. Doing the scan on each `list_datasets` / `get_dataset` call
+made the API vulnerable to "database is locked" errors under parallel
+load — the SQLite write lock is global, and concurrent scans would
+exceed `busy_timeout` (5s) on a slow dataset.
+
+Pattern:
+
+```python
+def __init__(self, ..., job_scheduler: JobScheduler | None = None):
+    ...
+    self._refresh_lock: threading.Lock = threading.Lock()
+    if job_scheduler is not None:
+        job_scheduler.new_scheduled_job(
+            self._configuration.dataset_refresh_interval_seconds,
+            self._refresh_stale_datasets,
+        )
+
+def _refresh_stale_datasets(self, max_age_seconds: float | None = None):
+    """Rescan stale datasets. Held under _refresh_lock so a future
+    manual refresh button can't race the background job."""
+    with self._refresh_lock:
+        ...
+        # Dispatches DatasetChangedEvent for each dataset that had changes.
+```
+
+`_apply_disk_scan` returns `True` when rows were actually upserted or
+deleted (i.e. the index changed). Both `_refresh_stale_datasets` and
+`rescan_dataset` use this return value to dispatch a
+`DatasetChangedEvent` only when the scan found real changes — avoiding
+spurious SSE notifications to the frontend.
+```
+
+The `JobScheduler` is optional so tests can construct the service
+without it. The lock serializes the background job with any future
+caller (manual refresh button, save-as-default side effect) — callers
+block instead of failing with "database is locked".
+
+`list_datasets` / `get_dataset` are now strict reads of the index
+state. Inotify events still drive live updates via the watcher; the
+stale-refresh job is a fallback for changes the watcher can't see
+(e.g. external edits to a dataset's `config.toml` that add new image
+paths, where no inotify event fires).
+
 ## What the service no longer does
 
 After the refactor:

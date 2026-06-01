@@ -142,12 +142,10 @@ The first pass of history browsing/restoring is implemented (backend API + front
 
 ## Incremental filesystem index updates
 
-Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-scans every file in every directory of the dataset. This is wasteful when only one file was added or removed.
+~~Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-scans every file in every directory of the dataset. This is wasteful when only one file was added or removed.~~ **PARTIAL** — Diff scans are in: `DatasetService._apply_disk_scan` now compares the freshly-walked disk state against the current index (via `DatasetRepository.list_image_infos`) and only writes SQL for changed rows (`to_upsert` + `to_delete`). The function returns `bool` so callers (`_refresh_stale_datasets` background job and `rescan_dataset` API endpoint) only dispatch `DatasetChangedEvent` when the scan found real changes. The `_refresh_stale_datasets` interval is now `dataset_refresh_interval_seconds` (default 300s) and runs in a background thread via `JobScheduler` (with `_refresh_lock` to serialize against manual rescans).
 
-**Fix**:
-- Make `DatasetWatcherService` pass the affected file path(s) in the event (or a new granular event type like `DatasetFileAddedEvent` / `DatasetFileRemovedEvent`).
-- `DatasetService` should handle these by doing targeted SQLite upserts/deletes for the affected files instead of a full rescan.
-- Increase or remove the `_refresh_stale_datasets` interval (currently 60s) since the watcher now handles updates incrementally — the stale refresh becomes just a fallback.
+**Still pending**:
+- Pass the affected file path(s) in the event (or a new granular event type like `DatasetFileAddedEvent` / `DatasetFileRemovedEvent`) so `DatasetService` can do targeted SQLite upserts/deletes for the affected files **without** walking the whole dataset. Currently every external change still triggers a full disk walk.
 
 ## Unify DatasetImage resolution for webui preview and captioning
 

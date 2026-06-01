@@ -340,6 +340,18 @@ export async function deleteDataset(name: string): Promise<void> {
     }
 }
 
+/** Rescan a dataset's images from disk. Returns updated dataset info. */
+export async function rescanDataset(name: string): Promise<DatasetInfo> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(name)}/rescan?source=${encodeURIComponent(clientId)}`,
+        { method: 'POST' }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
 async function _fetchImages(
     datasetName: string,
     options: { limit?: number; afterId?: number } = {}

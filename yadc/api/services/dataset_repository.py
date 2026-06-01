@@ -307,6 +307,46 @@ class DatasetRepository(Service):
             ).fetchall()
         return {row[1]: row[0] for row in rows}
 
+    def list_image_infos(self, dataset_id: int) -> dict[str, ImageInfo]:
+        """Return (path → :class:`ImageInfo`) for every image in a dataset.
+
+        Used by the service's scan diff orchestration: it reads the
+        current set of images *with metadata*, compares each row
+        against the freshly-walked disk state, and only issues
+        ``upsert_image`` / ``delete_image`` calls for rows that
+        actually changed. Empty dict if the dataset has no images or
+        doesn't exist.
+        """
+        with self._db.connection() as conn:
+            cfg_row = conn.execute("SELECT config_path FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
+            if cfg_row is None:
+                return {}
+            config_path: str | None = cfg_row[0]
+            rows = conn.execute(
+                """
+                SELECT id, file_name, path, has_caption, has_toml,
+                       width, height, draft_names, last_modified_t
+                FROM dataset_images
+                WHERE dataset_id = ?
+                """,
+                (dataset_id,),
+            ).fetchall()
+        return {
+            row[2]: ImageInfo(
+                id=row[0],
+                file_name=row[1],
+                path=row[2],
+                has_caption=bool(row[3]),
+                has_toml=bool(row[4]),
+                width=row[5] or 0,
+                height=row[6] or 0,
+                draft_names=row[7].split(",") if row[7] else [],
+                last_modified_t=row[8],
+                delete_path=compute_delete_path(row[2], config_path),
+            )
+            for row in rows
+        }
+
     # --- Datasets: writes ---
 
     def upsert_dataset(self, name: str, config_path: str, source: str) -> int:

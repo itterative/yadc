@@ -40,6 +40,14 @@ class Configuration:
     watcher_expected_file_max: int = 256
     watcher_expected_file_ttl: float = 1.0
 
+    # Dataset index
+    # How often the background thread re-scans datasets that haven't been
+    # scanned recently (or have never been scanned). The watcher handles
+    # inotify-driven updates; this is a fallback for changes the watcher
+    # can't see (e.g. external edits to a dataset's config.toml that add
+    # new image paths, where no inotify event fires).
+    dataset_refresh_interval_seconds: float = 300.0
+
     # Upload
     max_upload_size_bytes: int = 524_288_000  # ~500 MB
 

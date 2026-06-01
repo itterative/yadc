@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, and managed dataset lifecycle.
 status: In Progress
-last_history: 30
+last_history: 31
 category: meta
 ---
 
@@ -112,6 +112,7 @@ Create a reusable `<KeyValueEditor>` component for extras editing:
 ### Todos
 
 - [ ] **Split commit `23c29783` and reorder before UX feature commits**: The commit that updates memories/docs to reference async methods (`CaptionJob` → `AsyncCaptionJob`, `_caption_one()` → `_acaption_one()`, `_cleanup()` → `_cleanup_async()`, etc.) also includes the `027-async-rebase.md` history entry and plan metadata bump. It should be split so the doc updates land *before* the UX feature commits (they logically belong with the base branch's async migration), while the history entry stays in this branch. Reference backup: `backup/dataset-config-ux-before-async-rebase`.
+- [x] **Add a manual dataset refresh action for users**: Added a refresh button in the dataset detail page topbar. `rescan_dataset` now dispatches `DatasetChangedEvent` when changes are detected (from both manual and background scans). Frontend sends `?source=clientId` so the originating tab suppresses the SSE event. Background refresh dispatches with `job_id=None` to notify all clients.
 - [ ] **Deletion button for individual images lives next to the caption**: It's confusing for the users when they see a delete button next to the caption part, since they would assume this deletes the caption, not the image itself. Consider moving to a kebab menu or adding a visual separator.
 - [ ] **Investigate duplicate inotify events for TOML writes**: Even with `on_closed` (`IN_CLOSE_WRITE`), some file writes produce multiple watcher events — observed particularly for `.toml` sidecars. The current TTL-based expected-files buffer mitigates the symptom, but the root cause is unclear. Possible causes: watchdog internal buffering, OS-level event coalescing, or the Python file object producing multiple close events. May need to add per-path deduplication in `_on_fs_change` (e.g. track last-seen timestamp per path within the debounce window and skip duplicates).
 - [x] **Drafts should be properly supported in expected_changes**: Added `ExpectedPatternEntry` + `expect_pattern_change()` to `DatasetWatcherService`. Draft deletions now register `STEM.*.draft~` as a glob pattern before `_delete_file_with_sidecars` iterates and deletes them. Folder deletions (via `shutil.rmtree`) register `folder/*` as a pattern before removal. Patterns share the same TTL and bounded-deque limits as exact file entries. `_on_fs_change` checks `fnmatch` after exact-path matching, and `_dispatch_change` includes pattern sources when deriving the event `job_id`.
