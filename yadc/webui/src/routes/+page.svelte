@@ -73,8 +73,6 @@
 	}
 </script>
 
-<h1 class="mb-6 text-xl font-bold">Datasets</h1>
-
 {#if loading}
 	<p class="text-muted">Loading datasets...</p>
 {:else if error}

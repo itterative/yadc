@@ -68,8 +68,6 @@
 	}
 </script>
 
-<h1 class="mb-6 text-xl font-bold">Templates</h1>
-
 {#if loading}
 	<p class="text-muted">Loading templates...</p>
 {:else if error}
