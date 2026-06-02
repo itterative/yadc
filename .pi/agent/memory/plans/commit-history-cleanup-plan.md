@@ -17,15 +17,19 @@ A backup already exists at `backup/pre-cleanup-20260602`.
 
 Reduce the branch to ~30–50 well-named conventional commits that tell a coherent story, making review and future bisection possible.
 
-## Current tmp Commit Blocks
+## Current tmp Commit Blocks (as of 2026-06-02)
 
-| Block | Position | Size | Description |
-|-------|----------|------|-------------|
-| A (oldest) | `[45]`, `[47-48]`, `[51]`, `[54]`, `[56]`, `[59]`, `[62]` | 8 | `tmp: frontend plan` / `tmp: update frontend plan` interleaved with docs commits |
-| B | `[64]`–`[162]` | 99 | The **big block** — frontend dev (routing, datasets, captioning, toasts, SSE, tailwind, etc.) |
-| C | `[164]`–`[175]` | 12 | Mixed: tmux, toast, eslint, svelte, dataset config, SSE listeners, tailwind cleanup |
-| D | `[189]`–`[191]` | 3 | UI polish (vite proxy, page titles, side panel padding) |
-| E (newest) | `[200]`–`[202]` | 3 | Recent memory/plan reorganizations |
+**Phase 1 complete** — Blocks C, D, E squashed into 5 commits.
+
+**Phase 2 in progress** — Block B (big block) being squashed in thematic chunks.
+
+| Block | Status | Size | Description |
+|-------|--------|------|-------------|
+| A (oldest) | Pending | 8 | `tmp: frontend plan` / `tmp: update frontend plan` interleaved with docs commits |
+| B | In Progress | ~82 remaining | The **big block** — frontend dev (routing, datasets, captioning, toasts, SSE, tailwind, etc.) |
+| C | ✅ Done | 12 → 3 | `b30d859`–`7568bc7` → notification system; `ac1b30d`–`8d6fc17` → dataset config fixes; `fb4676a`–`b953ff1` → tailwind cleanup |
+| D | ✅ Done | 3 → 1 | `3ffff6f`–`c77f45f` → layout/styling polish |
+| E | ✅ Done | 3 → 1 | `60c3445`–`a4ca795` → memory/plan reorganization |
 
 ## Execution Strategy
 
@@ -33,24 +37,35 @@ Reduce the branch to ~30–50 well-named conventional commits that tell a cohere
 
 Squash from newest to oldest so earlier hashes remain stable.
 
-1. **Block E** `[200]`–`[202]`
+1. **Block E** `60c3445`–`a4ca795`
    - Squash into: `docs: reorganize agent memory files and plans`
-2. **Block D** `[189]`–`[191]`
+2. **Block D** `3ffff6f`–`c77f45f`
    - Squash into: `fix(webui): layout and styling polish for pages and side panel`
-3. **Block C** `[164]`–`[175]` — split into 3:
-   - `[164]`–`[170]` → `feat(webui): notification system and development tooling docs`
-   - `[171]`–`[173]` → `feat(webui): dataset config and SSE listener fixes`
-   - `[174]`–`[175]` → `style(webui): tailwind cleanup and agent memory updates`
+3. **Block C** `b30d859`–`b953ff1` — split into 3:
+   - `b30d859`–`7568bc7` → `feat(webui): notification system and development tooling docs`
+   - `ac1b30d`–`8d6fc17` → `feat(webui): dataset config and SSE listener fixes`
+   - `fb4676a`–`b953ff1` → `style(webui): tailwind cleanup and agent memory updates`
 
 After each squash: `list` → verify → `accept`.
 
 ### Phase 2 — The big 99-commit block (Block B)
 
-Use `git rebase -i <parent of block>`.
+Squashed in thematic chunks using `git-rebase-helper`. Some chunks combined loosely-related commits for expediency; these may be split later if bisection or review requires finer granularity.
 
-- Mark all generic `tmp: save` commits → `fixup`
-- Mark descriptive `tmp: …` commits → `reword` with proper `feat:`, `fix:`, `refactor:`, `docs:` messages
-- Leave already-proper commits as `pick`
+**Chunks squashed so far:**
+- `122c8b3`–`7435266` → `feat(webui): toast notifications, captioning status, and browser alerts`
+- `4112103`–`ee27acf` → `feat(webui): captioning progress UI, SSE events, templates tab, and settings` — *may split later; mixes SSE fixes, templates, progress tracking, and favicon*
+
+Remaining chunks to squash (hashes from original list — will shift after each operation):
+- `64caeaf`–`5d61393` — Mobile UI fixes and caption overlay
+- `9880c09`–`040c586` — Frontend reorganization and dataset config management
+- `578cde7`–`2b97e86` — CodeMirror improvements, layout, side panel
+- `5f54d93`–`89179bc` — Inotify plan, implementation, and docs
+- `c78fb22`–`22132bc` — Dataset thumbnails and Tailwind
+- `81a481a`–`0896907` — Config/exports APIs and CodeMirror
+- `276cda2`–`9c2acc8` — Editors, prompt preview, captioning progress
+- `7f82d98`–`92d9ec1` — Frontend plan iterations and env endpoints
+- `a6eb467`–`e1f3e88` — Initial frontend setup (routing, datasets, tailwind)
 
 Guidelines for rewording:
 - Use conventional-commit format: `type(scope): imperative subject`
