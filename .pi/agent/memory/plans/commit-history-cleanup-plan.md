@@ -1,7 +1,7 @@
 ---
 name: commit-history-cleanup-plan
 description: Squash tmp commits and reword messages on feature/svelte-frontend-dataset-config-editing-improvements before merging to main.
-status: In Progress
+status: Complete
 created: 2026-06-02
 ---
 
@@ -21,15 +21,17 @@ Reduce the branch to ~30–50 well-named conventional commits that tell a cohere
 
 **Phase 1 complete** — Blocks C, D, E squashed into 5 commits.
 
-**Phase 2 in progress** — Block B (big block) being squashed in thematic chunks.
+**Phase 2 complete** — Block B squashed into 12 thematic commits.
+
+**Phase 3 complete** — Block A reworded. Frontend plan commits were interleaved with implementation, so they were left as separate but properly-named `docs:` commits.
 
 | Block | Status | Size | Description |
 |-------|--------|------|-------------|
-| A (oldest) | Pending | 8 | `tmp: frontend plan` / `tmp: update frontend plan` interleaved with docs commits |
-| B | In Progress | ~82 remaining | The **big block** — frontend dev (routing, datasets, captioning, toasts, SSE, tailwind, etc.) |
-| C | ✅ Done | 12 → 3 | `b30d859`–`7568bc7` → notification system; `ac1b30d`–`8d6fc17` → dataset config fixes; `fb4676a`–`b953ff1` → tailwind cleanup |
-| D | ✅ Done | 3 → 1 | `3ffff6f`–`c77f45f` → layout/styling polish |
-| E | ✅ Done | 3 → 1 | `60c3445`–`a4ca795` → memory/plan reorganization |
+| A (oldest) | ✅ Done | 8 | `tmp: frontend plan` → `docs: frontend plan` / `docs: update frontend plan`; interleaved with implementation, left separate |
+| B | ✅ Done | 99 → 12 | Squashed into thematic frontend commits |
+| C | ✅ Done | 12 → 3 | Notification system, dataset config fixes, tailwind cleanup |
+| D | ✅ Done | 3 → 1 | Layout/styling polish |
+| E | ✅ Done | 3 → 1 | Memory/plan reorganization |
 
 ## Execution Strategy
 
@@ -52,32 +54,27 @@ After each squash: `list` → verify → `accept`.
 
 Squashed in thematic chunks using `git-rebase-helper`. Some chunks combined loosely-related commits for expediency; these may be split later if bisection or review requires finer granularity.
 
-**Chunks squashed so far:**
+**Chunks squashed:**
 - `122c8b3`–`7435266` → `feat(webui): toast notifications, captioning status, and browser alerts`
-- `4112103`–`ee27acf` → `feat(webui): captioning progress UI, SSE events, templates tab, and settings` — *may split later; mixes SSE fixes, templates, progress tracking, and favicon*
-
-Remaining chunks to squash (hashes from original list — will shift after each operation):
-- `64caeaf`–`5d61393` — Mobile UI fixes and caption overlay
-- `9880c09`–`040c586` — Frontend reorganization and dataset config management
-- `578cde7`–`2b97e86` — CodeMirror improvements, layout, side panel
-- `5f54d93`–`89179bc` — Inotify plan, implementation, and docs
-- `c78fb22`–`22132bc` — Dataset thumbnails and Tailwind
-- `81a481a`–`0896907` — Config/exports APIs and CodeMirror
-- `276cda2`–`9c2acc8` — Editors, prompt preview, captioning progress
-- `7f82d98`–`92d9ec1` — Frontend plan iterations and env endpoints
-- `a6eb467`–`e1f3e88` — Initial frontend setup (routing, datasets, tailwind)
-
-Guidelines for rewording:
-- Use conventional-commit format: `type(scope): imperative subject`
-- Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`
-- Keep messages short; no body needed unless the change is complex
-- Group closely related commits by fixup/squash
+- `4112103`–`ee27acf` → `feat(webui): captioning progress UI, SSE events, templates tab, and settings`
+- `64caeaf`–`5d61393` → `fix(webui): mobile captioning UI, editor sizing, and overlay states`
+- `9880c09`–`040c586` → `refactor(webui): frontend reorganization, dataset config management, and image details`
+- `578cde7`–`2b97e86` → `feat(webui): gallery layout, CodeMirror editors, side panel, and thread config`
+- `5f54d93`–`89179bc` → `feat(api): inotify-based dataset watcher with plan docs and agent memory updates`
+- `c78fb22`–`22132bc` → `feat(webui): dataset thumbnails, new dataset creation, and tailwind styling`
+- `81a481a`–`0896907` → `feat(webui): config and export APIs, TOML editing, and CodeMirror improvements`
+- `276cda2`–`9c2acc8` → `feat(webui): jinja/TOML editors, prompt preview, captioning progress, and sandbox config`
+- `7f82d98`–`92d9ec1` → `feat(webui): initial frontend setup with routing, datasets, tailwind, and env endpoints`
+- `a6eb467`–`e1f3e88` → `feat(api,webui): initial dataset API controllers, db migrations, and Svelte page scaffolding`
 
 ### Phase 3 — Oldest plan commits (Block A)
 
-During the same interactive rebase (or a second one):
-- Reorder the 8 `tmp: frontend plan` commits next to their neighboring `docs:` commits
-- Mark them `fixup` so they disappear into the surrounding documentation commits
+Reworded using `git-rebase-helper edit`:
+- `tmp: frontend plan` / `tmp: update frontend plan` → `docs: frontend plan` / `docs: update frontend plan`
+- Left as separate commits because they are interleaved with implementation commits
+- `tmp: bash sandbox for qwen` → `docs: add bash sandbox config for qwen`
+- `agent memory and instructions` → `docs: agent memory and instructions`
+- `featu dataset api` → `feat: dataset api`
 
 ## Stash Warning
 
