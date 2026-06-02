@@ -44,18 +44,24 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
     );
     registerJobId(info.job_id);
 
-    // Seed stores so the spinner appears immediately
-    setCaptioningStatus({
-        status: info.status,
-        dataset_name: info.dataset_name,
-        processed: info.processed,
-        total: info.total,
-        errors: info.errors,
-        job_id: info.job_id,
-        error: info.error,
-        error_messages: []
-    });
-    setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
+    // Seed stores so the spinner appears immediately, but only if the job
+    // hasn't already finished. Fast completions (e.g. 0 images due to
+    // no-overwrite) may finish before the HTTP response arrives; seeding
+    // a stale 'running' state can race with the SSE 'done' event and leave
+    // the UI stuck.
+    if (info.status === 'running' || info.status === 'stopping') {
+        setCaptioningStatus({
+            status: info.status,
+            dataset_name: info.dataset_name,
+            processed: info.processed,
+            total: info.total,
+            errors: info.errors,
+            job_id: info.job_id,
+            error: info.error,
+            error_messages: []
+        });
+        setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
+    }
 
     lastStartedJobId.set(info.job_id);
     return info.job_id;

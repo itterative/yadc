@@ -215,3 +215,163 @@ class TestCaptioningServiceCleanupRescan:
             await captioning_service._cleanup_async("test_ds")
 
         assert call_order == [("clear", "abc123"), ("rescan", "test_ds")]
+
+
+class TestStartJobPreflight:
+    """Tests for start_job_async preflight — accurate totals and early exits."""
+
+    @pytest.fixture
+    def captioning_service(self, tmp_path):
+        """Create a CaptioningService with a real config on disk."""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("""
+[api]
+url = "http://test"
+model_name = "test-model"
+
+[prompt]
+template = "test"
+""")
+
+        mock_ds = MagicMock()
+        mock_ds.get_dataset.return_value = MagicMock(config_path=str(config_path))
+
+        mock_dispatcher = MagicMock()
+        mock_watcher = MagicMock()
+        mock_logging = MagicMock()
+        mock_logging.get_logger.return_value = MagicMock()
+
+        svc = CaptioningService.__new__(CaptioningService)
+        svc._dataset_service = mock_ds
+        svc._event_dispatcher = mock_dispatcher
+        svc._dataset_watcher = mock_watcher
+        svc._logger = mock_logging.get_logger()
+        svc._configuration = MagicMock()
+        svc._async_lock = asyncio.Lock()
+        svc._async_jobs = {}
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_returns_done_when_no_images(self, captioning_service):
+        """When preflight returns 0 images, start_job_async returns done without starting a task."""
+        with patch.object(AsyncCaptionJob, "preflight_images", return_value=[]):
+            with patch.object(AsyncCaptionJob, "start") as mock_start:
+                info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
+
+        assert info.status == "done"
+        assert info.total == 0
+        assert info.processed == 0
+        mock_start.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_error_on_preflight_failure(self, captioning_service):
+        """When preflight raises, start_job_async returns error without starting a task."""
+        with patch.object(AsyncCaptionJob, "preflight_images", side_effect=ValueError("bad config")):
+            with patch.object(AsyncCaptionJob, "start") as mock_start:
+                info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
+
+        assert info.status == "error"
+        assert info.error == "bad config"
+        mock_start.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_starts_task_when_images_present(self, captioning_service):
+        """When preflight returns images, a task is started and status is running."""
+        mock_img = MagicMock()
+        mock_img.path = "/fake/img.jpg"
+
+        with patch.object(AsyncCaptionJob, "preflight_images", return_value=[mock_img]):
+            with patch.object(AsyncCaptionJob, "start") as mock_start:
+                info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
+
+        assert info.status == "running"
+        assert info.total == 1
+        mock_start.assert_called_once()
+
+
+class TestOverwriteFilter:
+    """Tests for the overwrite filter in _ado_run."""
+
+    @pytest.fixture
+    def _setup_ado_run(self, job, tmp_path):
+        """Return a helper that prepares mocks and runs _ado_run."""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("""
+[api]
+url = "http://test"
+model_name = "test-model"
+
+[prompt]
+template = "test"
+""")
+
+        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        job._dataset_service.get_image.return_value = MagicMock(path=str(tmp_path / "img.jpg"))
+        job._apply_overrides = MagicMock(return_value={})
+        job._resolve_template = MagicMock(return_value="test template")
+        job._acaption_one = AsyncMock(return_value="caption")
+
+        async def _run(mock_images, *, image_ids=None, overwrite=False, draft=""):
+            job._opts.image_ids = image_ids
+            job._opts.overwrite = overwrite
+            job._opts.draft = draft
+
+            with patch("yadc.api.services.captioning.resolve_dataset", return_value=mock_images):
+                with patch("yadc.api.services.captioning.parse_config") as mock_parse:
+                    mock_cfg = MagicMock()
+                    mock_cfg.dataset = MagicMock()
+                    mock_cfg.caption_suffix = ".txt"
+                    mock_cfg.prompt.name = ""
+                    mock_cfg.prompt.template = "test"
+                    mock_cfg.api.url = "http://test"
+                    mock_cfg.api.token = ""
+                    mock_cfg.api.model_name = "test"
+                    mock_cfg.settings.max_tokens = 512
+                    mock_cfg.settings.image_quality = "auto"
+                    mock_cfg.settings.store_conversation = False
+                    mock_cfg.reasoning.enable = False
+                    mock_cfg.settings.advanced.model_dump.return_value = {}
+                    mock_parse.return_value = mock_cfg
+
+                    with patch("yadc.api.services.captioning.APICaptioner.create", new_callable=AsyncMock) as mock_create:
+                        mock_model = AsyncMock()
+                        mock_model.log_usage = MagicMock()
+                        mock_create.return_value = mock_model
+                        await job._ado_run()
+
+            return await job.snapshot()
+
+        return _run
+
+    @pytest.mark.asyncio
+    async def test_single_image_mode_bypasses_overwrite(self, _setup_ado_run, tmp_path):
+        """When image_ids is set, already-captioned images are still processed."""
+        mock_img = MagicMock()
+        mock_img.path = str(tmp_path / "img.jpg")
+        mock_img.caption_path.exists.return_value = True
+
+        snap = await _setup_ado_run([mock_img], image_ids=[42], overwrite=False)
+        assert snap.total == 1
+        assert snap.processed == 1
+
+    @pytest.mark.asyncio
+    async def test_single_image_mode_bypasses_draft_overwrite(self, _setup_ado_run, tmp_path):
+        """When image_ids is set, existing drafts are still re-processed."""
+        mock_img = MagicMock()
+        mock_img.path = str(tmp_path / "img.jpg")
+        mock_img.draft_path.return_value.exists.return_value = True
+
+        snap = await _setup_ado_run([mock_img], image_ids=[42], overwrite=False, draft="test_draft")
+        assert snap.total == 1
+        assert snap.processed == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_mode_respects_overwrite_false(self, _setup_ado_run, tmp_path):
+        """Batch mode with overwrite=False skips already-captioned images."""
+        mock_img = MagicMock()
+        mock_img.path = str(tmp_path / "img.jpg")
+        mock_img.caption_path.exists.return_value = True
+
+        snap = await _setup_ado_run([mock_img], overwrite=False)
+        assert snap.total == 0
+        assert snap.status == "done"

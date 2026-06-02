@@ -277,8 +277,15 @@ class AsyncCaptionJob:
             else:
                 self._on_done()
 
-    async def _ado_run(self) -> None:
-        # 1. Resolve the dataset config path
+    def preflight_images(self) -> list[DatasetImage]:
+        """Synchronously resolve the dataset and filter images.
+
+        Performs steps 1-6 of captioning (config → images → filtering).
+        Returns the list of images that would be processed.  Callers can use
+        ``len(result)`` to know the total before the async task starts.
+
+        Raises ``ValueError`` on configuration / resolution errors.
+        """
         ds_info = self._dataset_service.get_dataset(self._dataset_name)
         if ds_info is None or ds_info.config_path is None:
             raise ValueError(f"Dataset '{self._dataset_name}' not found")
@@ -287,30 +294,22 @@ class AsyncCaptionJob:
         if not config_path.exists():
             raise ValueError(f"Config file not found: {config_path}")
 
-        # 2. Load raw TOML and merge env/api overrides
         with open(config_path) as f:
             raw = toml.load(f)
 
         raw = self._apply_overrides(raw)
 
-        # 3. Parse into a Config object
         try:
             config = parse_config(raw)
         except Exception as exc:
             raise ValueError(f"Invalid dataset config: {exc}") from exc
 
-        # 4. Resolve prompt template
         config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
 
-        # 5. Resolve images
         images = resolve_dataset(config.dataset, config.caption_suffix, base_dir=str(config_path.parent))
         if not images:
-            self._logger.info("No images to caption for dataset '%s'.", self._dataset_name)
-            await self._set_state(status="done")
-            await self._emit_status()
-            return
+            return []
 
-        # 5b. Filter to specific image IDs if requested (single-image mode)
         if self._opts.image_ids:
             target_paths: set[Path] = set()
             for image_id in self._opts.image_ids:
@@ -321,9 +320,11 @@ class AsyncCaptionJob:
             if not images:
                 raise ValueError(f"Specified image(s) not found in dataset '{self._dataset_name}'")
 
-        # 6. Filter already-captioned images
         to_do: list[DatasetImage] = []
         for img in images:
+            if self._opts.image_ids:
+                to_do.append(img)
+                continue
             if self._opts.draft:
                 if not self._opts.overwrite and img.draft_path(self._opts.draft).exists():
                     continue
@@ -332,16 +333,30 @@ class AsyncCaptionJob:
                     continue
             to_do.append(img)
 
+        return to_do
+
+    async def _ado_run(self) -> None:
+        to_do = self.preflight_images()
+
         await self._set_state(total=len(to_do))
         await self._emit_status()
 
         if not to_do:
-            self._logger.info("All images already captioned for dataset '%s'.", self._dataset_name)
+            self._logger.info("No images to caption for dataset '%s'.", self._dataset_name)
             await self._set_state(status="done")
             await self._emit_status()
             return
 
-        # 7. Create the captioner with an async session
+        # Re-parse config for the model creation (cheap).
+        ds_info = self._dataset_service.get_dataset(self._dataset_name)
+        config_path = Path(ds_info.config_path) if ds_info and ds_info.config_path else Path()
+        with open(config_path) as f:
+            raw = toml.load(f)
+        raw = self._apply_overrides(raw)
+        config = parse_config(raw)
+        config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
+
+        # Create the captioner with an async session
         async_headers: dict[str, str] = {}
         if config.api.token:
             async_headers["Authorization"] = f"Bearer {config.api.token}"
@@ -366,7 +381,7 @@ class AsyncCaptionJob:
         )
         await model.load_model(config.api.model_name)
 
-        # 8. Caption each image
+        # Caption each image
         conversation_overrides = config.settings.advanced.model_dump()
 
         for img in to_do:
@@ -606,6 +621,31 @@ class CaptioningService(Service):
                 job_id=job_id,
             )
             self._async_jobs[dataset_name] = job
+            # Synchronous preflight: compute total so the initial status is
+            # accurate (avoids returning 0/0 when images are present).  If
+            # there is nothing to do we return done immediately without
+            # starting a background task.
+            try:
+                to_do = job.preflight_images()
+            except ValueError as exc:
+                return JobInfo(
+                    status="error",
+                    dataset_name=dataset_name,
+                    job_id=job_id,
+                    error=str(exc),
+                )
+
+            if not to_do:
+                return JobInfo(
+                    status="done",
+                    dataset_name=dataset_name,
+                    job_id=job_id,
+                    total=0,
+                    processed=0,
+                    errors=0,
+                )
+
+            await job._set_state(total=len(to_do))
             self._mark_expected_changes(dataset_name, job_id)
             job.start()
 
