@@ -14,11 +14,7 @@
   let { class: klazz = "", open, onclose, children }: Props = $props();
 
   // Track open state internally for smooth transitions
-  let dialogOpen = $state(false);
-
-  $effect(() => {
-    dialogOpen = open;
-  });
+  let dialogOpen = $derived(open);
 
   $effect(() => {
     if (dialog === null) {

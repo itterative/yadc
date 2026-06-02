@@ -42,10 +42,10 @@
   // --- Variant styling ---
 
   const variantStyles: Record<ToastVariant, string> = {
-    info: "bg-blue-900/40 border-accent/40 text-accent",
-    success: "bg-green-900/40 border-success/40 text-success",
-    warning: "bg-yellow-900/40 border-yellow-700/50 text-yellow-200",
-    error: "bg-red-900/40 border-error/40 text-error",
+    info: "bg-blue-900 border-accent/40 text-accent",
+    success: "bg-green-900 border-success/40 text-success",
+    warning: "bg-yellow-900 border-yellow-700/50 text-yellow-200",
+    error: "bg-red-900 border-error/40 text-error",
   };
 
   const variantIcons: Record<ToastVariant, string> = {
@@ -69,7 +69,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="relative flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg min-w-72 max-w-sm {variantStyles[toast.variant]}"
   onmouseenter={() => (hovered = true)}
@@ -82,7 +81,18 @@
   <!-- Message + optional action -->
   <div class="flex-1 min-w-0">
     <p class="text-sm leading-5">{toast.message}</p>
-    {#if toast.action}
+    {#if toast.actions?.length}
+      <div class="mt-2 flex gap-2">
+        {#each toast.actions as act (act.label)}
+          <button
+            class="px-2.5 py-1 text-xs rounded-md bg-white/10 border border-current/20 hover:bg-white/20 transition-colors cursor-pointer"
+            onclick={act.handler}
+          >
+            {act.label}
+          </button>
+        {/each}
+      </div>
+    {:else if toast.action}
       <button
         class="mt-2 px-2.5 py-1 text-xs rounded-md bg-white/10 border border-current/20 hover:bg-white/20 transition-colors cursor-pointer"
         onclick={toast.action.handler}

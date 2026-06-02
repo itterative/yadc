@@ -63,9 +63,7 @@
 </button>
 
 <style>
-  .has-caption {
-    /* subtle indicator in the border */
-  }
+  /* .has-caption — indicator applied via has-caption class name, styling via border in parent */
 
   .selected {
     outline: 2px solid var(--color-accent);

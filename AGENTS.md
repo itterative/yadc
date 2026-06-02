@@ -37,17 +37,17 @@ You are working with yadc, a CLI tool for generating text captions for image dat
 
 ## WebUI (Development)
 
-Run the webui server in a tmux session so it stays in the background:
+Run the webui server in a tmux session so it stays in the background.
+Must use **single tmux commands** (no chaining) due to bash sandbox rules.
 
-```bash
-tmux new-session -d -s yadc-webui "uv run yadc webui serve --host 127.0.0.1"
-```
+### Allowed tmux commands
 
-- **Check if running**: `tmux has-session -t yadc-webui 2>/dev/null && echo 'running' || echo 'not running'`
-- **Attach**: `tmux attach -t yadc-webui`
-- **Detach** (inside tmux): `Ctrl+B` then `D`
+- **Start**: `tmux new-session -d -s yadc-webui "uv run yadc webui serve --host 127.0.0.1"`
 - **Stop**: `tmux kill-session -t yadc-webui`
+- **Check if running**: `tmux has-session -t yadc-webui 2>/dev/null`
 - **Capture output**: `tmux capture-pane -t yadc-webui -p | tail -30` (grab only the last 20-30 lines to see recent logs/errors)
+- **Pipe capture**: `| head *`, `| tail *`, and `| grep *` are allowed on capture-pane output
+- **List sessions**: `tmux list-sessions`
 
 Use this whenever you need a live server for testing webui changes.
 

@@ -193,7 +193,7 @@
             bind:value={createPaths}
             rows={4}
             class="input resize-y"
-            placeholder={"/path/to/images&#10;/another/image/dir"}></textarea>
+            placeholder="/path/to/images&#10;/another/image/dir"></textarea>
           <p class="help-text">
             One directory path per line. Each directory will be scanned for images.
           </p>

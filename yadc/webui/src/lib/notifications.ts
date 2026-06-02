@@ -12,7 +12,7 @@
 import { browser } from "$app/environment";
 import { get } from "svelte/store";
 import { settings } from "$lib/stores/settings";
-import { addToast } from "$lib/stores/toasts";
+import { addToast, dismissToast } from "$lib/stores/toasts";
 
 // --- Permission & support ---
 
@@ -61,10 +61,10 @@ export function sendNotification(opts: {
   // Don't bother if the tab is visible
   if (!opts.always && document.visibilityState === "visible") return null;
 
-  return new Notification(opts.title, {
+  return new Notification(`yadc - ${opts.title}`, {
     body: opts.body ?? "",
     tag: opts.tag,
-    icon: "/_app/favicon.png",
+    icon: "/android-chrome-192x192.png",
   });
 }
 
@@ -88,21 +88,31 @@ export function promptNotificationsOnce(): void {
 
   promptShown = true;
 
-  addToast({
+  const toastId = addToast({
     message: "Enable browser notifications to get alerted when captioning finishes?",
     variant: "info",
     duration: 15_000,
-    action: {
-      label: "Enable",
-      handler: () => {
-        requestNotificationPermission().then((perm) => {
-          if (perm === "granted") {
-            settings.update((s) => ({ ...s, notifications: "enabled" }));
-          } else {
-            settings.update((s) => ({ ...s, notifications: "disabled" }));
-          }
-        });
+    actions: [
+      {
+        label: "Enable",
+        handler: () => {
+          dismissToast(toastId);
+          requestNotificationPermission().then((perm) => {
+            if (perm === "granted") {
+              settings.update((s) => ({ ...s, notifications: "enabled" }));
+            } else {
+              settings.update((s) => ({ ...s, notifications: "disabled" }));
+            }
+          });
+        },
       },
-    },
+      {
+        label: "Don't Ask Again",
+        handler: () => {
+          dismissToast(toastId);
+          settings.update((s) => ({ ...s, notifications: "disabled" }));
+        },
+      },
+    ],
   });
 }

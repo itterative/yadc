@@ -249,17 +249,19 @@
 
       <!-- Source -->
       <div>
-        <label class="label">Source</label>
-        <div class="flex gap-4">
-          <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
-            <input type="radio" name="export-source" value="caption" bind:group={source} />
-            Captions
-          </label>
-          <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
-            <input type="radio" name="export-source" value="draft" bind:group={source} />
-            Draft
-          </label>
-        </div>
+        <fieldset>
+          <legend class="label">Source</legend>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
+              <input type="radio" name="export-source" value="caption" bind:group={source} />
+              Captions
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
+              <input type="radio" name="export-source" value="draft" bind:group={source} />
+              Draft
+            </label>
+          </div>
+        </fieldset>
         {#if source === "draft"}
           <div class="mt-2">
             <input
@@ -289,7 +291,7 @@
 
       <!-- Chain drafts -->
       <div>
-        <label class="label">
+        <label class="label" for="chain-draft-input">
           Chain Drafts
           <span class="text-gray-600 ml-1">(appended in order after source)</span>
         </label>
@@ -311,6 +313,7 @@
           </div>
         {/if}
         <input
+          id="chain-draft-input"
           type="text"
           bind:value={chainInput}
           onkeydown={handleChainKeydown}

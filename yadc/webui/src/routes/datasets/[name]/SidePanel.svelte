@@ -31,10 +31,6 @@
     oncaptionupdated,
     oncaptionimage,
   }: Props = $props();
-
-  function handleClose() {
-    onpanelclose?.();
-  }
 </script>
 
 <!-- Mobile: backdrop -->
@@ -43,7 +39,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="lg:hidden fixed inset-0 bg-black/50 z-30 transition-opacity"
-    onclick={() => (open = false)}
+    onclick={() => { open = false; onpanelclose?.(); }}
   ></div>
 {/if}
 
@@ -78,7 +74,7 @@
 
       <button
         class="ml-auto mr-2 p-1 text-gray-400 hover:text-white transition-colors cursor-pointer lg:hidden"
-        onclick={() => (open = false)}
+        onclick={() => { open = false; onpanelclose?.(); }}
         title="Close panel"
         aria-label="Close panel"
       >
@@ -101,7 +97,6 @@
           <ImageDetail
             {datasetName}
             item={focusedItem}
-            onclose={handleClose}
             oncaptionupdated={oncaptionupdated}
             oncaptionimage={oncaptionimage}
           />

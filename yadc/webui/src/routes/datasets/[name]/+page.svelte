@@ -102,7 +102,7 @@
   });
 
   // Live caption options from CaptionSettings (updated reactively as settings change)
-  let captionOptions: CaptionOptions = {};
+  let captionOptions: CaptionOptions = $state({});
 
   // --- Filesystem watcher state ---
 
@@ -196,6 +196,7 @@
   }
 
   function handleCaptionUpdated(imageId: number, _caption: string) {
+    void _caption;
     images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
   }
 

@@ -151,3 +151,11 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 - Ensure `APICaptioner` and shared `cmd/` modules use structured logging instead of direct stdout
 - Suppress or quiet CLI-specific output (progress bars, interactive menus) when running in API mode
 - Review `CaptionJob._do_run()` and its callees for noisy output
+
+
+# User TODOs (less verbose)
+
+* errors when starting captions show up in both the toast and at the top (latter needs removal)
+* error toasts have no details (just says HTTP 502)
+* need to enable prettier
+* need to fix the navbar at the top on mobile (it cuts off, export/settings not visible when selecting a dataset)

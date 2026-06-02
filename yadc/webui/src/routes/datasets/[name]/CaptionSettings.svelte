@@ -29,7 +29,7 @@
     onclose?: () => void;
   }
 
-  let { datasetName, currentOptions = $bindable(), onstart, onclose }: Props = $props();
+  let { datasetName: _datasetName, currentOptions = $bindable(), onstart, onclose: _onclose }: Props = $props();
 
   // --- State: Environment (managed by EnvSelector via bindings) ---
 
@@ -111,6 +111,8 @@
       _pendingModelName = saved.apiModelName;
       _pendingApiUrl = saved.apiUrl;
 
+      void _datasetName;
+      void _onclose;
       loadTemplateList();
     }
   });
@@ -136,8 +138,8 @@
       if (hasDefault && !selectedTemplate) {
         selectedTemplate = "default";
       }
-    } catch (e) {
-      templatesError = e instanceof Error ? e.message : "Failed to load templates";
+    } catch {
+      templatesError = "Failed to load templates";
     } finally {
       isLoadingTemplates = false;
     }
@@ -157,7 +159,7 @@
         templateContent = info.content;
         templateSource = info.source;
         templateDirty = false;
-      } catch (e) {
+      } catch {
         if (cancelled) return;
         templateContent = "";
         templateSource = "";

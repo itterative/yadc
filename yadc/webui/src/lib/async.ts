@@ -3,7 +3,7 @@ import { browser } from "$app/environment";
 /**
  * Debounce a callback — only fires after `delay` ms of inactivity.
  */
-export function deferred<T extends (...args: any[]) => void>(
+export function deferred<T extends (...args: unknown[]) => void>(
   cb: T,
   delay: number = 10,
 ): (...args: Parameters<T>) => void {
@@ -22,7 +22,7 @@ export function deferred<T extends (...args: any[]) => void>(
  * Wraps an async function so calls are serialized — each invocation
  * waits for the previous one to complete before starting.
  */
-export function synchronized<R, T extends (...args: any[]) => Promise<R>>(cb: T) {
+export function synchronized<R, T extends (...args: unknown[]) => Promise<R>>(cb: T) {
   const promises: Promise<R>[] = [];
 
   return async (...args: Parameters<T>) => {
@@ -50,15 +50,15 @@ export function sleep(delay: number): Promise<void> {
     return Promise.resolve();
   }
 
-  return new Promise((resolve, reject) => window.setTimeout(resolve, delay * 1000));
+  return new Promise((resolve) => window.setTimeout(resolve, delay * 1000));
 }
 
 /**
  * Delays execution of an async callback by `delay` seconds.
  */
-export function delayed<R, T extends (...args: any[]) => Promise<R>>(cb: T, delay: number) {
+export function delayed<R, T extends (...args: unknown[]) => Promise<R>>(cb: T, delay: number) {
   return async (...args: Parameters<T>) => {
     await sleep(delay);
-    await cb();
+    await cb(...args);
   };
 }

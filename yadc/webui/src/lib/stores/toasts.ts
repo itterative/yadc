@@ -17,16 +17,20 @@ import { writable, readonly, type Readable } from "svelte/store";
 
 export type ToastVariant = "info" | "success" | "warning" | "error";
 
+export interface ToastAction {
+  label: string;
+  handler: () => void;
+}
+
 export interface Toast {
   id: string;
   message: string;
   variant: ToastVariant;
   /** ms until auto-dismiss. 0 = persistent (must be dismissed manually). */
   duration: number;
-  action?: {
-    label: string;
-    handler: () => void;
-  };
+  /** @deprecated Use actions instead. */
+  action?: ToastAction;
+  actions?: ToastAction[];
 }
 
 export interface ToastOptions {
@@ -34,7 +38,9 @@ export interface ToastOptions {
   variant?: ToastVariant;
   /** Override auto-dismiss duration (ms). 0 = persistent. */
   duration?: number;
-  action?: Toast["action"];
+  /** @deprecated Use actions instead. */
+  action?: ToastAction;
+  actions?: ToastAction[];
 }
 
 // --- Defaults ---
@@ -68,6 +74,7 @@ export function addToast(options: ToastOptions): string {
     variant,
     duration: options.duration ?? DEFAULT_DURATIONS[variant],
     action: options.action,
+    actions: options.actions,
   };
 
   _toasts.update((list) => {

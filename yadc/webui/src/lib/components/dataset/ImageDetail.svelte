@@ -15,12 +15,11 @@
   interface Props {
     datasetName: string;
     item: ImageInfo | null;
-    onclose: () => void;
     oncaptionupdated?: (imageId: number, caption: string) => void;
     oncaptionimage?: (imageId: number) => Promise<string>;
   }
 
-  let { datasetName, item, onclose, oncaptionupdated, oncaptionimage }: Props = $props();
+  let { datasetName, item, oncaptionupdated, oncaptionimage }: Props = $props();
 
   let captionData: CaptionData | null = $state(null);
   let isLoadingCaption = $state(false);
