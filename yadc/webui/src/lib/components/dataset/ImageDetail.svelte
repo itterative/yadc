@@ -20,6 +20,7 @@
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgCheck from '$lib/icons/SvgCheck.svelte';
+    import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
     import { confirmDialog } from '$lib/stores/confirm';
@@ -285,7 +286,20 @@
         <!-- Scrollable content -->
         <div class="flex-1 space-y-4 overflow-y-auto p-4">
             <!-- Filename -->
-            <h2 class="dialog-title truncate text-base">{item.file_name}</h2>
+            <div class="flex items-center gap-2">
+                <h2 class="dialog-title min-w-0 flex-1 truncate text-base">{item.file_name}</h2>
+                {#if source === 'upload' && item.delete_path}
+                    <button
+                        class="shrink-0 cursor-pointer rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-800 hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
+                        onclick={handleDeleteImage}
+                        disabled={isDeleting}
+                        aria-label="Delete image"
+                        title="Delete image"
+                    >
+                        <SvgDelete class="h-5 w-5" />
+                    </button>
+                {/if}
+            </div>
             {#if source !== 'upload'}
                 <p class="-mt-3 truncate text-xs text-gray-500">{item.path}</p>
             {/if}
@@ -344,15 +358,6 @@
                             >
                                 Edit
                             </button>
-                            {#if source === 'upload'}
-                                <button
-                                    class="cursor-pointer text-xs text-error hover:text-error/80"
-                                    onclick={handleDeleteImage}
-                                    disabled={isDeleting}
-                                >
-                                    {isDeleting ? 'Deleting…' : 'Delete'}
-                                </button>
-                            {/if}
                         </div>
                     {/if}
                 </div>
