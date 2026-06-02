@@ -134,6 +134,7 @@
           <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-300">Template context ({ctxEntries.length} variables)</summary>
           <div class="mt-1">
             <TomlEditor
+              class="text-sm"
               value={promptPreview.template_context_toml}
               editable={false}
             />

@@ -8,28 +8,16 @@ description: Deferred tasks and improvements not tied to the current change.
 ## Frontend remaining cleanup
 
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
-- `isMobile` should be extracted into a reusable store (reactive window-width breakpoint) so it can be used in multiple places without duplicating resize listener logic
+- ~~`isMobile` should be extracted into a reusable store~~ **DONE** — Replaced with CSS media queries (Tailwind `lg:` responsive prefixes). No JS resize listener needed.
 
 ## Frontend icons cleanup
 
-**Inline SVGs in route files need to be extracted into icon components** in `src/lib/icons/`:
-
-- `src/routes/+page.svelte` line 39: **plus icon** (add dataset) — already exists as `SvgPlus.svelte` but uses a different SVG style
-- `src/routes/+page.svelte` line 71: **image placeholder icon** — no component exists yet
-- `src/routes/+layout.svelte` line 45: **upload/export icon** — no component exists yet
-- `src/routes/+layout.svelte` line 50: **settings/gear icon** — no component exists yet
-- `src/routes/datasets/[name]/+page.svelte` line 193: **back arrow (chevron-left)** — no component exists yet
-- `src/routes/datasets/[name]/SidePanel.svelte` line 83: **close panel (×)** — no component exists yet
-- `src/routes/datasets/[name]/SidePanel.svelte` line 125: **floating button caption icon** (speech bubble) — no component exists yet
-- `src/routes/datasets/[name]/SidePanel.svelte` line 129: **floating button details icon** (image) — no component exists yet
-
-**Style mismatch**: The existing icon components in `src/lib/icons/` use **Google Material Symbols** style (viewBox `0 -960 960 960`, `fill="currentColor"`). The inline SVGs in the route files use **Heroicons** style (viewBox `0 0 24 24`, `stroke="currentColor"`, `stroke-width="2"`). All icons should be updated to use the same style — preferably the Material Symbols style already used by the existing `Svg*` components.
-
-TODO:
-- [ ] Extract all inline SVGs into `Svg*.svelte` components in `src/lib/icons/`
-- [ ] Replace inline SVGs with component imports
-- [ ] Standardize all icons to Material Symbols style (fill-based, viewBox `0 -960 960 960`)
-- [ ] Verify no other stray inline SVGs exist elsewhere (components are clean — only `Checkbox.svelte` has an inline SVG for its checkmark)
+**DONE** — All inline SVGs extracted into icon components:
+- `SvgChevronLeft`, `SvgUpload`, `SvgSettings`, `SvgChat`, `SvgPhoto` (new)
+- `SvgClose` (reused for close panel)
+- All route files now use component imports, no inline SVGs remain
+- All icons use Material Symbols style (fill-based, viewBox `0 -960 960 960`)
+- Only `Checkbox.svelte` has an inline SVG (checkmark — acceptable UI primitive)
 
 ## Missing webui assets
 
@@ -48,7 +36,6 @@ The webui frontend code is newly written and needs a cleanup pass to bring it up
 - **Code style**: Consistent patterns for component structure, prop definitions, store usage, `$effect` cleanup, etc. Reduce duplication across similar components (e.g. the various dialog components)
 - **General cleanup**: Remove dead code, unused imports, consolidate shared logic
 - **Basedpyright warnings**: Fix all type-checking warnings in the webui-related backend code (and elsewhere)
-- **Svelte warnings**: Address Svelte compiler warnings in the frontend (unused variables, accessibility hints, reactive declarations, etc.)
 - **Watchdog Observer type**: `Observer` from `watchdog` is currently typed as `Any` to suppress basedpyright errors — this needs a proper fix. Investigate why basedpyright can't resolve `watchdog.observers.Observer` (likely missing/incomplete stubs) and find the right solution (e.g. custom stub, `type: ignore` with comment, or wrap with a protocol)
 
 ## UI/UX overhaul
@@ -61,9 +48,18 @@ The current UI is functional but needs a manual pass to improve overall look and
 - Accessibility basics — keyboard navigation, ARIA attributes, focus management in dialogs
 - Overall design coherence — the UI should feel like a unified application rather than assembled parts
 
-## Allow captioning images without a caption/draft
+## Simplified dataset config editing
 
-Currently images that have neither a caption nor a draft may be skipped or filtered out of the captioning flow. The user should be able to caption any image regardless of existing caption state — this is the primary use case for bulk captioning a new dataset.
+The current EditDatasetDialog shows the raw TOML config, which is cumbersome for simple operations like adding/removing image paths. A simplified UI with individual path entries (add/remove buttons) would be much better. This requires:
+
+- A `PATCH /configs/<name>` endpoint (or `PATCH /datasets/<name>`) that accepts granular operations like `add_path`, `remove_path`
+- A frontend dialog with a clean list of paths, each with a remove button, and an add-new-path input at the bottom
+- The TOML serialization should use multi-line strings for template values that contain newlines — currently they serialize as single-line strings with `\n` literals, which is unreadable
+- Remove the old `ConfigEditor.svelte` from `SettingsDialog.svelte` — dataset config management is now handled through the dataset listing page (edit/delete buttons on cards, `EditDatasetDialog`)
+
+## ~~Allow captioning images without a caption/draft~~ **DONE**
+
+Images without captions/drafts are never filtered out — the filter only skips images where the target output already exists. The `overwrite` checkbox in the webui allows re-captioning already-captioned images.
 
 ## Test captioning flow in the webui
 

@@ -5,12 +5,14 @@
   import DatasetBrowser from "$lib/components/dataset/DatasetBrowser.svelte";
   import CaptionProgress from "$lib/components/dataset/CaptionProgress.svelte";
   import SidePanel from "./SidePanel.svelte";
+  import SvgChevronLeft from "$lib/icons/SvgChevronLeft.svelte";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
   import { pendingDatasetChanges, clearPendingDatasetChange } from "$lib/stores/events";
   import {
     fetchDatasets,
     fetchImages,
     startCaptioning,
+    captionSingleImage,
     type DatasetInfo,
     type ImageInfo,
   } from "$lib/stores/datasetImages";
@@ -31,10 +33,7 @@
   const PAGE_SIZE = 50;
 
   // --- Mobile panel state ---
-  const MOBILE_BREAKPOINT = 1024;
-  let windowWidth = $state(0);
-  let isMobile = $derived(windowWidth > 0 && windowWidth < MOBILE_BREAKPOINT);
-  let mobilePanelOpen = $state(false);
+  let panelOpen = $state(false);
 
   // --- Captioning state ---
 
@@ -46,6 +45,9 @@
 
   let isCaptioning = $state(false);
   let captioningError: string | null = $state(null);
+
+  // Live caption options from CaptionSettings (updated reactively as settings change)
+  let captionOptions: CaptionOptions = {};
 
   // --- Filesystem watcher state ---
 
@@ -125,21 +127,34 @@
   function handleItemClick(item: ImageInfo) {
     focusedItem = item;
     panelTab = "details";
-    if (isMobile) mobilePanelOpen = true;
+    panelOpen = true;
   }
 
   function handlePanelClose() {
     focusedItem = null;
     panelTab = "caption";
-    if (isMobile) mobilePanelOpen = false;
+    panelOpen = false;
   }
 
   function handleCaptionUpdated(imageId: number, _caption: string) {
     images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
   }
 
+  async function handleCaptionImage(imageId: number) {
+    try {
+      const result = await captionSingleImage(datasetName, imageId, captionOptions as Record<string, unknown>);
+      if (result.caption) {
+        images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
+      }
+      return result.caption;
+    } catch (e) {
+      throw e instanceof Error ? e : new Error("Failed to caption image");
+    }
+  }
+
   async function handleStartCaptioning(options: CaptionOptions) {
     captioningError = null;
+    captionOptions = options;
     try {
       await startCaptioning(datasetName, options as Record<string, unknown>);
       isCaptioning = true;
@@ -172,14 +187,6 @@
     })();
   }
 
-  // Track window width for responsive behavior
-  onMount(() => {
-    if (!browser) return;
-    windowWidth = window.innerWidth;
-    const onResize = () => { windowWidth = window.innerWidth; };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  });
 </script>
 
 <svelte:head>
@@ -189,10 +196,8 @@
 <div class="flex flex-col h-full gap-4">
   <!-- Header -->
   <div class="flex items-center gap-4 flex-shrink-0">
-    <a href="#/" class="text-gray-400 hover:text-white transition-colors">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
+    <a href="#/" class="text-gray-400 hover:text-white transition-colors p-2 -ml-2">
+      <SvgChevronLeft class="w-6 h-6" />
     </a>
     <div>
       <h1 class="text-xl font-bold text-white">{datasetName}</h1>
@@ -259,12 +264,13 @@
     <SidePanel
       {datasetName}
       focusedItem={focusedItem}
-      {isMobile}
       bind:panelTab
-      bind:open={mobilePanelOpen}
+      bind:open={panelOpen}
+      bind:captionOptions
       onstartcaptioning={handleStartCaptioning}
       onpanelclose={handlePanelClose}
       oncaptionupdated={handleCaptionUpdated}
+      oncaptionimage={handleCaptionImage}
     />
   </div>
 </div>

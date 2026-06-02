@@ -18,13 +18,15 @@
   interface Props {
     /** Which dataset this is for. */
     datasetName: string;
+    /** The currently assembled caption options (reactive, updated as settings change). */
+    currentOptions?: CaptionOptions;
     /** Called when the user clicks "Start Captioning". Receives the assembled options. */
     onstart?: (options: CaptionOptions) => void;
     /** Called when the panel wants to close (e.g. after starting). */
     onclose?: () => void;
   }
 
-  let { datasetName, onstart, onclose }: Props = $props();
+  let { datasetName, currentOptions = $bindable(), onstart, onclose }: Props = $props();
 
   // --- State: Environment (managed by EnvSelector via bindings) ---
 
@@ -192,25 +194,31 @@
     }
   }
 
-  // --- Assemble and submit ---
+  // --- Assemble options ---
+
+  /** Assembled caption options derived from current settings. */
+  let _assembledOptions: CaptionOptions = $derived({
+    env: selectedEnv,
+    api_url: envUrl.trim() || undefined,
+    api_token: envToken || undefined,
+    api_model_name: effectiveModelName || undefined,
+    prompt_template: templateDirty ? templateContent : undefined,
+    prompt_name: templateDirty ? undefined : (effectiveTemplateName || undefined),
+    max_tokens: maxTokens,
+    image_quality: imageQuality,
+    draft: draftName.trim() || undefined,
+    overwrite: overwrite || undefined,
+    reasoning: reasoningEnabled || undefined,
+    reasoning_effort: reasoningEnabled ? reasoningEffort : undefined,
+  });
+
+  // Sync derived options to the bindable prop so the parent can read them
+  $effect(() => {
+    currentOptions = _assembledOptions;
+  });
 
   function handleStart() {
-    const options: CaptionOptions = {
-      env: selectedEnv,
-      api_url: envUrl.trim() || undefined,
-      api_token: envToken || undefined,
-      api_model_name: effectiveModelName || undefined,
-      prompt_template: templateDirty ? templateContent : undefined,
-      prompt_name: templateDirty ? undefined : (effectiveTemplateName || undefined),
-      max_tokens: maxTokens,
-      image_quality: imageQuality,
-      draft: draftName.trim() || undefined,
-      overwrite: overwrite || undefined,
-      reasoning: reasoningEnabled || undefined,
-      reasoning_effort: reasoningEnabled ? reasoningEffort : undefined,
-    };
-
-    onstart?.(options);
+    onstart?.(_assembledOptions);
   }
 </script>
 
@@ -267,7 +275,7 @@
           {/if}
         </div>
 
-        <div class="flex gap-1">
+        <div class="flex pb-px gap-2">
           {#if isNewTemplate}
             <button
               class="btn-secondary px-3 py-2"
@@ -314,6 +322,7 @@
           <SpinnerBlock class="py-8" size="h-4 w-4" label="Loading template…" />
         {:else}
           <JinjaEditor
+            class="text-sm"
             value={templateContent}
             onchange={handleTemplateContentChange}
           />

@@ -782,6 +782,38 @@ class DatasetService(Service):
         finally:
             conn.close()
 
+    def refresh_image_index(self, dataset_name: str, image_id: int) -> None:
+        """Re-read a single image's disk state and update its index row."""
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return
+
+        caption_path = image_path.with_suffix(".txt")
+        toml_path = image_path.with_suffix(".toml")
+
+        # Collect draft names
+        draft_names: list[str] = []
+        stem = image_path.stem
+        for f in image_path.parent.iterdir():
+            if f.name.startswith(stem + ".") and f.name.endswith(".draft~"):
+                draft_name = f.name[len(stem) + 1 : -len(".draft~")]
+                if draft_name:
+                    draft_names.append(draft_name)
+
+        conn = self._db.connection()
+        try:
+            conn.execute(
+                "UPDATE dataset_images SET has_caption = ?, has_toml = ?, draft_names = ? WHERE id = ?",
+                (int(caption_path.exists()), int(toml_path.exists()), ",".join(sorted(draft_names)), image_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def _refresh_stale_datasets(self, max_age_seconds: float = 60.0) -> None:
         """Rescan datasets that haven't been scanned recently."""
         conn = self._db.connection()

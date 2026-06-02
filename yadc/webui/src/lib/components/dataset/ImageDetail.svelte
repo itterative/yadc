@@ -10,15 +10,17 @@
     type CaptionData,
     type ImageInfo,
   } from "$lib/stores/datasetImages";
+  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
 
   interface Props {
     datasetName: string;
     item: ImageInfo | null;
     onclose: () => void;
     oncaptionupdated?: (imageId: number, caption: string) => void;
+    oncaptionimage?: (imageId: number) => Promise<string>;
   }
 
-  let { datasetName, item, onclose, oncaptionupdated }: Props = $props();
+  let { datasetName, item, onclose, oncaptionupdated, oncaptionimage }: Props = $props();
 
   let captionData: CaptionData | null = $state(null);
   let isLoadingCaption = $state(false);
@@ -26,6 +28,10 @@
   let isEditing = $state(false);
   let editCaption = $state("");
   let isSaving = $state(false);
+
+  // Single-image captioning state
+  let isCaptioning = $state(false);
+  let captioningError: string | null = $state(null);
 
   // TOML extras editing state
   let isEditingExtras = $state(false);
@@ -93,6 +99,23 @@
   function handleCancelEdit() {
     isEditing = false;
     editCaption = captionData?.caption || "";
+  }
+
+  async function handleCaptionImage() {
+    if (item === null || !oncaptionimage) return;
+    isCaptioning = true;
+    captioningError = null;
+    try {
+      const caption = await oncaptionimage(item.id);
+      if (caption) {
+        captionData = { ...captionData!, caption };
+        oncaptionupdated?.(item.id, caption);
+      }
+    } catch (e) {
+      captioningError = e instanceof Error ? e.message : "Failed to caption image";
+    } finally {
+      isCaptioning = false;
+    }
   }
 
   let isSavingExtras = $state(false);
@@ -169,16 +192,26 @@
       <div>
         <div class="flex items-center justify-between mb-2">
           <h3 class="text-sm font-medium text-gray-300">Caption</h3>
-          {#if captionData && !isEditing}
-            <button
-              class="text-xs text-accent hover:text-accent-hover cursor-pointer"
-              onclick={() => {
-                editCaption = captionData?.caption || "";
-                isEditing = true;
-              }}
-            >
-              Edit
-            </button>
+          {#if captionData && !isEditing && !isCaptioning}
+            <div class="flex items-center gap-3">
+              {#if oncaptionimage}
+                <button
+                  class="text-xs text-accent hover:text-accent-hover cursor-pointer"
+                  onclick={handleCaptionImage}
+                >
+                  Caption
+                </button>
+              {/if}
+              <button
+                class="text-xs text-accent hover:text-accent-hover cursor-pointer"
+                onclick={() => {
+                  editCaption = captionData?.caption || "";
+                  isEditing = true;
+                }}
+              >
+                Edit
+              </button>
+            </div>
           {/if}
         </div>
 
@@ -186,42 +219,56 @@
           <SpinnerBlock size="h-4 w-4" label="Loading caption..." />
         {:else if captionError}
           <p class="text-sm text-error">{captionError}</p>
-        {:else if isEditing}
-          <div class="space-y-2">
-            <textarea
-              bind:value={editCaption}
-              class="w-full rounded-lg bg-gray-800 p-3 text-sm text-gray-200 font-mono whitespace-pre-wrap resize-none max-h-60 focus:ring-2 focus:ring-accent focus:outline-none"
-              placeholder="Enter caption..."
-              oninput={(e) => {
-                const el = e.currentTarget;
-                el.style.height = 'auto';
-                el.style.height = Math.min(el.scrollHeight, 360) + 'px';
-              }}
-              use:autosize
-            ></textarea>
-            <div class="btn-bar">
-              <button
-                class="btn-secondary px-3 py-1.5"
-                onclick={handleCancelEdit}
-                disabled={isSaving}
-              >
-                Cancel
-              </button>
-              <button
-                class="btn-primary px-3 py-1.5"
-                onclick={handleSave}
-                disabled={isSaving}
-              >
-                {isSaving ? "Saving..." : "Save"}
-              </button>
-            </div>
+        {:else}
+          <div class="relative">
+            {#if isCaptioning}
+              <div class="absolute inset-0 z-10 flex items-center justify-center gap-2 text-sm text-gray-300 bg-black/60 rounded-lg">
+                <SvgSpinner class="w-4 h-4 animate-spin" />
+                <span>Generating caption…</span>
+              </div>
+            {:else if captioningError}
+              <div class="absolute inset-x-0 top-0 z-10 bg-error/90 text-white text-sm text-center rounded-t-lg py-1.5 px-3">
+                {captioningError}
+              </div>
+            {/if}
+            {#if isEditing}
+              <div class="space-y-2">
+                <textarea
+                  bind:value={editCaption}
+                  class="w-full rounded-lg bg-gray-800 p-3 text-sm text-gray-200 font-mono whitespace-pre-wrap resize-none max-h-60 focus:ring-2 focus:ring-accent focus:outline-none"
+                  placeholder="Enter caption..."
+                  oninput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 360) + 'px';
+                  }}
+                  use:autosize
+                ></textarea>
+                <div class="btn-bar">
+                  <button
+                    class="btn-secondary px-3 py-1.5"
+                    onclick={handleCancelEdit}
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="btn-primary px-3 py-1.5"
+                    onclick={handleSave}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            {:else if captionData}
+              {#if captionData.caption}
+                <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-60 overflow-y-auto">{captionData.caption}</pre>
+              {:else}
+                <pre class="text-sm text-gray-500 italic bg-gray-800 rounded-lg p-3 whitespace-pre-wrap">No caption</pre>
+              {/if}
+            {/if}
           </div>
-        {:else if captionData}
-          {#if captionData.caption}
-            <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-60 overflow-y-auto">{captionData.caption}</pre>
-          {:else}
-            <pre class="text-sm text-gray-500 italic bg-gray-800 rounded-lg p-3 whitespace-pre-wrap">No caption</pre>
-          {/if}
         {/if}
       </div>
 
@@ -260,6 +307,7 @@
             {/if}
           </div>
           <TomlEditor
+            class="text-sm"
             value={isEditingExtras ? editExtrasRaw : captionData.extras_raw}
             editable={isEditingExtras}
             onchange={(v) => (editExtrasRaw = v)}

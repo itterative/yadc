@@ -239,6 +239,37 @@ export async function stopCaptioning(datasetName: string): Promise<boolean> {
   return true;
 }
 
+/** Caption a single image synchronously. Returns the generated caption. */
+export async function captionSingleImage(
+  datasetName: string,
+  imageId: number,
+  options: Record<string, unknown> = {},
+): Promise<{ caption: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) {
+        if (typeof body.error === "string") {
+          message = body.error;
+        } else if (Array.isArray(body.error)) {
+          message = body.error.map((e: { msg: string }) => e.msg).join(", ");
+        }
+      }
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 // --- Store for paginated image browsing ---
 
 export interface DatasetBrowserState {

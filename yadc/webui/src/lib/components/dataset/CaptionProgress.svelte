@@ -19,7 +19,7 @@
 
   let status: CaptioningStatus = $state({
     status: "idle",
-    dataset_name: datasetName,
+    dataset_name: "",
     processed: 0,
     total: 0,
     errors: 0,

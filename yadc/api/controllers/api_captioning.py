@@ -90,3 +90,24 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         if not stopped:
             return jsonify({"error": "No running captioning job for this dataset"}), 404
         return jsonify({"status": "stopping"})
+
+    @app.post("/datasets/<name>/images/<int:image_id>/caption")
+    def caption_single_image(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Caption a single image synchronously.
+
+        Accepts the same JSON body fields as the batch endpoint.
+        Returns the generated caption.
+        """
+        raw: dict[str, Any] = request.get_json(silent=True) or {}
+
+        try:
+            options = CaptionJobOptions.model_validate(raw)
+        except pydantic.ValidationError as e:
+            return jsonify({"error": e.errors()}), 400
+
+        try:
+            result = captioning.caption_single(name, image_id, options)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 409
+
+        return jsonify(result)

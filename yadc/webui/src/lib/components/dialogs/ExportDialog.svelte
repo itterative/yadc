@@ -32,7 +32,7 @@
   let error: string | null = $state(null);
 
   // --- Form state ---
-  let selectedDataset = $state(datasetName);
+  let selectedDataset = $state("");
   let selectedBackend = $state("sd-scripts");
   let selectedFormat = $state("jsonl");
   let source: "caption" | "draft" = $state("caption");

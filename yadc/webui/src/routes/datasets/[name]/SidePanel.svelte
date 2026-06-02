@@ -3,29 +3,33 @@
   import ImageDetail from "$lib/components/dataset/ImageDetail.svelte";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
   import type { ImageInfo } from "$lib/stores/datasetImages";
+  import SvgClose from "$lib/icons/SvgClose.svelte";
+  import SvgMenuLeft from "$lib/icons/SvgMenuLeft.svelte";
 
   type PanelTab = "caption" | "details";
 
   interface Props {
     datasetName: string;
     focusedItem: ImageInfo | null;
-    isMobile: boolean;
     panelTab?: PanelTab;
     open?: boolean;
+    captionOptions?: CaptionOptions;
     onstartcaptioning?: (options: CaptionOptions) => void;
     onpanelclose?: () => void;
     oncaptionupdated?: (imageId: number, caption: string) => void;
+    oncaptionimage?: (imageId: number) => Promise<string>;
   }
 
   let {
     datasetName,
     focusedItem,
-    isMobile,
     panelTab = $bindable("caption"),
     open = $bindable(false),
+    captionOptions = $bindable(),
     onstartcaptioning,
     onpanelclose,
     oncaptionupdated,
+    oncaptionimage,
   }: Props = $props();
 
   function handleClose() {
@@ -34,7 +38,7 @@
 </script>
 
 <!-- Mobile: backdrop -->
-{#if isMobile && open}
+{#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -45,13 +49,12 @@
 
 <!-- Side panel: desktop = inline, mobile = slide-over drawer -->
 <div
-  class="side-panel {isMobile
-    ? 'fixed inset-y-0 right-0 z-40 w-[80vw] max-w-[480px] shadow-2xl transition-transform duration-300'
-    : 'w-[480px] flex-shrink-0'
-  }"
-  style:transform={isMobile ? (open ? 'translateX(0)' : 'translateX(100%)') : undefined}
+  class="side-panel
+    fixed inset-y-0 right-0 z-40 w-[80vw] max-w-[480px] shadow-2xl transition-transform duration-300
+    lg:static lg:z-auto lg:w-[480px] lg:max-w-none lg:flex-shrink-0 lg:shadow-none lg:transition-none
+    {open ? '' : 'translate-x-full'} lg:translate-x-0"
 >
-  <div class="flex flex-col h-full overflow-hidden bg-surface {isMobile ? 'border-l border-border' : 'rounded-xl border border-border'}">
+  <div class="flex flex-col h-full overflow-hidden bg-surface border-l border-border lg:border lg:rounded-xl">
     <!-- Tab bar -->
     <div class="flex items-center border-b border-border flex-shrink-0">
       <button
@@ -73,62 +76,51 @@
         Details
       </button>
 
-      {#if isMobile}
-        <button
-          class="ml-auto mr-2 p-1 text-gray-400 hover:text-white transition-colors cursor-pointer"
-          onclick={() => (open = false)}
-          title="Close panel"
-          aria-label="Close panel"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      {/if}
+      <button
+        class="ml-auto mr-2 p-1 text-gray-400 hover:text-white transition-colors cursor-pointer lg:hidden"
+        onclick={() => (open = false)}
+        title="Close panel"
+        aria-label="Close panel"
+      >
+        <SvgClose class="w-5 h-5" />
+      </button>
     </div>
 
-    <!-- Tab content -->
+    <!-- Tab content: always render both to preserve component state across tab switches -->
     <div class="flex-1 min-h-0 overflow-y-auto">
-      {#if panelTab === "caption"}
+      <div class="{panelTab === 'caption' ? '' : 'hidden'}">
         <CaptionSettings
           {datasetName}
+          bind:currentOptions={captionOptions}
           onstart={onstartcaptioning}
-          onclose={() => { if (isMobile) open = false; }}
+          onclose={() => { open = false; }}
         />
-      {:else if panelTab === "details"}
+      </div>
+      <div class="{panelTab === 'details' ? '' : 'hidden'}">
         {#if focusedItem !== null}
           <ImageDetail
             {datasetName}
             item={focusedItem}
             onclose={handleClose}
             oncaptionupdated={oncaptionupdated}
+            oncaptionimage={oncaptionimage}
           />
         {:else}
           <div class="flex items-center justify-center h-full text-gray-500 text-sm">
             Select an image to view details
           </div>
         {/if}
-      {/if}
+      </div>
     </div>
   </div>
 </div>
 
 <!-- Mobile: floating toggle button -->
-{#if isMobile}
-  <button
-    class="fixed bottom-6 right-6 z-20 w-16 h-16 rounded-full bg-accent text-white shadow-lg
-           flex items-center justify-center hover:bg-accent-hover transition-colors cursor-pointer"
-    onclick={() => (open = !open)}
-    title="Toggle panel"
-  >
-    {#if panelTab === 'caption'}
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-      </svg>
-    {:else}
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    {/if}
-  </button>
-{/if}
+<button
+  class="lg:hidden fixed bottom-6 right-6 z-20 w-16 h-16 rounded-full bg-accent text-white shadow-lg
+         flex items-center justify-center hover:bg-accent-hover transition-colors cursor-pointer"
+  onclick={() => (open = !open)}
+  title="Toggle panel"
+>
+  <SvgMenuLeft class="w-6 h-6" />
+</button>

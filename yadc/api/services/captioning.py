@@ -86,6 +86,77 @@ class CaptionJobOptions(pydantic.BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Config resolution helpers (shared by CaptionJob and CaptioningService)
+# ---------------------------------------------------------------------------
+
+
+def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict[str, Any]:
+    """Merge env/config overrides from *opts* into the raw TOML dict."""
+    env_name = opts.env or raw.get("env", "default")
+    try:
+        user_env = cmd_envs.load_env(env_name)
+    except Exception:
+        user_env = cmd_envs.load_env("default")
+
+    raw.setdefault("api", {})
+    api: dict[str, Any] = raw["api"]
+
+    # Apply overrides: CLI option > env > existing TOML
+    api["url"] = opts.api_url or user_env.api.url or api.get("url", "")
+    api["token"] = opts.api_token or user_env.api.token or api.get("token", "")
+    api["model_name"] = opts.api_model_name or user_env.api.model_name or api.get("model_name", "")
+
+    # Apply prompt overrides
+    raw.setdefault("prompt", {})
+    if opts.prompt_name:
+        raw["prompt"]["name"] = opts.prompt_name
+        raw["prompt"].pop("template", None)
+    if opts.prompt_template:
+        raw["prompt"]["template"] = opts.prompt_template
+        raw["prompt"].pop("name", None)
+
+    # Apply other option overrides
+    if opts.max_tokens != 512:
+        raw.setdefault("settings", {})
+        raw["settings"]["max_tokens"] = opts.max_tokens
+
+    if opts.image_quality != "auto":
+        raw.setdefault("settings", {})
+        raw["settings"]["image_quality"] = opts.image_quality
+
+    if opts.reasoning:
+        raw.setdefault("reasoning", {})
+        raw["reasoning"]["enable"] = True
+        raw["reasoning"]["thinking_effort"] = opts.reasoning_effort
+        raw["reasoning"]["exclude_from_output"] = opts.reasoning_exclude_output
+
+    return raw
+
+
+def resolve_template(prompt_name: str, prompt_template: str, logger: Logger | None = None) -> str:
+    """Resolve a prompt template through the fallback chain."""
+    if prompt_template:
+        return prompt_template
+
+    for loader in (cmd_templates.load_user_template, cmd_templates.load_builtin_template):
+        try:
+            return loader(prompt_name)
+        except Exception:
+            continue
+
+    if prompt_name:
+        available = cmd_templates.list_user_template()
+        raise ValueError(
+            f"Prompt template '{prompt_name}' not found. Available: {', '.join(available)}" if available else f"Prompt template '{prompt_name}' not found."
+        )
+
+    # No template specified — use default
+    if logger:
+        logger.warning("No prompt template specified, using default.")
+    return cmd_templates.default_template()
+
+
+# ---------------------------------------------------------------------------
 # Job runner
 # ---------------------------------------------------------------------------
 
@@ -296,68 +367,10 @@ class CaptionJob:
     # -- config resolution helpers -------------------------------------------
 
     def _apply_overrides(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Merge CLI-style env/config overrides into the raw TOML dict."""
-        # Merge user environment
-        env_name = self._opts.env or raw.get("env", "default")
-        try:
-            user_env = cmd_envs.load_env(env_name)
-        except Exception:
-            user_env = cmd_envs.load_env("default")
-
-        raw.setdefault("api", {})
-        api: dict[str, Any] = raw["api"]
-
-        # Apply overrides: CLI option > env > existing TOML
-        api["url"] = self._opts.api_url or user_env.api.url or api.get("url", "")
-        api["token"] = self._opts.api_token or user_env.api.token or api.get("token", "")
-        api["model_name"] = self._opts.api_model_name or user_env.api.model_name or api.get("model_name", "")
-
-        # Apply prompt overrides
-        raw.setdefault("prompt", {})
-        if self._opts.prompt_name:
-            raw["prompt"]["name"] = self._opts.prompt_name
-            raw["prompt"].pop("template", None)
-        if self._opts.prompt_template:
-            raw["prompt"]["template"] = self._opts.prompt_template
-            raw["prompt"].pop("name", None)
-
-        # Apply other option overrides
-        if self._opts.max_tokens != 512:
-            raw.setdefault("settings", {})
-            raw["settings"]["max_tokens"] = self._opts.max_tokens
-
-        if self._opts.image_quality != "auto":
-            raw.setdefault("settings", {})
-            raw["settings"]["image_quality"] = self._opts.image_quality
-
-        if self._opts.reasoning:
-            raw.setdefault("reasoning", {})
-            raw["reasoning"]["enable"] = True
-            raw["reasoning"]["thinking_effort"] = self._opts.reasoning_effort
-            raw["reasoning"]["exclude_from_output"] = self._opts.reasoning_exclude_output
-
-        return raw
+        return apply_config_overrides(raw, self._opts)
 
     def _resolve_template(self, prompt_name: str, prompt_template: str) -> str:
-        """Resolve a prompt template through the fallback chain."""
-        if prompt_template:
-            return prompt_template
-
-        for loader in (cmd_templates.load_user_template, cmd_templates.load_builtin_template):
-            try:
-                return loader(prompt_name)
-            except Exception:
-                continue
-
-        if prompt_name:
-            available = cmd_templates.list_user_template()
-            raise ValueError(
-                f"Prompt template '{prompt_name}' not found. Available: {', '.join(available)}" if available else f"Prompt template '{prompt_name}' not found."
-            )
-
-        # No template specified — use default
-        self._logger.warning("No prompt template specified, using default.")
-        return cmd_templates.default_template()
+        return resolve_template(prompt_name, prompt_template, self._logger)
 
     # -- state helpers -------------------------------------------------------
 
@@ -474,6 +487,108 @@ class CaptioningService(Service):
             if job is None:
                 return JobInfo(status="idle", dataset_name=dataset_name)
             return job.snapshot
+
+    def caption_single(self, dataset_name: str, image_id: int, options: CaptionJobOptions) -> dict[str, Any]:
+        """Caption a single image synchronously.
+
+        Resolves the dataset config, creates a captioner, and captions the
+        specified image. Returns a dict with the resulting caption.
+
+        Raises:
+            ValueError: If the dataset or image is not found, or a batch job is running.
+        """
+        # Block if a batch job is running for this dataset
+        with self._lock:
+            if dataset_name in self._jobs and self._jobs[dataset_name].alive:
+                raise ValueError(f"A batch captioning job is running for dataset '{dataset_name}'")
+
+        # Resolve dataset config
+        ds_info = self._dataset_service.get_dataset(dataset_name)
+        if ds_info is None or ds_info.config_path is None:
+            raise ValueError(f"Dataset '{dataset_name}' not found")
+
+        config_path = Path(ds_info.config_path)
+        if not config_path.exists():
+            raise ValueError(f"Config file not found: {config_path}")
+
+        with open(config_path) as f:
+            raw = toml.load(f)
+
+        # Build a temporary job-like object just for _apply_overrides
+        raw = apply_config_overrides(raw, options)
+
+        try:
+            config = parse_config(raw)
+        except Exception as exc:
+            raise ValueError(f"Invalid dataset config: {exc}") from exc
+
+        # Resolve template
+        config.prompt.template = resolve_template(config.prompt.name, config.prompt.template, self._logger)
+
+        # Resolve the specific image
+        info = self._dataset_service.get_image(dataset_name, image_id)
+        if info is None:
+            raise ValueError(f"Image {image_id} not found in dataset '{dataset_name}'")
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            raise ValueError(f"Image file not found: {image_path}")
+
+        # Build DatasetImage with extras
+        dataset_image = DatasetImage(path=str(image_path))
+        dataset_image.caption = dataset_image.read_caption()
+
+        # Load TOML extras
+        extras: dict[str, Any] = {}
+        if dataset_image.toml_path.exists():
+            try:
+                with open(dataset_image.toml_path) as f:
+                    extras = toml.loads(f.read())
+            except Exception:
+                pass
+        if extras:
+            dataset_image = DatasetImage.model_validate({"path": str(image_path), "caption": dataset_image.caption, **extras})
+
+        # Create the captioner
+        model = APICaptioner(
+            api_url=config.api.url,
+            api_token=config.api.token,
+            prompt_template=config.prompt.template,
+            store_conversation=config.settings.store_conversation,
+            image_quality=config.settings.image_quality,
+            reasoning=config.reasoning.enable,
+            reasoning_effort=config.reasoning.thinking_effort,
+            reasoning_exclude_output=config.reasoning.exclude_from_output,
+        )
+        model.load_model(config.api.model_name)
+
+        # Caption
+        conversation_overrides = config.settings.advanced.model_dump()
+        caption = model.predict(
+            dataset_image,
+            max_new_tokens=config.settings.max_tokens,
+            use_cache=True,
+            conversation_overrides=conversation_overrides,
+            prefill=config.settings.advanced.assistant_prefill,
+            drafts=dataset_image.read_all_drafts() or None,
+            prediction_context=PredictionContext(),
+        ).strip()
+
+        if caption:
+            if options.draft:
+                dataset_image.write_draft(options.draft, caption)
+            else:
+                if dataset_image.caption:
+                    dataset_image.save_history(when_not_exists=True)
+                dataset_image.update_caption(caption)
+                dataset_image.save_history(when_not_exists=False)
+
+            # Update the image index
+            self._dataset_service.refresh_image_index(dataset_name, image_id)
+
+        model.log_usage()
+
+        return {"caption": caption}
 
     # -- private helpers -----------------------------------------------------
 
