@@ -56,8 +56,31 @@ yadc/
       datasets.py           # DatasetService — filesystem scanning, SQLite indexing, paginated image queries, caption read/write
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 
-  webui/             # SvelteKit frontend (Phase 1 skeleton)
-    ...
+  webui/             # SvelteKit frontend (Svelte 5 + Tailwind CSS v4 + TypeScript + Zod)
+    src/
+      lib/
+        api.ts              # API_BASE constant (empty in prod, backend URL in dev)
+        events.ts           # TypedEventSource — SSE with Zod validation
+        async.ts            # deferred, sleep, synchronized helpers
+        storable.js         # localStorage-backed writable store
+        random.ts           # Seeded PRNG for deterministic stub layouts
+        stores/
+          settings.ts       # UI settings (storable)
+          captioning.ts     # Captioning SSE event state
+          datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers + createDatasetBrowserStore
+        components/
+          Dialog.svelte               # Modal dialog (HTML <dialog>)
+          Checkbox.svelte             # Checkbox component
+          IntersectionObserverElement.svelte  # Infinite scroll sentinel
+          DatasetImage.svelte         # Masonry grid tile (thumbnail + badges)
+          DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll)
+          ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML + drafts)
+        icons/             # SVG icon components
+      routes/
+        +layout.svelte    # App shell with breadcrumb nav
+        +layout.ts        # prerender=true, ssr=false (SPA mode)
+        +page.svelte      # Dataset listing → links to /datasets/{name}
+        datasets/[name]/+page.svelte  # Dataset browser (masonry grid + image detail)
 
   cmd/                # pure logic (no click imports)
     app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()

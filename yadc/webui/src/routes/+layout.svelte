@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { page } from "$app/stores";
   import "./layout.css";
 
   interface Props {
@@ -7,6 +8,10 @@
   }
 
   let { children }: Props = $props();
+
+  let currentPath = $derived($page.url.pathname);
+  let isDatasetPage = $derived(currentPath.startsWith("/datasets/"));
+  let datasetName = $derived(isDatasetPage ? $page.params.name : null);
 </script>
 
 <div class="app-shell">
@@ -15,7 +20,11 @@
       <a href="/">yadc</a>
     </div>
     <div class="nav-links">
-      <a href="/">Datasets</a>
+      <a href="/" class:active={!isDatasetPage}>Datasets</a>
+      {#if isDatasetPage && datasetName}
+        <span class="nav-separator">/</span>
+        <span class="nav-current">{datasetName}</span>
+      {/if}
     </div>
   </nav>
 
@@ -49,7 +58,8 @@
 
   .nav-links {
     display: flex;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .nav-links a {
@@ -60,6 +70,20 @@
 
   .nav-links a:hover {
     color: var(--color-text);
+  }
+
+  .nav-links a.active {
+    color: var(--color-text);
+  }
+
+  .nav-separator {
+    color: var(--color-text-dim);
+    opacity: 0.4;
+  }
+
+  .nav-current {
+    color: var(--color-text);
+    font-size: 0.875rem;
   }
 
   .app-main {

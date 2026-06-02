@@ -91,8 +91,7 @@ class DBMigrations(Service):
 
         CREATE TABLE IF NOT EXISTS datasets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            path TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL UNIQUE,
             config_path TEXT,
             last_scanned_t REAL,
             image_count INTEGER DEFAULT 0,
@@ -101,7 +100,6 @@ class DBMigrations(Service):
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_datasets_name ON datasets (name);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_datasets_path ON datasets (path);
 
         CREATE TABLE IF NOT EXISTS dataset_images (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +108,8 @@ class DBMigrations(Service):
             file_name TEXT NOT NULL,
             has_caption INTEGER NOT NULL DEFAULT 0,
             has_toml INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 0,
+            height INTEGER NOT NULL DEFAULT 0,
             draft_names TEXT NOT NULL DEFAULT '',
             last_modified_t REAL,
             FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE

@@ -1,4 +1,18 @@
-"""Dataset service — filesystem scanning, SQLite indexing, and image queries."""
+"""Dataset service — filesystem scanning, SQLite indexing, and image queries.
+
+A "dataset" is a named yadc config TOML stored in the XDG state directory
+(``STATE_PATH/<name>/config.toml``). The TOML is the source of truth — it
+defines API settings, prompts, and ``[[dataset]]`` entries pointing to image
+directories.
+
+Two registration flows:
+
+- **Import**: copy an existing TOML into the state dir (resolving relative
+  paths to absolute first).
+- **Create**: write a fresh TOML with the given image paths.
+
+Both end up as ``STATE_PATH/<name>/config.toml``.
+"""
 
 import sqlite3
 import time
@@ -8,7 +22,9 @@ from pathlib import Path
 from typing import Any
 
 import toml
+from PIL import Image
 
+from yadc.cmd.app import STATE_PATH
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
 
@@ -20,12 +36,21 @@ from ..modules.service import Service
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
 
 
+def _dataset_state_dir(name: str) -> Path:
+    """Return the state directory for a named dataset."""
+    return STATE_PATH / name
+
+
+def _dataset_config_path(name: str) -> Path:
+    """Return the config TOML path for a named dataset."""
+    return _dataset_state_dir(name) / "config.toml"
+
+
 @dataclass
 class DatasetInfo:
     """Summary of a dataset as returned by the listing API."""
 
     name: str
-    path: str
     config_path: str | None = None
     image_count: int = 0
     has_caption: int = 0
@@ -42,6 +67,8 @@ class ImageInfo:
     path: str
     has_caption: bool = False
     has_toml: bool = False
+    width: int = 0
+    height: int = 0
     draft_names: list[str] = field(default_factory=list)
     last_modified_t: float | None = None
 
@@ -69,6 +96,8 @@ class DatasetService(Service):
     def __init__(self, db: DBConnectionFactory, logging: LoggingFactory):
         self._db: DBConnectionFactory = db
         self._logger: Logger = logging.get_logger(__name__)
+        # Ensure state dir exists
+        STATE_PATH.mkdir(parents=True, exist_ok=True)
 
     # --- Dataset listing ---
 
@@ -80,7 +109,7 @@ class DatasetService(Service):
         try:
             rows = conn.execute(
                 """
-                SELECT d.name, d.path, d.config_path,
+                SELECT d.name, d.config_path,
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
@@ -100,12 +129,11 @@ class DatasetService(Service):
             return [
                 DatasetInfo(
                     name=row[0],
-                    path=row[1],
-                    config_path=row[2],
-                    image_count=row[3],
-                    has_caption=row[4],
-                    has_toml=row[5],
-                    last_scanned_t=row[6],
+                    config_path=row[1],
+                    image_count=row[2],
+                    has_caption=row[3],
+                    has_toml=row[4],
+                    last_scanned_t=row[5],
                 )
                 for row in rows
             ]
@@ -120,7 +148,7 @@ class DatasetService(Service):
         try:
             row = conn.execute(
                 """
-                SELECT d.name, d.path, d.config_path,
+                SELECT d.name, d.config_path,
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
@@ -144,12 +172,11 @@ class DatasetService(Service):
 
             return DatasetInfo(
                 name=row[0],
-                path=row[1],
-                config_path=row[2],
-                image_count=row[3],
-                has_caption=row[4],
-                has_toml=row[5],
-                last_scanned_t=row[6],
+                config_path=row[1],
+                image_count=row[2],
+                has_caption=row[3],
+                has_toml=row[4],
+                last_scanned_t=row[5],
             )
         finally:
             conn.close()
@@ -177,7 +204,7 @@ class DatasetService(Service):
 
             rows = conn.execute(
                 """
-                SELECT id, file_name, path, has_caption, has_toml, draft_names, last_modified_t
+                SELECT id, file_name, path, has_caption, has_toml, width, height, draft_names, last_modified_t
                 FROM dataset_images
                 WHERE dataset_id = ? AND id > ?
                 ORDER BY id
@@ -193,8 +220,10 @@ class DatasetService(Service):
                     path=row[2],
                     has_caption=bool(row[3]),
                     has_toml=bool(row[4]),
-                    draft_names=row[5].split(",") if row[5] else [],
-                    last_modified_t=row[6],
+                    width=row[5] or 0,
+                    height=row[6] or 0,
+                    draft_names=row[7].split(",") if row[7] else [],
+                    last_modified_t=row[8],
                 )
                 for row in rows[:limit]
             ]
@@ -213,7 +242,7 @@ class DatasetService(Service):
         try:
             row = conn.execute(
                 """
-                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.draft_names, di.last_modified_t
+                SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml, di.width, di.height, di.draft_names, di.last_modified_t
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
                 WHERE d.name = ? AND di.id = ?
@@ -230,8 +259,10 @@ class DatasetService(Service):
                 path=row[2],
                 has_caption=bool(row[3]),
                 has_toml=bool(row[4]),
-                draft_names=row[5].split(",") if row[5] else [],
-                last_modified_t=row[6],
+                width=row[5] or 0,
+                height=row[6] or 0,
+                draft_names=row[7].split(",") if row[7] else [],
+                last_modified_t=row[8],
             )
         finally:
             conn.close()
@@ -295,70 +326,74 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_caption=True)
         return True
 
-    # --- Dataset scanning / indexing ---
+    # --- Dataset registration ---
 
-    def scan_dataset(self, name: str) -> bool:
+    def import_dataset(self, name: str, toml_path: str) -> DatasetInfo:
+        """Import an existing TOML config as a named dataset.
+
+        Copies the TOML to ``STATE_PATH/<name>/config.toml``, resolving any
+        relative paths in ``[[dataset]]`` entries to absolute first.
+        """
+        source = Path(toml_path).resolve()
+        if not source.is_file():
+            raise ValueError(f"Not a file: {source}")
+
+        # Load and resolve relative paths
+        raw = self._load_raw_config(source)
+        raw = self._resolve_relative_paths(raw, source.parent)
+
+        # Write to state dir
+        dest_dir = _dataset_state_dir(name)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = _dataset_config_path(name)
+        with open(dest, "w") as f:
+            toml.dump(raw, f)
+
+        return self._register(name, str(dest))
+
+    def create_dataset(self, name: str, image_paths: list[str]) -> DatasetInfo:
+        """Create a new dataset with the given image directories.
+
+        Writes a minimal TOML to ``STATE_PATH/<name>/config.toml`` with one
+        ``[[dataset]]`` entry per path.
+        """
+        if not image_paths:
+            raise ValueError("At least one image path is required")
+
+        resolved_paths: list[str] = []
+        for p in image_paths:
+            rp = Path(p).resolve()
+            if not rp.is_dir():
+                raise ValueError(f"Not a directory: {rp}")
+            resolved_paths.append(str(rp))
+
+        # Build a minimal v2 TOML
+        raw: dict[str, Any] = {"dataset": []}
+        for ip in resolved_paths:
+            raw["dataset"].append({"path": ip})
+
+        dest_dir = _dataset_state_dir(name)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = _dataset_config_path(name)
+        with open(dest, "w") as f:
+            toml.dump(raw, f)
+
+        return self._register(name, str(dest))
+
+    def rescan_dataset(self, name: str) -> bool:
         """Force a rescan of a dataset by name. Returns True if dataset was found."""
         conn = self._db.connection()
         try:
-            row = conn.execute("SELECT id, path, config_path FROM datasets WHERE name = ?", (name,)).fetchone()
+            row = conn.execute("SELECT id, config_path FROM datasets WHERE name = ?", (name,)).fetchone()
             if row is None:
                 return False
 
-            dataset_id, path, config_path = row[0], row[1], row[2]
-            self._scan_dataset(conn, dataset_id, path, config_path)
+            dataset_id, config_path = row[0], row[1]
+            self._scan_dataset(conn, dataset_id, config_path)
             conn.commit()
             return True
         finally:
             conn.close()
-
-    def register_dataset(self, path: str, *, name: str | None = None) -> DatasetInfo:
-        """Register a dataset directory for indexing.
-
-        Scans for a config.toml in the directory, indexes all images, and stores
-        metadata in the DB.
-        """
-        dir_path = Path(path).resolve()
-        if not dir_path.is_dir():
-            raise ValueError(f"Not a directory: {dir_path}")
-
-        config_path = dir_path / "config.toml"
-        config_path_str = str(config_path) if config_path.exists() else None
-
-        # Derive name from directory if not provided
-        if name is None:
-            name = dir_path.name
-
-        # Load config to get dataset entries
-        config = self._load_config(config_path) if config_path.exists() else None
-
-        conn = self._db.connection()
-        try:
-            # Upsert dataset record
-            conn.execute(
-                """
-                INSERT INTO datasets (name, path, config_path, last_scanned_t, updated_t)
-                VALUES (?, ?, ?, unixepoch(), unixepoch())
-                ON CONFLICT(path) DO UPDATE SET
-                    name = excluded.name,
-                    config_path = excluded.config_path,
-                    updated_t = unixepoch()
-                """,
-                (name, str(dir_path), config_path_str),
-            )
-
-            row = conn.execute("SELECT id FROM datasets WHERE path = ?", (str(dir_path),)).fetchone()
-            assert row is not None
-            dataset_id = row[0]
-
-            self._scan_dataset(conn, dataset_id, str(dir_path), config_path_str, config=config)
-            conn.commit()
-        finally:
-            conn.close()
-
-        result = self.get_dataset(name)
-        assert result is not None
-        return result
 
     def unregister_dataset(self, name: str) -> bool:
         """Remove a dataset and its images from the index. Returns True if found."""
@@ -370,48 +405,67 @@ class DatasetService(Service):
         finally:
             conn.close()
 
-    def discover_datasets(self, search_paths: list[str] | None = None) -> list[DatasetInfo]:
-        """Scan search paths (and defaults) for dataset directories and register them.
+    def _register(self, name: str, config_path: str) -> DatasetInfo:
+        """Upsert a dataset record and scan its images."""
+        config = self._load_config(Path(config_path))
 
-        Looks for directories containing a ``config.toml`` file.
-        """
-        paths = list(search_paths or [])
-        # Add some default search paths
-        from yadc.cmd.app import CONFIG_PATH
+        conn = self._db.connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO datasets (name, config_path, last_scanned_t, updated_t)
+                VALUES (?, ?, unixepoch(), unixepoch())
+                ON CONFLICT(name) DO UPDATE SET
+                    config_path = excluded.config_path,
+                    updated_t = unixepoch()
+                """,
+                (name, config_path),
+            )
 
-        paths.append(str(CONFIG_PATH))
+            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (name,)).fetchone()
+            assert row is not None
+            dataset_id = row[0]
 
-        found: list[DatasetInfo] = []
-        seen_paths: set[str] = set()
+            self._scan_dataset(conn, dataset_id, config_path, config=config)
+            conn.commit()
+        finally:
+            conn.close()
 
-        for search_path in paths:
-            base = Path(search_path)
-            if not base.is_dir():
-                continue
-
-            # Check direct children for config.toml
-            for child in sorted(base.iterdir()):
-                if not child.is_dir():
-                    continue
-
-                resolved = str(child.resolve())
-                if resolved in seen_paths:
-                    continue
-                seen_paths.add(resolved)
-
-                config_file = child / "config.toml"
-                if not config_file.exists():
-                    continue
-
-                try:
-                    info = self.register_dataset(str(child))
-                    found.append(info)
-                except Exception as e:
-                    self._logger.warning("Failed to register dataset at %s: %s", child, e)
-
-        return found
+        result = self.get_dataset(name)
+        assert result is not None
+        return result
 
     # --- Private helpers ---
+
+    def _load_raw_config(self, config_path: Path) -> dict[str, Any]:
+        """Load a TOML config as a raw dict."""
+        with open(config_path) as f:
+            return toml.load(f)
+
+    def _resolve_relative_paths(self, raw: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+        """Resolve relative dataset paths in a raw config dict to absolute paths."""
+        # Handle v2 [[dataset]]
+        dataset_entries = raw.get("dataset")
+        if isinstance(dataset_entries, list):
+            for entry in dataset_entries:
+                if isinstance(entry, dict) and "path" in entry:
+                    p = Path(entry["path"])
+                    if not p.is_absolute():
+                        entry["path"] = str((base_dir / p).resolve())
+
+        # Handle v1 [dataset] paths
+        dataset_v1 = raw.get("dataset")
+        if isinstance(dataset_v1, dict) and "paths" in dataset_v1:
+            resolved = []
+            for p in dataset_v1["paths"]:
+                pp = Path(p)
+                if not pp.is_absolute():
+                    resolved.append(str((base_dir / pp).resolve()))
+                else:
+                    resolved.append(p)
+            dataset_v1["paths"] = resolved
+
+        return raw
 
     def _load_config(self, config_path: Path) -> Config | None:
         """Load and parse a dataset config file."""
@@ -427,33 +481,32 @@ class DatasetService(Service):
         self,
         conn: sqlite3.Connection,
         dataset_id: int,
-        path: str,
         config_path: str | None,
         config: Config | None = None,
     ) -> None:
-        """Scan a dataset directory and update the image index."""
-        dir_path = Path(path)
-        if not dir_path.is_dir():
+        """Scan a dataset's config and update the image index."""
+        if not config_path:
+            return
+
+        config_file = Path(config_path)
+        if not config_file.exists():
             return
 
         # Load config if not provided
-        if config is None and config_path:
-            config = self._load_config(Path(config_path))
+        if config is None:
+            config = self._load_config(config_file)
 
-        # Determine image directories from config
+        # Determine image directories from config (paths are already absolute)
         image_dirs: list[Path] = []
         if config:
             for entry in config.dataset:
                 if entry.path:
                     p = Path(entry.path)
-                    if not p.is_absolute():
-                        p = dir_path / p
                     if p.is_dir():
                         image_dirs.append(p.resolve())
 
-        # If no image dirs from config, use the dataset path itself
         if not image_dirs:
-            image_dirs = [dir_path]
+            return
 
         # Collect current files from disk
         disk_images: dict[str, dict[str, Any]] = {}
@@ -481,10 +534,21 @@ class DatasetService(Service):
                 except OSError:
                     mod_time = None
 
+                # Read image dimensions
+                img_width = 0
+                img_height = 0
+                try:
+                    with Image.open(child) as img:
+                        img_width, img_height = img.size
+                except Exception:
+                    pass
+
                 disk_images[str(child)] = {
                     "file_name": child.name,
                     "has_caption": caption_path.exists(),
                     "has_toml": toml_path.exists(),
+                    "width": img_width,
+                    "height": img_height,
                     "draft_names": ",".join(sorted(draft_names)),
                     "last_modified_t": mod_time,
                 }
@@ -502,13 +566,15 @@ class DatasetService(Service):
                 conn.execute(
                     """
                     UPDATE dataset_images
-                    SET file_name = ?, has_caption = ?, has_toml = ?, draft_names = ?, last_modified_t = ?
+                    SET file_name = ?, has_caption = ?, has_toml = ?, width = ?, height = ?, draft_names = ?, last_modified_t = ?
                     WHERE id = ?
                     """,
                     (
                         meta["file_name"],
                         int(meta["has_caption"]),
                         int(meta["has_toml"]),
+                        meta["width"],
+                        meta["height"],
                         meta["draft_names"],
                         meta["last_modified_t"],
                         existing_by_path[img_path],
@@ -517,8 +583,8 @@ class DatasetService(Service):
             else:
                 conn.execute(
                     """
-                    INSERT INTO dataset_images (dataset_id, path, file_name, has_caption, has_toml, draft_names, last_modified_t)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO dataset_images (dataset_id, path, file_name, has_caption, has_toml, width, height, draft_names, last_modified_t)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         dataset_id,
@@ -526,6 +592,8 @@ class DatasetService(Service):
                         meta["file_name"],
                         int(meta["has_caption"]),
                         int(meta["has_toml"]),
+                        meta["width"],
+                        meta["height"],
                         meta["draft_names"],
                         meta["last_modified_t"],
                     ),
@@ -569,13 +637,13 @@ class DatasetService(Service):
         try:
             cutoff = time.time() - max_age_seconds
             stale = conn.execute(
-                "SELECT id, path, config_path FROM datasets WHERE last_scanned_t IS NULL OR last_scanned_t < ?",
+                "SELECT id, config_path FROM datasets WHERE last_scanned_t IS NULL OR last_scanned_t < ?",
                 (cutoff,),
             ).fetchall()
 
-            for dataset_id, path, config_path in stale:
+            for dataset_id, config_path in stale:
                 try:
-                    self._scan_dataset(conn, dataset_id, path, config_path)
+                    self._scan_dataset(conn, dataset_id, config_path)
                     conn.commit()
                 except Exception as e:
                     self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)

@@ -37,12 +37,12 @@ def app_frontend(configuration: Configuration, app: AppBlueprint, logging: Loggi
         response.headers.set("Cache-Control", configuration.app_frontend_cache_control)
         return response
 
-    @app.errorhandler(404)
-    def spa_fallback(e: Exception):  # noqa: ARG001  # pyright: ignore[reportUnusedParameter,reportUnusedFunction]
-        """Fall back to index.html for SPA routes."""
+    @app.get("/datasets/<path:name>")
+    def spa_datasets(name: str):  # pyright: ignore[reportUnusedFunction]
+        """SPA fallback for dataset routes."""
+        index_file = f"{configuration.app_frontend_build_path}/index.html"
         import os
 
-        index_file = f"{configuration.app_frontend_build_path}/index.html"
         if os.path.isfile(index_file):
             return send_file(index_file)
         return Response("Not Found", status=404)

@@ -40,6 +40,32 @@ def api_datasets(
     _logger = logging.get_logger(__name__)
     _thumb_cache_dir = Path(configuration.cache_path) / "thumbnails"
 
+    @app.post("/datasets")
+    def add_dataset():  # pyright: ignore[reportUnusedFunction]
+        """Import an existing TOML or create a new dataset.
+
+        JSON body:
+            Import: {"name": "...", "toml_path": "..."}
+            Create: {"name": "...", "image_paths": ["...", ...]}
+        """
+        body = request.get_json(silent=True)
+        if body is None or "name" not in body:
+            return jsonify({"error": "Request body must include 'name'"}), 400
+
+        name = body["name"]
+
+        try:
+            if "toml_path" in body:
+                result = datasets.import_dataset(name, body["toml_path"])
+            elif "image_paths" in body:
+                result = datasets.create_dataset(name, body["image_paths"])
+            else:
+                return jsonify({"error": "Provide 'toml_path' to import or 'image_paths' to create"}), 400
+
+            return jsonify_dataclass(result), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]
         """List available datasets."""

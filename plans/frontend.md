@@ -200,9 +200,21 @@ uv run yadc webui serve   # serves everything on :7860
 3. ~~`yadc/api/services/` — dataset & settings service/repos~~ ✅ — `DatasetService` (filesystem scanning + DB indexing + paginated queries + caption read/write) and `SettingsService` (KV store over `settings` table). Services live in `yadc/api/services/` package, auto-discovered alongside `modules/`.
 4. ~~`yadc/api/controllers/api_datasets.py` — wire up controller stubs to use `DatasetService`~~ ✅ — Full implementation: `GET /datasets`, `GET /datasets/<name>/images` (paginated), `GET .../media`, `GET .../thumbnail` (cached in `<cache_path>/thumbnails/` as WebP), `GET .../caption`, `PUT .../caption`. Extracted shared `DataclassJSONEncoder` + `jsonify_dataclass` into `yadc/api/json_utils.py` (also used by `api_events.py`).
 5. ~~`yadc/webui/src/lib/components/IntersectionObserverElement.svelte`~~ ✅ — copied from reference
-6. Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading
-7. Frontend: `ImageDetail.svelte` — focused view with caption display
-8. Wire up pagination with next_token pattern
+6. ~~Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading~~ ✅ — Masonry grid adapted from reference `GalleryContainer.svelte`/`GalleryItem.svelte`; uses `IntersectionObserverElement` for infinite scroll; responsive columns (2/3/4/5); loading stubs with deterministic layout
+7. ~~Frontend: `ImageDetail.svelte` — focused view with caption display~~ ✅ — Dialog modal showing full-size image + caption (view/edit), TOML extras, drafts, status badges. Caption editing via PUT endpoint with optimistic UI updates.
+8. ~~Wire up pagination with next_token pattern~~ ✅ — `createDatasetBrowserStore()` manages paginated loading via `after_id` cursor; `loadMore()` appends pages; auto-recreates on dataset navigation
+
+**Additional Phase 2 work:**
+- **DB migration step 4** — Added `width`/`height` columns to `dataset_images` table for masonry layout calculation
+- **`ImageInfo` expanded** — Now includes `width`/`height` fields; populated during filesystem scanning via PIL `Image.open()`
+- **`src/lib/stores/datasetImages.ts`** — Full type definitions (`DatasetInfo`, `ImageInfo`, `ImagePage`, `CaptionData`) + API helpers (`fetchDatasets`, `fetchImages`, `fetchCaption`, `updateCaption`, URL helpers) + `createDatasetBrowserStore` (paginated browsing store)
+- **`src/lib/components/DatasetImage.svelte`** — Thumbnail tile with aspect ratio, loading state, caption/TOML/draft badges
+- **`src/lib/components/DatasetBrowser.svelte`** — Masonry grid container with column distribution, loading stubs, infinite scroll
+- **`src/lib/components/ImageDetail.svelte`** — Full image detail dialog with caption editing, TOML extras display, draft viewing
+- **`src/routes/datasets/[name]/+page.svelte`** — Dataset detail page with masonry grid + image detail modal
+- **Updated `src/routes/+page.svelte`** — Dataset cards now link to `/datasets/{name}`; uses shared `fetchDatasets` API helper
+- **Updated `src/routes/+layout.svelte`** — Breadcrumb navigation showing current dataset name
+- **`svelte.config.js`** — Added SPA `fallback: 'index.html'` + `handleUnseenRoutes: 'warn'` for dynamic route support
 
 ### Phase 3: Captioning Integration
 

@@ -8,14 +8,9 @@
     PingEventZ,
   } from "$lib/stores/captioning";
   import { API_BASE } from "$lib/api";
+  import { fetchDatasets, type DatasetInfo } from "$lib/stores/datasetImages";
 
-  interface Dataset {
-    name: string;
-    path: string;
-    image_count?: number;
-  }
-
-  let datasets: Dataset[] = $state([]);
+  let datasets: DatasetInfo[] = $state([]);
   let loading = $state(true);
   let error = $state("");
 
@@ -68,9 +63,7 @@
     // Fetch datasets
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/datasets`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        datasets = await res.json();
+        datasets = await fetchDatasets();
       } catch (e) {
         error = e instanceof Error ? e.message : "Failed to load datasets";
       } finally {
@@ -101,13 +94,19 @@
 {:else}
   <div class="dataset-grid">
     {#each datasets as dataset}
-      <div class="dataset-card">
+      <a href="/datasets/{dataset.name}" class="dataset-card">
         <h3>{dataset.name}</h3>
-        <p class="text-dim">{dataset.path}</p>
-        {#if dataset.image_count !== undefined}
-          <p class="text-dim">{dataset.image_count} images</p>
+        <p class="text-dim">{dataset.image_count} images</p>
+        {#if dataset.image_count > 0}
+          <div class="dataset-stats">
+            <span>{dataset.image_count} images</span>
+            <span class="separator">·</span>
+            <span>{dataset.has_caption} captioned</span>
+            <span class="separator">·</span>
+            <span>{dataset.has_toml} with TOML</span>
+          </div>
         {/if}
-      </div>
+      </a>
     {/each}
   </div>
 {/if}
@@ -147,11 +146,13 @@
   }
 
   .dataset-card {
+    display: block;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 1rem 1.25rem;
     transition: border-color 0.2s;
+    text-decoration: none;
   }
 
   .dataset-card:hover {
@@ -161,5 +162,18 @@
   .dataset-card h3 {
     margin: 0 0 0.25rem;
     color: var(--color-text);
+  }
+
+  .dataset-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-text-dim);
+  }
+
+  .separator {
+    opacity: 0.4;
   }
 </style>
