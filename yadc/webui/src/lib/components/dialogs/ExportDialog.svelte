@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Checkbox from "$lib/components/Checkbox.svelte";
+  import Dialog from "$lib/components/ui/Dialog.svelte";
+  import Checkbox from "$lib/components/ui/Checkbox.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
   import {
     fetchExportBackends,
     fetchDatasetDrafts,
@@ -199,9 +199,7 @@
         </button>
       </div>
     {:else if isLoading}
-      <div class="flex items-center justify-center py-8">
-        <SvgSpinner class="h-6 w-6 animate-spin text-gray-400" />
-      </div>
+      <SpinnerBlock class="py-8" />
     {:else}
       <!-- Dataset -->
       <div>

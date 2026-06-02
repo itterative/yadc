@@ -81,6 +81,21 @@ export async function createDataset(name: string, imagePaths: string[]): Promise
   return res.json();
 }
 
+/** Delete/unregister a dataset. */
+export async function deleteDataset(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+}
+
 export async function fetchImages(
   datasetName: string,
   options: { limit?: number; afterId?: number } = {},

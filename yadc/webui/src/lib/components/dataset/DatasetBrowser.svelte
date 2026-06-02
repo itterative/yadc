@@ -1,7 +1,7 @@
 <script lang="ts">
-  import IntersectionObserverElement from "$lib/components/IntersectionObserverElement.svelte";
-  import DatasetImage from "$lib/components/DatasetImage.svelte";
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import IntersectionObserverElement from "$lib/components/ui/IntersectionObserverElement.svelte";
+  import DatasetImage from "$lib/components/dataset/DatasetImage.svelte";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
   import { random } from "$lib/random";
   import type { ImageInfo } from "$lib/stores/datasetImages";
 
@@ -154,9 +154,7 @@
   </div>
 
   {#if isLoadingMore}
-    <div class="flex justify-center py-6">
-      <SvgSpinner class="h-8 w-8 animate-spin text-gray-400" />
-    </div>
+    <SpinnerBlock class="py-6" size="h-8 w-8" />
   {/if}
 </div>
 

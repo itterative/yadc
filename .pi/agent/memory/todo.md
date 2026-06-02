@@ -5,39 +5,31 @@ description: Deferred tasks and improvements not tied to the current change.
 
 # TODO
 
-## Frontend component restructuring
+## Frontend remaining cleanup
 
-The `src/lib/components/` directory is flat — all components (dialogs, editors, browsers, progress widgets) are dumped together. This should be restructured into more logical and composable groupings, e.g.:
-
-- `components/editors/` — CodeMirror, TomlEditor, JinjaEditor
-- `components/dialogs/` — Dialog, AddDatasetDialog, ExportDialog, SettingsDialog
-- `components/dataset/` — DatasetBrowser, DatasetImage, ImageDetail, CaptionProgress
-- `components/ui/` — Checkbox, IntersectionObserverElement
-
-Also consider extracting shared patterns (e.g. the recurring dialog shell with header/close button/scrollable body) into a reusable wrapper.
-
-Components that are only used in a single route should be co-located within that route's directory rather than in the shared `src/lib/components/` tree. SvelteKit supports this naturally — only truly reusable components belong in `src/lib/`.
+- SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
+- `isMobile` should be extracted into a reusable store (reactive window-width breakpoint) so it can be used in multiple places without duplicating resize listener logic
 
 ## Frontend icons cleanup
 
-**Inline SVGs in route pages need to be extracted into icon components** and moved to `src/lib/icons/`:
+**Inline SVGs in route files need to be extracted into icon components** in `src/lib/icons/`:
 
-- `+page.svelte` line 39: **plus icon** (add dataset) — already exists as `SvgPlus.svelte` but uses a different SVG style
-- `+page.svelte` line 71: **image placeholder icon** — no component exists yet
-- `+layout.svelte` line 45: **upload/export icon** — no component exists yet
-- `+layout.svelte` line 50: **settings/gear icon** — no component exists yet
-- `datasets/[name]/+page.svelte`: **back arrow (chevron-left)** — no component exists yet
-- `datasets/[name]/+page.svelte`: **close panel (×)** — no component exists yet
-- `datasets/[name]/+page.svelte`: **floating button caption icon** (speech bubble) — no component exists yet
-- `datasets/[name]/+page.svelte`: **floating button details icon** (image) — no component exists yet
+- `src/routes/+page.svelte` line 39: **plus icon** (add dataset) — already exists as `SvgPlus.svelte` but uses a different SVG style
+- `src/routes/+page.svelte` line 71: **image placeholder icon** — no component exists yet
+- `src/routes/+layout.svelte` line 45: **upload/export icon** — no component exists yet
+- `src/routes/+layout.svelte` line 50: **settings/gear icon** — no component exists yet
+- `src/routes/datasets/[name]/+page.svelte` line 193: **back arrow (chevron-left)** — no component exists yet
+- `src/routes/datasets/[name]/SidePanel.svelte` line 83: **close panel (×)** — no component exists yet
+- `src/routes/datasets/[name]/SidePanel.svelte` line 125: **floating button caption icon** (speech bubble) — no component exists yet
+- `src/routes/datasets/[name]/SidePanel.svelte` line 129: **floating button details icon** (image) — no component exists yet
 
-**Style mismatch**: The existing icon components in `src/lib/icons/` use **Google Material Symbols** style (viewBox `0 -960 960 960`, `fill="currentColor"`). The inline SVGs in the route pages use **Heroicons** style (viewBox `0 0 24 24`, `stroke="currentColor"`, `stroke-width="2"`). All icons should be updated to use the same style — preferably the Material Symbols style already used by the existing `Svg*` components.
+**Style mismatch**: The existing icon components in `src/lib/icons/` use **Google Material Symbols** style (viewBox `0 -960 960 960`, `fill="currentColor"`). The inline SVGs in the route files use **Heroicons** style (viewBox `0 0 24 24`, `stroke="currentColor"`, `stroke-width="2"`). All icons should be updated to use the same style — preferably the Material Symbols style already used by the existing `Svg*` components.
 
 TODO:
-- [ ] Extract all inline SVGs from route pages into `Svg*.svelte` components in `src/lib/icons/`
-- [ ] Replace inline SVGs with component imports in the route pages
+- [ ] Extract all inline SVGs into `Svg*.svelte` components in `src/lib/icons/`
+- [ ] Replace inline SVGs with component imports
 - [ ] Standardize all icons to Material Symbols style (fill-based, viewBox `0 -960 960 960`)
-- [ ] Verify no other stray inline SVGs exist elsewhere
+- [ ] Verify no other stray inline SVGs exist elsewhere (components are clean — only `Checkbox.svelte` has an inline SVG for its checkmark)
 
 ## Missing webui assets
 

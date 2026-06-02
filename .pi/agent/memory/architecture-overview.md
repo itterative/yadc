@@ -64,52 +64,8 @@ yadc/
       datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 
-  webui/             # SvelteKit frontend (Svelte 5 + Tailwind CSS v4 + TypeScript + Zod)
-    src/
-      lib/
-        index.ts             # Re-exports: storable, async helpers, TypedEventSource, API_BASE, random
-        api.ts               # API_BASE constant (empty in prod, backend URL in dev)
-        events.ts            # TypedEventSource — SSE with Zod validation
-        async.ts             # deferred, sleep, synchronized, delayed helpers
-        storable.js          # localStorage-backed writable store
-        random.ts            # Seeded PRNG for deterministic stub layouts
-        styles/              # Tailwind @layer components
-          badges.css         # .badge
-          buttons.css        # .btn variants
-          forms.css          # .input
-          overlays.css       # .dialog-panel
-          utilities.css      # .btn-bar
-        stores/
-          settings.ts       # UI settings (storable)
-          events.ts         # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges)
-          captioning.ts     # Re-export shim from events.ts for backward compatibility
-          captionOptions.ts # CaptionJobOptions type for caption settings dialog
-          datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers + createDatasetBrowserStore
-          configs.ts        # Config CRUD API helpers + export backend types
-          envs.ts           # Environment CRUD API helpers + types (EnvInfo)
-          templates.ts      # Template CRUD API helpers + types (TemplateInfo)
-        components/
-          Dialog.svelte               # Modal dialog (HTML <dialog>)
-          Checkbox.svelte             # Checkbox component
-          CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
-          JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
-          TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode)
-          IntersectionObserverElement.svelte  # Infinite scroll sentinel
-          DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
-          DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + drafts + prompt preview)
-          EnvManager.svelte           # Environment CRUD dialog
-          AddDatasetDialog.svelte     # Create/import dataset dialog
-          CaptionProgress.svelte      # Captioning progress display with status polling
-          CaptionSettings.svelte      # Captioning settings side panel (env, model, template selection)
-          ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
-          SettingsDialog.svelte       # App settings dialog (config editing, template management)
-        icons/             # SVG icon components (SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
-      routes/
-        layout.css        # Tailwind v4 imports + @source workaround + dark theme
-        +layout.svelte    # App shell with breadcrumb nav (hash routing links)
-        +page.svelte      # Dataset listing → links to #/datasets/{name}
-        datasets/[name]/+page.svelte  # Dataset browser (masonry grid + tabbed side panel: Caption/Details)
+  webui/             # SvelteKit frontend — see `frontend-architecture` memory for full details
+    …
 
   cmd/                # pure logic (no click imports)
     app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()
@@ -173,7 +129,6 @@ yadc/
 - **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
 - **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/<name>/config.toml`. `import_dataset(name, toml_path)` copies TOML to state dir (resolving relative paths). `create_dataset(name, image_paths)` generates a new TOML. `name` is the unique key — no `path` column.
 - **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Flask only serves `GET /` + static assets.
-- **Tailwind content detection**: Two issues were fixed: (1) root `.gitignore` `lib/` rule was hiding `src/lib/` — fixed with `!src/lib/` in `webui/.gitignore`; (2) `:root` CSS vars needed to be `@theme { }` for Tailwind v4 to register them as theme values. No `@source` directives needed.
+- **WebUI frontend**: See `frontend-architecture` memory for full directory structure, stores, components, and frontend-specific patterns.
 - **Config validation is strict by default, relaxable**: `parse_config(raw)` enforces CLI-level checks (api url/model_name must exist, prompt must be specified). `parse_config(raw, strict=False)` skips those checks (used by webui, which provides these at caption time). Uses Pydantic validation context to thread the flag — no fields on the model. The `ConfigV1.to_v2()` uses `model_construct()` to avoid re-running validators on already-validated data.
-- **CodeMirror 6**: Used for Jinja2 template editing (`@codemirror/lang-jinja`) and readonly TOML display (`@codemirror/legacy-modes/mode/toml`). The `CodeMirror.svelte` wrapper uses three separate `$effect` blocks to avoid duplicate editor creation on prop changes.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.

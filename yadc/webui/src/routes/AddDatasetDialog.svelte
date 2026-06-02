@@ -1,7 +1,8 @@
 <script lang="ts">
-  import Dialog from "$lib/components/Dialog.svelte";
+  import Dialog from "$lib/components/ui/Dialog.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import TabBar from "$lib/components/ui/TabBar.svelte";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
   import { createDataset, importDataset, type DatasetInfo } from "$lib/stores/datasetImages";
 
   interface Props {
@@ -100,10 +101,7 @@
     }
   }
 
-  const tabClass = (active: boolean) =>
-    `px-4 py-2 text-sm font-medium rounded-t-lg cursor-pointer transition-colors ${
-      active ? "bg-surface text-accent border-b-2 border-accent" : "text-gray-400 hover:text-gray-200"
-    }`;
+
 </script>
 
 <Dialog
@@ -121,14 +119,15 @@
     </div>
 
     <!-- Mode tabs -->
-    <div class="flex gap-1 border-b border-border mb-4">
-      <button class={tabClass(mode === "import")} onclick={() => switchMode("import")}>
-        Import TOML
-      </button>
-      <button class={tabClass(mode === "create")} onclick={() => switchMode("create")}>
-        Create New
-      </button>
-    </div>
+    <TabBar
+      class="mb-4"
+      tabs={[
+        { value: "import", label: "Import TOML" },
+        { value: "create", label: "Create New" },
+      ]}
+      selected={mode}
+      onchange={(v) => switchMode(v as Mode)}
+    />
 
     {#if error}
       <div class="alert-error mb-4">{error}</div>
@@ -213,9 +212,7 @@
     {/if}
 
     {#if isSubmitting}
-      <div class="flex items-center justify-center py-4">
-        <SvgSpinner class="h-5 w-5 animate-spin text-gray-400" />
-      </div>
+      <SpinnerBlock class="py-4" size="h-5 w-5" />
     {/if}
   </div>
 </Dialog>

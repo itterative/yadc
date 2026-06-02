@@ -2,8 +2,8 @@
   import type { Snippet } from "svelte";
   import { page } from "$app/stores";
   import "./layout.css";
-  import SettingsDialog from "$lib/components/SettingsDialog.svelte";
-  import ExportDialog from "$lib/components/ExportDialog.svelte";
+  import SettingsDialog from "$lib/components/dialogs/SettingsDialog.svelte";
+  import ExportDialog from "$lib/components/dialogs/ExportDialog.svelte";
   import type { ExportResult } from "$lib/stores/configs";
 
   interface Props {

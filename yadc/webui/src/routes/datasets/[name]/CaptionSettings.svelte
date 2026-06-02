@@ -1,16 +1,10 @@
 <script lang="ts">
-  import EnvManager from "$lib/components/EnvManager.svelte";
-  import JinjaEditor from "$lib/components/JinjaEditor.svelte";
-  import Checkbox from "$lib/components/Checkbox.svelte";
-  import SvgRefresh from "$lib/icons/SvgRefresh.svelte";
+  import EnvManager from "$lib/components/dialogs/EnvManager.svelte";
+  import EnvSelector from "$lib/components/settings/EnvSelector.svelte";
+  import JinjaEditor from "$lib/components/ui/JinjaEditor.svelte";
+  import Checkbox from "$lib/components/ui/Checkbox.svelte";
   import SvgPlus from "$lib/icons/SvgPlus.svelte";
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
-  import {
-    fetchEnvs,
-    fetchEnv,
-    fetchModels,
-    type EnvInfo,
-  } from "$lib/stores/envs";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
   import {
     fetchTemplates,
     fetchTemplate,
@@ -32,24 +26,14 @@
 
   let { datasetName, onstart, onclose }: Props = $props();
 
-  // --- State: Environments ---
+  // --- State: Environment (managed by EnvSelector via bindings) ---
 
-  let envNames: string[] = $state([]);
   let selectedEnv = $state("default");
-  let envInfo: EnvInfo | null = $state(null);
-
   let envUrl = $state("");
   let envToken = $state("");
   let envModelName = $state("");
-
+  let envReloadCounter = $state(0);
   let showEnvManager = $state(false);
-
-  // --- State: Models ---
-
-  let models: string[] = $state([]);
-  let isLoadingModels = $state(false);
-  let modelsError: string | null = $state(null);
-  let modelFetchDone = $state(false);
 
   // --- State: Templates ---
 
@@ -79,9 +63,7 @@
 
   // --- State: General ---
 
-  let isLoadingEnvs = $state(false);
   let isLoadingTemplates = $state(false);
-  let envsError: string | null = $state(null);
   let templatesError: string | null = $state(null);
 
   // --- Computed ---
@@ -104,69 +86,9 @@
   $effect(() => {
     if (!dataLoaded) {
       dataLoaded = true;
-      loadEnvs();
       loadTemplateList();
     }
   });
-
-  // --- Env loading & selection ---
-
-  async function loadEnvs() {
-    isLoadingEnvs = true;
-    envsError = null;
-    try {
-      envNames = await fetchEnvs();
-    } catch (e) {
-      envsError = e instanceof Error ? e.message : "Failed to load environments";
-    } finally {
-      isLoadingEnvs = false;
-    }
-  }
-
-  /** When env selection changes, load its details and auto-fill URL/token/model. */
-  $effect(() => {
-    const env = selectedEnv;
-    if (!env) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const info = await fetchEnv(env);
-        if (cancelled) return;
-        envInfo = info;
-        envUrl = info.api_url || "";
-        envToken = ""; // Don't pre-fill token (masked as [REDACTED] in API)
-        envModelName = info.api_model_name || "";
-
-        // Reset model list when env changes
-        models = [];
-        modelFetchDone = false;
-        modelsError = null;
-      } catch {
-        if (cancelled) return;
-        envInfo = null;
-      }
-    })();
-
-    return () => { cancelled = true; };
-  });
-
-  // --- Model fetching ---
-
-  async function loadModels() {
-    if (!selectedEnv) return;
-    isLoadingModels = true;
-    modelsError = null;
-    try {
-      const result = await fetchModels(selectedEnv);
-      models = result.models;
-      modelFetchDone = true;
-    } catch (e) {
-      modelsError = e instanceof Error ? e.message : "Failed to fetch models";
-    } finally {
-      isLoadingModels = false;
-    }
-  }
 
   // --- Template loading & selection ---
 
@@ -270,14 +192,6 @@
     }
   }
 
-  // --- Env manager closed → refresh env list ---
-
-  $effect(() => {
-    if (!showEnvManager) {
-      loadEnvs();
-    }
-  });
-
   // --- Assemble and submit ---
 
   function handleStart() {
@@ -301,120 +215,20 @@
 </script>
 
 <!-- Sub-dialogs -->
-<EnvManager open={showEnvManager} onclose={() => (showEnvManager = false)} />
+<EnvManager open={showEnvManager} onclose={() => { showEnvManager = false; envReloadCounter++; }} />
 
 <div class="flex flex-col h-full">
   <!-- Scrollable content -->
   <div class="flex-1 overflow-y-auto p-4 space-y-5">
-    <!-- Errors -->
-    {#if envsError}
-      <div class="alert-error">{envsError}</div>
-    {/if}
-
     <!-- ═══ Section: Environment ═══ -->
-    <section class="space-y-3">
-      <div class="flex items-center justify-between">
-        <h3 class="section-heading">Environment</h3>
-        <button
-          class="text-xs text-accent hover:text-accent-hover cursor-pointer"
-          onclick={() => (showEnvManager = true)}
-        >
-          Manage…
-        </button>
-      </div>
-
-      <div>
-        <label class="label" for="caption-env">Environment</label>
-        <select
-          id="caption-env"
-          class="input cursor-pointer"
-          bind:value={selectedEnv}
-          disabled={isLoadingEnvs}
-        >
-          {#each envNames as name (name)}
-            <option value={name}>{name}</option>
-          {/each}
-          {#if envNames.length === 0}
-            <option value="default" disabled>default</option>
-          {/if}
-        </select>
-      </div>
-
-      <div class="grid grid-cols-1 gap-3">
-        <!-- API URL -->
-        <div>
-          <label class="label" for="caption-url">API URL</label>
-          <input
-            id="caption-url"
-            type="text"
-            bind:value={envUrl}
-            class="input"
-            placeholder="https://api.openai.com"
-          />
-        </div>
-
-        <!-- API Token -->
-        <div>
-          <label class="label" for="caption-token">
-            API Token
-            {#if envInfo?.api_token}
-              <span class="text-gray-500 ml-1">(leave blank to use saved)</span>
-            {/if}
-          </label>
-          <input
-            id="caption-token"
-            type="password"
-            bind:value={envToken}
-            class="input"
-            placeholder={envInfo?.api_token ? "•••••••• (saved)" : "sk-…"}
-          />
-        </div>
-
-        <!-- Model -->
-        <div>
-          <label class="label" for="caption-model">Model</label>
-          <div class="flex gap-2">
-            {#if modelFetchDone && models.length > 0}
-              <select
-                id="caption-model"
-                class="input cursor-pointer"
-                bind:value={envModelName}
-              >
-                {#each models as m (m)}
-                  <option value={m}>{m}</option>
-                {/each}
-                {#if !models.includes(envModelName) && envModelName}
-                  <option value={envModelName}>{envModelName}</option>
-                {/if}
-              </select>
-            {:else}
-              <input
-                id="caption-model"
-                type="text"
-                bind:value={envModelName}
-                class="input"
-                placeholder="gpt-4o-mini"
-              />
-            {/if}
-            <button
-              class="px-3 py-2 rounded-lg bg-bg border border-border text-gray-400 hover:text-white hover:border-gray-500 transition-colors cursor-pointer disabled:opacity-50"
-              onclick={loadModels}
-              disabled={isLoadingModels || !selectedEnv}
-              title="Fetch available models"
-            >
-              {#if isLoadingModels}
-                <SvgSpinner class="h-4 w-4 animate-spin" />
-              {:else}
-                <SvgRefresh class="h-4 w-4" />
-              {/if}
-            </button>
-          </div>
-          {#if modelsError}
-            <p class="text-xs text-error mt-1">{modelsError}</p>
-          {/if}
-        </div>
-      </div>
-    </section>
+    <EnvSelector
+      bind:env={selectedEnv}
+      bind:apiUrl={envUrl}
+      bind:apiToken={envToken}
+      bind:apiModelName={envModelName}
+      reload={envReloadCounter}
+      onmanagerequest={() => (showEnvManager = true)}
+    />
 
     <!-- ═══ Section: Template ═══ -->
     <section class="space-y-3">
@@ -497,10 +311,7 @@
       <!-- Editor -->
       <div class="relative">
         {#if isLoadingTemplate}
-          <div class="flex items-center gap-2 text-gray-400 py-8 justify-center">
-            <SvgSpinner class="h-4 w-4 animate-spin" />
-            <span class="text-sm">Loading template…</span>
-          </div>
+          <SpinnerBlock class="py-8" size="h-4 w-4" label="Loading template…" />
         {:else}
           <JinjaEditor
             value={templateContent}

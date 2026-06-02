@@ -1,21 +1,15 @@
 <script lang="ts">
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
-  import TomlEditor from "$lib/components/TomlEditor.svelte";
+  import TomlEditor from "$lib/components/ui/TomlEditor.svelte";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
+  import PromptPreview from "$lib/components/ui/PromptPreview.svelte";
   import {
     fetchCaption,
-    fetchPromptPreview,
     mediaUrl,
     updateCaption,
     updateExtras,
     type CaptionData,
     type ImageInfo,
-    type PromptPreview,
   } from "$lib/stores/datasetImages";
-
-  import {
-    fetchTemplates,
-    type TemplateListItem,
-  } from "$lib/stores/templates";
 
   interface Props {
     datasetName: string;
@@ -38,15 +32,6 @@
   let editExtrasRaw = $state("");
 
   let imgElement: HTMLImageElement | null = $state(null);
-
-  // Prompt preview state
-  let promptPreview: PromptPreview | null = $state(null);
-  let isLoadingPreview = $state(false);
-  let previewError: string | null = $state(null);
-  let previewTemplateName = $state("");
-  let showPreview = $state(true);
-  let templates: TemplateListItem[] = $state([]);
-  let templatesLoaded = $state(false);
 
   // Load caption when item changes
   $effect(() => {
@@ -76,24 +61,6 @@
         captionError = e instanceof Error ? e.message : "Failed to load caption";
       } finally {
         if (!cancelled) isLoadingCaption = false;
-      }
-    })();
-
-    // Load templates, then render preview with default template
-    (async () => {
-      try {
-        if (!templatesLoaded) {
-          templates = await fetchTemplates();
-          templatesLoaded = true;
-        }
-        const data = await fetchPromptPreview(datasetName, item.id);
-        if (cancelled) return;
-        promptPreview = data;
-        previewError = null;
-      } catch (e) {
-        if (cancelled) return;
-        if (!templatesLoaded) templates = [];
-        previewError = e instanceof Error ? e.message : "Failed to preview prompt";
       }
     })();
 
@@ -149,35 +116,13 @@
     editExtrasRaw = captionData?.extras_raw || "";
   }
 
-  async function handleTogglePreview() {
-    showPreview = !showPreview;
-    if (showPreview && !templatesLoaded) {
-      try {
-        templates = await fetchTemplates();
-      } catch {
-        templates = [];
-      }
-      templatesLoaded = true;
+  function autosize(el: HTMLTextAreaElement) {
+    function resize() {
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 360) + "px";
     }
-  }
-
-  async function handlePreviewPrompt() {
-    if (item === null) return;
-    isLoadingPreview = true;
-    previewError = null;
-    promptPreview = null;
-    showPreview = true;
-
-    try {
-      const opts = previewTemplateName
-        ? { template_name: previewTemplateName }
-        : {};
-      promptPreview = await fetchPromptPreview(datasetName, item.id, opts);
-    } catch (e) {
-      previewError = e instanceof Error ? e.message : "Failed to preview prompt";
-    } finally {
-      isLoadingPreview = false;
-    }
+    resize();
+    return { update: resize };
   }
 </script>
 
@@ -187,6 +132,7 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
       <!-- Filename -->
       <h2 class="dialog-title truncate text-base">{item.file_name}</h2>
+      <p class="text-xs text-gray-500 truncate -mt-3">{item.path}</p>
       <!-- Image -->
       <div class="flex-shrink-0 flex items-start justify-center">
         <img
@@ -199,10 +145,25 @@
         />
       </div>
 
-      <!-- Dimensions -->
-      {#if item.width && item.height}
-        <p class="text-sm text-gray-400">{item.width}×{item.height}</p>
-      {/if}
+      <!-- Dimensions & badges -->
+      <div class="flex items-center gap-3 flex-wrap">
+        {#if item.width && item.height}
+          <span class="text-sm text-gray-400">{item.width}×{item.height}</span>
+        {/if}
+        {#if item.has_caption}
+          <span class="badge-success rounded-full px-2 py-1">Captioned</span>
+        {:else}
+          <span class="badge-muted rounded-full px-2 py-1">No caption</span>
+        {/if}
+        {#if item.has_toml}
+          <span class="badge-accent rounded-full px-2 py-1">TOML</span>
+        {/if}
+        {#if item.draft_names.length > 0}
+          <span class="badge-error rounded-full px-2 py-1">
+            {item.draft_names.length} draft{item.draft_names.length !== 1 ? "s" : ""}
+          </span>
+        {/if}
+      </div>
 
       <!-- Caption -->
       <div>
@@ -222,18 +183,21 @@
         </div>
 
         {#if isLoadingCaption}
-          <div class="flex items-center gap-2 text-gray-400">
-            <SvgSpinner class="h-4 w-4 animate-spin" />
-            <span class="text-sm">Loading caption...</span>
-          </div>
+          <SpinnerBlock size="h-4 w-4" label="Loading caption..." />
         {:else if captionError}
           <p class="text-sm text-error">{captionError}</p>
         {:else if isEditing}
           <div class="space-y-2">
             <textarea
               bind:value={editCaption}
-              class="w-full rounded-lg bg-gray-800 border border-gray-600 p-3 text-sm text-gray-200 resize-y min-h-[120px] focus:ring-2 focus:ring-accent focus:outline-none"
+              class="w-full rounded-lg bg-gray-800 p-3 text-sm text-gray-200 font-mono whitespace-pre-wrap resize-none max-h-60 focus:ring-2 focus:ring-accent focus:outline-none"
               placeholder="Enter caption..."
+              oninput={(e) => {
+                const el = e.currentTarget;
+                el.style.height = 'auto';
+                el.style.height = Math.min(el.scrollHeight, 360) + 'px';
+              }}
+              use:autosize
             ></textarea>
             <div class="btn-bar">
               <button
@@ -254,9 +218,9 @@
           </div>
         {:else if captionData}
           {#if captionData.caption}
-            <p class="text-sm text-gray-200 whitespace-pre-wrap">{captionData.caption}</p>
+            <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-60 overflow-y-auto">{captionData.caption}</pre>
           {:else}
-            <p class="text-sm text-gray-500 italic">No caption</p>
+            <pre class="text-sm text-gray-500 italic bg-gray-800 rounded-lg p-3 whitespace-pre-wrap">No caption</pre>
           {/if}
         {/if}
       </div>
@@ -316,7 +280,7 @@
             {#each Object.entries(captionData.drafts) as [name, text] (name)}
               <div class="bg-gray-800 rounded-lg p-3">
                 <p class="text-xs font-medium text-accent mb-1">{name}</p>
-                <p class="text-sm text-gray-200 whitespace-pre-wrap">{text}</p>
+                <pre class="text-sm text-gray-200 whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">{text}</pre>
               </div>
             {/each}
           </div>
@@ -324,87 +288,9 @@
       {/if}
 
       <!-- Prompt Preview -->
-      <div class="pt-2">
-        <div class="flex items-center gap-2 mb-2">
-          <button
-            class="text-sm text-accent hover:text-accent-hover cursor-pointer"
-            onclick={handleTogglePreview}
-          >
-            {showPreview ? "▾" : "▸"} Preview Prompt
-          </button>
-        </div>
+      <PromptPreview {datasetName} imageId={item.id} />
 
-        {#if showPreview}
-          <div class="space-y-3">
-            <div class="flex gap-2 items-end">
-              <div class="flex-1">
-                <label class="label mb-1">Template</label>
-                <select
-                  bind:value={previewTemplateName}
-                  class="input-sm"
-                  onchange={() => handlePreviewPrompt()}
-                >
-                  <option value="">(default)</option>
-                  {#each templates as t (t.name)}
-                    <option value={t.name}>{t.name} {t.source === "builtin" ? "(built-in)" : ""}</option>
-                  {/each}
-                </select>
-              </div>
-              <button
-                class="btn-primary px-3 py-1.5"
-                onclick={handlePreviewPrompt}
-                disabled={isLoadingPreview}
-              >
-                {isLoadingPreview ? "Loading..." : "Render"}
-              </button>
-            </div>
 
-            {#if previewError}
-              <p class="text-sm text-error">{previewError}</p>
-            {/if}
-
-            {#if promptPreview}
-              {@const ctxEntries = Object.entries(promptPreview.template_context).filter(
-                ([k]) => k !== "caption_suffix" && k !== "toml_suffix" && k !== "history_suffix",
-              )}
-              <div>
-                <h4 class="text-xs font-medium text-gray-400 mb-1">System Prompt</h4>
-                <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-40 overflow-y-auto">{promptPreview.system_prompt}</pre>
-              </div>
-              <div>
-                <h4 class="text-xs font-medium text-gray-400 mb-1">User Prompt</h4>
-                <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-60 overflow-y-auto">{promptPreview.user_prompt}</pre>
-              </div>
-              <details class="group">
-                <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-300">Template context ({ctxEntries.length} variables)</summary>
-                <div class="mt-1">
-                  <TomlEditor
-                    value={promptPreview.template_context_toml}
-                    editable={false}
-                  />
-                </div>
-              </details>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Status badges -->
-      <div class="flex gap-2 pt-2">
-        {#if item.has_caption}
-          <span class="badge-success rounded-full px-2 py-1">Captioned</span>
-        {:else}
-          <span class="badge-muted rounded-full px-2 py-1">No caption</span>
-        {/if}
-        {#if item.has_toml}
-          <span class="badge-accent rounded-full px-2 py-1">TOML</span>
-        {/if}
-        {#if item.draft_names.length > 0}
-          <span class="badge-error rounded-full px-2 py-1">
-            {item.draft_names.length} draft{item.draft_names.length !== 1 ? "s" : ""}
-          </span>
-        {/if}
-      </div>
     </div>
   </div>
 {/if}

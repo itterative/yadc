@@ -1,10 +1,11 @@
 <script lang="ts">
-  import Dialog from "$lib/components/Dialog.svelte";
+  import Dialog from "$lib/components/ui/Dialog.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
   import SvgDelete from "$lib/icons/SvgDelete.svelte";
   import SvgEdit from "$lib/icons/SvgEdit.svelte";
   import SvgPlus from "$lib/icons/SvgPlus.svelte";
-  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import ConfirmDelete from "$lib/components/ui/ConfirmDelete.svelte";
+  import SpinnerBlock from "$lib/components/ui/SpinnerBlock.svelte";
   import { deleteEnv, fetchEnv, fetchEnvs, saveEnv, type EnvInfo } from "$lib/stores/envs";
 
   interface Props {
@@ -148,9 +149,7 @@
     {#if !editingEnv && !isNew}
       <div class="space-y-2 mb-4">
         {#if isLoading}
-          <div class="flex items-center justify-center py-8">
-            <SvgSpinner class="h-6 w-6 animate-spin text-gray-400" />
-          </div>
+          <SpinnerBlock class="py-8" />
         {:else if envNames.length === 0}
           <p class="text-gray-500 text-sm text-center py-4">No environments yet.</p>
         {:else}
@@ -191,25 +190,13 @@
       </button>
 
       <!-- Delete confirmation -->
-      {#if confirmDelete}
-        <div class="mt-4 p-4 rounded-lg bg-error/10 border border-error/20">
-          <p class="text-sm text-gray-200 mb-3">Delete environment <strong>{confirmDelete}</strong>?</p>
-          <div class="btn-bar">
-            <button
-              class="btn-secondary px-3 py-1.5"
-              onclick={() => (confirmDelete = null)}
-            >
-              Cancel
-            </button>
-            <button
-              class="btn-danger"
-              onclick={() => handleDelete(confirmDelete!)}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      {/if}
+      <ConfirmDelete
+        open={confirmDelete !== null}
+        oncancel={() => (confirmDelete = null)}
+        onconfirm={() => handleDelete(confirmDelete!)}
+      >
+        Delete environment <strong>{confirmDelete}</strong>?
+      </ConfirmDelete>
 
     <!-- Edit / Create form -->
     {:else}
