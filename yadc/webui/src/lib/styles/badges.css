@@ -1,22 +1,21 @@
 @layer components {
-  .badge {
-    @apply text-xs px-2 py-0.5 rounded-md font-medium;
-  }
+	.badge {
+		@apply rounded-md px-2 py-0.5 text-xs font-medium;
+	}
 
-  .badge-accent {
-    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-accent/15 border border-accent/25
-           text-accent;
-  }
+	.badge-accent {
+		@apply rounded-md border border-accent/25 bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent;
+	}
 
-  .badge-success {
-    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-success/20 text-success;
-  }
+	.badge-success {
+		@apply rounded-md bg-success/20 px-2 py-0.5 text-xs font-medium text-success;
+	}
 
-  .badge-error {
-    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-error/20 text-error;
-  }
+	.badge-error {
+		@apply rounded-md bg-error/20 px-2 py-0.5 text-xs font-medium text-error;
+	}
 
-  .badge-muted {
-    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-gray-600/50 text-gray-400;
-  }
+	.badge-muted {
+		@apply rounded-md bg-gray-600/50 px-2 py-0.5 text-xs font-medium text-gray-400;
+	}
 }

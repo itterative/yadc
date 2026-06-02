@@ -4,36 +4,12 @@ from typing import Any
 import toml
 
 from yadc.cmd import app
+from yadc.utils import deep_merge
 
 CONFIG_PATH = app.STATE_PATH / "configs"
 
 
 def merge_user_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    def _deep_merge(config_part: dict[str, Any], config_part_overrides: dict[str, Any]) -> dict[str, Any]:
-        if isinstance(config_part, dict) and isinstance(config_part_overrides, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
-            # override the values from config_path with config_part_overrides
-            for key, value in config_part_overrides.items():
-                if key in config_part:
-                    config_part[key] = _deep_merge(config_part[key], value)
-                else:
-                    config_part[key] = value
-
-            # add the values from config_path into config_part_overrides if they are missing
-            for key, value in config_part.items():
-                if key in config_part_overrides:
-                    continue
-
-                config_part_overrides[key] = value
-
-            # remove any values that are set to null (i.e. use the defaults)
-            for key, value in list(config_part_overrides.items()):
-                if value is not None:
-                    continue
-
-                config_part_overrides.pop(key, None)
-
-        return config_part_overrides
-
     config = copy.deepcopy(config)
 
     try:
@@ -41,7 +17,7 @@ def merge_user_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         raise ValueError(f"failed to load user config: {name}") from e
 
-    return _deep_merge(config, user_config)  # type: ignore
+    return deep_merge(config, user_config, remove_none=True)  # type: ignore[arg-type]
 
 
 def load_user_config(name: str):

@@ -58,12 +58,11 @@ yadc/webui/
         dialogs/                        # Dialog-shaped components
           EnvManager.svelte           # Environment CRUD dialog
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
-          SettingsDialog.svelte       # App settings dialog (General tab + ConfigEditor + EnvManager launcher)
+          SettingsDialog.svelte       # App settings dialog (General tab + EnvManager launcher)
         settings/                       # Settings-domain sub-components
           EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props, reload trigger)
-          ConfigEditor.svelte         # Full config CRUD panel (sidebar list + TOML editor + save/delete)
           TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
-      icons/             # SVG icon components (SvgBell, SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
+      icons/             # SVG icon components (SvgBell, SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgMenuLeft, SvgPhoto, SvgPlus, SvgRefresh, SvgReset, SvgSettings, SvgSpinner, SvgUpload)
     routes/
       layout.css        # Tailwind v4 imports + @source workaround + dark theme
       +layout.svelte    # App shell with breadcrumb nav (hash routing links) + global captioning notification watcher
@@ -75,8 +74,9 @@ yadc/webui/
         EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
       datasets/[name]/
         +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line)
-        CaptionSettings.svelte    # Co-located: captioning settings side panel
-        SidePanel.svelte          # Co-located: tabbed side panel (caption/details) with mobile drawer
+        CaptionSettings.svelte    # Co-located: captioning settings side panel. Fetches dataset config defaults from GET /configs/<name>, pre-fills fields, shows diff dots for overridden values, collapsible Overrides section with per-field reset.
+        DatasetConfig.svelte      # Co-located: dataset config editor tab. Structured form for caption settings (max_tokens, image_quality, rounds, overwrite, reasoning, prompt) saved via PATCH /configs/<name>. Read-only raw TOML view at bottom.
+        SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer
 ```
 
 ## Component Organization
@@ -100,7 +100,7 @@ yadc/webui/
 | `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `clearPendingDatasetChange()`, `clearResumptionFailed()`. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
-| `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning" |
+| `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning". Priority: localStorage override → dataset config default → hardcoded default. |
 | `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`) for browser notification preference |
 
 ## Key Patterns

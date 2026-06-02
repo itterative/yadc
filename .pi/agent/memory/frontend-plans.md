@@ -20,7 +20,7 @@ For frontend directory structure, stores, component organization, and general pa
 | `api_captioning.py` | Start/stop/status (SSE) captioning |
 | `api_envs.py` | Env CRUD + model list proxy |
 | `api_templates.py` | Template CRUD + variable extraction |
-| `api_configs.py` | Dataset config TOML CRUD |
+| `api_configs.py` | Dataset config TOML CRUD (GET, PUT raw TOML, **PATCH JSON merge**, DELETE) |
 | `api_export.py` | Export backends list + run export |
 | `api_events.py` | Global SSE stream |
 
@@ -31,7 +31,7 @@ For frontend directory structure, stores, component organization, and general pa
 - **JinjaEditor.svelte** (`ui/`): Wraps CodeMirror with Jinja2 syntax, variable extraction bar. Also uses `editable` prop (default `true`).
 - **PromptPreview.svelte** (`ui/`): Self-contained prompt preview — manages its own template loading, preview fetching, and expand/collapse state. Used in `ImageDetail`.
 - **EnvSelector.svelte** (`settings/`): Environment form with env dropdown, URL/token/model fields, model fetching. Uses `$bindable()` props for two-way value binding with parent. `reload` counter prop triggers env list refresh. **Auto-fetches models** when env loads (populates dropdown immediately).
-- **ConfigEditor.svelte** (`settings/`): Full config CRUD panel — sidebar list + TOML CodeMirror editor + save/delete. Self-contained, takes `open` prop to trigger data loading.
+- **ConfigEditor.svelte** (`settings/`): *(REMOVED)* Was a full config CRUD panel. Dataset config management is now on the dataset listing page (edit/delete buttons), the side panel Config tab (`DatasetConfig.svelte`), and caption settings panel (config defaults integration).
 - **TemplateManager.svelte** (`settings/`): Full template CRUD panel — sidebar list + JinjaEditor + new/save/delete. Self-contained, takes `open` prop to trigger data loading.
 
 ## Known Issues

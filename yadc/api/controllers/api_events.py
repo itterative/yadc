@@ -1,4 +1,6 @@
 import json
+from collections.abc import Callable
+from typing import cast
 
 from flask import Response, request, stream_with_context
 
@@ -33,7 +35,19 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
             # Tell the browser to wait 5 s before auto-reconnecting.
             yield f"retry: {SSE_RETRY_MS}\n\n"
 
-            for event_id, event in sse_events.receive(object, last_event_id=last_event_id):
+            # waitress exposes a callable in the WSGI environ that checks if
+            # the client socket is still connected without writing to it.
+            client_disconnected: Callable[[], bool] | None = None
+            raw_cb = request.environ.get("waitress.client_disconnected")
+            if raw_cb is not None:
+                assert callable(raw_cb)
+                client_disconnected = cast(Callable[[], bool], raw_cb)
+
+            for event_id, event in sse_events.receive(
+                object,
+                last_event_id=last_event_id,
+                client_disconnected=client_disconnected,
+            ):
                 try:
                     parts = [f"event: {event.TYPE}", f"data: {json.dumps(event, cls=DataclassJSONEncoder)}"]
                     if event_id:

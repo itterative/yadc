@@ -78,6 +78,7 @@ class CaptionJobOptions(pydantic.BaseModel):
     image_quality: str = "auto"
     store_conversation: bool = False
     overwrite: bool = False
+    rounds: int = 1
     draft: str = ""
 
     # Reasoning
@@ -132,6 +133,9 @@ def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict
         raw["reasoning"]["enable"] = True
         raw["reasoning"]["thinking_effort"] = opts.reasoning_effort
         raw["reasoning"]["exclude_from_output"] = opts.reasoning_exclude_output
+
+    if opts.rounds != 1:
+        raw["rounds"] = opts.rounds
 
     return raw
 

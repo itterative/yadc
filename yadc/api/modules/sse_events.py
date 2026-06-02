@@ -1,6 +1,6 @@
 import itertools
 from collections import deque
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from logging import Logger
 from threading import Condition
 from typing import Any
@@ -95,6 +95,7 @@ class SSEEvents(Service):
         self,
         event_cls: type,
         last_event_id: int | None = None,
+        client_disconnected: Callable[[], bool] | None = None,
     ) -> Generator[tuple[int, Event], Any, None]:
         """Yield ``(event_id, event)`` tuples filtered by *event_cls*.
 
@@ -103,6 +104,9 @@ class SSEEvents(Service):
         requested ID is older than the oldest entry in the ring buffer, a single
         ``ResumptionFailedEvent`` is yielded before the live stream begins so
         the client can warn the user.
+
+        If *client_disconnected* is provided, it is called on each loop
+        iteration to detect a gone client without waiting for a socket write.
         """
         with self._queue_cv:
             if len(self._queues) >= self.configuration.sse_listeners_max:
@@ -158,6 +162,9 @@ class SSEEvents(Service):
 
             # Phase 2: live stream.
             while not self._shutdown:
+                if client_disconnected is not None and client_disconnected():
+                    break
+
                 with self._queue_cv:
                     self._queue_cv.wait(timeout=1)
 

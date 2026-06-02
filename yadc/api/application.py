@@ -119,4 +119,7 @@ class Application(Module):
             host=self.configuration.http_host,
             port=self.configuration.http_port,
             threads=self.configuration.http_threads,
+            # Enable waitress.client_disconnected WSGI environ callback so SSE
+            # listeners can detect client disconnect without waiting for a write.
+            channel_request_lookahead=1,
         )

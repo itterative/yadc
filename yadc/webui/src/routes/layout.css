@@ -1,58 +1,53 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
-@import '$lib/styles/buttons.css';
-@import '$lib/styles/forms.css';
-@import '$lib/styles/overlays.css';
-@import '$lib/styles/badges.css';
-@import '$lib/styles/utilities.css';
+@import '../lib/styles/buttons.css';
+@import '../lib/styles/forms.css';
+@import '../lib/styles/overlays.css';
+@import '../lib/styles/badges.css';
+@import '../lib/styles/utilities.css';
 
 @theme {
-  --color-bg: #0f1117;
-  --color-surface: #1a1b26;
-  --color-border: #2a2b3d;
-  --color-fg: #c0caf5;
-  --color-muted: #565f89;
-  --color-accent: #7aa2f7;
-  --color-accent-hover: #89b4fa;
-  --color-error: #f7768e;
-  --color-success: #9ece6a;
+	--color-bg: #0f1117;
+	--color-surface: #1a1b26;
+	--color-border: #2a2b3d;
+	--color-fg: #c0caf5;
+	--color-muted: #565f89;
+	--color-accent: #7aa2f7;
+	--color-accent-hover: #89b4fa;
+	--color-error: #f7768e;
+	--color-success: #9ece6a;
 
-  --color-syn-keyword: #bb9af7;
-  --color-syn-string: #9ece6a;
-  --color-syn-number: #ff9e64;
-  --color-syn-type: #2ac3de;
-  --color-syn-property: #73daca;
-  --color-syn-label: #e0af68;
-  --color-syn-comment: #565f89;
-  --color-syn-punctuation: #a9b1d6;
-  --color-syn-invalid: #ff007c;
-  --color-syn-regexp: #b4f9f8;
-  --color-syn-escape: #ff007c;
+	--color-syn-keyword: #bb9af7;
+	--color-syn-string: #9ece6a;
+	--color-syn-number: #ff9e64;
+	--color-syn-type: #2ac3de;
+	--color-syn-property: #73daca;
+	--color-syn-label: #e0af68;
+	--color-syn-comment: #565f89;
+	--color-syn-punctuation: #a9b1d6;
+	--color-syn-invalid: #ff007c;
+	--color-syn-regexp: #b4f9f8;
+	--color-syn-escape: #ff007c;
 
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+	--font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 }
 
 body {
-  background: var(--color-bg);
-  color: var(--color-fg);
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
-  margin: 0;
+	background: var(--color-bg);
+	color: var(--color-fg);
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	margin: 0;
 }
 
 a {
-  color: var(--color-accent);
+	color: var(--color-accent);
 }
 
 a:hover {
-  color: var(--color-accent-hover);
+	color: var(--color-accent-hover);
 }
 
 body.noscroll {
-  overflow: hidden;
+	overflow: hidden;
 }

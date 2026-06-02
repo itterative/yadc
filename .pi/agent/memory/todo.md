@@ -49,12 +49,15 @@ The current UI is functional but needs a manual pass to improve overall look and
 
 ## Simplified dataset config editing
 
-The current EditDatasetDialog shows the raw TOML config, which is cumbersome for simple operations like adding/removing image paths. A simplified UI with individual path entries (add/remove buttons) would be much better. This requires:
+See **dataset-config-settings-plan** for full details. Mostly done:
 
-- A `PATCH /configs/<name>` endpoint (or `PATCH /datasets/<name>`) that accepts granular operations like `add_path`, `remove_path`
-- A frontend dialog with a clean list of paths, each with a remove button, and an add-new-path input at the bottom
-- The TOML serialization should use multi-line strings for template values that contain newlines — currently they serialize as single-line strings with `\n` literals, which is unreadable
-- Remove the old `ConfigEditor.svelte` from `SettingsDialog.svelte` — dataset config management is now handled through the dataset listing page (edit/delete buttons on cards, `EditDatasetDialog`)
+- [x] `PATCH /configs/<name>` endpoint (JSON body, deep-merged into TOML)
+- [x] `rounds` wired through backend + frontend
+- [x] Frontend fetches config defaults + pre-fills fields
+- [x] Diff indicators (dots) + collapsible overrides section with reset
+- [x] Removed `ConfigEditor.svelte` from Settings dialog
+- [ ] TOML multiline string serialization for templates
+- [ ] "Save as dataset default" action (PATCH from caption settings panel)
 
 ## Test captioning flow in the webui
 
@@ -98,42 +101,12 @@ The current implementation (never clearing) is being reverted. The job_id infras
 
 ## Caption settings: dataset defaults integration
 
-The caption settings panel currently uses hardcoded defaults and localStorage for persistence. The dataset's TOML config already has caption-relevant fields (`api.url`, `api.model_name`, `settings.max_tokens`, `settings.image_quality`, `reasoning.*`, `rounds`, `overwrite_captions`, `prompt.name/template`). These should be surfaced in the UI.
+See **dataset-config-settings-plan** for full details. Phase 1 + 2 mostly done.
 
-### Retrieve dataset config defaults
-
-Add a backend endpoint (or extend the existing dataset info endpoint) that returns the caption-relevant fields from the dataset's TOML config — something like `GET /datasets/<name>/caption-defaults` returning a shape matching `CaptionJobOptions`. The frontend would load this alongside the dataset and use it to:
-- Show what the dataset config specifies as defaults
-- Pre-fill fields that have no localStorage override
-
-### Two editing modes
-
-**User settings mode (current default)**: Edit localStorage-backed settings. These override dataset config defaults. Show a visual indicator when a field differs from the dataset default (e.g. a small dot or italic "custom" badge next to the label, or a "Reset to dataset default" action on each field).
-
-**Dataset config mode**: Edit the dataset's TOML config directly. This changes the defaults for all future sessions (and for CLI users). Should prompt the user to confirm since it modifies a shared config file. Could reuse the existing TOML editor or provide a structured form that writes back to the config.
-
-UI approach: a toggle or mode switch at the top of the settings panel ("User Settings" / "Dataset Config"), or a contextual action (gear icon → "Edit dataset defaults…").
-
-### Per-field reset
-
-Each field that differs from the dataset default should have a small reset action (e.g. an X or ↩ icon) that clears the localStorage override and reverts to the dataset default. This requires the frontend to track both values (saved override vs. dataset default) simultaneously.
-
-### Default source priority
-
-When initializing the panel:
-1. **Dataset config** provides the base defaults
-2. **localStorage** overrides the dataset config for fields the user has explicitly changed
-3. **Environment** provides API URL/token/model (already handled by EnvSelector)
-
-Fields with no localStorage override and no dataset config value fall back to the hardcoded defaults (current behavior).
-
-### Preset profiles
-
-Let users save/restore named setting profiles (e.g. "Quick draft", "High quality") — basically named snapshots of the localStorage settings. Could be a dropdown at the top of the panel.
-
-### Config diff indicator
-
-Show a summary banner like "3 settings differ from dataset defaults" with a one-click reset-all.
+Remaining:
+- "Save as dataset default" action — writes current settings back to TOML via `PATCH /configs/<name>`
+- Preset profiles, config diff banner (Phase 3 nice-to-haves)
+- Phase 4: type-safe config API (Pydantic validation on GET/PATCH)
 
 ## Incremental filesystem index updates
 
@@ -152,6 +125,13 @@ The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level
 - Suppress or quiet CLI-specific output (progress bars, interactive menus) when running in API mode
 - Review `CaptionJob._do_run()` and its callees for noisy output
 
+
+## TOML comment preservation on API write-back
+
+`PATCH /configs/<name>` and `PUT /configs/<name>` parse the TOML, merge changes, and re-serialize. Any comments in the original file are lost because the TOML data model has no concept of comments — all TOML libraries discard them on parse. This is fine for configs created/managed through the webui, but imported configs that the user authored with comments will have them stripped on the first edit. Possible approaches:
+- Text-level patching (find/replace in the raw string instead of parse→serialize) — works for simple scalar changes but can't handle structural changes
+- A TOML AST-aware library that preserves comments and formatting (e.g. `taplo`/Python bindings if they exist)
+- Accept the limitation and document it (comments are not preserved when editing configs through the webui)
 
 # User TODOs (less verbose)
 

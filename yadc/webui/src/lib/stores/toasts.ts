@@ -12,44 +12,44 @@
  *   toast.error("Failed to start captioning", { duration: 0 });
  */
 
-import { writable, readonly, type Readable } from "svelte/store";
+import { writable, readonly, type Readable } from 'svelte/store';
 // --- Types ---
 
-export type ToastVariant = "info" | "success" | "warning" | "error";
+export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
 export interface ToastAction {
-  label: string;
-  handler: () => void;
+	label: string;
+	handler: () => void;
 }
 
 export interface Toast {
-  id: string;
-  message: string;
-  variant: ToastVariant;
-  /** ms until auto-dismiss. 0 = persistent (must be dismissed manually). */
-  duration: number;
-  /** @deprecated Use actions instead. */
-  action?: ToastAction;
-  actions?: ToastAction[];
+	id: string;
+	message: string;
+	variant: ToastVariant;
+	/** ms until auto-dismiss. 0 = persistent (must be dismissed manually). */
+	duration: number;
+	/** @deprecated Use actions instead. */
+	action?: ToastAction;
+	actions?: ToastAction[];
 }
 
 export interface ToastOptions {
-  message: string;
-  variant?: ToastVariant;
-  /** Override auto-dismiss duration (ms). 0 = persistent. */
-  duration?: number;
-  /** @deprecated Use actions instead. */
-  action?: ToastAction;
-  actions?: ToastAction[];
+	message: string;
+	variant?: ToastVariant;
+	/** Override auto-dismiss duration (ms). 0 = persistent. */
+	duration?: number;
+	/** @deprecated Use actions instead. */
+	action?: ToastAction;
+	actions?: ToastAction[];
 }
 
 // --- Defaults ---
 
 const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
-  info: 5000,
-  success: 4000,
-  warning: 8000,
-  error: 0, // persistent — user must dismiss
+	info: 5000,
+	success: 4000,
+	warning: 8000,
+	error: 0 // persistent — user must dismiss
 };
 
 const MAX_TOASTS = 5;
@@ -65,58 +65,58 @@ export const toasts: Readable<Toast[]> = readonly(_toasts);
 
 /** Add a toast and return its id. */
 export function addToast(options: ToastOptions): string {
-  const variant = options.variant ?? "info";
-  // NOTE: crypto.randomUUID requires https
-  const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 10);
-  const toast: Toast = {
-    id,
-    message: options.message,
-    variant,
-    duration: options.duration ?? DEFAULT_DURATIONS[variant],
-    action: options.action,
-    actions: options.actions,
-  };
+	const variant = options.variant ?? 'info';
+	// NOTE: crypto.randomUUID requires https
+	const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 10);
+	const toast: Toast = {
+		id,
+		message: options.message,
+		variant,
+		duration: options.duration ?? DEFAULT_DURATIONS[variant],
+		action: options.action,
+		actions: options.actions
+	};
 
-  _toasts.update((list) => {
-    const next = [...list, toast];
-    // Evict oldest if over capacity (only auto-dismissable ones)
-    if (next.length > MAX_TOASTS) {
-      const removable = next.findIndex((t) => t.duration > 0);
-      if (removable !== -1) {
-        next.splice(removable, 1);
-      } else {
-        next.shift();
-      }
-    }
-    return next;
-  });
+	_toasts.update((list) => {
+		const next = [...list, toast];
+		// Evict oldest if over capacity (only auto-dismissable ones)
+		if (next.length > MAX_TOASTS) {
+			const removable = next.findIndex((t) => t.duration > 0);
+			if (removable !== -1) {
+				next.splice(removable, 1);
+			} else {
+				next.shift();
+			}
+		}
+		return next;
+	});
 
-  return id;
+	return id;
 }
 
 /** Dismiss a toast by id. */
 export function dismissToast(id: string): void {
-  _toasts.update((list) => list.filter((t) => t.id !== id));
+	_toasts.update((list) => list.filter((t) => t.id !== id));
 }
 
 /** Dismiss all active toasts. */
 export function dismissAllToasts(): void {
-  _toasts.set([]);
+	_toasts.set([]);
 }
 
 // --- Convenience helpers ---
 
 export const toast = {
-  info(message: string, opts?: Omit<ToastOptions, "message" | "variant">) {
-    return addToast({ ...opts, message, variant: "info" });
-  },
-  success(message: string, opts?: Omit<ToastOptions, "message" | "variant">) {
-    return addToast({ ...opts, message, variant: "success" });
-  },
-  warning(message: string, opts?: Omit<ToastOptions, "message" | "variant">) {
-    return addToast({ ...opts, message, variant: "warning" });
-  },
-  error(message: string, opts?: Omit<ToastOptions, "message" | "variant">) {
-    return addToast({ ...opts, message, variant: "error" });
-  },
+	info(message: string, opts?: Omit<ToastOptions, 'message' | 'variant'>) {
+		return addToast({ ...opts, message, variant: 'info' });
+	},
+	success(message: string, opts?: Omit<ToastOptions, 'message' | 'variant'>) {
+		return addToast({ ...opts, message, variant: 'success' });
+	},
+	warning(message: string, opts?: Omit<ToastOptions, 'message' | 'variant'>) {
+		return addToast({ ...opts, message, variant: 'warning' });
+	},
+	error(message: string, opts?: Omit<ToastOptions, 'message' | 'variant'>) {
+		return addToast({ ...opts, message, variant: 'error' });
+	}
 };

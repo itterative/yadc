@@ -1,29 +1,21 @@
 @layer components {
-  .btn {
-    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
-           transition-colors disabled:opacity-50;
-  }
+	.btn {
+		@apply inline-flex cursor-pointer items-center justify-center rounded-lg font-medium transition-colors disabled:opacity-50;
+	}
 
-  .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
-           transition-colors disabled:opacity-50 px-4 py-2 text-sm bg-accent hover:bg-accent-hover
-           text-black;
-  }
+	.btn-primary {
+		@apply inline-flex cursor-pointer items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-accent-hover disabled:opacity-50;
+	}
 
-  .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
-           transition-colors disabled:opacity-50 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600
-           text-gray-300;
-  }
+	.btn-secondary {
+		@apply inline-flex cursor-pointer items-center justify-center rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-600 disabled:opacity-50;
+	}
 
-  .btn-danger {
-    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
-           transition-colors disabled:opacity-50 px-3 py-1.5 text-sm bg-error hover:bg-error/80
-           text-white;
-  }
+	.btn-danger {
+		@apply inline-flex cursor-pointer items-center justify-center rounded-lg bg-error px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-error/80 disabled:opacity-50;
+	}
 
-  .btn-close {
-    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
-           transition-colors disabled:opacity-50 p-1 text-gray-400 hover:text-white;
-  }
+	.btn-close {
+		@apply inline-flex cursor-pointer items-center justify-center rounded-lg p-1 font-medium text-gray-400 transition-colors hover:text-white disabled:opacity-50;
+	}
 }
