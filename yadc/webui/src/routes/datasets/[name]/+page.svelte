@@ -7,6 +7,7 @@
   import CaptionProgress from "$lib/components/CaptionProgress.svelte";
   import ImageDetail from "$lib/components/ImageDetail.svelte";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
+  import { pendingDatasetChanges, clearPendingDatasetChange } from "$lib/stores/events";
   import {
     fetchDatasets,
     fetchImages,
@@ -40,6 +41,17 @@
 
   let isCaptioning = $state(false);
   let captioningError: string | null = $state(null);
+
+  // --- Filesystem watcher state ---
+
+  let hasPendingChanges = $state(false);
+
+  $effect(() => {
+    const name = datasetName;
+    return pendingDatasetChanges.subscribe((set) => {
+      hasPendingChanges = set.has(name);
+    });
+  });
 
   async function loadInitial(name: string) {
     nextToken = null;
@@ -133,6 +145,17 @@
       })();
     }
   }
+
+  function handleRefreshFromWatcher() {
+    if (!browser || !datasetName) return;
+    clearPendingDatasetChange(datasetName);
+    loadInitial(datasetName);
+    (async () => {
+      try {
+        datasets = await fetchDatasets();
+      } catch { /* ignore */ }
+    })();
+  }
 </script>
 
 <svelte:head>
@@ -174,6 +197,19 @@
   <!-- Captioning progress -->
   {#if isCaptioning}
     <CaptionProgress {datasetName} ondone={handleCaptioningDone} />
+  {/if}
+
+  <!-- Filesystem change notification -->
+  {#if hasPendingChanges}
+    <div class="rounded-lg bg-blue-900/50 border border-blue-700/50 px-4 py-2 flex items-center justify-between">
+      <span class="text-sm text-blue-200">Dataset files have changed</span>
+      <button
+        class="px-3 py-1.5 text-xs rounded-lg bg-blue-600/40 border border-blue-500/50 text-blue-200 hover:bg-blue-600/60 transition-colors cursor-pointer"
+        onclick={handleRefreshFromWatcher}
+      >
+        Refresh
+      </button>
+    </div>
   {/if}
 
   <!-- Content -->

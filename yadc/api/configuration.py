@@ -29,6 +29,9 @@ class Configuration:
     sse_listeners_max: int = 100
     sse_listener_max_events: int = 100
 
+    # File watcher
+    watcher_debounce_seconds: float = 1.0
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))

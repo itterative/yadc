@@ -25,6 +25,13 @@ You are working with yadc, a CLI tool for generating text captions for image dat
 - **`__init__.py` re-exports**: use `__all__` lists to avoid ruff F401 false positives
 - **Conventional commits**: `type: subject` or `type(scope): subject` (feat, fix, refactor, docs)
 
+## Key Paths
+
+- **Python package**: `yadc/` (CLI, core logic, API backend, webui build output)
+- **WebUI source**: `yadc/webui/` (SvelteKit frontend — NOT at repo root)
+- **Tests**: `tests/` (mirrors `yadc/` structure: `cli/`, `captioners/`, `core/`)
+- **Project config**: `pyproject.toml` at repo root
+
 ## Testing
 
 - Mostly unit tests using `requests-mock` and Click's `CliRunner`

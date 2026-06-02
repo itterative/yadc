@@ -4,7 +4,7 @@ from threading import Condition
 from typing import Any
 
 from ..configuration import Configuration
-from ..events import CaptioningStatusEvent, Event, PingEvent
+from ..events import CaptioningStatusEvent, DatasetChangedEvent, Event, PingEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .job_scheduler import JobScheduler
 from .logging_factory import LoggingFactory
@@ -42,6 +42,10 @@ class SSEEvents(Service):
 
     @event_handler(CaptioningStatusEvent)
     def on_captioning_status(self, event: CaptioningStatusEvent):
+        self.push(event)
+
+    @event_handler(DatasetChangedEvent)
+    def on_dataset_changed(self, event: DatasetChangedEvent):
         self.push(event)
 
     def push(self, event: Event):

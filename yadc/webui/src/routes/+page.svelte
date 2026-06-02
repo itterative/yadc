@@ -1,13 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
-  import { TypedEventSource } from "$lib/events";
-  import {
-    captioningStatus,
-    CaptioningStatusZ,
-    PingEventZ,
-  } from "$lib/stores/captioning";
-  import { API_BASE } from "$lib/api";
   import {
     fetchDatasets,
     thumbnailUrl,
@@ -20,59 +13,9 @@
   let error = $state("");
   let showAddDataset = $state(false);
 
-  let eventSource: TypedEventSource | null = null;
-
   onMount(() => {
-    if (!browser) {
-      return;
-    }
-
-    // Connect SSE event stream with auto-reconnect
-    function connect() {
-      if (eventSource !== null && eventSource.readyState !== EventSource.CLOSED) {
-        return;
-      }
-
-      try {
-        eventSource = new TypedEventSource(`${API_BASE}/api/events`);
-      } catch (e) {
-        console.warn("Failed to connect to event stream", { error: e });
-        return;
-      }
-
-      eventSource.listen("captioning_status", CaptioningStatusZ, (data) => {
-        captioningStatus.set(data);
-      });
-
-      eventSource.listen("ping", PingEventZ, () => {
-        // keepalive
-      });
-
-      eventSource.onerror = function () {
-        eventSource?.close();
-      };
-    }
-
-    connect();
-    let reconnecting = false;
-
-    const interval = window.setInterval(() => {
-      if (eventSource === null) {
-        connect();
-      } else if (!reconnecting && eventSource.readyState === EventSource.CLOSED) {
-        reconnecting = true;
-        connect();
-        reconnecting = false;
-      }
-    }, 5000);
-
-    // Fetch datasets
+    if (!browser) return;
     loadDatasets();
-
-    return () => {
-      window.clearInterval(interval);
-      eventSource?.close();
-    };
   });
 
   async function loadDatasets() {

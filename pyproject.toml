@@ -22,6 +22,7 @@ dependencies = [
     "flask>=3.1.0",
     "waitress>=3.0.0",
     "injector>=0.22.0",
+    "watchdog>=4.0",
 ]
 
 [project.optional-dependencies]

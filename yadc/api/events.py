@@ -21,3 +21,9 @@ class CaptioningStatusEvent(Event):
     total: int
     errors: int
     error: str | None = None
+
+
+@dataclass
+class DatasetChangedEvent(Event):
+    TYPE: ClassVar[str] = "dataset_changed"
+    dataset_name: str

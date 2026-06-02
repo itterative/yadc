@@ -98,8 +98,9 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `EventDispatcher` | `modules/` | Subscribe/dispatch events, `@event_handler` |
 | `JobScheduler` | `modules/` | Daemon threads for periodic jobs |
 | `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping |
+| `DatasetWatcherService` | `modules/` | watchdog-based filesystem watcher for dataset dirs, debounced `DatasetChangedEvent` emission |
 | `SettingsService` | `services/` | KV store over `settings` table (JSON values) |
-| `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan |
+| `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
 | `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher` |
 
 ## CORS
@@ -108,7 +109,8 @@ CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Servic
 
 ## Events System
 
-- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `PingEvent`, `CaptioningStatusEvent`
+- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`
 - `EventDispatcher` — `subscribe(event_cls, handler)`, `dispatch(event)`, `register_service(service)` (auto-scans for `@event_handler` methods), `@event_handler` decorator
-- `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls)` generator, auto-ping via `JobScheduler`
+- `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls)` generator, auto-ping via `JobScheduler`. Handles `CaptioningStatusEvent` and `DatasetChangedEvent`.
+- `DatasetWatcherService` — Uses `watchdog.Observer` to watch dataset image directories for filesystem changes (images + sidecars). Debounces events per-dataset (configurable via `Configuration.watcher_debounce_seconds`, default 1s). Dispatches `DatasetChangedEvent` via `EventDispatcher`.
 - Controllers receive `SSEEvents` as a dependency and use `receive()` for SSE endpoints

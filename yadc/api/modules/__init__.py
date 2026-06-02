@@ -1,4 +1,5 @@
 from .cors_middleware import CORSMiddleware
+from .dataset_watcher import DatasetWatcherService
 from .db_connection_factory import DBConnectionFactory
 from .db_migrations import DBMigrations
 from .event_dispatcher import EventDispatcher
@@ -16,4 +17,5 @@ __all__ = [
     "LoggingFactory",
     "Service",
     "SSEEvents",
+    "DatasetWatcherService",
 ]

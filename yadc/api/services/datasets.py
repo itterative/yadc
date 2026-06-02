@@ -28,7 +28,11 @@ from yadc.cmd.app import STATE_PATH
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
 
+from ..configuration import Configuration
+from ..events import DatasetChangedEvent
+from ..modules.dataset_watcher import DatasetWatcherService
 from ..modules.db_connection_factory import DBConnectionFactory
+from ..modules.event_dispatcher import EventDispatcher, event_handler
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 
@@ -91,11 +95,26 @@ class DatasetService(Service):
     the ``datasets`` and ``dataset_images`` tables, and provides paginated queries.
     """
 
-    def __init__(self, db: DBConnectionFactory, logging: LoggingFactory):
+    def __init__(
+        self,
+        db: DBConnectionFactory,
+        watcher: DatasetWatcherService,
+        configuration: Configuration,
+        event_dispatcher: EventDispatcher,
+        logging: LoggingFactory,
+    ):
         self._db: DBConnectionFactory = db
+        self._watcher: DatasetWatcherService = watcher
         self._logger: Logger = logging.get_logger(__name__)
         # Ensure state dir exists
         STATE_PATH.mkdir(parents=True, exist_ok=True)
+
+        # Configure watcher debounce and register existing datasets
+        watcher.set_debounce_seconds(configuration.watcher_debounce_seconds)
+        self._watch_existing_datasets()
+
+        # Register for DatasetChangedEvent to auto-rescan
+        event_dispatcher.register_service(self)
 
     # --- Dataset listing ---
 
@@ -502,6 +521,8 @@ class DatasetService(Service):
         """Remove a dataset, its images from the index, and its state dir."""
         import shutil
 
+        self._watcher.unwatch_dataset(name)
+
         conn = self._db.connection()
         try:
             cursor = conn.execute("DELETE FROM datasets WHERE name = ?", (name,))
@@ -542,6 +563,11 @@ class DatasetService(Service):
             conn.commit()
         finally:
             conn.close()
+
+        # Start watching the dataset's directories
+        paths = self._get_dataset_paths(config)
+        if paths:
+            self._watcher.watch_dataset(name, paths)
 
         result = self.get_dataset(name)
         assert result is not None
@@ -773,3 +799,38 @@ class DatasetService(Service):
                     self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
         finally:
             conn.close()
+
+    def _get_dataset_paths(self, config: Config | None) -> list[str]:
+        """Extract image directory paths from a parsed config."""
+        if config is None:
+            return []
+        paths: list[str] = []
+        for entry in config.dataset:
+            if entry.path:
+                p = Path(entry.path).resolve()
+                if p.is_dir():
+                    paths.append(str(p))
+        return paths
+
+    def _watch_existing_datasets(self) -> None:
+        """Watch all existing datasets' directories. Called during startup."""
+        conn = self._db.connection()
+        try:
+            rows = conn.execute("SELECT name, config_path FROM datasets").fetchall()
+        finally:
+            conn.close()
+
+        for name, config_path in rows:
+            if not config_path:
+                continue
+            config = self._load_config(Path(config_path))
+            paths = self._get_dataset_paths(config)
+            if paths:
+                self._watcher.watch_dataset(name, paths)
+                self._logger.debug("Watching existing dataset. [dataset=%s, paths=%d]", name, len(paths))
+
+    @event_handler(DatasetChangedEvent)
+    def _on_dataset_changed(self, event: DatasetChangedEvent) -> None:
+        """Auto-rescan when the watcher detects filesystem changes."""
+        self._logger.debug("Auto-rescanning dataset due to filesystem change. [dataset=%s]", event.dataset_name)
+        self.rescan_dataset(event.dataset_name)

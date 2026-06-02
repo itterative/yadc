@@ -31,7 +31,8 @@ All phases (1–4) are **implemented**.
 | `templates.ts` | Template types + CRUD + `extractVariables()` |
 | `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) |
 | `configs.ts` | Config CRUD + export API |
-| `captioning.ts` | SSE event Zod schemas |
+| `events.ts` | **Self-connecting SSE store** — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `clearPendingDatasetChange()` |
+| `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `settings.ts` | UI settings (localStorage) |
 
 ## Key Patterns
@@ -41,11 +42,11 @@ All phases (1–4) are **implemented**.
 - **JinjaEditor.svelte**: Wraps CodeMirror with Jinja2 syntax, variable extraction bar. Also uses `editable` prop (default `true`).
 - **Svelte 5**: No pipe directives on events. No nested `<button>`. Use `<div role="button">` for clickable list items.
 - **Tailwind v4**: Custom colors must be registered in `@theme { }` block, not `:root` vars.
-- **SSE**: `TypedEventSource` + Zod schemas for type-safe event handling.
+- **SSE**: `stores/events.ts` is a self-connecting store module (inspired by reference project `~/Repos/qwen-reranker-test/`). Opens `TypedEventSource` on module load, validates events with Zod, pipes into `readonly` writable stores. Components import stores directly — no SSE connection logic in page components. Per-dataset SSE (e.g. `CaptionProgress.svelte`) still creates its own `TypedEventSource`.
+- **Dataset watcher**: Backend emits `DatasetChangedEvent` via SSE when filesystem changes are detected. Frontend stores these in `pendingDatasetChanges` (a `Set<string>`). Dataset browser page subscribes and shows a "Refresh" banner.
 - **Security**: `min-release-age=14` in `.npmrc`.
 
 ## Known Issues
 
 - ImageDetail dialog overloaded — needs tabbed/split redesign
-- TOML extras editing in ImageDetail is UI-only (no backend save endpoint yet)
 - No per-tile SSE updates during captioning (aggregate events only)

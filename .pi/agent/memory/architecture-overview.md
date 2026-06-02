@@ -11,6 +11,8 @@ Yet Another Dataset Captioner — a CLI tool for captioning image datasets using
 
 ## Package Structure
 
+All source code lives under `yadc/` in the repo root.
+
 ```
 yadc/
   __init__.py         # version
@@ -33,7 +35,7 @@ yadc/
     application.py      # Application(Module) — DI container, auto-discovers services + controllers
     configuration.py    # @dataclass config (http, cors, sse, yadc paths)
     discovery.py        # discover_services() / discover_controllers() — package scanning
-    events.py           # Event base class + PingEvent, CaptioningStatusEvent
+    events.py           # Event base class + PingEvent, CaptioningStatusEvent, DatasetChangedEvent
     json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
       __init__.py          # @controller decorator (auto-discovery marker + @inject)
@@ -53,38 +55,56 @@ yadc/
       event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
       job_scheduler.py       # JobScheduler — daemon threads for periodic jobs
       sse_events.py         # SSEEvents — Condition-based SSE queue with ping
+      dataset_watcher.py    # DatasetWatcherService — watchdog-based filesystem watcher for dataset dirs, debounced DatasetChangedEvent emission
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init
     services/
       __init__.py           # re-exports CaptioningService, DatasetService, SettingsService
       captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher
-      datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write
+      datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 
   webui/             # SvelteKit frontend (Svelte 5 + Tailwind CSS v4 + TypeScript + Zod)
     src/
       lib/
-        api.ts              # API_BASE constant (empty in prod, backend URL in dev)
-        events.ts           # TypedEventSource — SSE with Zod validation
-        async.ts            # deferred, sleep, synchronized helpers
-        storable.js         # localStorage-backed writable store
-        random.ts           # Seeded PRNG for deterministic stub layouts
+        index.ts             # Re-exports: storable, async helpers, TypedEventSource, API_BASE, random
+        api.ts               # API_BASE constant (empty in prod, backend URL in dev)
+        events.ts            # TypedEventSource — SSE with Zod validation
+        async.ts             # deferred, sleep, synchronized, delayed helpers
+        storable.js          # localStorage-backed writable store
+        random.ts            # Seeded PRNG for deterministic stub layouts
+        styles/              # Tailwind @layer components
+          badges.css         # .badge
+          buttons.css        # .btn variants
+          forms.css          # .input
+          overlays.css       # .dialog-panel
+          utilities.css      # .btn-bar
         stores/
           settings.ts       # UI settings (storable)
-          captioning.ts     # Captioning SSE event state
+          events.ts         # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges)
+          captioning.ts     # Re-export shim from events.ts for backward compatibility
+          captionOptions.ts # CaptionJobOptions type for caption settings dialog
           datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers + createDatasetBrowserStore
+          configs.ts        # Config CRUD API helpers + export backend types
+          envs.ts           # Environment CRUD API helpers + types (EnvInfo)
+          templates.ts      # Template CRUD API helpers + types (TemplateInfo)
         components/
           Dialog.svelte               # Modal dialog (HTML <dialog>)
           Checkbox.svelte             # Checkbox component
           CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
           JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
-          TomlViewer.svelte           # Readonly TOML viewer (CM6 + @codemirror/legacy-modes)
+          TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode)
           IntersectionObserverElement.svelte  # Infinite scroll sentinel
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll)
           ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML viewer + drafts)
           EnvManager.svelte           # Environment CRUD dialog
-        icons/             # SVG icon components
+          AddDatasetDialog.svelte     # Create/import dataset dialog
+          CaptionProgress.svelte      # Captioning progress display with status polling
+          CaptionSettings.svelte      # Captioning settings dialog (env, model, template selection)
+          ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
+          SettingsDialog.svelte       # App settings dialog (config editing, template management)
+        icons/             # SVG icon components (SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
       routes/
         layout.css        # Tailwind v4 imports + @source workaround + dark theme
         +layout.svelte    # App shell with breadcrumb nav (hash routing links)
@@ -97,6 +117,10 @@ yadc/
     cache/            # cache dir helpers, clean_cache()
     configs/          # user config CRUD, deep merge
     envs/             # env loading/saving, RSA encryption via keyring
+      encryption.py   # keyring-based RSA encryption helpers
+      envs.py         # env loading/saving logic
+      setting.py      # Setting base class for env settings
+      user_config.py  # UserConfig / UserConfigApi models
     templates/        # user template CRUD in STATE_PATH/templates/
 
   core/               # business logic
@@ -106,6 +130,7 @@ yadc/
     dataset_resolver.py # resolve_dataset() — scans paths, merges images, applies extras
     env.py            # env var flags (DEBUG_CAPTION_RESPONSES, etc.)
     exporters/        # export backends (currently sd-scripts: json/jsonl/txt)
+      utils.py          # read_caption_source() — shared caption/draft reading for export
     logging.py        # custom logger with TRACE level, global level/handler management
     prediction.py     # PredictionContext — mutable container for reasoning data
     user_config.py    # UserConfig / UserConfigApi models
