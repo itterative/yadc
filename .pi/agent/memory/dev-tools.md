@@ -9,7 +9,7 @@ Both are dev dependencies installed via `uv add --dev`.
 
 Config in `pyproject.toml` under `[tool.ruff]` and `[tool.ruff.lint]`.
 
-- Target: Python 3.11
+- Target: Python 3.13
 - Line length: 160
 - Rule sets: E, F, W, I (pycodestyle, pyflakes, warnings, isort)
 - `__init__.py` re-exports use `__all__` lists to avoid F401 false positives

@@ -105,7 +105,7 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 
 ## Startup Event
 
-A `StartupEvent` is dispatched after all services are instantiated but before `waitress.serve()`. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread, `CORSMiddleware` registers its `after_request` handler) do so via `@event_handler(StartupEvent)`. The event is dispatched after `configure_app()` (blueprints registered) so that handlers can interact with the fully-configured Flask app.
+A `StartupEvent` is dispatched after controllers are configured but before `configure_app()` registers blueprints on the Flask app. The `run()` order is: `configure_services()` → `configure_controllers()` → print banner → `dispatch(StartupEvent())` → `configure_app()` → signal handler → `waitress.serve()`. The StartupEvent fires first so CORS middleware can register its `after_request` handler on the blueprint before the blueprint is registered on the Flask app. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread) do so via `@event_handler(StartupEvent)`.
 
 ## CORS
 
@@ -113,7 +113,7 @@ CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Servic
 
 ## Events System
 
-- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`, `ResumptionFailedEvent`
+- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `ShutdownEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`, `ResumptionFailedEvent`
 - `EventDispatcher` — `subscribe(event_cls, handler)`, `dispatch(event)`, `register_service(service)` (auto-scans for `@event_handler` methods), `@event_handler` decorator
 - `@event_handler` uses `typing.get_type_hints()` to resolve annotations — needed because `from __future__ import annotations` stringifies them, causing `issubclass()` to fail on plain `inspect.signature()` annotations
 - `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls, last_event_id=None)` generator yielding `(event_id, event)` tuples, auto-ping via `JobScheduler`. Assigns monotonic IDs to non-ping events, maintains a configurable ring buffer (`sse_event_history_size`, default 128) for `Last-Event-ID` resumption. On reconnect, replays missed events from history; if the requested ID is too old, yields a `ResumptionFailedEvent`. Handles `CaptioningStatusEvent` and `DatasetChangedEvent`.

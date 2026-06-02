@@ -164,7 +164,7 @@
 			<h2 class="dialog-title truncate text-base">{item.file_name}</h2>
 			<p class="-mt-3 truncate text-xs text-gray-500">{item.path}</p>
 			<!-- Image -->
-			<div class="flex flex-shrink-0 items-start justify-center">
+			<div class="flex shrink-0 items-start justify-center">
 				<img
 					src={imgSrc}
 					alt={item.file_name}

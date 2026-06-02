@@ -32,4 +32,4 @@ description: v2 dataset config format for yadc. Each [[dataset]] is a list entry
 - `yadc/core/dataset.py` — DatasetImage (has `_dataset_extras` PrivateAttr)
 - `yadc/cli_caption.py` — `_load_dataset()` uses `parse_config()` + `resolve_dataset()`
 - `tests/core/test_dataset_resolver.py` — 17 tests for resolution and extras merging
-- `tests/core/test_config.py` — 7 tests for v1/v2 parsing
+- `tests/core/test_config.py` — 10 tests for v1/v2 parsing

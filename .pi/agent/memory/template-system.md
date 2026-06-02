@@ -65,4 +65,3 @@ Templates are Jinja2 files that define three blocks as `{% set %}` variables:
 ## Built-in Templates
 
 - `default` — generic image captioning assistant
-- (example: `example_booru.jinja` — anime-focused captioner with artist/character/tags variables)

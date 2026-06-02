@@ -5,23 +5,25 @@ description: Files and directories ignored by git in the yadc project. These mus
 
 # Git-Ignored Files in yadc
 
-## Project-specific ignored paths
+## Project-specific gitignored paths
 - `configs/*` — all configs except `configs/example*` are gitignored
 - `templates/*` — all templates except `templates/example*` are gitignored
-- `datasets/` — dataset storage
-- `output/` — training output
-- `dist/`, `build/` — build artifacts
-- `wandb/` — Weights & Biases logs
+- `dist/`, `build/` — build artifacts (from Python default gitignore)
 - `.venv/` — Python virtual environment
 - `.env` — environment variables
+- `yadc/webui/node_modules/`, `yadc/webui/.svelte-kit/`, `yadc/webui/build/` — frontend build artifacts
 
-## Ignored sub-directories (exist locally but not tracked)
-- `yadc/api_routes/`
-- `yadc/captioners/extensions/`
-- `yadc/captioners/hf_transformers/`
-- `yadc/training/`
-- `yadc/cmd/api/`
-- `configs/tmp/`
+## Historical directories (not on disk, not gitignored)
+These directories existed during development for testing/planned features but are no longer present:
+- `datasets/` — dataset storage
+- `output/` — training output
+- `wandb/` — Weights & Biases logs
+- `yadc/api_routes/` — experimental API routes module
+- `yadc/captioners/extensions/` — experimental captioner extensions
+- `yadc/captioners/hf_transformers/` — HuggingFace transformers support
+- `yadc/training/` — training-related code
+- `yadc/cmd/api/` — API command module
+- `configs/tmp/` — temporary config files
 
 ## Auto-generated (always ignored)
 - `__pycache__/` (everywhere)

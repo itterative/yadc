@@ -75,6 +75,21 @@ No `@source` directives are needed.
 - All component class files use `@layer components { }` — imported via `@import '$lib/styles/...'` in `layout.css`
 - Component-specific styles use Svelte's `<style>` scoped blocks (e.g. `.grid-cols-auto` in `DatasetBrowser.svelte`, nav styles in `+layout.svelte`)
 
+```css
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@import '../lib/styles/buttons.css';
+/* ... */
+
+@theme {
+  --color-bg: #0f1117;
+  /* ... Tokyo Night dark palette + syntax highlight colors ... */
+}
+```
+
+Imports Tailwind v4 base, registers the `@tailwindcss/typography` plugin, imports component CSS files, then defines the custom theme.
+
 ### Vite Plugin Order
 
 `tailwindcss()` before `sveltekit()` in `vite.config.ts`:

@@ -36,7 +36,7 @@ yadc/
     banner.txt           # ASCII art banner printed on startup (optional, --no-banner to disable)
     configuration.py    # @dataclass config (http, cors, sse, yadc paths, banner_enable)
     discovery.py        # discover_services() / discover_controllers() — package scanning
-    events.py           # Event base class + StartupEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent
+    events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent
     json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
       __init__.py          # @controller decorator (auto-discovery marker + @inject)
@@ -79,6 +79,9 @@ yadc/
       setting.py      # Setting base class for env settings
       user_config.py  # UserConfig / UserConfigApi models
     templates/        # user template CRUD in STATE_PATH/templates/
+
+  utils/              # shared utility functions
+    dict_utils.py      # deep_merge() for TOML config patching
 
   core/               # business logic
     captioner.py      # Abstract Captioner base class (Jinja2 prompts, image encoding)

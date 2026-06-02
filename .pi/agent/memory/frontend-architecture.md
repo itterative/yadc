@@ -62,9 +62,9 @@ yadc/webui/
         settings/                       # Settings-domain sub-components
           EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props, reload trigger)
           TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
-      icons/             # SVG icon components (SvgBell, SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgMenuLeft, SvgPhoto, SvgPlus, SvgRefresh, SvgReset, SvgSettings, SvgSpinner, SvgUpload)
+      icons/             # SVG icon components (Svg* prefix)
     routes/
-      layout.css        # Tailwind v4 imports + @source workaround + dark theme
+      layout.css        # Tailwind v4 imports + @theme block + typography plugin
       +layout.svelte    # App shell with breadcrumb nav (hash routing links) + global captioning notification watcher
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
       AddDatasetDialog.svelte   # Co-located: create/import dataset dialog (used only by +page.svelte)

@@ -57,7 +57,7 @@ See **dataset-config-settings-plan** for full details. Mostly done:
 - [x] Diff indicators (dots) + collapsible overrides section with reset
 - [x] Removed `ConfigEditor.svelte` from Settings dialog
 - [ ] TOML multiline string serialization for templates
-- [ ] "Save as dataset default" action (PATCH from caption settings panel)
+- [x] "Save as dataset default" action (Config tab in side panel, PATCH via `DatasetConfig.svelte`)
 
 ## Test captioning flow in the webui
 
