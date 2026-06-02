@@ -265,7 +265,7 @@
     }
 </script>
 
-<div class="flex min-h-full flex-col p-4">
+<div class="grid grid-cols-1 grid-rows-[min-content_minmax(0,1fr)] min-h-full h-fit flex-col p-4">
     <!-- Header — always visible across all tabs -->
     <div class="space-y-4 pb-0">
         <!-- Filename -->
@@ -318,12 +318,12 @@
     </div>
 
     <!-- Inner tabs: Caption / Preview / Edit -->
-    <CompactPillTabs bind:value={activeTab} class="flex-1 pt-4">
+    <CompactPillTabs bind:value={activeTab} class="h-full pt-4">
         <Tab
             id="caption"
             label="Caption"
             icon={SvgSparkle}
-            class="h-full overflow-y-auto"
+            class="h-full"
         >
             <Caption
                 {item}
@@ -348,7 +348,7 @@
             id="preview"
             label="Preview"
             icon={SvgVisibility}
-            class="h-full overflow-y-auto"
+            class="h-full"
         >
             <Preview {datasetName} {item} />
         </Tab>

@@ -174,7 +174,6 @@
                                     class="text-sm"
                                     value={entry.content}
                                     editable={false}
-                                    autoHeight
                                 />
                             {:else if prevEntry}
                                 <TomlEditor
@@ -182,7 +181,6 @@
                                     value={entry.content}
                                     original={prevEntry.content}
                                     editable={false}
-                                    autoHeight
                                     compactDiff
                                 />
                             {/if}

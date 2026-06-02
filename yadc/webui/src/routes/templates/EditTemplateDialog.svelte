@@ -92,8 +92,8 @@
     }
 </script>
 
-<Dialog class="dialog-panel flex max-h-[85vh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
-    <div class="flex h-full max-h-[85vh] flex-col p-5">
+<Dialog class="dialog-panel flex h-[85vh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
+    <div class="flex h-full flex-col p-5">
         <!-- Header -->
         <div class="dialog-header">
             <h2 class="dialog-title">{isNew ? 'New Template' : `Edit ${templateName}`}</h2>
@@ -126,7 +126,7 @@
         {#if isLoading}
             <SpinnerBlock class="py-12" label="Loading template..." />
         {:else}
-            <div class="max-h-[55vh] min-h-0 min-h-[200px] flex-1 overflow-y-auto">
+            <div class="h-[50vh] flex-1 overflow-y-auto">
                 <JinjaEditor
                     class="rounded-md border border-border"
                     bind:value={content}

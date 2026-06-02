@@ -47,8 +47,8 @@
 <!-- Side panel: desktop = inline, mobile = slide-over drawer -->
 <div
     class="side-panel
-    fixed inset-y-0 right-0 z-40 w-[80vw] max-w-[480px] shadow-2xl transition-transform duration-300
-    lg:static lg:w-[480px] lg:max-w-none lg:flex-shrink-0 lg:shadow-none lg:transition-none
+    fixed inset-y-0 right-0 z-40 w-[80vw] max-w-120 shadow-2xl transition-transform duration-300
+    lg:static lg:w-120 lg:max-w-none lg:shrink-0 lg:shadow-none lg:transition-none
     {open ? '' : 'translate-x-full'} lg:translate-x-0"
 >
     <div

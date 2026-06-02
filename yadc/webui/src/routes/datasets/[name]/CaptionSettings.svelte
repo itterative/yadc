@@ -473,6 +473,22 @@
             bind:apiModelName={envModelName}
         />
 
+        <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
+        <CaptionOptionsFields
+            bind:maxTokens
+            bind:imageQuality
+            bind:rounds
+            bind:overwrite
+            bind:reasoningEnabled
+            bind:reasoningEffort
+            bind:draftName
+            display={{
+                idPrefix: 'caption',
+                showDraftName: true,
+                diffDefaults: datasetDefaults
+            }}
+        />
+
         <!-- ═══ Section: Template ═══ -->
         <section class="space-y-3">
             <h3 class="section-heading">Template</h3>
@@ -554,12 +570,12 @@
                 <p class="text-xs text-error">{templateSaveError}</p>
             {/if}
 
-            <div class="relative">
+            <div class="relative h-64">
                 {#if isLoadingTemplate}
                     <SpinnerBlock class="py-8" size="h-4 w-4" label="Loading template…" />
                 {:else}
                     <JinjaEditor
-                        class="rounded-md border border-border text-sm"
+                        class="rounded-md border border-border text-sm h-full"
                         bind:value={templateContent}
                         onchange={handleTemplateContentChange}
                     />
@@ -572,22 +588,6 @@
                 </p>
             {/if}
         </section>
-
-        <!-- ═══ Section: Options & Reasoning (shared component) ═══ -->
-        <CaptionOptionsFields
-            bind:maxTokens
-            bind:imageQuality
-            bind:rounds
-            bind:overwrite
-            bind:reasoningEnabled
-            bind:reasoningEffort
-            bind:draftName
-            display={{
-                idPrefix: 'caption',
-                showDraftName: true,
-                diffDefaults: datasetDefaults
-            }}
-        />
 
         <!-- ═══ Section: Overrides ═══ -->
         {#if overriddenCount > 0}
