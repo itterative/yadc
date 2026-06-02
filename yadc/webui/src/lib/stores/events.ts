@@ -29,7 +29,7 @@ import { z } from 'zod';
 // --- Zod schemas ---
 
 export const CaptioningStatusZ = z.object({
-    status: z.enum(['idle', 'running', 'stopping', 'error', 'done']),
+    status: z.enum(['idle', 'running', 'stopping', 'error', 'done', 'cancelled']),
     dataset_name: z.string(),
     processed: z.number(),
     total: z.number(),
@@ -269,7 +269,12 @@ function connect() {
     _eventSource.listen('captioning_status', CaptioningStatusZ, (data) => {
         _captioningStatus.set(data);
         // Clear "currently captioning" when the job finishes or errors.
-        if (data.status === 'done' || data.status === 'error' || data.status === 'idle') {
+        if (
+            data.status === 'done' ||
+            data.status === 'error' ||
+            data.status === 'cancelled' ||
+            data.status === 'idle'
+        ) {
             _currentlyCaptioning.update((cur) => {
                 if (cur && cur.dataset_name === data.dataset_name) {
                     return null;

@@ -137,6 +137,8 @@
                                     <span class="text-yellow-300">Stopping…</span>
                                 {:else if cs.status === 'done'}
                                     <span class="text-success">✓ Complete</span>
+                                {:else if cs.status === 'cancelled'}
+                                    <span class="text-warning">⊘ Cancelled</span>
                                 {:else if cs.status === 'error'}
                                     <span class="text-error">✗ Error</span>
                                 {/if}

@@ -119,7 +119,7 @@
         if (s?.dataset_name !== datasetName) {
             return;
         }
-        if (s.status !== 'error' && s.status !== 'done') {
+        if (s.status !== 'error' && s.status !== 'done' && s.status !== 'cancelled') {
             return;
         }
         if (s.job_id !== $lastStartedJobId) {
@@ -352,7 +352,9 @@
             })();
         }
 
-        if (status.status === 'error') {
+        if (status.status === 'cancelled') {
+            toast.info(`Captioning cancelled (${status.processed}/${status.total} processed)`);
+        } else if (status.status === 'error') {
             const details =
                 status.error_messages.length > 0
                     ? status.error_messages

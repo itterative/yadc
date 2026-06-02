@@ -26,7 +26,7 @@ class PingEvent(Event):
 @dataclass
 class CaptioningStatusEvent(Event):
     TYPE: ClassVar[str] = "captioning_status"
-    status: Literal["idle", "running", "stopping", "error", "done"]
+    status: Literal["idle", "running", "stopping", "error", "done", "cancelled"]
     dataset_name: str
     processed: int
     total: int

@@ -65,14 +65,19 @@
 
         // Detect transition from active → terminal
         if (prevCaptioningActive && !isActive && s.dataset_name) {
-            const hadErrors = s.errors > 0;
-            if (s.status === 'error') {
+            if (s.status === 'cancelled') {
+                sendNotification({
+                    title: `Captioning cancelled: ${s.dataset_name}`,
+                    body: `${s.processed}/${s.total} processed before stop`,
+                    tag: `caption-${s.dataset_name}`
+                });
+            } else if (s.status === 'error') {
                 sendNotification({
                     title: `Captioning failed: ${s.dataset_name}`,
                     body: s.error ?? 'Unknown error',
                     tag: `caption-${s.dataset_name}`
                 });
-            } else if (hadErrors) {
+            } else if (s.errors > 0) {
                 sendNotification({
                     title: `Captioning complete with errors: ${s.dataset_name}`,
                     body: `${s.processed}/${s.total} done, ${s.errors} errors`,

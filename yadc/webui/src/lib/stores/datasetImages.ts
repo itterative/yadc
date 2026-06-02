@@ -489,7 +489,7 @@ export function mediaUrl(datasetName: string, imageId: number): string {
 // --- Captioning API helpers ---
 
 export interface CaptioningJobInfo {
-    status: 'idle' | 'running' | 'stopping' | 'error' | 'done';
+    status: 'idle' | 'running' | 'stopping' | 'error' | 'done' | 'cancelled';
     dataset_name: string;
     job_id: string;
     processed: number;

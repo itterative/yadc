@@ -44,7 +44,7 @@ from .datasets import DatasetService
 # Data types
 # ---------------------------------------------------------------------------
 
-type JobStatus = Literal["idle", "running", "stopping", "error", "done"]
+type JobStatus = Literal["idle", "running", "stopping", "error", "done", "cancelled"]
 
 
 @dataclass
@@ -259,7 +259,7 @@ class AsyncCaptionJob:
             await self._ado_run()
         except asyncio.CancelledError:
             self._logger.info("Captioning job for '%s' cancelled", self._dataset_name)
-            await self._set_state(status="done")
+            await self._set_state(status="cancelled")
             await self._emit_status()
         except Exception as exc:
             self._logger.exception("Captioning job for '%s' failed: %s", self._dataset_name, exc)
@@ -407,7 +407,10 @@ class AsyncCaptionJob:
 
         model.log_usage()
 
-        await self._set_state(status="done")
+        if self._check_stop():
+            await self._set_state(status="cancelled")
+        else:
+            await self._set_state(status="done")
         await self._emit_status()
 
         self._logger.info(
