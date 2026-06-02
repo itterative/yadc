@@ -32,6 +32,7 @@ export interface ImagePage {
 export interface CaptionData {
   caption: string;
   extras: Record<string, unknown>;
+  extras_raw?: string;
   drafts: Record<string, string>;
 }
 
@@ -80,8 +81,90 @@ export function thumbnailUrl(datasetName: string, imageId: number, size = 256): 
   return `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/thumbnail?size=${size}`;
 }
 
+export interface PromptPreview {
+  system_prompt: string;
+  user_prompt: string;
+  template_context: Record<string, unknown>;
+}
+
+export async function fetchPromptPreview(
+  datasetName: string,
+  imageId: number,
+  options: { template?: string; template_name?: string } = {},
+): Promise<PromptPreview> {
+  const res = await fetch(
+    `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/preview-prompt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) message = body.error;
+    } catch { /* ignore JSON parse failure */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 export function mediaUrl(datasetName: string, imageId: number): string {
   return `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/media`;
+}
+
+// --- Captioning API helpers ---
+
+export interface CaptioningJobInfo {
+  status: "idle" | "running" | "stopping" | "error" | "done";
+  dataset_name: string;
+  processed: number;
+  total: number;
+  errors: number;
+  error: string | null;
+}
+
+/** Start a captioning job. Returns initial job info. */
+export async function startCaptioning(
+  datasetName: string,
+  options: Record<string, unknown>,
+): Promise<CaptioningJobInfo> {
+  const res = await fetch(
+    `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) {
+        if (typeof body.error === "string") {
+          message = body.error;
+        } else if (Array.isArray(body.error)) {
+          // Pydantic validation errors
+          message = body.error.map((e: { msg: string }) => e.msg).join(", ");
+        }
+      }
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+/** Stop a running captioning job. */
+export async function stopCaptioning(datasetName: string): Promise<boolean> {
+  const res = await fetch(
+    `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) return false;
+  return true;
 }
 
 // --- Store for paginated image browsing ---

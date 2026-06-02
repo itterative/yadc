@@ -17,15 +17,15 @@ Plans live in `plans/` at the project root (not in `.pi/agent/memory/`):
 |-------|-------------|--------|
 | 1 | Skeleton (Flask + SvelteKit + DI) | ✅ Done |
 | 2 | Dataset browsing API + UI | ✅ Done |
-| 3 | Captioning integration | In progress |
+| 3 | Captioning integration | ✅ Done |
 | 3.1–3.3 | Backend captioning service/controller/events | ✅ Done |
-| 3.4 | Caption settings UI + supporting APIs | In progress |
+| 3.4 | Caption settings UI + supporting APIs | ✅ Done |
 | 3.4 step 1 | Environment CRUD API (`api_envs.py`) | ✅ Done |
 | 3.4 step 2 | Template CRUD API (`api_templates.py`) | ✅ Done |
 | 3.4 step 3 | EnvManager.svelte + `envs.ts` API helpers | ✅ Done |
-| 3.4 step 4 | JinjaEditor.svelte + `templates.ts` API helpers | ✅ Done (textarea-based, no CodeMirror) |
-| 3.4 step 5 | CaptionSettings.svelte | Not started |
-| 3.4 step 6 | CaptionProgress.svelte + SSE wiring | Not started |
+| 3.4 step 4 | JinjaEditor + CodeMirror setup + TomlViewer | ✅ Done (CodeMirror 6 + @codemirror/lang-jinja + @codemirror/legacy-modes/mode/toml) |
+| 3.4 step 5 | CaptionSettings.svelte | ✅ Done |
+| 3.4 step 6 | CaptionProgress.svelte + SSE wiring | ✅ Done |
 | 4 | Config & export management | Not started |
 
 ## New API Endpoints (Phase 3)
@@ -46,16 +46,31 @@ Plans live in `plans/` at the project root (not in `.pi/agent/memory/`):
 ## Frontend Components Created (Phase 3.4)
 
 - `EnvManager.svelte` — Dialog for env CRUD (list, create, edit, delete with confirmation)
-- `JinjaEditor.svelte` — Textarea-based Jinja2 template editor with variable extraction display
+- `JinjaEditor.svelte` — CodeMirror 6 Jinja2 editor with `@codemirror/lang-jinja`, dark Tokyo Night theme, variable extraction
+- `CodeMirror.svelte` — Svelte 5 runes wrapper for CM6
+- `TomlViewer.svelte` — Readonly CM6 viewer with `@codemirror/legacy-modes/mode/toml`
 - `envs.ts` — API helpers + `EnvInfo` type
 - `templates.ts` — API helpers + `TemplateInfo`/`TemplateListItem` types + `extractVariables()`
+- `captionOptions.ts` — `CaptionOptions` type for the settings form output
+- `CaptionSettings.svelte` — Main caption settings dialog (env/template/options/reasoning sections)
+- `CaptionProgress.svelte` — Real-time progress bar with SSE subscription, stop button, color-coded states
 - Icons: `SvgFile`, `SvgEdit`, `SvgDelete`, `SvgPlus`, `SvgRefresh`
+- Backend: `datasets.py` now returns `extras_raw` (raw TOML) alongside parsed `extras`
+- `datasetImages.ts` — added `startCaptioning()`, `stopCaptioning()`, `CaptioningJobInfo` type
 
 ## Editor Decision
 
-CodeMirror 6 was the original plan. Currently using a plain textarea with variable hints.
-The plan doc has a detailed comparison of CM6 vs PrismJS vs highlight.js vs CodeFlask vs textarea+preview.
-User wants to evaluate leaner options before committing to CM6.
+Using **CodeMirror 6** with `@codemirror/lang-jinja` for Jinja2 templates and
+`@codemirror/legacy-modes/mode/toml` for readonly TOML display.
+
+### CodeMirror.svelte wrapper
+Svelte 5 runes wrapper. Key design: three separate `$effect` blocks (create, destroy,
+doc/extensions sync) to avoid the "duplicate editor" bug. Do NOT combine creation
+and prop reactivity into one effect — Svelte re-runs on prop changes causing
+destroy → recreate → duplicate DOM children.
+
+### Security
+`min-release-age=14` in `.npmrc` blocks packages published <14 days ago.
 
 ## Env System Backend
 

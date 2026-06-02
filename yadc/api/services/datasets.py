@@ -81,9 +81,6 @@ class ImagePage:
     next_token: str | None = None
 
 
-
-
-
 class DatasetService(Service):
     """Scans filesystem for dataset configs, indexes images in SQLite, and serves queries.
 
@@ -293,11 +290,14 @@ class DatasetService(Service):
         dataset_image = DatasetImage(path=str(image_path))
         caption = dataset_image.read_caption()
 
+        extras_raw: str = ""
         extras: dict[str, Any] = {}
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = toml.load(f)
+                    extras_raw = f.read()
+                    f.seek(0)
+                    extras = toml.loads(extras_raw)
             except Exception:
                 pass
 
@@ -307,7 +307,58 @@ class DatasetService(Service):
         except Exception:
             pass
 
-        return {"caption": caption, "extras": extras, "drafts": drafts}
+        return {"caption": caption, "extras": extras, "extras_raw": extras_raw, "drafts": drafts}
+
+    def preview_prompt(self, dataset_name: str, image_id: int, template: str) -> dict[str, Any] | None:
+        """Render the system and user prompts for an image using a Jinja2 template.
+
+        Returns dict with keys: system_prompt, user_prompt, template_context — or None if not found.
+        """
+        from yadc.core.captioner import PromptRenderer
+
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return None
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return None
+
+        dataset_image = DatasetImage(path=str(image_path))
+
+        # Load extras from TOML sidecar
+        extras: dict[str, Any] = {}
+        if dataset_image.toml_path.exists():
+            try:
+                with open(dataset_image.toml_path) as f:
+                    extras = toml.loads(f.read())
+            except Exception:
+                pass
+
+        # Apply extras as additional fields on the DatasetImage
+        if extras:
+            dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+
+        # Load drafts
+        drafts: dict[str, str] = {}
+        try:
+            drafts = dataset_image.read_all_drafts()
+        except Exception:
+            pass
+
+        # Build template context (same as what PromptRenderer.render uses)
+        template_context = dataset_image.model_dump()
+        if drafts:
+            template_context["drafts"] = drafts
+
+        renderer = PromptRenderer(prompt_template=template)
+        system_prompt, user_prompt = renderer.render(dataset_image, drafts=drafts or None)
+
+        return {
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "template_context": template_context,
+        }
 
     def update_caption(self, dataset_name: str, image_id: int, caption: str) -> bool:
         """Update the caption file for an image. Returns True on success."""
@@ -477,53 +528,18 @@ class DatasetService(Service):
         return raw
 
     def _load_config(self, config_path: Path) -> Config | None:
-        """Load and parse a dataset config file using full CLI validation."""
-        try:
-            with open(config_path) as f:
-                raw = toml.load(f)
-            return parse_config(raw)
-        except Exception as e:
-            self._logger.warning("Failed to parse config at %s: %s", config_path, e)
-            return None
+        """Load and parse a dataset config file with relaxed validation.
 
-    # TODO: refine TOML loading strategy — currently uses two paths:
-    #   1. _load_config() → full CLI validation (fails for webui TOMLs missing api_url/model/template)
-    #   2. _load_dataset_entries() → raw [[dataset]] extraction (no validation)
-    # The webui should ideally have its own relaxed config model that accepts
-    # partial TOMLs (no required api_url/model/template) while still validating
-    # dataset entry structure (path, images, extras).
-
-    def _load_dataset_entries(self, config_path: Path) -> list[dict[str, Any]]:
-        """Extract [[dataset]] entries from a TOML without CLI validation.
-
-        The webui doesn't need api_url, model_name, template, etc. — it only
-        cares about the ``[[dataset]]`` entries (image paths + extras). This
-        parses the raw TOML and returns the dataset list as-is.
-
-        NOTE: This needs refinement — see TODO above.
+        Uses ``strict=False`` so webui TOMLs (missing api_url/model/template)
+        parse cleanly. Those fields are validated when creating the captioner.
         """
         try:
             with open(config_path) as f:
                 raw = toml.load(f)
+            return parse_config(raw, strict=False)
         except Exception as e:
-            self._logger.warning("Failed to read config at %s: %s", config_path, e)
-            return []
-
-        # v2: [[dataset]] array of tables
-        dataset = raw.get("dataset")
-        if isinstance(dataset, list):
-            return dataset
-
-        # v1: [dataset] with paths list
-        if isinstance(dataset, dict) and "paths" in dataset:
-            entries: list[dict[str, Any]] = []
-            for p in dataset["paths"]:
-                entries.append({"path": p})
-            if "images" in dataset:
-                entries.append({"images": dataset["images"]})
-            return entries
-
-        return []
+            self._logger.warning("Failed to parse config at %s: %s", config_path, e)
+            return None
 
     def _scan_dataset(
         self,
@@ -548,23 +564,15 @@ class DatasetService(Service):
         image_dirs: list[Path] = []
         extras_per_dir: dict[str, dict[str, object]] = {}
 
-        if config:
-            for entry in config.dataset:
-                if entry.path:
-                    p = Path(entry.path)
-                    if p.is_dir():
-                        image_dirs.append(p.resolve())
-                        extras_per_dir[str(p.resolve())] = entry.extras
-        else:
-            # Fallback: parse just [[dataset]] entries without CLI validation
-            entries = self._load_dataset_entries(config_file)
-            for entry in entries:
-                entry_path = entry.get("path", "")
-                if entry_path:
-                    p = Path(entry_path)
-                    if p.is_dir():
-                        image_dirs.append(p.resolve())
-                        extras_per_dir[str(p.resolve())] = entry.get("extras", {})
+        if config is None:
+            return
+
+        for entry in config.dataset:
+            if entry.path:
+                p = Path(entry.path)
+                if p.is_dir():
+                    image_dirs.append(p.resolve())
+                    extras_per_dir[str(p.resolve())] = entry.extras
 
         if not image_dirs:
             return

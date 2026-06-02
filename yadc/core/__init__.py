@@ -1,4 +1,4 @@
-from .captioner import ROLE_ASSISTANT, ROLE_USER, Captioner, CaptionerRound, ReplyRound
+from .captioner import ROLE_ASSISTANT, ROLE_USER, Captioner, CaptionerRound, PromptRenderer, ReplyRound
 from .config import Config, ConfigApi, ConfigDatasetEntry, ConfigSettings, parse_config
 from .dataset import DatasetImage
 from .prediction import PredictionContext
@@ -10,6 +10,7 @@ __all__ = [
     "ConfigSettings",
     "Captioner",
     "CaptionerRound",
+    "PromptRenderer",
     "DatasetImage",
     "PredictionContext",
     "ReplyRound",

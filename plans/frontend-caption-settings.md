@@ -223,77 +223,96 @@ Auto-discovered by `discovery.discover_controllers()`.
 2. `envs.ts` — types (`EnvInfo`) + API helpers (`fetchEnvs`, `fetchEnv`, `saveEnv`, `deleteEnv`, `fetchModels`)
 3. New icons: `SvgFile`, `SvgEdit`, `SvgDelete`, `SvgPlus`, `SvgRefresh`
 
-### Step 4: Frontend — JinjaEditor ✅ DONE (textarea-based, no CodeMirror)
+### Step 4: Frontend — JinjaEditor + CodeMirror setup ✅ DONE
 
-1. `JinjaEditor.svelte` — textarea-based editor with:
-   - Monospace font, tab key inserts 2 spaces
+1. `JinjaEditor.svelte` — CodeMirror 6 editor with:
+   - `@codemirror/lang-jinja` for Jinja2 syntax highlighting + autocomplete
+   - Dark Tokyo Night theme matching the app palette
+   - Line wrapping, monospace font
    - Reactive `extractVariables()` showing detected Jinja2 variables as tags below the editor
    - `readonly` mode support
    - `value` bindable + `onchange` callback
 2. `templates.ts` — types (`TemplateInfo`, `TemplateListItem`) + API helpers + `extractVariables()` frontend utility
+3. `CodeMirror.svelte` — Svelte 5 runes wrapper for CM6 (doc sync, extension reconfig, readonly)
+4. `TomlViewer.svelte` — readonly CM6 viewer with `@codemirror/legacy-modes/mode/toml` via `StreamLanguage`
+5. Backend `datasets.py` now returns `extras_raw` (raw TOML string) alongside parsed `extras`
+6. `ImageDetail.svelte` uses `TomlViewer` for TOML extras display
 
-**Note:** CodeMirror 6 is NOT installed yet. The plan originally called for CM6 but the user wants to
-evaluate leaner alternatives first. Current version is a plain `<textarea>` with variable extraction.
-See "Editor Options" below for the evaluation.
+#### npm packages installed
+- `codemirror`, `@codemirror/view`, `@codemirror/state`, `@codemirror/language`, `@codemirror/commands`
+- `@codemirror/lang-jinja` — official Jinja2 language support
+- `@codemirror/legacy-modes` — TOML mode for readonly viewer
 
-#### Editor Options (CodeMirror 6 alternatives evaluation)
+#### Security: `min-release-age=14` in `.npmrc`
+Blocks installing any package version published less than 14 days ago.
 
-**CodeMirror 6** (v6.43.0) — the original plan choice:
-- ~2MB unpacked for core (`@codemirror/view` 1.2MB + `@codemirror/state` 433KB + `@codemirror/language` 310KB)
-- Full-featured editor: line numbers, syntax highlighting, code folding, search, autocomplete
-- Needs `@codemirror/lang-html` + custom Jinja2 delimiter mode
-- 7 transitive deps in `codemirror` package alone
+#### CodeMirror.svelte design notes
+The wrapper uses three separate `$effect` blocks to avoid the "duplicate editor" bug:
+1. **Create** — fires once when DOM is ready, creates an empty `EditorView`
+2. **Destroy** — cleanup on unmount
+3. **Doc sync** + **Extensions sync** — separate effects that update the existing view
 
-**PrismJS** (v1.30.0) — syntax highlighting only, not an editor:
-- ~2MB unpacked (includes all languages; ~5KB for a custom Jinja-like grammar)
-- Zero dependencies
-- Read-only highlighting — could be used as an overlay on a transparent textarea
-- Would need manual sync between textarea scroll and highlight layer
+Do NOT combine creation + prop reactivity into one `$effect` — Svelte may re-run it on prop changes,
+causing destroy → recreate → duplicate DOM children.
 
-**highlight.js** (v11.11.1) — syntax highlighting only:
-- ~5.4MB unpacked (all languages bundled; tree-shakeable to ~50KB with specific languages)
-- Zero dependencies
-- Same overlay approach as PrismJS
+### Step 5: Frontend — CaptionSettings ✅ DONE
 
-**CodeFlask** (v1.4.1) — tiny code editor built on PrismJS:
-- ~55KB unpacked, depends on PrismJS
-- Provides a real editor (not just highlighting) — wraps textarea + PrismJS highlight
-- Very lightweight, but limited customization
+1. `CaptionSettings.svelte` — main form component with:
+   - **Environment section**: dropdown selector → auto-fills URL/token/model from env, "Manage…" opens EnvManager sub-dialog
+   - **Model section**: dropdown (if models fetched) or text input, refresh button fetches via `POST /api/envs/<name>/models`
+   - **Template section**: dropdown (user + built-in) → loads into JinjaEditor, "New" creates inline, "Save" persists changes
+   - **Options section**: max tokens, image quality, draft name, rounds, overwrite checkbox
+   - **Reasoning section**: enable checkbox → thinking effort dropdown (conditional)
+   - "Start Captioning" button assembles `CaptionOptions` and calls `onstart` callback
+2. `captionOptions.ts` — `CaptionOptions` type (mirrors backend `CaptionJobOptions`)
+3. Wired into `datasets/[name]/+page.svelte` — "Caption…" button in header opens the dialog
+4. Actual captioning POST call intentionally skipped (TODO in `handleStartCaptioning`, will be done in Step 6)
 
-**Textarea + highlighted preview** — pure approach:
-- Zero dependencies
-- `<textarea>` for editing, `<pre><code>` panel showing highlighted output
-- Could use a simple regex-based highlighter for Jinja2 delimiters (`{{ }}`, `{% %}`, `{# #}`)
-- Simplest approach, good enough for Jinja2 templates which are mostly prose with scattered tags
+### Step 6: Frontend — CaptionProgress + SSE wiring ✅ DONE
 
-**Recommendation to revisit:** For a Jinja2 template editor, a full code editor like CodeMirror is
-arguably overkill. The templates are typically short (10-30 lines) and mostly prose text with a few
-Jinja2 blocks. The textarea + preview or PrismJS overlay approaches would be lighter. If we do
-want a proper editor experience (line numbers, bracket matching, etc.), CodeMirror 6 is the right
-choice despite the weight.
+1. `CaptionProgress.svelte` — inline progress component with:
+   - SSE subscription to `GET /api/datasets/<name>/caption/status` via `TypedEventSource` + Zod validation
+   - Progress bar (processed/total + percentage) with color-coded states (running=accent, stopping=yellow, done=success, error=error)
+   - Status header with spinner (running/stopping), checkmark (done), X (error)
+   - Error detail display
+   - Stop button → `DELETE /api/datasets/<name>/caption`
+   - Auto-close SSE + fire `ondone` callback 2s after terminal state
+2. `startCaptioning()` and `stopCaptioning()` API helpers in `datasetImages.ts`
+3. Wired into `datasets/[name]/+page.svelte`:
+   - `handleStartCaptioning` POSTs to caption API, sets `isCaptioning = true`
+   - `CaptionProgress` shown when `isCaptioning` is true
+   - "Caption…" button disabled while captioning is active
+   - `handleCaptioningDone` refreshes image list + dataset stats on completion
+   - Error display for failed start attempts
 
-### Step 5: Frontend — CaptionSettings
+**Note on per-tile updates**: The current `CaptioningStatusEvent` only has aggregate counts (processed/total/errors), not per-image IDs. Grid tiles update via full refresh when captioning completes. Per-image live updates would require backend changes to emit image-level events.
 
-1. `CaptionSettings.svelte` — main form component
-2. `templates.ts` — types + API helpers for template endpoints
-3. Wire env selector → auto-fill → model fetch flow
-4. Wire template selector → editor load/save flow
+### Prompt Preview ✅ DONE
 
-### Step 6: Frontend — CaptionProgress + SSE wiring
+A "Preview Prompt" feature on each `ImageDetail` dialog that renders a Jinja2 template
+against the image's data and shows the resulting system/user prompts + template context.
 
-1. `CaptionProgress.svelte` — progress bar with SSE subscription
-2. Wire into `DatasetBrowser` — show progress when captioning is active
-3. Update `ImageDetail` and grid tiles on processed-image events
-4. Re-use `CaptioningStatusEvent` Zod schema from `stores/captioning.ts`
+**Backend:**
+- `POST /api/datasets/<name>/images/<id>/preview-prompt` — accepts `{template: "..."}` or `{template_name: "..."}`,
+  resolves the template, renders via `Captioner.prompts_from_image()`, returns `{system_prompt, user_prompt, template_context}`
+- `DatasetService.preview_prompt()` — loads image + TOML extras + drafts, builds `DatasetImage`, renders with `PromptRenderer`
+- `PromptRenderer` (`yadc/core/captioner.py`) — extracted from `Captioner`, pure Jinja2 rendering with no API dependencies
 
-## Dependencies to Add
+**Frontend:**
+- `fetchPromptPreview()` API helper in `datasetImages.ts` — POSTs to the endpoint, returns `PromptPreview` type
+- `ImageDetail.svelte` — collapsible "Preview Prompt" section with template dropdown (populated from templates API) + "Render" button,
+  displays system prompt, user prompt, and a `<details>` with the raw template context variables
+- Filters noise from context display (hides `caption_suffix`, `toml_suffix`, `history_suffix`)
+
+## Dependencies Added
 
 ### Python
 None — all backend logic exists in `cmd/envs` and `cmd/templates`.
 
 ### npm (`yadc/webui/`)
-- ~~`codemirror` + related packages~~ — **ON HOLD**, evaluating lighter alternatives
-  (see Step 4 editor options evaluation above)
+- `codemirror`, `@codemirror/view`, `@codemirror/state`, `@codemirror/language`, `@codemirror/commands` — core CM6
+- `@codemirror/lang-jinja` — Jinja2 syntax highlighting + autocomplete
+- `@codemirror/legacy-modes` — TOML stream language for readonly viewer
 
 ## Open Questions
 
@@ -306,12 +325,25 @@ None — all backend logic exists in `cmd/envs` and `cmd/templates`.
    return them in the template metadata, or should the frontend handle this?
    (Frontend seems more natural since it's a display concern.)
 
-3. **CodeMirror vs simpler approach** — Is CodeMirror 6 worth the dependency
-   weight for a template editor? A `<textarea>` with a separate syntax-
-   highlighted preview might be lighter. Decision: start with CodeMirror —
-   it provides a much better editing experience and ~40KB is acceptable.
+3. ~~CodeMirror vs simpler approach~~ — **Resolved**: Using CodeMirror 6 with `@codemirror/lang-jinja`.
+   Official package exists with Jinja2 support out of the box.
 
 4. **Env auto-save** — When user changes URL/token/model in the caption
    settings form, should we offer to save back to the env? Or keep it strictly
    as a one-time override? (Current plan: one-time override with optional
    "Save to env" button.)
+
+## TODO: ImageDetail dialog UX refinement
+
+The `ImageDetail` dialog is getting overloaded — caption, TOML extras, drafts,
+prompt preview, status badges all stacked vertically in a scrollable panel.
+Needs a redesign to avoid excessive scrolling. Possible approaches:
+
+- **Tabbed panel** (Caption | Metadata | Preview) — each section gets its own tab
+- **Sidebar + detail split** — image on left, tabs on right
+- **Collapsible sections** with smart defaults (e.g., only one expanded at a time)
+- **Sub-dialogs** — "Preview Prompt" and "TOML Extras" as separate dialogs
+  opened from buttons in the main view
+
+Should be revisited after Phase 3 is complete, once all the content that needs
+to live in ImageDetail is finalized.

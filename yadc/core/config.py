@@ -50,7 +50,7 @@ class ConfigApi(pydantic.BaseModel):
     Configuration for connecting to a remote inference API.
 
     Attributes:
-        url: Base URL of the API endpoint (must start with http:// or https://).
+        url: Base URL of the API endpoint (must start with http:// or https:// when provided).
         token: Authorization token for API access (optional depending on server requirements).
         model_name: Identifier of the model to use on the API server (e.g., 'gpt-5-mini', 'gemini-2.5-flash').
     """
@@ -60,36 +60,44 @@ class ConfigApi(pydantic.BaseModel):
     model_name: str = ""
 
     @pydantic.model_validator(mode="after")
-    def validate_(self):
-        try:
-            assert self.url, "api url must be provided"
-            assert self.url.startswith("http://") or self.url.startswith("https://"), "api url must be an http link"
+    def validate_(self, info: pydantic.ValidationInfo):
+        strict = (info.context or {}).get("strict", True)
 
-            assert self.model_name, "api model_name must be provided"
-        except AssertionError as e:
-            raise ValueError(e)
+        if strict:
+            if not self.url:
+                raise ValueError("api url must be provided")
+            if not self.model_name:
+                raise ValueError("api model_name must be provided")
+
+        if self.url:
+            if not self.url.startswith(("http://", "https://")):
+                raise ValueError("api url must be an http link")
 
         return self
 
 
 class ConfigPrompt(pydantic.BaseModel):
     """
-    Configuration for connecting to a remote inference API.
+    Configuration for the prompt template.
 
     Attributes:
         name: The name of the user/built-in template
         template: The prompt template itself
+
+    In strict mode (default, used by CLI), at least one must be provided.
+    In non-strict mode, both may be empty — the default template is used at
+    caption time.
     """
 
     name: str = ""
     template: str = ""
 
     @pydantic.model_validator(mode="after")
-    def validate_(self):
-        try:
-            assert self.name or self.template, "either prompt name or prompt template must be provided in the config"
-        except AssertionError as e:
-            raise ValueError(e)
+    def validate_(self, info: pydantic.ValidationInfo):
+        strict = (info.context or {}).get("strict", True)
+
+        if strict and not self.name and not self.template:
+            raise ValueError("either prompt name or prompt template must be provided in the config")
 
         return self
 
@@ -253,7 +261,10 @@ class ConfigV1(pydantic.BaseModel):
         if self.dataset.images:
             entries.append(ConfigDatasetEntry(images=self.dataset.images))
 
-        return Config(
+        # FIXME: model_construct bypasses all validation — could we instead pass the
+        # validation context through to_v2 so the v2 Config is properly validated
+        # with the same strict flag?
+        return Config.model_construct(
             api=self.api,
             prompt=self.prompt,
             settings=self.settings,
@@ -267,17 +278,31 @@ class ConfigV1(pydantic.BaseModel):
         )
 
 
-def parse_config(raw: dict[str, Any]) -> Config:
+def parse_config(raw: dict[str, Any], *, strict: bool = True) -> Config:
     """
     Parse a raw TOML dict into a Config.
 
     Tries v1 first (``[dataset]`` single table with ``paths`` and ``images``).
     If that fails, falls back to v2 (``[[dataset]]`` array of tables with
     ``path``, ``images``, ``extras``).
+
+    Args:
+        raw: Raw TOML dict.
+        strict: If True (default), enforce CLI-level validation (api url/model
+            and prompt must be provided). If False, allow partial configs
+            (used by the webui which provides these at caption time).
     """
+    ctx = {"strict": strict}
+
+    # Ensure api/prompt sections exist so default factories don't fire
+    # without validation context (which would enforce strict checks on empty defaults).
+    raw = {**raw}
+    raw.setdefault("api", {})
+    raw.setdefault("prompt", {})
+
     try:
-        return ConfigV1.model_validate(raw).to_v2()
+        return ConfigV1.model_validate(raw, context=ctx).to_v2()
     except pydantic.ValidationError:
         pass
 
-    return Config.model_validate(raw)
+    return Config.model_validate(raw, context=ctx)

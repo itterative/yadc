@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import sys
-import time
-from threading import Thread
 from typing import override
 
 from flask import Flask
@@ -79,31 +76,16 @@ class Application(Module):
 
     def run(self) -> None:
         """Configure everything and start the server via waitress."""
+        import waitress
+
         self.configure_services()
         self.configure_controllers()
         self.configure_app()
 
-        def _run():
-            import waitress
-
-            print(f"yadc web UI starting on http://{self.configuration.http_host}:{self.configuration.http_port}")
-            waitress.serve(
-                self.app,
-                host=self.configuration.http_host,
-                port=self.configuration.http_port,
-                threads=self.configuration.http_threads,
-            )
-
-        t = Thread(target=_run, daemon=False)
-        t.start()
-
-        time.sleep(1)
-
-        # If waitress failed (e.g. port in use), exit cleanly
-        if not t.is_alive():
-            sys.exit(1)
-
-        try:
-            t.join()
-        except KeyboardInterrupt:
-            pass
+        print(f"yadc web UI starting on http://{self.configuration.http_host}:{self.configuration.http_port}")
+        waitress.serve(
+            self.app,
+            host=self.configuration.http_host,
+            port=self.configuration.http_port,
+            threads=self.configuration.http_threads,
+        )

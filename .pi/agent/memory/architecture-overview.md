@@ -74,10 +74,14 @@ yadc/
         components/
           Dialog.svelte               # Modal dialog (HTML <dialog>)
           Checkbox.svelte             # Checkbox component
+          CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
+          JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
+          TomlViewer.svelte           # Readonly TOML viewer (CM6 + @codemirror/legacy-modes)
           IntersectionObserverElement.svelte  # Infinite scroll sentinel
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll)
-          ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML + drafts)
+          ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML viewer + drafts)
+          EnvManager.svelte           # Environment CRUD dialog
         icons/             # SVG icon components
       routes/
         layout.css        # Tailwind v4 imports + @source workaround + dark theme
@@ -142,4 +146,7 @@ yadc/
 - **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
 - **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/<name>/config.toml`. `import_dataset(name, toml_path)` copies TOML to state dir (resolving relative paths). `create_dataset(name, image_paths)` generates a new TOML. `name` is the unique key — no `path` column.
 - **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Flask only serves `GET /` + static assets.
-- **Tailwind @source workaround**: `layout.css` needs `@source '../lib'` and `@source '../routes'` because automatic content detection misses component files. See TODO comment in `layout.css`.
+- **Tailwind content detection**: Two issues were fixed: (1) root `.gitignore` `lib/` rule was hiding `src/lib/` — fixed with `!src/lib/` in `webui/.gitignore`; (2) `:root` CSS vars needed to be `@theme { }` for Tailwind v4 to register them as theme values. No `@source` directives needed.
+- **Config validation is strict by default, relaxable**: `parse_config(raw)` enforces CLI-level checks (api url/model_name must exist, prompt must be specified). `parse_config(raw, strict=False)` skips those checks (used by webui, which provides these at caption time). Uses Pydantic validation context to thread the flag — no fields on the model. The `ConfigV1.to_v2()` uses `model_construct()` to avoid re-running validators on already-validated data.
+- **CodeMirror 6**: Used for Jinja2 template editing (`@codemirror/lang-jinja`) and readonly TOML display (`@codemirror/legacy-modes/mode/toml`). The `CodeMirror.svelte` wrapper uses three separate `$effect` blocks to avoid duplicate editor creation on prop changes.
+- **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.

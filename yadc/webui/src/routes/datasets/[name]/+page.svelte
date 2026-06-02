@@ -3,15 +3,19 @@
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import DatasetBrowser from "$lib/components/DatasetBrowser.svelte";
+  import CaptionSettings from "$lib/components/CaptionSettings.svelte";
+  import CaptionProgress from "$lib/components/CaptionProgress.svelte";
   import ImageDetail from "$lib/components/ImageDetail.svelte";
+  import type { CaptionOptions } from "$lib/stores/captionOptions";
   import {
     fetchDatasets,
     fetchImages,
+    startCaptioning,
     type DatasetInfo,
     type ImageInfo,
   } from "$lib/stores/datasetImages";
 
-  let datasetName = $derived($page.params.name);
+  let datasetName = $derived($page.params.name ?? "");
 
   let datasets: DatasetInfo[] = $state([]);
   let currentDataset: DatasetInfo | null = $state(null);
@@ -25,6 +29,17 @@
 
   let nextToken: string | null = null;
   const PAGE_SIZE = 50;
+
+  // --- Captioning state ---
+
+  // NOTE: Grid tiles are NOT updated live during captioning — the SSE events
+  // (CaptioningStatusEvent) only carry aggregate counts (processed/total/errors),
+  // not individual image IDs. A full reload happens when captioning finishes
+  // (see handleCaptioningDone). For live per-tile updates, the backend would
+  // need to emit per-image events (e.g. CaptionedImageEvent with image_id).
+
+  let isCaptioning = $state(false);
+  let captioningError: string | null = $state(null);
 
   async function loadInitial(name: string) {
     nextToken = null;
@@ -90,8 +105,33 @@
     focusedItem = item;
   }
 
+  let showCaptionSettings = $state(false);
+
   function handleCaptionUpdated(imageId: number, _caption: string) {
     images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
+  }
+
+  async function handleStartCaptioning(options: CaptionOptions) {
+    captioningError = null;
+    try {
+      await startCaptioning(datasetName, options as Record<string, unknown>);
+      isCaptioning = true;
+    } catch (e) {
+      captioningError = e instanceof Error ? e.message : "Failed to start captioning";
+    }
+  }
+
+  function handleCaptioningDone() {
+    isCaptioning = false;
+    // Refresh everything — caption counts and image states may have changed
+    if (browser && datasetName) {
+      loadInitial(datasetName);
+      (async () => {
+        try {
+          datasets = await fetchDatasets();
+        } catch { /* ignore */ }
+      })();
+    }
   }
 </script>
 
@@ -117,7 +157,26 @@
         </p>
       {/if}
     </div>
+    <button
+      class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer transition-colors disabled:opacity-50"
+      onclick={() => (showCaptionSettings = true)}
+      disabled={isCaptioning}
+    >
+      Caption…
+    </button>
   </div>
+
+  <!-- Captioning error from start attempt -->
+  {#if captioningError}
+    <div class="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">
+      {captioningError}
+    </div>
+  {/if}
+
+  <!-- Captioning progress -->
+  {#if isCaptioning}
+    <CaptionProgress {datasetName} ondone={handleCaptioningDone} />
+  {/if}
 
   <!-- Content -->
   {#if error}
@@ -147,4 +206,11 @@
   item={focusedItem}
   onclose={() => (focusedItem = null)}
   oncaptionupdated={handleCaptionUpdated}
+/>
+
+<CaptionSettings
+  {datasetName}
+  open={showCaptionSettings}
+  onclose={() => (showCaptionSettings = false)}
+  onstart={handleStartCaptioning}
 />

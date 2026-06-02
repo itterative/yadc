@@ -1,8 +1,23 @@
 {
-  "$schema": "https://raw.githubusercontent.com/itterative/pi-bash-sandbox/refs/heads/main/docs/schema.json",
   "sandbox": {
     "mounts": {
       "~/Repos/qwen-reranker-test": "readonly"
     }
+  },
+  "permissions": {
+    "ls *": "allow:sandbox",
+    "grep *": "allow:sandbox",
+    "git status *": "allow:sandbox",
+    "npm run *": "allow:sandbox",
+    "uv run basedpyright *": "allow:sandbox",
+    "uv run ruff *": "allow:sandbox",
+    "uv run pytest *": "allow:sandbox",
+    "cd */yadc & ls *": "allow:sandbox",
+    "cd */yadc & grep *": "allow:sandbox",
+    "cd */yadc & git status *": "allow:sandbox",
+    "cd */yadc & npm run *": "allow:sandbox",
+    "cd */yadc & uv run basedpyright *": "allow:sandbox",
+    "cd */yadc & uv run ruff *": "allow:sandbox",
+    "cd */yadc & uv run pytest *": "allow:sandbox"
   }
 }

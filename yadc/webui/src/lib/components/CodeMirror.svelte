@@ -1,141 +1,101 @@
-<!-- The code below is released under public domain. -->
+<!--
+  Minimal CodeMirror 6 wrapper for Svelte 5.
+  Based on the public-domain shim, converted to Svelte 5 runes API.
+-->
 
-<script context="module">
-	import { EditorView, minimalSetup, basicSetup } from 'codemirror';
-	import { ViewPlugin } from '@codemirror/view';
-	import { StateEffect } from '@codemirror/state';
-	export { minimalSetup, basicSetup };
+<script lang="ts">
+  import { EditorView, minimalSetup } from "codemirror";
+  import { StateEffect } from "@codemirror/state";
+  import type { Extension } from "@codemirror/state";
+
+  interface Props {
+    /** Document text. Setting this after mount overwrites the editor content. */
+    doc?: string;
+    /** CodeMirror extensions (e.g. language support, theme). */
+    extensions?: Extension[];
+    /** Called when the document text changes. */
+    onchange?: (value: string) => void;
+    /** Whether the editor is read-only. */
+    readonly?: boolean;
+    /** CSS class applied to the wrapper div. */
+    class?: string;
+  }
+
+  let {
+    doc = "",
+    extensions = [minimalSetup],
+    onchange,
+    readonly = false,
+    class: klazz = "",
+  }: Props = $props();
+
+  let dom: HTMLDivElement | undefined = $state();
+  let view: EditorView | null = $state(null);
+
+  // --- Create editor once when DOM is ready ---
+
+  $effect(() => {
+    if (dom && !view) {
+      view = new EditorView({
+        doc: "",
+        extensions: [],
+        parent: dom,
+        dispatchTransactions: handleTransactions,
+      });
+    }
+  });
+
+  // --- Destroy on unmount ---
+
+  $effect(() => {
+    return () => {
+      view?.destroy();
+    };
+  });
+
+  // --- Sync doc from outside ---
+
+  let prevDoc: string | undefined = $state();
+  $effect(() => {
+    const currentDoc = doc;
+    if (!view) return;
+    if (currentDoc !== prevDoc && currentDoc !== view.state.doc.toString()) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: currentDoc },
+      });
+    }
+    prevDoc = currentDoc;
+  });
+
+  // --- Sync extensions + readonly ---
+
+  $effect(() => {
+    const exts = [...extensions, EditorView.editable.of(!readonly)];
+    if (view) {
+      view.dispatch({
+        effects: StateEffect.reconfigure.of(exts),
+      });
+    }
+  });
+
+  // --- Transaction handler ---
+
+  function handleTransactions(trs: readonly import("@codemirror/state").Transaction[]) {
+    if (!view) return;
+    view.update(trs);
+    const lastChange = trs.findLast((tr) => tr.docChanged);
+    if (lastChange) {
+      const text = lastChange.newDoc.toString();
+      prevDoc = text;
+      onchange?.(text);
+    }
+  }
 </script>
 
-<script>
-	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-	const dispatch = createEventDispatcher();
-
-	let dom;
-
-	let _mounted = false;
-	onMount(() => {
-		_mounted = true;
-		return () => {
-			_mounted = false;
-		};
-	});
-
-	export let view = null;
-
-	/* `doc` is deliberately made non-reactive for not storing a reduntant string
-   besides the editor. Also, setting doc to undefined will not trigger an
-   update, so that you can clear it after setting one. */
-	export let doc;
-
-	/* Set this if you would like to listen to all transactions via `update` event. */
-	export let verbose = false;
-
-	/* Cached doc string so that we don't extract strings in bulk over and over. */
-	let _docCached = null;
-
-	/* Overwrite the bulk of the text with the one specified. */
-	function _setText(text) {
-		view.dispatch({
-			changes: { from: 0, to: view.state.doc.length, insert: text }
-		});
-	}
-
-	const subscribers = new Set();
-
-	/* And here comes the reactivity, implemented as a r/w store. */
-	export const docStore = {
-		ready: () => view !== null,
-		subscribe(cb) {
-			subscribers.add(cb);
-
-			if (!this.ready()) {
-				cb(null);
-			} else {
-				if (_docCached == null) {
-					_docCached = view.state.doc.toString();
-				}
-				cb(_docCached);
-			}
-
-			return () => void subscribers.delete(cb);
-		},
-		set(newValue) {
-			if (!_mounted) {
-				throw new Error('Cannot set docStore when the component is not mounted.');
-			}
-
-			const inited = _initEditorView(newValue);
-			if (!inited) _setText(newValue);
-		}
-	};
-
-	export let extensions = minimalSetup;
-
-	function _reconfigureExtensions() {
-		if (view === null) return;
-		view.dispatch({
-			effects: StateEffect.reconfigure.of(extensions)
-		});
-	}
-
-	$: (extensions, _reconfigureExtensions());
-
-	function _editorTxHandler(trs, view) {
-		view.update(trs);
-
-		if (verbose) {
-			dispatch('update', trs);
-		}
-
-		let lastChangingTr;
-		if ((lastChangingTr = trs.findLast((tr) => tr.docChanged))) {
-			_docCached = null;
-			if (subscribers.size) {
-				dispatchDocStore((_docCached = lastChangingTr.newDoc.toString()));
-			}
-			dispatch('change', { view, trs });
-		}
-	}
-
-	function dispatchDocStore(s) {
-		for (const cb of subscribers) {
-			cb(s);
-		}
-	}
-
-	// the view will be inited with the either doc (as long as that it is not `undefined`)
-	// or the value in docStore once set
-	function _initEditorView(initialDoc) {
-		if (view !== null) {
-			return false;
-		}
-
-		view = new EditorView({
-			doc: initialDoc,
-			extensions,
-			parent: dom,
-			dispatchTransactions: _editorTxHandler
-		});
-		return true;
-	}
-
-	$: if (_mounted && doc !== undefined) {
-		const inited = _initEditorView(doc);
-		dispatchDocStore(doc);
-	}
-
-	onDestroy(() => {
-		if (view !== null) {
-			view.destroy();
-		}
-	});
-</script>
-
-<div class="codemirror" bind:this={dom}></div>
+<div class="codemirror-wrapper {klazz}" bind:this={dom}></div>
 
 <style>
-	.codemirror {
-		display: contents;
-	}
+  .codemirror-wrapper {
+    display: contents;
+  }
 </style>

@@ -1,4 +1,8 @@
 <script lang="ts">
+  import CodeMirror from "./CodeMirror.svelte";
+  import { minimalSetup } from "codemirror";
+  import { jinja } from "@codemirror/lang-jinja";
+  import { EditorView } from "@codemirror/view";
   import { extractVariables } from "$lib/stores/templates";
 
   interface Props {
@@ -10,50 +14,51 @@
 
   let { value = $bindable(), onchange, readonly = false, class: klazz = "" }: Props = $props();
 
-  let textareaEl: HTMLTextAreaElement | null = $state(null);
-
   // Extract variables reactively
   let variables = $derived(extractVariables(value));
 
-  // Sync value changes upward
-  function handleInput(e: Event) {
-    const target = e.target as HTMLTextAreaElement;
-    value = target.value;
-    onchange(target.value);
-  }
+  // CodeMirror extensions
+  let extensions = $derived([
+    minimalSetup,
+    jinja(),
+    EditorView.lineWrapping,
+    // Custom theme for the dark background
+    EditorView.theme({
+      "&": {
+        fontSize: "0.875rem",
+        borderRadius: "0.5rem",
+        border: "1px solid var(--color-border)",
+      },
+      ".cm-content": {
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+        padding: "0.5rem 0",
+      },
+      ".cm-focused": {
+        outline: "2px solid var(--color-accent)",
+        outlineOffset: "-1px",
+      },
+      "&.cm-editor": {
+        background: "var(--color-bg)",
+        color: "var(--color-text)",
+        minHeight: "200px",
+      },
+      ".cm-gutters": {
+        background: "var(--color-surface)",
+        borderRight: "1px solid var(--color-border)",
+        color: "var(--color-text-dim)",
+      },
+    }),
+  ]);
 
-  // Tab key inserts 2 spaces
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const ta = e.target as HTMLTextAreaElement;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-
-      value = value.substring(0, start) + "  " + value.substring(end);
-      onchange(value);
-
-      // Restore cursor position after Svelte re-renders
-      requestAnimationFrame(() => {
-        ta.selectionStart = ta.selectionEnd = start + 2;
-      });
-    }
+  function handleChange(text: string) {
+    value = text;
+    onchange(text);
   }
 </script>
 
 <div class="flex flex-col {klazz}">
-  <!-- Editor area -->
-  <div class="relative flex-1 min-h-0">
-    <textarea
-      bind:this={textareaEl}
-      {readonly}
-      {value}
-      oninput={handleInput}
-      onkeydown={handleKeydown}
-      spellcheck="false"
-      class="w-full h-full min-h-[200px] rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 font-mono resize-y focus:ring-2 focus:ring-accent focus:outline-none"
-    ></textarea>
-  </div>
+  <!-- Editor -->
+  <CodeMirror doc={value} {extensions} {readonly} onchange={handleChange} />
 
   <!-- Variables bar -->
   {#if variables.length > 0}

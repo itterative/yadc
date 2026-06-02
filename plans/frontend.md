@@ -223,17 +223,17 @@ uv run yadc webui serve   # serves everything on :7860
 - **Frontend components** — `DatasetImage.svelte` (thumbnail tile), `DatasetBrowser.svelte` (masonry grid), `ImageDetail.svelte` (caption edit dialog), `datasetImages.ts` (types + API helpers + paginated store)
 - **Pagination fix** — `afterId` cursor: `!== undefined` check instead of falsy check (id `0` was being skipped); `next_token` from API used directly as `after_id` for next request
 
-### Phase 3: Captioning Integration
+### Phase 3: Captioning Integration ✅ DONE
 
 1. ~~`yadc/api/modules/event_dispatcher.py`~~ ✅ — Done (subscribe/dispatch, @event_handler decorator)
 2. ~~`yadc/api/services/captioning.py` — `CaptioningService` + `CaptionJob` + `CaptionJobOptions`~~ ✅ — Pydantic `CaptionJobOptions` (validated via `model_validate` in controller, 400 on bad input), public `CaptionJob` runs in background thread, `CaptioningService` manages start/stop/status, env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher`
 3. ~~`yadc/api/controllers/api_captioning.py` — wire up controller~~ ✅ — POST/DELETE/GET endpoints connected to `CaptioningService`, SSE via `SSEEvents`, Pydantic validation with 400 on invalid body
-4. **Caption settings UI + supporting APIs** — ➡️ See **`plans/frontend-caption-settings.md`** for full breakdown:
+4. **Caption settings UI + supporting APIs** ✅ — ➡️ See **`plans/frontend-caption-settings.md`** for full breakdown:
    - Environment CRUD API + manager UI
    - Template CRUD API + Jinja2 editor (CodeMirror 6)
    - `CaptionSettings.svelte` form (env → model → template → options)
    - `CaptionProgress.svelte` with SSE wiring
-   - Live caption display updates in grid/detail
+   - Live caption display updates (full refresh on completion)
 5. ~~Wire SSE events for real-time progress (images done, tokens, errors)~~ → merged into item 4
 6. ~~Caption display updates as images are processed~~ → merged into item 4
 
@@ -271,6 +271,7 @@ uv run yadc webui serve   # serves everything on :7860
 | GET | `/api/templates/{name}` | Get template content + metadata | 3 |
 | PUT | `/api/templates/{name}` | Create or update user template | 3 |
 | DELETE | `/api/templates/{name}` | Delete user template | 3 |
+| POST | `/api/datasets/{name}/images/{id}/preview-prompt` | Render system/user prompts for an image | 3 |
 | GET | `/api/configs` | List user configs | 4 |
 | GET | `/api/envs` | List environments | 4 |
 | GET | `/api/templates` | List prompt templates | 4 |

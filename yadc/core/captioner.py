@@ -16,6 +16,98 @@ from .logging import get_logger
 _logger = get_logger(__name__)
 
 
+class PromptRenderer:
+    """Jinja2 template renderer for caption prompts.
+
+    Handles the template loading and rendering logic used by both the
+    captioner (for real captioning) and the preview endpoint (for showing
+    what prompts will look like without calling an API).
+
+    Templates use a virtual filesystem with special names:
+    - ``__default_template__`` — built-in default Jinja2 template
+    - ``__user_template__`` — the user-provided template string (or default if none)
+    - ``__system_prompt__``, ``__user_prompt__``, ``__user_prompt_multiple_rounds__`` —
+      composed templates that merge default + user template blocks
+    """
+
+    def __init__(self, prompt_template: str = ""):
+        self._prompt_template = prompt_template.strip()
+        self._jinja: jinja2.Environment = jinja2.Environment(
+            loader=jinja2.FunctionLoader(self._load_template),
+            lstrip_blocks=True,
+            trim_blocks=True,
+            keep_trailing_newline=False,
+        )
+
+    @staticmethod
+    def _unindent(template: str) -> str:
+        return "\n".join(line.lstrip() for line in template.strip().splitlines())
+
+    def _load_template(self, name: str) -> str:
+        if name == "__system_prompt__":
+            return self._unindent("""
+                {% import "__default_template__" as default_template %}
+                {% import "__user_template__" as user_template %}
+                {{ user_template.system_prompt|default(default_template.system_prompt, true) }}
+            """)
+
+        if name == "__user_prompt__":
+            return self._unindent("""
+                {% import "__default_template__" as default_template %}
+                {% import "__user_template__" as user_template %}
+                {{ user_template.user_prompt|default(default_template.user_prompt, true) }}
+            """)
+
+        if name == "__user_prompt_multiple_rounds__":
+            return self._unindent("""
+                {% import "__default_template__" as default_template %}
+                {% import "__user_template__" as user_template %}
+                {{ user_template.user_prompt_multiple_rounds|default(default_template.user_prompt_multiple_rounds, true) }}
+            """)
+
+        if name == "__default_template__":
+            return default_template()
+
+        if name == "__user_template__":
+            return self._prompt_template if self._prompt_template else default_template()
+
+        raise ValueError(f"bad jinja template: {name}")
+
+    def render(
+        self,
+        dataset_image: DatasetImage,
+        *,
+        caption_rounds: "list[CaptionerRound] | None" = None,
+        drafts: dict[str, str] | None = None,
+        system_prompt_override: str = "",
+        user_prompt_override: str = "",
+    ) -> tuple[str, str]:
+        """Render system and user prompts for an image.
+
+        Returns:
+            (system_prompt, user_prompt) — both stripped of leading/trailing whitespace.
+        """
+        if caption_rounds is None:
+            caption_rounds = []
+        else:
+            assert isinstance(caption_rounds, list)
+            assert all(isinstance(r, CaptionerRound) for r in caption_rounds)
+
+        template_context = dataset_image.model_dump()
+        if drafts:
+            template_context["drafts"] = drafts
+
+        system_prompt = system_prompt_override or self._jinja.get_template("__system_prompt__", globals=template_context).render()
+
+        if caption_rounds:
+            template_context["caption_rounds"] = caption_rounds
+            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt_multiple_rounds__", globals=template_context).render()
+        else:
+            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt__", globals=template_context).render()
+
+        return system_prompt.strip(), user_prompt.strip()
+
+
 class CaptionerRound(pydantic.BaseModel):
     """
     Represents a single round of captioning in a multi-round captioning.
@@ -95,71 +187,7 @@ class Captioner(abc.ABC):
                 - `prompt_template` (str): The prompt template used for captioning. If none is provided, the default will be used.
         """
 
-        self._prompt_template: str = kwargs.pop("prompt_template", "").strip()
-
-        self._jinja: jinja2.Environment = jinja2.Environment(
-            loader=jinja2.FunctionLoader(self._load_jinja_template),
-            lstrip_blocks=True,
-            trim_blocks=True,
-            keep_trailing_newline=False,
-        )
-
-    def _unindent_template(self, template: str):
-        template = template.strip()
-        return "\n".join([line.lstrip() for line in template.splitlines()])
-
-    def _load_jinja_template(self, template: str):
-        """
-        Loads a Jinja2 template by name using a custom loading mechanism.
-
-        Resolves special template names:
-        - `__system_prompt__`: Loads the system prompt combining default and user templates.
-        - `__user_prompt__`: Loads the user prompt for single-round captioning.
-        - `__user_prompt_multiple_rounds__`: Loads the prompt for multi-round interactions.
-        - `__default_template__`: Refers to the built-in default template.
-        - `__user_template__`: Refers to the user-provided template (file or string).
-
-        Args:
-            template (str): The logical template name to load.
-
-        Returns:
-            str: The loaded template content.
-
-        Raises:
-            ValueError: If an invalid template name is requested.
-        """
-
-        if template == "__system_prompt__":
-            return self._unindent_template("""
-                {% import "__default_template__" as default_template %}
-                {% import "__user_template__" as user_template %}
-                {{ user_template.system_prompt|default(default_template.system_prompt, true) }}
-            """)
-
-        if template == "__user_prompt__":
-            return self._unindent_template("""
-                {% import "__default_template__" as default_template %}
-                {% import "__user_template__" as user_template %}
-                {{ user_template.user_prompt|default(default_template.user_prompt, true) }}
-            """)
-
-        if template == "__user_prompt_multiple_rounds__":
-            return self._unindent_template("""
-                {% import "__default_template__" as default_template %}
-                {% import "__user_template__" as user_template %}
-                {{ user_template.user_prompt_multiple_rounds|default(default_template.user_prompt_multiple_rounds, true) }}
-            """)
-
-        if template == "__default_template__":
-            return default_template()
-        elif template == "__user_template__":
-            # early exit if prompt template is given directly
-            if self._prompt_template:
-                return self._prompt_template
-
-            return default_template()
-        else:
-            raise ValueError(f"bad jinja template: {template}")
+        self._renderer = PromptRenderer(kwargs.pop("prompt_template", ""))
 
     def prompts_from_image(self, dataset_image: DatasetImage, **kwargs: Any) -> tuple[str, str]:
         """
@@ -183,39 +211,16 @@ class Captioner(abc.ABC):
             ValueError: If `caption_rounds` is not a list of `CaptionerRound` instances.
         """
 
-        try:
-            caption_rounds: list[CaptionerRound] = kwargs.pop("caption_rounds", [])
-            assert isinstance(caption_rounds, list)
-            assert all(map(lambda r: isinstance(r, CaptionerRound), caption_rounds))
-        except Exception:
-            raise ValueError("bad argument for caption_rounds")
+        caption_rounds = kwargs.get("caption_rounds", [])
+        drafts = kwargs.get("drafts", None)
 
-        drafts: dict[str, str] = kwargs.pop("drafts", None)
-
-        system_prompt_override = kwargs.pop("system_prompt_override", "")
-        user_prompt_override = kwargs.pop("user_prompt_override", "")
-
-        assert isinstance(system_prompt_override, str)
-        assert isinstance(user_prompt_override, str)
-
-        template_context = dataset_image.model_dump()
-
-        if drafts:
-            template_context["drafts"] = drafts
-
-        system_prompt = system_prompt_override or self._jinja.get_template("__system_prompt__", globals=template_context).render()
-
-        if caption_rounds:
-            template_context["caption_rounds"] = caption_rounds
-
-            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt_multiple_rounds__", globals=template_context).render()
-        else:
-            user_prompt = user_prompt_override or self._jinja.get_template("__user_prompt__", globals=template_context).render()
-
-        system_prompt = system_prompt.strip()
-        user_prompt = user_prompt.strip()
-
-        return system_prompt, user_prompt
+        return self._renderer.render(
+            dataset_image,
+            caption_rounds=caption_rounds,
+            drafts=drafts,
+            system_prompt_override=kwargs.get("system_prompt_override", ""),
+            user_prompt_override=kwargs.get("user_prompt_override", ""),
+        )
 
     def _encode_image(self, image: DatasetImage, max_image_size: tuple[int, int], max_image_encoded_size: int, **kwargs: Any) -> tuple[str, str]:
         """

@@ -1,13 +1,21 @@
 <script lang="ts">
   import Dialog from "$lib/components/Dialog.svelte";
   import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import TomlViewer from "$lib/components/TomlViewer.svelte";
   import {
     fetchCaption,
+    fetchPromptPreview,
     mediaUrl,
     updateCaption,
     type CaptionData,
     type ImageInfo,
+    type PromptPreview,
   } from "$lib/stores/datasetImages";
+
+  import {
+    fetchTemplates,
+    type TemplateListItem,
+  } from "$lib/stores/templates";
 
   interface Props {
     datasetName: string;
@@ -27,6 +35,15 @@
 
   let dialogOpen = $state(false);
   let imgElement: HTMLImageElement | null = $state(null);
+
+  // Prompt preview state
+  let promptPreview: PromptPreview | null = $state(null);
+  let isLoadingPreview = $state(false);
+  let previewError: string | null = $state(null);
+  let previewTemplateName = $state("");
+  let showPreview = $state(false);
+  let templates: TemplateListItem[] = $state([]);
+  let templatesLoaded = $state(false);
 
   $effect(() => {
     dialogOpen = item !== null;
@@ -95,6 +112,37 @@
   function handleCancelEdit() {
     isEditing = false;
     editCaption = captionData?.caption || "";
+  }
+
+  async function handleTogglePreview() {
+    showPreview = !showPreview;
+    if (showPreview && !templatesLoaded) {
+      try {
+        templates = await fetchTemplates();
+      } catch {
+        templates = [];
+      }
+      templatesLoaded = true;
+    }
+  }
+
+  async function handlePreviewPrompt() {
+    if (item === null) return;
+    isLoadingPreview = true;
+    previewError = null;
+    promptPreview = null;
+    showPreview = true;
+
+    try {
+      const opts = previewTemplateName
+        ? { template_name: previewTemplateName }
+        : {};
+      promptPreview = await fetchPromptPreview(datasetName, item.id, opts);
+    } catch (e) {
+      previewError = e instanceof Error ? e.message : "Failed to preview prompt";
+    } finally {
+      isLoadingPreview = false;
+    }
   }
 </script>
 
@@ -183,7 +231,12 @@
         </div>
 
         <!-- TOML extras -->
-        {#if captionData?.extras && Object.keys(captionData.extras).length > 0}
+        {#if captionData?.extras_raw}
+          <div>
+            <h3 class="text-sm font-medium text-gray-300 mb-2">TOML Extras</h3>
+            <TomlViewer value={captionData.extras_raw} />
+          </div>
+        {:else if captionData?.extras && Object.keys(captionData.extras).length > 0}
           <div>
             <h3 class="text-sm font-medium text-gray-300 mb-2">TOML Extras</h3>
             <pre class="text-xs text-gray-400 bg-gray-800 rounded-lg p-3 overflow-x-auto">{JSON.stringify(captionData.extras, null, 2)}</pre>
@@ -204,6 +257,67 @@
             </div>
           </div>
         {/if}
+
+        <!-- Prompt Preview -->
+        <div class="pt-2">
+          <div class="flex items-center gap-2 mb-2">
+            <button
+              class="text-sm text-accent hover:text-accent-hover cursor-pointer"
+              onclick={handleTogglePreview}
+            >
+              {showPreview ? "▾" : "▸"} Preview Prompt
+            </button>
+          </div>
+
+          {#if showPreview}
+            <div class="space-y-3">
+              <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                  <label class="text-xs text-gray-400 block mb-1">Template</label>
+                  <select
+                    bind:value={previewTemplateName}
+                    class="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-1.5 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+                    onchange={() => handlePreviewPrompt()}
+                  >
+                    <option value="">(default)</option>
+                    {#each templates as t (t.name)}
+                      <option value={t.name}>{t.name} {t.source === "builtin" ? "(built-in)" : ""}</option>
+                    {/each}
+                  </select>
+                </div>
+                <button
+                  class="px-3 py-1.5 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+                  onclick={handlePreviewPrompt}
+                  disabled={isLoadingPreview}
+                >
+                  {isLoadingPreview ? "Loading..." : "Render"}
+                </button>
+              </div>
+
+              {#if previewError}
+                <p class="text-sm text-error">{previewError}</p>
+              {/if}
+
+              {#if promptPreview}
+                {@const ctxEntries = Object.entries(promptPreview.template_context).filter(
+                  ([k]) => k !== "caption_suffix" && k !== "toml_suffix" && k !== "history_suffix",
+                )}
+                <div>
+                  <h4 class="text-xs font-medium text-gray-400 mb-1">System Prompt</h4>
+                  <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-40 overflow-y-auto">{promptPreview.system_prompt}</pre>
+                </div>
+                <div>
+                  <h4 class="text-xs font-medium text-gray-400 mb-1">User Prompt</h4>
+                  <pre class="text-sm text-gray-200 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap max-h-60 overflow-y-auto">{promptPreview.user_prompt}</pre>
+                </div>
+                <details class="group">
+                  <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-300">Template context ({ctxEntries.length} variables)</summary>
+                  <pre class="text-xs text-gray-400 bg-gray-800 rounded-lg p-3 mt-1 overflow-x-auto">{JSON.stringify(Object.fromEntries(ctxEntries), null, 2)}</pre>
+                </details>
+              {/if}
+            </div>
+          {/if}
+        </div>
 
         <!-- Status badges -->
         <div class="flex gap-2 pt-2">

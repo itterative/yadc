@@ -98,6 +98,25 @@ class TestParseConfigInvalid:
         with pytest.raises(pydantic.ValidationError):
             parse_config(raw)
 
+    def test_non_strict_allows_partial(self):
+        raw = _load("invalid.toml")
+        cfg = parse_config(raw, strict=False)
+        assert isinstance(cfg, Config)
+        assert cfg.api.url == ""
+        assert cfg.api.model_name == ""
+        assert cfg.prompt.name == ""
+        assert cfg.prompt.template == ""
+
+    def test_bad_dataset_path_type_raises(self):
+        raw = {"dataset": [{"path": 123}]}
+        with pytest.raises(pydantic.ValidationError):
+            parse_config(raw)
+
+    def test_negative_rounds_raises(self):
+        raw = {"rounds": 0}
+        with pytest.raises(pydantic.ValidationError):
+            parse_config(raw)
+
 
 class TestExtrasOverride:
     def test_dataset_extras_as_defaults(self):

@@ -147,3 +147,43 @@ def api_datasets(
         if not ok:
             return jsonify({"error": "Image not found"}), 404
         return jsonify({"status": "ok"})
+
+    @app.post("/datasets/<name>/images/<int:image_id>/preview-prompt")
+    def preview_prompt(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Render the system and user prompts for an image using a given template.
+
+        JSON body:
+            {"template": "..."}  — raw Jinja2 template content
+            {"template_name": "..."}  — name of a user/builtin template
+            {}  — use the default template
+        If both are provided, "template" takes priority.
+        """
+        body = request.get_json(silent=True) or {}
+
+        template = body.get("template", "")
+        template_name = body.get("template_name", "")
+
+        # Resolve template name to content if needed
+        if not template and template_name:
+            from yadc.cmd import templates as cmd_templates
+            from yadc.templates import load_builtin_template
+
+            for loader in (cmd_templates.load_user_template, load_builtin_template):
+                try:
+                    template = loader(template_name)
+                    break
+                except Exception:
+                    continue
+
+            if not template:
+                return jsonify({"error": f"Template '{template_name}' not found"}), 404
+
+        try:
+            result = datasets.preview_prompt(name, image_id, template)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
+        if result is None:
+            return jsonify({"error": "Image not found"}), 404
+
+        return jsonify(result)
