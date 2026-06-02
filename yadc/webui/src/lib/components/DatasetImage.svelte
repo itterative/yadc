@@ -5,10 +5,11 @@
     class?: string;
     datasetName: string;
     item: ImageInfo;
+    selected?: boolean;
     onclick: (item: ImageInfo) => void;
   }
 
-  let { class: klazz = "", datasetName, item, onclick }: Props = $props();
+  let { class: klazz = "", datasetName, item, selected = false, onclick }: Props = $props();
 
   let media: HTMLImageElement | null = $state(null);
   let loading: boolean = $state(true);
@@ -34,6 +35,7 @@
   onclick={() => onclick(item)}
   class:has-caption={item.has_caption}
   class:has-toml={item.has_toml}
+  class:selected={selected}
 >
   <img
     src={thumbnailSrc}
@@ -63,6 +65,11 @@
 <style>
   .has-caption {
     /* subtle indicator in the border */
+  }
+
+  .selected {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
   }
 
   .caption-badge,

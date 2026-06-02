@@ -65,7 +65,7 @@ No `@source` directives are needed.
 ## CSS Architecture
 
 - `layout.css` is the Tailwind entry point, imported by `+layout.svelte`
-- Custom theme colors registered via `@theme { }` block (Tokyo Night dark palette)
+- Custom theme colors registered via `@theme { }` block (Tokyo Night dark palette + `--color-syn-*` variables for CodeMirror syntax highlighting)
 - Component classes are split into domain-specific CSS files under `src/lib/styles/`:
   - `buttons.css` — `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-close`
   - `forms.css` — `.input`, `.input-sm`, `.label`, `.help-text`

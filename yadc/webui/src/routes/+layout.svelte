@@ -72,7 +72,8 @@
   .app-shell {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
   }
 
   .app-nav {
@@ -150,6 +151,8 @@
   .app-main {
     flex: 1;
     padding: 1.5rem;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .export-toast {

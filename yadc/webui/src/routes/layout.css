@@ -18,6 +18,18 @@
   --color-error: #f7768e;
   --color-success: #9ece6a;
 
+  --color-syn-keyword: #bb9af7;
+  --color-syn-string: #9ece6a;
+  --color-syn-number: #ff9e64;
+  --color-syn-type: #2ac3de;
+  --color-syn-property: #73daca;
+  --color-syn-label: #e0af68;
+  --color-syn-comment: #565f89;
+  --color-syn-punctuation: #a9b1d6;
+  --color-syn-invalid: #ff007c;
+  --color-syn-regexp: #b4f9f8;
+  --color-syn-escape: #ff007c;
+
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 }
 

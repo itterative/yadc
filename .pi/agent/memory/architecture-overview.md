@@ -95,13 +95,13 @@ yadc/
           JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja)
           TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode)
           IntersectionObserverElement.svelte  # Infinite scroll sentinel
-          DatasetImage.svelte         # Masonry grid tile (thumbnail + badges)
-          DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll)
-          ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML viewer + drafts)
+          DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
+          DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
+          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + drafts + prompt preview)
           EnvManager.svelte           # Environment CRUD dialog
           AddDatasetDialog.svelte     # Create/import dataset dialog
           CaptionProgress.svelte      # Captioning progress display with status polling
-          CaptionSettings.svelte      # Captioning settings dialog (env, model, template selection)
+          CaptionSettings.svelte      # Captioning settings side panel (env, model, template selection)
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
           SettingsDialog.svelte       # App settings dialog (config editing, template management)
         icons/             # SVG icon components (SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
@@ -109,7 +109,7 @@ yadc/
         layout.css        # Tailwind v4 imports + @source workaround + dark theme
         +layout.svelte    # App shell with breadcrumb nav (hash routing links)
         +page.svelte      # Dataset listing → links to #/datasets/{name}
-        datasets/[name]/+page.svelte  # Dataset browser (masonry grid + image detail)
+        datasets/[name]/+page.svelte  # Dataset browser (masonry grid + tabbed side panel: Caption/Details)
 
   cmd/                # pure logic (no click imports)
     app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()

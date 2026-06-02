@@ -141,6 +141,7 @@ export interface PromptPreview {
   system_prompt: string;
   user_prompt: string;
   template_context: Record<string, unknown>;
+  template_context_toml: string;
 }
 
 export async function fetchPromptPreview(

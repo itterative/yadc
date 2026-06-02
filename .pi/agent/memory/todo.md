@@ -26,7 +26,10 @@ Components that are only used in a single route should be co-located within that
 - `+page.svelte` line 71: **image placeholder icon** — no component exists yet
 - `+layout.svelte` line 45: **upload/export icon** — no component exists yet
 - `+layout.svelte` line 50: **settings/gear icon** — no component exists yet
-- `datasets/[name]/+page.svelte` line 169: **back arrow (chevron-left)** — no component exists yet
+- `datasets/[name]/+page.svelte`: **back arrow (chevron-left)** — no component exists yet
+- `datasets/[name]/+page.svelte`: **close panel (×)** — no component exists yet
+- `datasets/[name]/+page.svelte`: **floating button caption icon** (speech bubble) — no component exists yet
+- `datasets/[name]/+page.svelte`: **floating button details icon** (image) — no component exists yet
 
 **Style mismatch**: The existing icon components in `src/lib/icons/` use **Google Material Symbols** style (viewBox `0 -960 960 960`, `fill="currentColor"`). The inline SVGs in the route pages use **Heroicons** style (viewBox `0 0 24 24`, `stroke="currentColor"`, `stroke-width="2"`). All icons should be updated to use the same style — preferably the Material Symbols style already used by the existing `Svg*` components.
 
@@ -73,6 +76,10 @@ Currently images that have neither a caption nor a draft may be skipped or filte
 ## Test captioning flow in the webui
 
 The full captioning workflow (start → progress → completion → result display) needs end-to-end testing through the webui to catch any integration issues between the frontend stores, SSE events, and the backend captioning API.
+
+## Dataset browser scroll cutoff
+
+The dataset browser grid uses `overflow-y-auto` on its parent div, but images near the bottom get cut off because the scroll container's padding doesn't extend past the last items. The fix is to replace the padding-based spacing on the scroll container with margin-based spacing on the children (grid items), so the last row of images is fully visible when scrolled to the bottom.
 
 ## Centralize event handler registration
 

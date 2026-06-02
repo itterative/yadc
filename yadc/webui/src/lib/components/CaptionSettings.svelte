@@ -1,9 +1,7 @@
 <script lang="ts">
-  import Dialog from "$lib/components/Dialog.svelte";
   import EnvManager from "$lib/components/EnvManager.svelte";
   import JinjaEditor from "$lib/components/JinjaEditor.svelte";
   import Checkbox from "$lib/components/Checkbox.svelte";
-  import SvgClose from "$lib/icons/SvgClose.svelte";
   import SvgRefresh from "$lib/icons/SvgRefresh.svelte";
   import SvgPlus from "$lib/icons/SvgPlus.svelte";
   import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
@@ -24,15 +22,15 @@
   // --- Props ---
 
   interface Props {
-    /** Which dataset this dialog is for. */
+    /** Which dataset this is for. */
     datasetName: string;
-    open: boolean;
-    onclose: () => void;
     /** Called when the user clicks "Start Captioning". Receives the assembled options. */
     onstart?: (options: CaptionOptions) => void;
+    /** Called when the panel wants to close (e.g. after starting). */
+    onclose?: () => void;
   }
 
-  let { datasetName, open, onclose, onstart }: Props = $props();
+  let { datasetName, onstart, onclose }: Props = $props();
 
   // --- State: Environments ---
 
@@ -99,31 +97,17 @@
     isNewTemplate ? newTemplateName.trim() : selectedTemplate,
   );
 
-  // --- Load data when dialog opens ---
+  // --- Load data on mount ---
+
+  let dataLoaded = $state(false);
 
   $effect(() => {
-    if (open) {
-      resetForm();
+    if (!dataLoaded) {
+      dataLoaded = true;
       loadEnvs();
       loadTemplateList();
     }
   });
-
-  function resetForm() {
-    maxTokens = 512;
-    imageQuality = "auto";
-    draftName = "";
-    overwrite = false;
-    rounds = 1;
-    reasoningEnabled = false;
-    reasoningEffort = "low";
-    templateDirty = false;
-    isNewTemplate = false;
-    newTemplateName = "";
-    templateSaveError = null;
-    modelsError = null;
-    modelFetchDone = false;
-  }
 
   // --- Env loading & selection ---
 
@@ -251,7 +235,6 @@
     templateSaveError = null;
     // Re-load current selection
     if (selectedTemplate) {
-      // Trigger re-load by touching the selection
       const name = selectedTemplate;
       selectedTemplate = "";
       selectedTemplate = name;
@@ -290,9 +273,7 @@
   // --- Env manager closed → refresh env list ---
 
   $effect(() => {
-    // When EnvManager closes, reload env list
-    if (!showEnvManager && open) {
-      // Only reload if we've been open (not the initial false)
+    if (!showEnvManager) {
       loadEnvs();
     }
   });
@@ -316,33 +297,15 @@
     };
 
     onstart?.(options);
-    onclose();
-  }
-
-  // --- Close handling ---
-
-  function handleClose() {
-    onclose();
   }
 </script>
 
 <!-- Sub-dialogs -->
 <EnvManager open={showEnvManager} onclose={() => (showEnvManager = false)} />
 
-<Dialog
-  class="dialog-panel max-w-3xl max-h-[85vh] overflow-y-auto"
-  open={open}
-  onclose={handleClose}
->
-  <div class="p-6 space-y-6">
-    <!-- Header -->
-    <div class="dialog-header">
-      <h2 class="dialog-title">Caption Settings</h2>
-      <button class="btn-close" onclick={handleClose}>
-        <SvgClose class="h-5 w-5" />
-      </button>
-    </div>
-
+<div class="flex flex-col h-full">
+  <!-- Scrollable content -->
+  <div class="flex-1 overflow-y-auto p-4 space-y-5">
     <!-- Errors -->
     {#if envsError}
       <div class="alert-error">{envsError}</div>
@@ -644,21 +607,15 @@
         </div>
       {/if}
     </section>
-
-    <!-- ═══ Footer ═══ -->
-    <div class="btn-bar border-t border-border">
-      <button
-        class="btn-secondary"
-        onclick={handleClose}
-      >
-        Cancel
-      </button>
-      <button
-        class="btn-primary"
-        onclick={handleStart}
-      >
-        Start Captioning
-      </button>
-    </div>
   </div>
-</Dialog>
+
+  <!-- Footer: sticky start button -->
+  <div class="flex-shrink-0 p-4 border-t border-border">
+    <button
+      class="btn-primary w-full"
+      onclick={handleStart}
+    >
+      Start Captioning
+    </button>
+  </div>
+</div>

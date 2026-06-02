@@ -407,6 +407,7 @@ class DatasetService(Service):
             "system_prompt": system_prompt,
             "user_prompt": user_prompt,
             "template_context": template_context,
+            "template_context_toml": toml.dumps(template_context),
         }
 
     def update_caption(self, dataset_name: str, image_id: int, caption: str) -> bool:

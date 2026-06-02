@@ -11,6 +11,7 @@
     items: ImageInfo[];
     isLoading: boolean;
     isLoadingMore: boolean;
+    selectedId?: number | null;
     onclick: (item: ImageInfo) => void;
     onendreached: () => void;
   }
@@ -21,6 +22,7 @@
     items = [],
     isLoading,
     isLoadingMore,
+    selectedId = null,
     onclick,
     onendreached,
   }: Props = $props();
@@ -120,7 +122,7 @@
   });
 </script>
 
-<div class={klazz}>
+<div class={klazz} style="overflow: hidden;">
   <div
     class="grid-cols-auto grid w-full [--x-grid-cols:2] lg:[--x-grid-cols:3] xl:[--x-grid-cols:4] 2xl:[--x-grid-cols:5] gap-4"
     bind:this={container}
@@ -133,6 +135,7 @@
             class="row-end-[auto_span_20px] rounded-xl overflow-hidden bg-gray-800 shadow-md transform transition-all hover:scale-105 hover:shadow-xl cursor-pointer relative"
             {datasetName}
             {item}
+            selected={item.id === selectedId}
             onclick={() => onclick(item)}
           />
         {/each}

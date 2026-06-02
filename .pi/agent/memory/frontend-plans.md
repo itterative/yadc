@@ -37,8 +37,8 @@ All phases (1–4) are **implemented**.
 
 ## Key Patterns
 
-- **CodeMirror.svelte**: Three separate `$effect` blocks (create/destroy/sync) — never combine. See `plans/frontend-caption-settings.md`. Uses `editable` prop (default `true`) — not `readonly`.
-- **TomlEditor.svelte**: Wraps CodeMirror with TOML syntax, line wrapping, hidden gutters. `editable` prop (default `true`) toggles cursor visibility and write access. Used in `ImageDetail.svelte` with a View/Edit toggle for TOML extras.
+- **CodeMirror.svelte**: Three separate `$effect` blocks (create/destroy/sync) — never combine. See `plans/frontend-caption-settings.md`. Uses `editable` prop (default `true`) — not `readonly`. Includes a `baseTheme` (dark surface, accent-colored selection via `color-mix(in oklch, ...)`) and a `darkHighlightStyle` (`HighlightStyle.define` + `syntaxHighlighting`) that maps all `@lezer/highlight` tags to CSS `--color-syn-*` variables defined in the Tailwind `@theme` block.
+- **TomlEditor.svelte**: Wraps CodeMirror with TOML syntax, line wrapping, hidden gutters. `editable` prop (default `true`) toggles cursor visibility and write access. Used in `ImageDetail.svelte` for TOML extras editing and readonly template context display.
 - **JinjaEditor.svelte**: Wraps CodeMirror with Jinja2 syntax, variable extraction bar. Also uses `editable` prop (default `true`).
 - **Svelte 5**: No pipe directives on events. No nested `<button>`. Use `<div role="button">` for clickable list items.
 - **Tailwind v4**: Custom colors must be registered in `@theme { }` block, not `:root` vars.
@@ -48,5 +48,4 @@ All phases (1–4) are **implemented**.
 
 ## Known Issues
 
-- ImageDetail dialog overloaded — needs tabbed/split redesign
 - No per-tile SSE updates during captioning (aggregate events only)

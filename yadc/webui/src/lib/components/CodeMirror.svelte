@@ -7,6 +7,8 @@
   import { EditorView, minimalSetup } from "codemirror";
   import { StateEffect } from "@codemirror/state";
   import type { Extension } from "@codemirror/state";
+  import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+  import { tags } from "@lezer/highlight";
 
   interface Props {
     /** Document text. Setting this after mount overwrites the editor content. */
@@ -97,10 +99,64 @@
       borderRight: "1px solid var(--color-border)",
       color: "var(--color-muted)",
     },
+    ".cm-selectionBackground": {
+      background: "color-mix(in oklch, var(--color-accent) 40%, transparent) !important",
+    },
+    "&.cm-focused .cm-selectionBackground": {
+      background: "color-mix(in oklch, var(--color-accent) 50%, transparent) !important",
+    },
   });
 
+  // --- Dark syntax highlighting (Tokyo Night–inspired) ---
+
+  const darkHighlightStyle = HighlightStyle.define([
+    { tag: tags.keyword, color: "var(--color-syn-keyword)" },
+    { tag: tags.controlKeyword, color: "var(--color-syn-keyword)", fontStyle: "italic" },
+    { tag: tags.definitionKeyword, color: "var(--color-accent)" },
+    { tag: tags.moduleKeyword, color: "var(--color-accent)" },
+    { tag: tags.operatorKeyword, color: "var(--color-syn-keyword)" },
+    { tag: tags.comment, color: "var(--color-syn-comment)", fontStyle: "italic" },
+    { tag: tags.string, color: "var(--color-syn-string)" },
+    { tag: tags.special(tags.string), color: "var(--color-syn-property)" },
+    { tag: tags.character, color: "var(--color-syn-string)" },
+    { tag: tags.number, color: "var(--color-syn-number)" },
+    { tag: tags.integer, color: "var(--color-syn-number)" },
+    { tag: tags.float, color: "var(--color-syn-number)" },
+    { tag: tags.bool, color: "var(--color-syn-number)" },
+    { tag: tags.null, color: "var(--color-syn-number)" },
+    { tag: tags.typeName, color: "var(--color-syn-type)" },
+    { tag: tags.variableName, color: "var(--color-fg)" },
+    { tag: tags.definition(tags.variableName), color: "var(--color-accent)" },
+    { tag: tags.propertyName, color: "var(--color-syn-property)" },
+    { tag: tags.function(tags.variableName), color: "var(--color-accent)" },
+    { tag: tags.labelName, color: "var(--color-syn-label)" },
+    { tag: tags.literal, color: "var(--color-syn-number)" },
+    { tag: tags.escape, color: "var(--color-syn-escape)" },
+    { tag: tags.meta, color: "var(--color-syn-comment)" },
+    { tag: tags.invalid, color: "var(--color-syn-invalid)" },
+    { tag: tags.special(tags.variableName), color: "var(--color-syn-type)" },
+    { tag: tags.separator, color: "var(--color-syn-punctuation)" },
+    { tag: tags.punctuation, color: "var(--color-syn-punctuation)" },
+    { tag: tags.bracket, color: "var(--color-syn-punctuation)" },
+    { tag: tags.angleBracket, color: "var(--color-syn-punctuation)" },
+    { tag: tags.regexp, color: "var(--color-syn-regexp)" },
+    { tag: tags.color, color: "var(--color-syn-number)" },
+    { tag: tags.content, color: "var(--color-fg)" },
+    { tag: tags.contentSeparator, color: "var(--color-syn-comment)" },
+    { tag: tags.heading, color: "var(--color-accent)", fontWeight: "bold" },
+    { tag: tags.link, color: "var(--color-accent)", textDecoration: "underline" },
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: tags.strong, fontWeight: "bold" },
+    { tag: tags.strikethrough, textDecoration: "line-through" },
+    { tag: tags.inserted, color: "var(--color-success)" },
+    { tag: tags.deleted, color: "var(--color-error)" },
+    { tag: tags.changed, color: "var(--color-syn-label)" },
+  ]);
+
+  const darkHighlightExt = syntaxHighlighting(darkHighlightStyle);
+
   $effect(() => {
-    const exts = [baseTheme, ...extensions, EditorView.editable.of(editable)];
+    const exts = [baseTheme, darkHighlightExt, ...extensions, EditorView.editable.of(editable)];
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(exts),
