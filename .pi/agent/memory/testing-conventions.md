@@ -1,6 +1,6 @@
 ---
 name: testing-conventions
-description: Test structure, patterns, and how to run tests in the yadc project.
+description: When a user query involves tests, test structure, or how to run tests in the yadc project, read this memory first.
 ---
 
 # Testing Conventions

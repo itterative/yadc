@@ -1,6 +1,6 @@
 ---
 name: frontend-architecture
-description: Frontend (webui) architecture — directory structure, stores, components, routes, and key patterns.
+description: When a user query relates to the webui frontend structure, stores, components, routes, or patterns, read this memory first.
 ---
 
 # Frontend Architecture

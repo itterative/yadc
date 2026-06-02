@@ -1,6 +1,6 @@
 ---
 name: architecture-overview
-description: High-level project architecture and module organization for yadc.
+description: When a user query relates to the overall project structure, module organization, or how major components fit together, read this memory first.
 ---
 
 # yadc Architecture Overview

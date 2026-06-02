@@ -1,6 +1,6 @@
 ---
 name: dev-tools
-description: Dev tooling — ruff (linting & formatting) and basedpyright (type checking).
+description: When a user query involves linting, formatting, or type checking (ruff, basedpyright), read this memory first.
 ---
 
 Both are dev dependencies installed via `uv add --dev`.

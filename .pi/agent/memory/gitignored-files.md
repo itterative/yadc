@@ -1,6 +1,6 @@
 ---
 name: gitignored-files
-description: Files and directories ignored by git in the yadc project. These must not be modified or included when making changes.
+description: When a user query involves files that must not be modified or included in changes, read this memory first.
 ---
 
 # Git-Ignored Files in yadc

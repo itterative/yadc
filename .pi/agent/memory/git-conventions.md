@@ -1,6 +1,6 @@
 ---
 name: git-conventions
-description: Git commit message conventions used in the yadc project.
+description: When a user query involves git commits, commit messages, or version control conventions, read this memory first.
 ---
 
 Conventional commits format: `type: short imperative subject`

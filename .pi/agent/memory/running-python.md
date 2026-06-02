@@ -1,6 +1,6 @@
 ---
 name: running-python
-description: When running python in yadc project, use uv
+description: When a user query involves running Python scripts or commands in the yadc project, read this memory first.
 ---
 
 You should use `uv run ...` when executing any python files in this project. Usual uv commands also apply, such as `uv sync`, `uv add ...`, etc.

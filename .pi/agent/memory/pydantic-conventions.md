@@ -1,6 +1,6 @@
 ---
 name: pydantic-conventions
-description: Pydantic conventions used in the yadc project.
+description: When a user query involves Pydantic models, validation, or serialization patterns used in the project, read this memory first.
 ---
 
 # Pydantic Conventions

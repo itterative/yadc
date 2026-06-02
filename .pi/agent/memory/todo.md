@@ -1,6 +1,6 @@
 ---
 name: todo
-description: Deferred tasks and improvements not tied to the current change.
+description: When a user query involves deferred tasks, known issues, or future improvements, read this memory first.
 ---
 
 # TODO
@@ -50,7 +50,7 @@ The current UI is functional but needs a manual pass to improve overall look and
 
 ## Simplified dataset config editing
 
-See **dataset-config-settings-plan** for full details. Mostly done:
+See **plans/dataset-config-settings-plan** for full details. Mostly done:
 
 - [x] `PATCH /configs/<name>` endpoint (JSON body, deep-merged into TOML)
 - [x] `rounds` wired through backend + frontend
@@ -103,12 +103,12 @@ The current implementation (never clearing) is being reverted. The job_id infras
 
 ## Caption settings: dataset defaults integration
 
-See **dataset-config-settings-plan** for full details. Phase 1 + 2 mostly done.
+See **plans/dataset-config-settings-plan** for full details. Phase 1 + 2 mostly done.
 
 Remaining:
 - "Save as dataset default" action — writes current settings back to TOML via `PATCH /configs/<name>`
 - Preset profiles, config diff banner (Phase 3 nice-to-haves)
-- ~~Phase 4: type-safe config API (Pydantic validation on GET/PATCH)~~ **DONE** — see `dataset-config-settings-plan`
+- ~~Phase 4: type-safe config API (Pydantic validation on GET/PATCH)~~ **DONE** — see `plans/dataset-config-settings-plan`
 
 ## Incremental filesystem index updates
 
