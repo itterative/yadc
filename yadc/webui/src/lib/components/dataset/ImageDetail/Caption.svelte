@@ -132,6 +132,15 @@
             // Parent already set captionError
         }
     }
+
+    function autosize(el: HTMLTextAreaElement) {
+        function resize() {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 360) + 'px';
+        }
+        resize();
+        return { update: resize };
+    }
 </script>
 
 <div class="space-y-4">
@@ -188,6 +197,7 @@
                             bind:value={editCaption}
                             class="w-full resize-none bg-transparent p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
                             placeholder="Enter caption..."
+                            use:autosize
                             oninput={(e) => {
                                 const el = e.currentTarget;
                                 el.style.height = 'auto';
