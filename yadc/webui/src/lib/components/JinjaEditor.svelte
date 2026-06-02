@@ -8,46 +8,19 @@
   interface Props {
     value: string;
     onchange: (value: string) => void;
-    readonly?: boolean;
+    editable?: boolean;
     class?: string;
   }
 
-  let { value = $bindable(), onchange, readonly = false, class: klazz = "" }: Props = $props();
+  let { value = $bindable(), onchange, editable = true, class: klazz = "" }: Props = $props();
 
   // Extract variables reactively
   let variables = $derived(extractVariables(value));
 
-  // CodeMirror extensions
   let extensions = $derived([
     minimalSetup,
     jinja(),
     EditorView.lineWrapping,
-    // Custom theme for the dark background
-    EditorView.theme({
-      "&": {
-        fontSize: "0.875rem",
-        borderRadius: "0.5rem",
-        border: "1px solid var(--color-border)",
-      },
-      ".cm-content": {
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-        padding: "0.5rem 0",
-      },
-      ".cm-focused": {
-        outline: "2px solid var(--color-accent)",
-        outlineOffset: "-1px",
-      },
-      "&.cm-editor": {
-        background: "var(--color-bg)",
-        color: "var(--color-text)",
-        minHeight: "200px",
-      },
-      ".cm-gutters": {
-        background: "var(--color-surface)",
-        borderRight: "1px solid var(--color-border)",
-        color: "var(--color-text-dim)",
-      },
-    }),
   ]);
 
   function handleChange(text: string) {
@@ -56,9 +29,9 @@
   }
 </script>
 
-<div class="flex flex-col {klazz}">
+<div class="flex flex-col min-h-0 h-full {klazz}">
   <!-- Editor -->
-  <CodeMirror doc={value} {extensions} {readonly} onchange={handleChange} />
+  <CodeMirror doc={value} {extensions} {editable} onchange={handleChange} class="flex-1 min-h-0" />
 
   <!-- Variables bar -->
   {#if variables.length > 0}

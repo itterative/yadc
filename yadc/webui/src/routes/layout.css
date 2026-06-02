@@ -11,6 +11,8 @@
   --color-accent-hover: #89b4fa;
   --color-error: #f7768e;
   --color-success: #9ece6a;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 }
 
 body {

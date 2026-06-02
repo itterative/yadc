@@ -1,12 +1,13 @@
 <script lang="ts">
   import Dialog from "$lib/components/Dialog.svelte";
   import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
-  import TomlViewer from "$lib/components/TomlViewer.svelte";
+  import TomlEditor from "$lib/components/TomlEditor.svelte";
   import {
     fetchCaption,
     fetchPromptPreview,
     mediaUrl,
     updateCaption,
+    updateExtras,
     type CaptionData,
     type ImageInfo,
     type PromptPreview,
@@ -33,6 +34,10 @@
   let editCaption = $state("");
   let isSaving = $state(false);
 
+  // TOML extras editing state
+  let isEditingExtras = $state(false);
+  let editExtrasRaw = $state("");
+
   let dialogOpen = $state(false);
   let imgElement: HTMLImageElement | null = $state(null);
 
@@ -55,6 +60,7 @@
       captionData = null;
       captionError = null;
       isEditing = false;
+      isEditingExtras = false;
       return;
     }
 
@@ -63,6 +69,7 @@
     captionError = null;
     captionData = null;
     isEditing = false;
+    isEditingExtras = false;
 
     (async () => {
       try {
@@ -112,6 +119,27 @@
   function handleCancelEdit() {
     isEditing = false;
     editCaption = captionData?.caption || "";
+  }
+
+  let isSavingExtras = $state(false);
+
+  async function handleSaveExtras() {
+    if (item === null || !isEditingExtras) return;
+    isSavingExtras = true;
+    try {
+      await updateExtras(datasetName, item.id, editExtrasRaw);
+      captionData = { ...captionData!, extras_raw: editExtrasRaw };
+      isEditingExtras = false;
+    } catch (e) {
+      captionError = e instanceof Error ? e.message : "Failed to save extras";
+    } finally {
+      isSavingExtras = false;
+    }
+  }
+
+  function handleCancelEditExtras() {
+    isEditingExtras = false;
+    editExtrasRaw = captionData?.extras_raw || "";
   }
 
   async function handleTogglePreview() {
@@ -233,8 +261,42 @@
         <!-- TOML extras -->
         {#if captionData?.extras_raw}
           <div>
-            <h3 class="text-sm font-medium text-gray-300 mb-2">TOML Extras</h3>
-            <TomlViewer value={captionData.extras_raw} />
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-medium text-gray-300">TOML Extras</h3>
+              {#if !isEditingExtras}
+                <button
+                  class="text-xs text-accent hover:text-accent-hover cursor-pointer"
+                  onclick={() => {
+                    editExtrasRaw = captionData?.extras_raw || "";
+                    isEditingExtras = true;
+                  }}
+                >
+                  Edit
+                </button>
+              {:else}
+                <div class="flex gap-2">
+                  <button
+                    class="px-2 py-1 text-xs rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                    onclick={handleCancelEditExtras}
+                    disabled={isSavingExtras}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="px-2 py-1 text-xs rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+                    onclick={handleSaveExtras}
+                    disabled={isSavingExtras}
+                  >
+                    {isSavingExtras ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              {/if}
+            </div>
+            <TomlEditor
+              value={isEditingExtras ? editExtrasRaw : captionData.extras_raw}
+              editable={isEditingExtras}
+              onchange={(v) => (editExtrasRaw = v)}
+            />
           </div>
         {:else if captionData?.extras && Object.keys(captionData.extras).length > 0}
           <div>

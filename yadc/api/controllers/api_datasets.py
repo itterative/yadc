@@ -148,6 +148,22 @@ def api_datasets(
             return jsonify({"error": "Image not found"}), 404
         return jsonify({"status": "ok"})
 
+    @app.put("/datasets/<name>/images/<int:image_id>/extras")
+    def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Update the TOML extras sidecar for an image."""
+        body = request.get_json(silent=True)
+        if body is None or "extras_raw" not in body:
+            return jsonify({"error": "Request body must include 'extras_raw'"}), 400
+
+        try:
+            ok = datasets.update_extras(name, image_id, body["extras_raw"])
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+        if not ok:
+            return jsonify({"error": "Image not found"}), 404
+        return jsonify({"status": "ok"})
+
     @app.post("/datasets/<name>/images/<int:image_id>/preview-prompt")
     def preview_prompt(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Render the system and user prompts for an image using a given template.

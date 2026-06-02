@@ -77,6 +77,25 @@ export async function updateCaption(datasetName: string, imageId: number, captio
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+export async function updateExtras(datasetName: string, imageId: number, extrasRaw: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/extras`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ extras_raw: extrasRaw }),
+    },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+}
+
 export function thumbnailUrl(datasetName: string, imageId: number, size = 256): string {
   return `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/thumbnail?size=${size}`;
 }

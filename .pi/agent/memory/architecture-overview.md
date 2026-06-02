@@ -41,7 +41,9 @@ yadc/
       app_frontend.py   # @controller — serves SvelteKit build
       api_datasets.py   # @controller — dataset/image endpoints (wired to DatasetService)
       api_captioning.py # @controller — captioning start/stop/status, SSE stream via SSEEvents + CaptioningService
+      api_configs.py   # @controller — dataset config TOML CRUD (view/edit/delete)
       api_envs.py       # @controller — environment CRUD + model list proxy
+      api_export.py     # @controller — export backends listing + run export
       api_templates.py  # @controller — template CRUD + Jinja2 variable extraction
       api_events.py     # @controller — SSE event stream
     modules/

@@ -15,8 +15,8 @@
     extensions?: Extension[];
     /** Called when the document text changes. */
     onchange?: (value: string) => void;
-    /** Whether the editor is read-only. */
-    readonly?: boolean;
+    /** Whether the editor is editable. Defaults to true. */
+    editable?: boolean;
     /** CSS class applied to the wrapper div. */
     class?: string;
   }
@@ -25,7 +25,7 @@
     doc = "",
     extensions = [minimalSetup],
     onchange,
-    readonly = false,
+    editable = true,
     class: klazz = "",
   }: Props = $props();
 
@@ -67,10 +67,40 @@
     prevDoc = currentDoc;
   });
 
-  // --- Sync extensions + readonly ---
+  // --- Sync extensions + editable ---
+
+  // --- Base theme (dark background, uses Tailwind CSS variables) ---
+
+  const baseTheme = EditorView.theme({
+    "&": {
+      borderRadius: "0.5rem",
+      border: "1px solid var(--color-border)",
+    },
+    ".cm-content": {
+      fontFamily: "var(--font-mono)",
+      padding: "0.5rem 0",
+    },
+    "&.cm-editor": {
+      background: "var(--color-surface)",
+      color: "var(--color-text)",
+      height: "100%",
+    },
+    ".cm-focused": {
+      outline: "2px solid var(--color-accent)",
+      outlineOffset: "-1px",
+    },
+    ".cm-cursor": {
+      borderLeftColor: "var(--color-text)",
+    },
+    ".cm-gutters": {
+      background: "var(--color-surface)",
+      borderRight: "1px solid var(--color-border)",
+      color: "var(--color-text-dim)",
+    },
+  });
 
   $effect(() => {
-    const exts = [...extensions, EditorView.editable.of(!readonly)];
+    const exts = [baseTheme, ...extensions, EditorView.editable.of(editable)];
     if (view) {
       view.dispatch({
         effects: StateEffect.reconfigure.of(exts),
@@ -96,6 +126,7 @@
 
 <style>
   .codemirror-wrapper {
-    display: contents;
+    height: 100%;
+    overflow: hidden;
   }
 </style>

@@ -377,6 +377,28 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_caption=True)
         return True
 
+    def update_extras(self, dataset_name: str, image_id: int, extras_raw: str) -> bool:
+        """Update the TOML extras sidecar for an image. Returns True on success."""
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return False
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return False
+
+        # Validate TOML before writing
+        try:
+            toml.loads(extras_raw)
+        except Exception as e:
+            raise ValueError(f"Invalid TOML: {e}") from e
+
+        dataset_image = DatasetImage(path=str(image_path))
+        dataset_image.toml_path.write_text(extras_raw)
+
+        self._update_image_index(image_id, has_toml=bool(extras_raw.strip()))
+        return True
+
     # --- Dataset registration ---
 
     def import_dataset(self, name: str, toml_path: str) -> DatasetInfo:
@@ -683,7 +705,7 @@ class DatasetService(Service):
             (len(disk_images), dataset_id),
         )
 
-    def _update_image_index(self, image_id: int, *, has_caption: bool | None = None) -> None:
+    def _update_image_index(self, image_id: int, *, has_caption: bool | None = None, has_toml: bool | None = None) -> None:
         """Update specific fields on an indexed image."""
         conn = self._db.connection()
         try:
@@ -692,6 +714,9 @@ class DatasetService(Service):
             if has_caption is not None:
                 sets.append("has_caption = ?")
                 params.append(int(has_caption))
+            if has_toml is not None:
+                sets.append("has_toml = ?")
+                params.append(int(has_toml))
             if not sets:
                 return
             params.append(image_id)
