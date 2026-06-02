@@ -13,6 +13,7 @@
   } from "$lib/stores/templates";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
   import { captionSettings } from "$lib/stores/captionSettings";
+  import { promptNotificationsOnce } from "$lib/notifications";
   import { get } from "svelte/store";
 
   // --- Props ---
@@ -264,6 +265,8 @@
       apiUrl: envUrl.trim(),
       apiModelName: envModelName.trim(),
     }));
+
+    promptNotificationsOnce();
     onstart?.(_assembledOptions);
   }
 </script>

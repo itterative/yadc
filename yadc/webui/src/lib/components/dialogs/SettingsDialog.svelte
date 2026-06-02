@@ -3,7 +3,14 @@
   import TabBar from "$lib/components/ui/TabBar.svelte";
   import ConfigEditor from "$lib/components/settings/ConfigEditor.svelte";
   import EnvManager from "$lib/components/dialogs/EnvManager.svelte";
+  import Checkbox from "$lib/components/ui/Checkbox.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
+  import { settings } from "$lib/stores/settings";
+  import {
+    notificationsSupported,
+    notificationPermission,
+    requestNotificationPermission,
+  } from "$lib/notifications";
 
   interface Props {
     open: boolean;
@@ -13,11 +20,53 @@
   let { open, onclose }: Props = $props();
 
   // --- Tabs ---
-  type Tab = "configs" | "environments";
-  let activeTab: Tab = $state("configs");
+  type Tab = "general" | "configs" | "environments";
+  let activeTab: Tab = $state("general");
 
   // --- Env state ---
   let showEnvManager = $state(false);
+
+  // --- Notification state ---
+  let permStatus = $state<NotificationPermission | "unsupported">("default");
+
+  // Local state bound to checkbox; derived from tri-state store value
+  let notificationsOn = $state(false);
+  let previousStoreValue = $state<"unset" | "enabled" | "disabled">("unset");
+
+  // Sync from store → local state when the dialog opens or the store changes
+  $effect(() => {
+    const storeVal = $settings.notifications;
+    if (storeVal !== previousStoreValue) {
+      notificationsOn = storeVal === "enabled";
+      previousStoreValue = storeVal;
+    }
+    permStatus = notificationPermission();
+  });
+
+  // React to checkbox toggle
+  $effect(() => {
+    const enabled = notificationsOn;
+    const currentStore = $settings.notifications;
+    const wantsEnable = enabled && currentStore !== "enabled";
+    const wantsDisable = !enabled && currentStore === "enabled";
+
+    if (!wantsEnable && !wantsDisable) return;
+
+    if (wantsEnable) {
+      // Request permission asynchronously, then update
+      requestNotificationPermission().then((perm) => {
+        permStatus = perm;
+        if (perm === "granted") {
+          settings.update((s) => ({ ...s, notifications: "enabled" }));
+        } else {
+          // Denied or dismissed — revert the checkbox
+          notificationsOn = false;
+        }
+      });
+    } else {
+      settings.update((s) => ({ ...s, notifications: "disabled" }));
+    }
+  });
 </script>
 
 <!-- Sub-dialogs -->
@@ -41,6 +90,7 @@
     <TabBar
       class="px-5 pt-3"
       tabs={[
+        { value: "general", label: "General" },
         { value: "configs", label: "Configs" },
         { value: "environments", label: "Environments" },
       ]}
@@ -50,7 +100,41 @@
 
     <!-- Tab content -->
     <div class="flex-1 overflow-y-auto p-5 space-y-4">
-      {#if activeTab === "configs"}
+      {#if activeTab === "general"}
+        <section class="space-y-4">
+          <h3 class="section-heading">Notifications</h3>
+
+          {#if !notificationsSupported()}
+            <p class="text-sm text-gray-500">
+              Browser notifications are not supported in this environment.
+            </p>
+          {:else}
+            <div class="flex items-start gap-3">
+              <Checkbox
+                id="settings-notifications"
+                bind:checked={notificationsOn}
+              />
+              <div>
+                <label class="text-sm text-gray-300 cursor-pointer" for="settings-notifications">
+                  Browser notifications
+                </label>
+                <p class="text-xs text-gray-500 mt-0.5">
+                  Get notified when captioning finishes or encounters an error.
+                </p>
+                {#if permStatus === "denied"}
+                  <p class="text-xs text-yellow-400 mt-1">
+                    Notification permission is blocked. Enable it in your browser's site settings.
+                  </p>
+                {:else if permStatus === "unsupported"}
+                  <p class="text-xs text-gray-500 mt-1">
+                    Notifications are not available in this browser.
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </section>
+      {:else if activeTab === "configs"}
         <ConfigEditor {open} />
       {:else if activeTab === "environments"}
         <div class="py-8 text-center">

@@ -7,6 +7,10 @@
   import SvgUpload from "$lib/icons/SvgUpload.svelte";
   import SvgSettings from "$lib/icons/SvgSettings.svelte";
   import type { ExportResult } from "$lib/stores/configs";
+  import ToastContainer from "$lib/components/ui/ToastContainer.svelte";
+  import { toast } from "$lib/stores/toasts";
+  import { captioningStatus, resumptionFailed } from "$lib/stores/events";
+  import { sendNotification } from "$lib/notifications";
 
   interface Props {
     children: Snippet;
@@ -22,17 +26,60 @@
   let showSettings = $state(false);
   let showExport = $state(false);
 
-  let exportResult: ExportResult | null = $state(null);
-
   $effect(() => {
     document.getElementById("yadc-loading-screen")?.remove();
   });
 
   function handleExported(result: ExportResult) {
-    exportResult = result;
-    // Auto-clear after 5 seconds
-    setTimeout(() => (exportResult = null), 5000);
+    toast.success(`Exported ${result.count} images → ${result.output}`);
   }
+
+  // Fire a persistent warning toast when SSE resumption fails.
+  // The inline banner on the dataset page handles the route-specific case;
+  // this toast provides visibility on other pages.
+  let prevResumptionFailed = $state(false);
+  $effect(() => {
+    if ($resumptionFailed && !prevResumptionFailed) {
+      toast.warning("Some events may have been missed due to a disconnected event stream.", {
+        action: { label: "Dismiss", handler: () => {} },
+      });
+    }
+    prevResumptionFailed = $resumptionFailed;
+  });
+
+  // Global browser notifications for captioning completion.
+  // Tracked here (layout level) so notifications fire even if the user
+  // navigated away from the dataset page.
+  let prevCaptioningActive = $state(false);
+  $effect(() => {
+    const s = $captioningStatus;
+    const isActive = s.status === "running" || s.status === "stopping";
+
+    // Detect transition from active → terminal
+    if (prevCaptioningActive && !isActive && s.dataset_name) {
+      const hadErrors = s.errors > 0;
+      if (s.status === "error") {
+        sendNotification({
+          title: `Captioning failed: ${s.dataset_name}`,
+          body: s.error ?? "Unknown error",
+          tag: `caption-${s.dataset_name}`,
+        });
+      } else if (hadErrors) {
+        sendNotification({
+          title: `Captioning complete with errors: ${s.dataset_name}`,
+          body: `${s.processed}/${s.total} done, ${s.errors} errors`,
+          tag: `caption-${s.dataset_name}`,
+        });
+      } else {
+        sendNotification({
+          title: `Captioning complete: ${s.dataset_name}`,
+          body: `${s.processed}/${s.total} images captioned`,
+          tag: `caption-${s.dataset_name}`,
+        });
+      }
+    }
+    prevCaptioningActive = isActive;
+  });
 </script>
 
 <div class="app-shell">
@@ -59,17 +106,13 @@
   </nav>
 
   <main class="app-main">
-    {#if exportResult}
-      <div class="export-toast">
-        Exported {exportResult.count} images → {exportResult.output}
-      </div>
-    {/if}
     {@render children()}
   </main>
 </div>
 
 <SettingsDialog open={showSettings} onclose={() => (showSettings = false)} />
 <ExportDialog open={showExport} onclose={() => (showExport = false)} onexported={handleExported} />
+<ToastContainer />
 
 <style>
   .app-shell {
@@ -158,28 +201,5 @@
     overflow-y: auto;
   }
 
-  .export-toast {
-    position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    padding: 0.75rem 1.25rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 0.5rem;
-    color: var(--color-fg);
-    font-size: 0.875rem;
-    z-index: 40;
-    animation: toast-in 0.2s ease-out;
-  }
 
-  @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translateY(0.5rem);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
 </style>

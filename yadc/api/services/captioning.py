@@ -210,6 +210,7 @@ class CaptionJob:
         with self._state_lock:
             self._stop_requested = True
             self._status = "stopping"
+        self._emit_status()
 
     # -- snapshot ------------------------------------------------------------
 

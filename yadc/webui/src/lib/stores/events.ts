@@ -5,6 +5,11 @@
  * ``GET /api/events``, validates every event with Zod, and pipes the
  * result into the corresponding writable stores.  Components just
  * import the stores they need — the connection is managed here.
+ *
+ * The server sends ``id:`` fields on every non-ping event and supports
+ * ``Last-Event-ID`` resumption.  The browser's built-in ``EventSource``
+ * automatically stores the last event ID and sends it on reconnect, so
+ * no manual bookkeeping is needed.
  */
 
 import { browser } from "$app/environment";
@@ -34,6 +39,10 @@ export const DatasetChangedEventZ = z.object({
   job_id: z.string().nullable().optional(),
 });
 
+export const ResumptionFailedEventZ = z.object({
+  requested_event_id: z.number(),
+});
+
 // --- Types ---
 
 export type CaptioningStatus = z.infer<typeof CaptioningStatusZ>;
@@ -56,6 +65,9 @@ const _pendingDatasetChanges = writable<Set<string>>(new Set());
 /** Job IDs of captioning operations initiated by this frontend (bounded ring). */
 const _activeJobIds = writable<string[]>([]);
 
+/** Set to true when the server signals that SSE resumption failed. */
+const _resumptionFailed = writable(false);
+
 const MAX_ACTIVE_JOB_IDS = 16;
 
 // --- Public readonly stores ---
@@ -65,6 +77,11 @@ export const captioningStatus: Readable<CaptioningStatus> = readonly(_captioning
 
 /** Set of dataset names that have pending filesystem changes (not yet refreshed). */
 export const pendingDatasetChanges: Readable<Set<string>> = readonly(_pendingDatasetChanges);
+
+/** True when the SSE event history was too old to resume after a reconnect. */
+export const resumptionFailed: Readable<boolean> = readonly(_resumptionFailed);
+
+// --- Public actions ---
 
 /** Clear the pending-change flag for a dataset (call after the user refreshes). */
 export function clearPendingDatasetChange(datasetName: string): void {
@@ -83,6 +100,11 @@ export function registerJobId(jobId: string): void {
     }
     return [...ids, jobId];
   });
+}
+
+/** Dismiss the resumption-failed warning (e.g. after the user refreshes). */
+export function clearResumptionFailed(): void {
+  _resumptionFailed.set(false);
 }
 
 // --- Self-connecting SSE lifecycle ---
@@ -123,14 +145,29 @@ function connect() {
     });
   });
 
+  _eventSource.listen("resumption_failed", ResumptionFailedEventZ, (data) => {
+    console.warn("SSE resumption failed: server could not replay from event id %d", data.requested_event_id);
+    _resumptionFailed.set(true);
+  });
+
+  // Let the browser handle reconnection automatically.  The server sends a
+  // ``retry:`` directive so the browser waits 5 s before reconnecting.  On
+  // reconnect the browser sends ``Last-Event-ID`` automatically, allowing the
+  // server to replay missed events.
   _eventSource.onerror = () => {
-    _eventSource?.close();
+    // No-op: the browser will reconnect on its own.  We deliberately do NOT
+    // call close() here — closing would discard the internal last-event-id
+    // state and prevent automatic resumption.
   };
 }
 
 if (browser) {
   connect();
 
+  // Watch for a permanently closed connection (e.g. server shutdown) and
+  // attempt to reconnect.  The normal reconnect path is the browser's
+  // built-in auto-reconnect (which preserves Last-Event-ID), so this is only
+  // a fallback for edge cases.
   let reconnecting = false;
   window.setInterval(() => {
     if (_eventSource === null) {

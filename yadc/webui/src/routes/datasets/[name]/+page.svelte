@@ -3,11 +3,13 @@
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import DatasetBrowser from "$lib/components/dataset/DatasetBrowser.svelte";
-  import CaptionProgress from "$lib/components/dataset/CaptionProgress.svelte";
   import SidePanel from "./SidePanel.svelte";
   import SvgChevronLeft from "$lib/icons/SvgChevronLeft.svelte";
+  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
-  import { captioningStatus, pendingDatasetChanges, clearPendingDatasetChange, registerJobId } from "$lib/stores/events";
+  import { captioningStatus, pendingDatasetChanges, clearPendingDatasetChange, registerJobId, resumptionFailed, clearResumptionFailed } from "$lib/stores/events";
+  import { toast } from "$lib/stores/toasts";
+  import { API_BASE } from "$lib/api";
   import {
     fetchDatasets,
     fetchImages,
@@ -43,6 +45,8 @@
   // (see handleCaptioningDone). For live per-tile updates, the backend would
   // need to emit per-image events (e.g. CaptionedImageEvent with image_id).
 
+  // Captioning start error — shown inline below header. Also fires a persistent
+  // toast so the error is visible even if the user navigates away.
   let captioningError: string | null = $state(null);
   let captionDoneFired = $state(false);
 
@@ -51,6 +55,31 @@
     $captioningStatus?.dataset_name === datasetName &&
     ($captioningStatus.status === "running" || $captioningStatus.status === "stopping"),
   );
+
+  let isStopping = $derived(
+    $captioningStatus?.dataset_name === datasetName && $captioningStatus.status === "stopping",
+  );
+
+  let captionPct = $derived(
+    $captioningStatus?.total > 0
+      ? Math.round(($captioningStatus.processed / $captioningStatus.total) * 100)
+      : 0,
+  );
+
+  async function handleStopCaptioning() {
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(`Failed to stop captioning: ${body.error || res.status}`);
+      }
+    } catch {
+      toast.error("Failed to stop captioning: request failed");
+    }
+  }
 
   // Register job_id from incoming status events so dataset_changed events
   // from our own captioning are suppressed
@@ -85,6 +114,10 @@
       hasPendingChanges = set.has(name);
     });
   });
+
+  function handleDismissResumptionFailed() {
+    clearResumptionFailed();
+  }
 
   async function loadInitial(name: string) {
     nextToken = null;
@@ -182,11 +215,13 @@
   async function handleStartCaptioning(options: CaptionOptions) {
     captioningError = null;
     captionOptions = options;
+    panelOpen = false;
     try {
       const info = await startCaptioning(datasetName, options as Record<string, unknown>);
       registerJobId(info.job_id);
     } catch (e) {
       captioningError = e instanceof Error ? e.message : "Failed to start captioning";
+      toast.error(captioningError);
     }
   }
 
@@ -225,26 +260,48 @@
     <a href="#/" class="text-gray-400 hover:text-white transition-colors p-2 -ml-2">
       <SvgChevronLeft class="w-6 h-6" />
     </a>
-    <div>
+    <div class="flex-1 min-w-0">
       <h1 class="text-xl font-bold text-white">{datasetName}</h1>
-      {#if currentDataset}
+      <div class="min-h-[1.75rem] flex items-center mt-0.5 w-full">
+      {#if isCaptioning}
+        <div class="flex items-center gap-2 w-full">
+          {#if isStopping}
+            <SvgSpinner class="h-3.5 w-3.5 animate-spin text-yellow-400 flex-shrink-0" />
+            <span class="text-sm text-yellow-300">Stopping…</span>
+          {:else}
+            <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent flex-shrink-0" />
+            <span class="text-sm text-gray-400">
+              Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
+            </span>
+            <div class="flex-1 max-w-32 h-1.5 rounded-full bg-bg overflow-hidden">
+              <div
+                class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
+                style:width="{captionPct}%"
+              ></div>
+            </div>
+            <span class="text-xs text-gray-500">{captionPct}%</span>
+            <button
+              class="px-2 py-0.5 text-xs rounded-md bg-error/20 border border-error/30 text-error hover:bg-error/30 transition-colors cursor-pointer disabled:opacity-50"
+              onclick={handleStopCaptioning}
+            >
+              Stop
+            </button>
+          {/if}
+        </div>
+      {:else if currentDataset}
         <p class="text-sm text-gray-400">
           {currentDataset.image_count} images
           · {currentDataset.has_caption} captioned
           · {currentDataset.has_toml} with TOML
         </p>
       {/if}
+      </div>
     </div>
   </div>
 
   <!-- Captioning error from start attempt -->
   {#if captioningError}
     <div class="alert-error">{captioningError}</div>
-  {/if}
-
-  <!-- Captioning progress -->
-  {#if isCaptioning}
-    <CaptionProgress {datasetName} ondone={handleCaptioningDone} />
   {/if}
 
   <!-- Filesystem change notification -->
@@ -257,6 +314,27 @@
       >
         Refresh
       </button>
+    </div>
+  {/if}
+
+  <!-- SSE resumption failure notification -->
+  {#if $resumptionFailed}
+    <div class="rounded-lg bg-yellow-900/50 border border-yellow-700/50 px-4 py-2 flex items-center justify-between gap-4">
+      <span class="text-sm text-yellow-200">Some events may have been missed due to a disconnected event stream.</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button
+          class="px-3 py-1.5 text-xs rounded-lg bg-yellow-600/40 border border-yellow-500/50 text-yellow-200 hover:bg-yellow-600/60 transition-colors cursor-pointer"
+          onclick={() => { handleRefreshFromWatcher(); handleDismissResumptionFailed(); }}
+        >
+          Refresh
+        </button>
+        <button
+          class="px-2 py-1.5 text-xs rounded-lg bg-transparent border border-yellow-500/30 text-yellow-300 hover:bg-yellow-600/20 transition-colors cursor-pointer"
+          onclick={handleDismissResumptionFailed}
+        >
+          Dismiss
+        </button>
+      </div>
     </div>
   {/if}
 

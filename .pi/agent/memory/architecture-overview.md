@@ -36,7 +36,7 @@ yadc/
     banner.txt           # ASCII art banner printed on startup (optional, --no-banner to disable)
     configuration.py    # @dataclass config (http, cors, sse, yadc paths, banner_enable)
     discovery.py        # discover_services() / discover_controllers() — package scanning
-    events.py           # Event base class + StartupEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent
+    events.py           # Event base class + StartupEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent
     json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
       __init__.py          # @controller decorator (auto-discovery marker + @inject)
@@ -48,14 +48,14 @@ yadc/
       api_envs.py       # @controller — environment CRUD + model list proxy
       api_export.py     # @controller — export backends listing + run export
       api_templates.py  # @controller — template CRUD + Jinja2 variable extraction
-      api_events.py     # @controller — SSE event stream
+      api_events.py     # @controller — SSE event stream with Last-Event-ID resumption support (replays from ring buffer on reconnect)
     modules/
       service.py            # base Service class (marker for DI auto-discovery)
       cors_middleware.py    # CORSMiddleware — origin-based CORS, registered on ApiBlueprint
       logging_factory.py    # LoggingFactory — get_logger()
       event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
       job_scheduler.py       # JobScheduler — daemon threads for periodic jobs
-      sse_events.py         # SSEEvents — Condition-based SSE queue with ping
+      sse_events.py         # SSEEvents — Condition-based SSE queue with ping, monotonic event IDs, ring buffer history for Last-Event-ID resumption
       dataset_watcher.py    # DatasetWatcherService — watchdog-based filesystem watcher for dataset dirs, debounced DatasetChangedEvent emission
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init

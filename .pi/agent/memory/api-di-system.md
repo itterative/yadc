@@ -97,7 +97,7 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `CORSMiddleware` | `modules/` | Origin-based CORS on ApiBlueprint |
 | `EventDispatcher` | `modules/` | Subscribe/dispatch events, `@event_handler` |
 | `JobScheduler` | `modules/` | Daemon threads for periodic jobs |
-| `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping |
+| `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping, monotonic event IDs, ring buffer history for `Last-Event-ID` resumption |
 | `DatasetWatcherService` | `modules/` | watchdog-based filesystem watcher for dataset dirs, debounced `DatasetChangedEvent` emission |
 | `SettingsService` | `services/` | KV store over `settings` table (JSON values) |
 | `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
@@ -113,9 +113,9 @@ CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Servic
 
 ## Events System
 
-- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`
+- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`, `ResumptionFailedEvent`
 - `EventDispatcher` — `subscribe(event_cls, handler)`, `dispatch(event)`, `register_service(service)` (auto-scans for `@event_handler` methods), `@event_handler` decorator
 - `@event_handler` uses `typing.get_type_hints()` to resolve annotations — needed because `from __future__ import annotations` stringifies them, causing `issubclass()` to fail on plain `inspect.signature()` annotations
-- `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls)` generator, auto-ping via `JobScheduler`. Handles `CaptioningStatusEvent` and `DatasetChangedEvent`.
+- `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls, last_event_id=None)` generator yielding `(event_id, event)` tuples, auto-ping via `JobScheduler`. Assigns monotonic IDs to non-ping events, maintains a configurable ring buffer (`sse_event_history_size`, default 128) for `Last-Event-ID` resumption. On reconnect, replays missed events from history; if the requested ID is too old, yields a `ResumptionFailedEvent`. Handles `CaptioningStatusEvent` and `DatasetChangedEvent`.
 - `DatasetWatcherService` — Uses `watchdog.Observer` to watch dataset image directories for filesystem changes (images + sidecars). Debounces events per-dataset (configurable via `Configuration.watcher_debounce_seconds`, default 1s). Dispatches `DatasetChangedEvent` via `EventDispatcher`.
 - Controllers receive `SSEEvents` as a dependency and use `receive()` for SSE endpoints

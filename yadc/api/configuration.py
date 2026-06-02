@@ -28,6 +28,7 @@ class Configuration:
     sse_listeners_warning: int = 25
     sse_listeners_max: int = 100
     sse_listener_max_events: int = 100
+    sse_event_history_size: int = 128
 
     # Display
     banner_enable: bool = True

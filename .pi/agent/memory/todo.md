@@ -21,20 +21,9 @@ Key files that would change: `yadc/api/application.py`, `yadc/api/controllers/`,
 ## Frontend remaining cleanup
 
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
-- ~~`isMobile` should be extracted into a reusable store~~ **DONE** — Replaced with CSS media queries (Tailwind `lg:` responsive prefixes). No JS resize listener needed.
-
-## Frontend icons cleanup
-
-**DONE** — All inline SVGs extracted into icon components:
-- `SvgChevronLeft`, `SvgUpload`, `SvgSettings`, `SvgChat`, `SvgPhoto` (new)
-- `SvgClose` (reused for close panel)
-- All route files now use component imports, no inline SVGs remain
-- All icons use Material Symbols style (fill-based, viewBox `0 -960 960 960`)
-- Only `Checkbox.svelte` has an inline SVG (checkmark — acceptable UI primitive)
 
 ## Missing webui assets
 
-- ~~**Favicon** — no favicon is set, browser shows a default blank tab icon~~ **DONE** — Favicons and web manifest added to `static/`, referenced from `app.html`, Flask serves them via `/<filename>` catch-all route in `app_frontend.py`.
 - **Logo** — no app logo exists for use in the navbar/header and potentially as a larger brand mark. Theme-matching to be done later.
 
 ## Webui code quality pass
@@ -67,10 +56,6 @@ The current EditDatasetDialog shows the raw TOML config, which is cumbersome for
 - The TOML serialization should use multi-line strings for template values that contain newlines — currently they serialize as single-line strings with `\n` literals, which is unreadable
 - Remove the old `ConfigEditor.svelte` from `SettingsDialog.svelte` — dataset config management is now handled through the dataset listing page (edit/delete buttons on cards, `EditDatasetDialog`)
 
-## ~~Allow captioning images without a caption/draft~~ **DONE**
-
-Images without captions/drafts are never filtered out — the filter only skips images where the target output already exists. The `overwrite` checkbox in the webui allows re-captioning already-captioned images.
-
 ## Test captioning flow in the webui
 
 The full captioning workflow (start → progress → completion → result display) needs end-to-end testing through the webui to catch any integration issues between the frontend stores, SSE events, and the backend captioning API.
@@ -78,10 +63,6 @@ The full captioning workflow (start → progress → completion → result displ
 ## Dataset browser scroll cutoff
 
 The dataset browser grid uses `overflow-y-auto` on its parent div, but images near the bottom get cut off because the scroll container's padding doesn't extend past the last items. The fix is to replace the padding-based spacing on the scroll container with margin-based spacing on the children (grid items), so the last row of images is fully visible when scrolled to the bottom.
-
-## ~~Centralize event handler registration~~ **DONE**
-
-Services with `@event_handler` methods used to register themselves with `EventDispatcher` in their constructors. Now, `Application.configure_services()` iterates all services and calls `event_dispatcher.register_service(svc)` for each. Individual `register_service()` calls have been removed from service constructors.
 
 ## Watchdog job_id tag cleanup strategy
 
@@ -103,14 +84,17 @@ The current implementation (never clearing) is being reverted. The job_id infras
 
 ## SSE captioning event reliability / resumption
 
-The frontend `CaptionProgress` component and dataset browser page derive captioning state from the global SSE `captioningStatus` store. If the final "done"/"error" event is missed (e.g. SSE reconnect, network blip, browser tab backgrounded), the UI gets stuck showing a running state forever.
+**DONE** — Implemented `Last-Event-ID` based SSE event resumption:
 
-Options:
-1. **Periodic status events** — have the backend emit `CaptioningStatusEvent` at a regular interval (e.g. every 5-10s) while a job is running, so a reconnecting client quickly sees the current state
-2. **SSE event resumption** — use `Last-Event-ID` (standard SSE mechanism) so the client can resume from where it left off after a reconnect. Requires the backend to assign IDs to events and buffer recent history
-3. **Polling fallback** — add a `GET /datasets/<name>/caption/status` JSON endpoint (not SSE) that returns the current job snapshot. The frontend polls it as a fallback when no SSE events have been received for N seconds
+- **Backend**: `SSEEvents` maintains a configurable ring buffer (`sse_event_history_size`, default 128) of recent non-ping events with monotonic IDs. On reconnect, the controller reads `Last-Event-ID` from the request header and replays missed events from history. If the requested ID is too old (no longer in the buffer), a `ResumptionFailedEvent` is sent to the client.
+- **Backend**: `api_events.py` sends `id:` fields on every non-ping SSE event and `retry: 5000` at connection start so the browser auto-reconnects after 5s.
+- **Frontend**: Switched from manual close/reconnect to browser's built-in `EventSource` auto-reconnect, which automatically preserves and sends `Last-Event-ID`. Added `resumptionFailed` store and warning banner on the dataset detail page with Refresh/Dismiss actions.
+- Key files: `yadc/api/modules/sse_events.py`, `yadc/api/controllers/api_events.py`, `yadc/api/events.py` (`ResumptionFailedEvent`), `yadc/api/configuration.py` (`sse_event_history_size`), `yadc/webui/src/lib/stores/events.ts`, `yadc/webui/src/routes/datasets/[name]/+page.svelte`.
 
-Any of these also covers the case where the user opens the dataset page mid-captioning and the store hasn't received any events yet.
+### Remaining edge cases
+
+- **Mid-captioning page load**: If a user opens the dataset page while captioning is already running, they won't see any progress until the next SSE event arrives. Could be solved with a periodic status re-broadcast or a `GET /datasets/<name>/caption/status` endpoint.
+- **WSGI thread exhaustion**: Each SSE connection still blocks a thread. The async migration (see top-level TODO) is the proper fix.
 
 ## Caption settings: dataset defaults integration
 
@@ -159,3 +143,11 @@ Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-sca
 - Make `DatasetWatcherService` pass the affected file path(s) in the event (or a new granular event type like `DatasetFileAddedEvent` / `DatasetFileRemovedEvent`).
 - `DatasetService` should handle these by doing targeted SQLite upserts/deletes for the affected files instead of a full rescan.
 - Increase or remove the `_refresh_stale_datasets` interval (currently 60s) since the watcher now handles updates incrementally — the stale refresh becomes just a fallback.
+
+## Clean up captioning server logs
+
+The API captioning service (`CaptioningService` / `CaptionJob`) reuses CLI-level code (`APICaptioner`, `cmd_envs`, `cmd_templates`, `resolve_dataset`, etc.) which logs verbosely to stdout/stderr using print statements and CLI-style formatters (progress bars, usage stats, interactive prompts). When captioning via the API/webui, these logs pollute the server output. The logging needs a pass to:
+- Replace print/prompt output with proper `logger` calls at appropriate levels
+- Ensure `APICaptioner` and shared `cmd/` modules use structured logging instead of direct stdout
+- Suppress or quiet CLI-specific output (progress bars, interactive menus) when running in API mode
+- Review `CaptionJob._do_run()` and its callees for noisy output

@@ -35,3 +35,9 @@ class DatasetChangedEvent(Event):
     TYPE: ClassVar[str] = "dataset_changed"
     dataset_name: str
     job_id: str | None = None
+
+
+@dataclass
+class ResumptionFailedEvent(Event):
+    TYPE: ClassVar[str] = "resumption_failed"
+    requested_event_id: int

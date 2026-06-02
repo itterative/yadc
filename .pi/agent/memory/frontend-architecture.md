@@ -19,6 +19,7 @@ yadc/webui/
       api.ts               # API_BASE constant (empty in prod, backend URL in dev)
       events.ts            # TypedEventSource — SSE with Zod validation
       async.ts             # deferred, sleep, synchronized, delayed helpers
+      notifications.ts   # Browser Notification API helpers (permission, sending, first-use prompt)
       storable.js          # localStorage-backed writable store
       random.ts            # Seeded PRNG for deterministic stub layouts
       styles/              # Tailwind @layer components
@@ -48,23 +49,24 @@ yadc/webui/
           ConfirmDelete.svelte        # Delete confirmation block (cancel/confirm buttons)
           SpinnerBlock.svelte         # Centered spinner with optional label and size
           PromptPreview.svelte        # Self-contained prompt preview (template selector + system/user prompt display)
+          ToastContainer.svelte       # Fixed-position toast stack (mounted in +layout.svelte)
+          ToastItem.svelte            # Single toast (message, variant, progress bar, dismiss, optional action button)
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
           ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + drafts + PromptPreview)
-          CaptionProgress.svelte      # Captioning progress display with SSE status stream
         dialogs/                        # Dialog-shaped components
           EnvManager.svelte           # Environment CRUD dialog
           ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
-          SettingsDialog.svelte       # App settings dialog (ConfigEditor + TemplateManager + EnvManager launcher)
+          SettingsDialog.svelte       # App settings dialog (General tab + ConfigEditor + EnvManager launcher)
         settings/                       # Settings-domain sub-components
           EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props, reload trigger)
           ConfigEditor.svelte         # Full config CRUD panel (sidebar list + TOML editor + save/delete)
           TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
-      icons/             # SVG icon components (SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
+      icons/             # SVG icon components (SvgBell, SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
     routes/
       layout.css        # Tailwind v4 imports + @source workaround + dark theme
-      +layout.svelte    # App shell with breadcrumb nav (hash routing links)
+      +layout.svelte    # App shell with breadcrumb nav (hash routing links) + global captioning notification watcher
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
       AddDatasetDialog.svelte   # Co-located: create/import dataset dialog (used only by +page.svelte)
       EditDatasetDialog.svelte  # Co-located: edit dataset TOML config dialog (CodeMirror TOML editor)
@@ -72,7 +74,7 @@ yadc/webui/
         +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing
         EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
       datasets/[name]/
-        +page.svelte              # Dataset browser (masonry grid + side panel)
+        +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line)
         CaptionSettings.svelte    # Co-located: captioning settings side panel
         SidePanel.svelte          # Co-located: tabbed side panel (caption/details) with mobile drawer
 ```
@@ -95,18 +97,27 @@ yadc/webui/
 | `templates.ts` | Template types + CRUD + `extractVariables()` |
 | `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) |
 | `configs.ts` | Config CRUD + export API |
-| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `clearPendingDatasetChange()` |
+| `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `clearPendingDatasetChange()`, `clearResumptionFailed()`. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
+| `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
 | `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning" |
-| `settings.ts` | UI settings (localStorage) |
+| `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`) for browser notification preference |
 
 ## Key Patterns
 
 - **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Flask only serves `GET /` + static assets.
-- **SSE**: `stores/events.ts` is a self-connecting store module. Opens `TypedEventSource` on module load, validates events with Zod, pipes into `readonly` writable stores. Components import stores directly — no SSE connection logic in page components. Per-dataset SSE (e.g. `CaptionProgress.svelte`) creates its own `TypedEventSource`.
+- **SSE**: `stores/events.ts` is a self-connecting store module. Opens `TypedEventSource` on module load, validates events with Zod, pipes into `readonly` writable stores. The browser's built-in `EventSource` auto-reconnect handles reconnection automatically — it preserves and sends `Last-Event-ID` on reconnect, allowing the backend to replay missed events from its ring buffer. If resumption fails (history too old), a `resumption_failed` event sets a `resumptionFailed` store, and a warning toast is fired (plus inline banner on the dataset detail page). The `onerror` handler deliberately does **not** call `close()` (which would discard the last-event-id state). A 5s interval fallback reconnect handles edge cases where the EventSource ends up in CLOSED state.
 - **Dataset watcher**: Backend emits `DatasetChangedEvent` via SSE when filesystem changes are detected. Frontend stores these in `pendingDatasetChanges` (a `Set<string>`). Dataset browser page subscribes and shows a "Refresh" banner.
 - **CodeMirror 6**: `CodeMirror.svelte` wrapper uses three separate `$effect` blocks (create/destroy/sync) — never combine. Uses `editable` prop (default `true`) — not `readonly`. Includes a `baseTheme` (dark surface, accent-colored selection via `color-mix(in oklch, ...)`) and a `darkHighlightStyle` that maps all `@lezer/highlight` tags to CSS `--color-syn-*` variables defined in the Tailwind `@theme` block.
 - **Svelte 5**: No pipe directives on events. No nested `<button>`. Use `<div role="button">` for clickable list items.
 - **Tailwind v4**: Custom colors must be registered in `@theme { }` block, not `:root` vars.
 - **Tailwind content detection**: Root `.gitignore` `lib/` rule was hiding `src/lib/` — fixed with `!src/lib/` in `webui/.gitignore`.
 - **npm security**: `min-release-age=14` in `.npmrc` blocks installing packages published <14 days ago.
+- **Z-index layers**: Fixed-position elements use a consistent z-index stack:
+  - `z-10`: Local absolute-positioned overlays within components (e.g. ImageDetail hover/delete masks)
+  - `z-20`: FABs (mobile caption settings floating button)
+  - `z-30`: Mobile overlay backdrops (side panel scrim)
+  - `z-40`: Mobile slide-in panels (side panel drawer on small screens)
+  - `z-50`: Global overlays — dialogs (`Dialog.svelte`) and toast stack (`ToastContainer.svelte`)
+  - When adding new fixed/absolute layers, use the appropriate slot and avoid values outside this scale.
+- **Browser notifications**: `notifications.ts` is the single gatekeeper. `sendNotification()` checks support, settings preference (`notifications === "enabled"`), browser permission, and tab visibility — callers just call it with no pre-checks. `promptNotificationsOnce()` shows a one-time toast with "Enable" action on first captioning start (session-guarded, only when `notifications === "unset"`). Settings dialog General tab has a checkbox that toggles between `"enabled"`/`"disabled"`. Global notification dispatching lives in `+layout.svelte` so it works even when the user navigates away from the dataset page.
