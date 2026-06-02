@@ -130,7 +130,7 @@
       <div class="flex flex-col gap-4">
         {#each column as item (`${column_index}-${item.id}`)}
           <DatasetImage
-            class="row-end-[auto_span_20px] rounded-xl overflow-hidden bg-gray-800 shadow-md transform transition-all hover:scale-105 hover:shadow-xl cursor-pointer"
+            class="row-end-[auto_span_20px] rounded-xl overflow-hidden bg-gray-800 shadow-md transform transition-all hover:scale-105 hover:shadow-xl cursor-pointer relative"
             {datasetName}
             {item}
             onclick={() => onclick(item)}

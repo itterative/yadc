@@ -1,0 +1,19 @@
+@layer components {
+  .input {
+    @apply w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200
+           focus:ring-2 focus:ring-accent focus:outline-none;
+  }
+
+  .input-sm {
+    @apply w-full rounded-lg bg-bg border border-border px-3 py-1.5 text-sm text-gray-200
+           focus:ring-2 focus:ring-accent focus:outline-none;
+  }
+
+  .label {
+    @apply block text-sm text-gray-400 mb-1;
+  }
+
+  .help-text {
+    @apply text-xs text-gray-500 mt-1;
+  }
+}

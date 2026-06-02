@@ -1,11 +1,11 @@
 <script lang="ts">
   import Dialog from "$lib/components/Dialog.svelte";
-  import CodeMirror from "$lib/components/CodeMirror.svelte";
   import Checkbox from "$lib/components/Checkbox.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
   import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
   import {
     fetchExportBackends,
+    fetchDatasetDrafts,
     runExport,
     type ExportBackend,
     type ExportResult,
@@ -26,6 +26,7 @@
   // --- Data ---
   let datasets: DatasetInfo[] = $state([]);
   let backends: ExportBackend[] = $state([]);
+  let availableDrafts: string[] = $state([]);
   let isLoading = $state(false);
   let isExporting = $state(false);
   let error: string | null = $state(null);
@@ -36,6 +37,8 @@
   let selectedFormat = $state("jsonl");
   let source: "caption" | "draft" = $state("caption");
   let draftName = $state("");
+  let chainedDrafts: string[] = $state([]);
+  let chainInput = $state("");
   let outputPath = $state("");
   let append = $state(false);
   let captionExtension = $state(".txt");
@@ -46,6 +49,11 @@
   // --- Derived ---
   let currentBackend = $derived(backends.find((b) => b.name === selectedBackend));
   let formats = $derived(currentBackend?.formats ?? ["jsonl"]);
+  let remainingDrafts = $derived(
+    availableDrafts.filter(
+      (d) => d !== draftName && !chainedDrafts.includes(d),
+    ),
+  );
 
   // --- Load data on open ---
   $effect(() => {
@@ -64,6 +72,16 @@
     }
   });
 
+  // Load available drafts when dataset changes
+  $effect(() => {
+    chainedDrafts = [];
+    if (selectedDataset) {
+      loadDrafts(selectedDataset);
+    } else {
+      availableDrafts = [];
+    }
+  });
+
   async function load() {
     isLoading = true;
     error = null;
@@ -75,6 +93,33 @@
       error = e instanceof Error ? e.message : "Failed to load export options";
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function loadDrafts(dataset: string) {
+    try {
+      availableDrafts = await fetchDatasetDrafts(dataset);
+    } catch {
+      availableDrafts = [];
+    }
+  }
+
+  function addChainedDraft(name: string) {
+    if (name && !chainedDrafts.includes(name) && name !== draftName) {
+      chainedDrafts = [...chainedDrafts, name];
+    }
+    chainInput = "";
+  }
+
+  function removeChainedDraft(index: number) {
+    chainedDrafts = chainedDrafts.filter((_, i) => i !== index);
+  }
+
+  function handleChainKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = chainInput.trim();
+      if (val) addChainedDraft(val);
     }
   }
 
@@ -101,6 +146,9 @@
       if (source === "draft" && draftName.trim()) {
         opts.draft = draftName.trim();
       }
+      if (chainedDrafts.length > 0) {
+        opts.with_drafts = chainedDrafts;
+      }
       if (outputPath.trim()) {
         opts.output = outputPath.trim();
       }
@@ -117,24 +165,21 @@
 </script>
 
 <Dialog
-  class="w-full max-w-lg max-h-[85vh] overflow-y-auto bg-surface rounded-xl shadow-2xl border border-border m-auto"
+  class="dialog-panel max-w-lg max-h-[85vh] overflow-y-auto"
   {open}
   onclose={onclose}
 >
   <div class="p-6 space-y-5">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-white">Export Dataset</h2>
-      <button
-        class="p-1 text-gray-400 hover:text-white transition-colors cursor-pointer"
-        onclick={onclose}
-      >
+    <div class="dialog-header">
+      <h2 class="dialog-title">Export Dataset</h2>
+      <button class="btn-close" onclick={onclose}>
         <SvgClose class="h-5 w-5" />
       </button>
     </div>
 
     {#if error}
-      <div class="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">{error}</div>
+      <div class="alert-error">{error}</div>
     {/if}
 
     {#if result}
@@ -147,7 +192,7 @@
           <p><span class="text-gray-500">Output:</span> {result.output}</p>
         </div>
         <button
-          class="mt-2 px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+          class="mt-2 btn-secondary"
           onclick={() => (result = null)}
         >
           Export Again
@@ -160,10 +205,10 @@
     {:else}
       <!-- Dataset -->
       <div>
-        <label class="block text-sm text-gray-400 mb-1" for="export-dataset">Dataset</label>
+        <label class="label" for="export-dataset">Dataset</label>
         <select
           id="export-dataset"
-          class="w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none cursor-pointer"
+          class="input cursor-pointer"
           bind:value={selectedDataset}
         >
           <option value="" disabled>Select dataset</option>
@@ -176,10 +221,10 @@
       <!-- Backend & Format -->
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-sm text-gray-400 mb-1" for="export-backend">Backend</label>
+          <label class="label" for="export-backend">Backend</label>
           <select
             id="export-backend"
-            class="w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none cursor-pointer"
+            class="input cursor-pointer"
             bind:value={selectedBackend}
           >
             {#each backends as b (b.name)}
@@ -187,14 +232,14 @@
             {/each}
           </select>
           {#if currentBackend}
-            <p class="text-xs text-gray-500 mt-1">{currentBackend.description}</p>
+            <p class="help-text">{currentBackend.description}</p>
           {/if}
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1" for="export-format">Format</label>
+          <label class="label" for="export-format">Format</label>
           <select
             id="export-format"
-            class="w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none cursor-pointer"
+            class="input cursor-pointer"
             bind:value={selectedFormat}
           >
             {#each formats as f (f)}
@@ -206,7 +251,7 @@
 
       <!-- Source -->
       <div>
-        <label class="block text-sm text-gray-400 mb-1">Source</label>
+        <label class="label">Source</label>
         <div class="flex gap-4">
           <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer">
             <input type="radio" name="export-source" value="caption" bind:group={source} />
@@ -218,18 +263,79 @@
           </label>
         </div>
         {#if source === "draft"}
-          <input
-            type="text"
-            bind:value={draftName}
-            class="mt-2 w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
-            placeholder="Draft name"
-          />
+          <div class="mt-2">
+            <input
+              type="text"
+              bind:value={draftName}
+              class="input"
+              placeholder="Draft name"
+            />
+            {#if availableDrafts.length > 0}
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                {#each availableDrafts as d (d)}
+                  {@const active = draftName === d}
+                  <button
+                    class="px-2 py-0.5 rounded-md text-xs font-medium transition-colors cursor-pointer {active
+                      ? 'bg-accent/25 border border-accent/40 text-accent'
+                      : 'bg-bg border border-border text-gray-400 hover:text-gray-200 hover:border-gray-500'}"
+                    onclick={() => (draftName = active ? "" : d)}
+                  >
+                    {d}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Chain drafts -->
+      <div>
+        <label class="label">
+          Chain Drafts
+          <span class="text-gray-600 ml-1">(appended in order after source)</span>
+        </label>
+        {#if chainedDrafts.length > 0}
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            {#each chainedDrafts as name, i (i)}
+              <span
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/15 border border-accent/25 text-accent text-xs font-medium"
+              >
+                {name}
+                <button
+                  class="hover:text-white transition-colors cursor-pointer"
+                  onclick={() => removeChainedDraft(i)}
+                >
+                  <SvgClose class="h-3 w-3" />
+                </button>
+              </span>
+            {/each}
+          </div>
+        {/if}
+        <input
+          type="text"
+          bind:value={chainInput}
+          onkeydown={handleChainKeydown}
+          class="input"
+          placeholder="Type draft name, press Enter to add"
+        />
+        {#if remainingDrafts.length > 0}
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            {#each remainingDrafts as d (d)}
+              <button
+                class="px-2 py-0.5 rounded-md text-xs font-medium bg-bg border border-border text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors cursor-pointer"
+                onclick={() => addChainedDraft(d)}
+              >
+                + {d}
+              </button>
+            {/each}
+          </div>
         {/if}
       </div>
 
       <!-- Output path -->
       <div>
-        <label class="block text-sm text-gray-400 mb-1" for="export-output">
+        <label class="label" for="export-output">
           Output Path
           <span class="text-gray-600 ml-1">(optional — auto-detected if empty)</span>
         </label>
@@ -237,7 +343,7 @@
           id="export-output"
           type="text"
           bind:value={outputPath}
-          class="w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+          class="input"
           placeholder="e.g. /data/training/metadata.jsonl"
         />
       </div>
@@ -254,21 +360,21 @@
             id="export-ext"
             type="text"
             bind:value={captionExtension}
-            class="w-20 rounded-lg bg-bg border border-border px-2 py-1 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+            class="input-sm w-20 px-2 py-1"
           />
         </div>
       </div>
 
       <!-- Footer -->
-      <div class="flex gap-2 justify-end pt-2 border-t border-border">
+      <div class="btn-bar border-t border-border">
         <button
-          class="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+          class="btn-secondary"
           onclick={onclose}
         >
           Cancel
         </button>
         <button
-          class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer disabled:opacity-50"
+          class="btn-primary"
           onclick={handleExport}
           disabled={isExporting || !selectedDataset}
         >

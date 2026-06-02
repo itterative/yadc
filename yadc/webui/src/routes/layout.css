@@ -1,12 +1,18 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+@import '$lib/styles/buttons.css';
+@import '$lib/styles/forms.css';
+@import '$lib/styles/overlays.css';
+@import '$lib/styles/badges.css';
+@import '$lib/styles/utilities.css';
+
 @theme {
   --color-bg: #0f1117;
   --color-surface: #1a1b26;
   --color-border: #2a2b3d;
-  --color-text: #c0caf5;
-  --color-text-dim: #565f89;
+  --color-fg: #c0caf5;
+  --color-muted: #565f89;
   --color-accent: #7aa2f7;
   --color-accent-hover: #89b4fa;
   --color-error: #f7768e;
@@ -17,7 +23,7 @@
 
 body {
   background: var(--color-bg);
-  color: var(--color-text);
+  color: var(--color-fg);
   font-family:
     -apple-system,
     BlinkMacSystemFont,

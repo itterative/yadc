@@ -1,0 +1,21 @@
+@layer components {
+  .dialog-panel {
+    @apply w-full bg-surface rounded-xl shadow-2xl border border-border m-auto;
+  }
+
+  .dialog-header {
+    @apply flex items-center justify-between mb-4;
+  }
+
+  .dialog-title {
+    @apply text-lg font-semibold text-white;
+  }
+
+  .alert-error {
+    @apply p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm;
+  }
+
+  .alert-success {
+    @apply p-3 rounded-lg bg-success/10 border border-success/20 text-success text-sm;
+  }
+}

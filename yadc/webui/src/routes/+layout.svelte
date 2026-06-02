@@ -99,26 +99,26 @@
   }
 
   .nav-links a {
-    color: var(--color-text-dim);
+    color: var(--color-muted);
     text-decoration: none;
     transition: color 0.2s;
   }
 
   .nav-links a:hover {
-    color: var(--color-text);
+    color: var(--color-fg);
   }
 
   .nav-links a.active {
-    color: var(--color-text);
+    color: var(--color-fg);
   }
 
   .nav-separator {
-    color: var(--color-text-dim);
+    color: var(--color-muted);
     opacity: 0.4;
   }
 
   .nav-current {
-    color: var(--color-text);
+    color: var(--color-fg);
     font-size: 0.875rem;
   }
 
@@ -135,7 +135,7 @@
     width: 2rem;
     height: 2rem;
     border-radius: 0.375rem;
-    color: var(--color-text-dim);
+    color: var(--color-muted);
     background: transparent;
     border: none;
     cursor: pointer;
@@ -143,7 +143,7 @@
   }
 
   .nav-btn:hover {
-    color: var(--color-text);
+    color: var(--color-fg);
     background: var(--color-bg);
   }
 
@@ -160,7 +160,7 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 0.5rem;
-    color: var(--color-text);
+    color: var(--color-fg);
     font-size: 0.875rem;
     z-index: 40;
     animation: toast-in 0.2s ease-out;

@@ -82,7 +82,7 @@
     },
     "&.cm-editor": {
       background: "var(--color-surface)",
-      color: "var(--color-text)",
+      color: "var(--color-fg)",
       height: "100%",
     },
     ".cm-focused": {
@@ -90,12 +90,12 @@
       outlineOffset: "-1px",
     },
     ".cm-cursor": {
-      borderLeftColor: "var(--color-text)",
+      borderLeftColor: "var(--color-fg)",
     },
     ".cm-gutters": {
       background: "var(--color-surface)",
       borderRight: "1px solid var(--color-border)",
-      color: "var(--color-text-dim)",
+      color: "var(--color-muted)",
     },
   });
 

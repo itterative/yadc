@@ -56,6 +56,7 @@ class DatasetInfo:
     has_caption: int = 0
     has_toml: int = 0
     last_scanned_t: float | None = None
+    first_image_id: int | None = None
 
 
 @dataclass
@@ -110,7 +111,8 @@ class DatasetService(Service):
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
-                       d.last_scanned_t
+                       d.last_scanned_t,
+                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
                 FROM datasets d
                 LEFT JOIN (
                     SELECT dataset_id,
@@ -131,6 +133,7 @@ class DatasetService(Service):
                     has_caption=row[3],
                     has_toml=row[4],
                     last_scanned_t=row[5],
+                    first_image_id=row[6],
                 )
                 for row in rows
             ]
@@ -149,7 +152,8 @@ class DatasetService(Service):
                        d.image_count,
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
-                       d.last_scanned_t
+                       d.last_scanned_t,
+                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
                 FROM datasets d
                 LEFT JOIN (
                     SELECT dataset_id,
@@ -174,6 +178,7 @@ class DatasetService(Service):
                 has_caption=row[3],
                 has_toml=row[4],
                 last_scanned_t=row[5],
+                first_image_id=row[6],
             )
         finally:
             conn.close()
@@ -273,6 +278,31 @@ class DatasetService(Service):
             return None
         p = Path(info.path)
         return p if p.exists() else None
+
+    def get_draft_names(self, dataset_name: str) -> list[str]:
+        """Return sorted list of unique draft names across all images in a dataset."""
+        conn = self._db.connection()
+        try:
+            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
+            if row is None:
+                return []
+            dataset_id: int = row[0]
+            raw = conn.execute(
+                """
+                SELECT DISTINCT draft_names FROM dataset_images
+                WHERE dataset_id = ? AND draft_names != ''
+                """,
+                (dataset_id,),
+            ).fetchall()
+            names: set[str] = set()
+            for (csv,) in raw:
+                for part in csv.split(","):
+                    part = part.strip()
+                    if part:
+                        names.add(part)
+            return sorted(names)
+        finally:
+            conn.close()
 
     def get_caption(self, dataset_name: str, image_id: int) -> dict[str, Any] | None:
         """Read the caption text and TOML extras for an image.

@@ -10,6 +10,7 @@ export interface DatasetInfo {
   has_caption: number;
   has_toml: number;
   last_scanned_t: number | null;
+  first_image_id: number | null;
 }
 
 export interface ImageInfo {
@@ -41,6 +42,42 @@ export interface CaptionData {
 export async function fetchDatasets(): Promise<DatasetInfo[]> {
   const res = await fetch(`${API_BASE}/api/datasets`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Import an existing TOML config as a new dataset. */
+export async function importDataset(name: string, tomlPath: string): Promise<DatasetInfo> {
+  const res = await fetch(`${API_BASE}/api/datasets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, toml_path: tomlPath }),
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+/** Create a new dataset from image directory paths. */
+export async function createDataset(name: string, imagePaths: string[]): Promise<DatasetInfo> {
+  const res = await fetch(`${API_BASE}/api/datasets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, image_paths: imagePaths }),
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
   return res.json();
 }
 

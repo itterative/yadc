@@ -1,0 +1,22 @@
+@layer components {
+  .badge {
+    @apply text-xs px-2 py-0.5 rounded-md font-medium;
+  }
+
+  .badge-accent {
+    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-accent/15 border border-accent/25
+           text-accent;
+  }
+
+  .badge-success {
+    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-success/20 text-success;
+  }
+
+  .badge-error {
+    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-error/20 text-error;
+  }
+
+  .badge-muted {
+    @apply text-xs px-2 py-0.5 rounded-md font-medium bg-gray-600/50 text-gray-400;
+  }
+}

@@ -89,6 +89,12 @@ def api_datasets(
         result = datasets.get_dataset(name)
         return jsonify_dataclass(result)
 
+    @app.get("/datasets/<name>/drafts")
+    def list_dataset_drafts(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Return sorted list of unique draft names across all images in a dataset."""
+        names = datasets.get_draft_names(name)
+        return jsonify(names)
+
     @app.get("/datasets/<name>/images")
     def list_images(name: str):  # pyright: ignore[reportUnusedFunction]
         """List images with captions/drafts (paginated)."""

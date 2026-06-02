@@ -78,9 +78,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
 
         if fmt not in backend_desc.formats:
             return (
-                jsonify(
-                    {"error": f"Backend '{backend_name}' does not support format '{fmt}'. Available: {', '.join(backend_desc.formats)}"}
-                ),
+                jsonify({"error": f"Backend '{backend_name}' does not support format '{fmt}'. Available: {', '.join(backend_desc.formats)}"}),
                 400,
             )
 

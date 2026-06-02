@@ -193,7 +193,7 @@
       <!-- Info panel -->
       <div class="flex-1 min-w-0 space-y-4">
         <div>
-          <h2 class="text-lg font-semibold text-white truncate">{item.file_name}</h2>
+          <h2 class="dialog-title truncate">{item.file_name}</h2>
           <p class="text-sm text-gray-400">
             {#if item.width && item.height}
               {item.width}×{item.height}
@@ -232,16 +232,16 @@
                 class="w-full rounded-lg bg-gray-800 border border-gray-600 p-3 text-sm text-gray-200 resize-y min-h-[120px] focus:ring-2 focus:ring-accent focus:outline-none"
                 placeholder="Enter caption..."
               ></textarea>
-              <div class="flex gap-2 justify-end">
+              <div class="btn-bar">
                 <button
-                  class="px-3 py-1.5 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                  class="btn-secondary px-3 py-1.5"
                   onclick={handleCancelEdit}
                   disabled={isSaving}
                 >
                   Cancel
                 </button>
                 <button
-                  class="px-3 py-1.5 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+                  class="btn-primary px-3 py-1.5"
                   onclick={handleSave}
                   disabled={isSaving}
                 >
@@ -276,14 +276,14 @@
               {:else}
                 <div class="flex gap-2">
                   <button
-                    class="px-2 py-1 text-xs rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                  class="btn-secondary px-2 py-1 text-xs"
                     onclick={handleCancelEditExtras}
                     disabled={isSavingExtras}
                   >
                     Cancel
                   </button>
                   <button
-                    class="px-2 py-1 text-xs rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+                    class="btn-primary px-2 py-1 text-xs"
                     onclick={handleSaveExtras}
                     disabled={isSavingExtras}
                   >
@@ -335,10 +335,10 @@
             <div class="space-y-3">
               <div class="flex gap-2 items-end">
                 <div class="flex-1">
-                  <label class="text-xs text-gray-400 block mb-1">Template</label>
+                  <label class="label mb-1">Template</label>
                   <select
                     bind:value={previewTemplateName}
-                    class="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-1.5 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+                    class="input-sm"
                     onchange={() => handlePreviewPrompt()}
                   >
                     <option value="">(default)</option>
@@ -348,7 +348,7 @@
                   </select>
                 </div>
                 <button
-                  class="px-3 py-1.5 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+                  class="btn-primary px-3 py-1.5"
                   onclick={handlePreviewPrompt}
                   disabled={isLoadingPreview}
                 >
@@ -384,15 +384,15 @@
         <!-- Status badges -->
         <div class="flex gap-2 pt-2">
           {#if item.has_caption}
-            <span class="text-xs px-2 py-1 rounded-full bg-success/20 text-success">Captioned</span>
+            <span class="badge-success rounded-full px-2 py-1">Captioned</span>
           {:else}
-            <span class="text-xs px-2 py-1 rounded-full bg-gray-600/50 text-gray-400">No caption</span>
+            <span class="badge-muted rounded-full px-2 py-1">No caption</span>
           {/if}
           {#if item.has_toml}
-            <span class="text-xs px-2 py-1 rounded-full bg-accent/20 text-accent">TOML</span>
+            <span class="badge-accent rounded-full px-2 py-1">TOML</span>
           {/if}
           {#if item.draft_names.length > 0}
-            <span class="text-xs px-2 py-1 rounded-full bg-error/20 text-error">
+            <span class="badge-error rounded-full px-2 py-1">
               {item.draft_names.length} draft{item.draft_names.length !== 1 ? "s" : ""}
             </span>
           {/if}

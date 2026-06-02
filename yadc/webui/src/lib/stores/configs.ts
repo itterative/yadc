@@ -65,6 +65,14 @@ export async function runExport(options: {
   return res.json();
 }
 
+// --- Dataset drafts API ---
+
+export async function fetchDatasetDrafts(datasetName: string): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/drafts`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 // --- Config API helpers ---
 
 export async function fetchConfigs(): Promise<DatasetConfig[]> {

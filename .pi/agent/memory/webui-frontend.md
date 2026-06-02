@@ -62,11 +62,18 @@ Produces a flat `build/` directory with `index.html`, `robots.txt`, and `_app/` 
 
 No `@source` directives are needed.
 
-### CSS Architecture
+## CSS Architecture
 
-- `layout.css` is the single Tailwind entry point, imported by `+layout.svelte`
-- Custom theme colors registered via `@theme { }` block in `layout.css` (Tokyo Night dark palette: `--color-bg`, `--color-surface`, `--color-border`, etc.)
-- Component-specific styles use Svelte's `<style>` scoped blocks (e.g. `.grid-cols-auto` in `DatasetBrowser.svelte`)
+- `layout.css` is the Tailwind entry point, imported by `+layout.svelte`
+- Custom theme colors registered via `@theme { }` block (Tokyo Night dark palette)
+- Component classes are split into domain-specific CSS files under `src/lib/styles/`:
+  - `buttons.css` — `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-close`
+  - `forms.css` — `.input`, `.input-sm`, `.label`, `.help-text`
+  - `overlays.css` — `.dialog-panel`, `.dialog-header`, `.dialog-title`, `.alert-error`, `.alert-success`
+  - `badges.css` — `.badge`, `.badge-accent`, `.badge-success`, `.badge-error`, `.badge-muted`
+  - `utilities.css` — `.btn-bar`, `.section-heading`, `.loading-center`, `.empty-state`, `.card`, `.card-body`, `.dot-separator`
+- All component class files use `@layer components { }` — imported via `@import '$lib/styles/...'` in `layout.css`
+- Component-specific styles use Svelte's `<style>` scoped blocks (e.g. `.grid-cols-auto` in `DatasetBrowser.svelte`, nav styles in `+layout.svelte`)
 
 ### Vite Plugin Order
 

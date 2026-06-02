@@ -1,0 +1,29 @@
+@layer components {
+  .btn-bar {
+    @apply flex gap-2 justify-end pt-2;
+  }
+
+  .section-heading {
+    @apply text-sm font-medium text-gray-300 uppercase tracking-wide;
+  }
+
+  .loading-center {
+    @apply flex items-center justify-center;
+  }
+
+  .empty-state {
+    @apply text-center py-12 text-gray-400;
+  }
+
+  .card {
+    @apply bg-surface border border-border rounded-lg overflow-hidden;
+  }
+
+  .card-body {
+    @apply p-3;
+  }
+
+  .dot-separator {
+    @apply opacity-40;
+  }
+}

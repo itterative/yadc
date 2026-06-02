@@ -158,7 +158,7 @@
       {/if}
     </div>
     <button
-      class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer transition-colors disabled:opacity-50"
+      class="btn-primary transition-colors"
       onclick={() => (showCaptionSettings = true)}
       disabled={isCaptioning}
     >
@@ -168,9 +168,7 @@
 
   <!-- Captioning error from start attempt -->
   {#if captioningError}
-    <div class="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">
-      {captioningError}
-    </div>
+    <div class="alert-error">{captioningError}</div>
   {/if}
 
   <!-- Captioning progress -->
@@ -194,7 +192,7 @@
   />
 
   {#if !isLoading && images.length === 0 && !error}
-    <div class="text-center py-12 text-gray-400">
+    <div class="empty-state">
       <p class="text-lg">No images found</p>
       <p class="text-sm mt-1">This dataset may be empty or not yet scanned.</p>
     </div>

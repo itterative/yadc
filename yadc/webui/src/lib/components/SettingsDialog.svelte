@@ -243,18 +243,15 @@
 <EnvManager open={showEnvManager} onclose={() => (showEnvManager = false)} />
 
 <Dialog
-  class="w-full max-w-3xl max-h-[85vh] overflow-hidden bg-surface rounded-xl shadow-2xl border border-border m-auto flex flex-col"
+  class="dialog-panel max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
   {open}
   onclose={onclose}
 >
   <div class="flex flex-col h-full max-h-[85vh]">
     <!-- Header -->
     <div class="flex items-center justify-between p-5 pb-0">
-      <h2 class="text-lg font-semibold text-white">Settings</h2>
-      <button
-        class="p-1 text-gray-400 hover:text-white transition-colors cursor-pointer"
-        onclick={onclose}
-      >
+      <h2 class="dialog-title">Settings</h2>
+      <button class="btn-close" onclick={onclose}>
         <SvgClose class="h-5 w-5" />
       </button>
     </div>
@@ -278,10 +275,10 @@
     <!-- Tab content -->
     <div class="flex-1 overflow-y-auto p-5 space-y-4">
       {#if configError && activeTab === "configs"}
-        <div class="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">{configError}</div>
+        <div class="alert-error">{configError}</div>
       {/if}
       {#if templateError && activeTab === "templates"}
-        <div class="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">{templateError}</div>
+        <div class="alert-error">{templateError}</div>
       {/if}
 
       <!-- ═══ Configs tab ═══ -->
@@ -326,7 +323,7 @@
                 <div class="flex gap-2">
                   {#if configDirty}
                     <button
-                      class="px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer disabled:opacity-50"
+                      class="btn-primary px-3 py-1.5 text-xs"
                       onclick={saveConfigContent}
                       disabled={isSavingConfig}
                     >
@@ -357,15 +354,15 @@
             <p class="text-sm text-gray-200 mb-3">
               Delete config for <strong>{confirmDeleteConfig}</strong>? This will unregister the dataset.
             </p>
-            <div class="flex gap-2 justify-end">
+            <div class="btn-bar">
               <button
-                class="px-3 py-1.5 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                class="btn-secondary px-3 py-1.5"
                 onclick={() => (confirmDeleteConfig = null)}
               >
                 Cancel
               </button>
               <button
-                class="px-3 py-1.5 text-sm rounded-lg bg-error hover:bg-error/80 text-white cursor-pointer"
+                class="btn-danger"
                 onclick={() => handleDeleteConfig(confirmDeleteConfig!)}
               >
                 Delete
@@ -424,11 +421,11 @@
                 <input
                   type="text"
                   bind:value={newTemplateName}
-                  class="flex-1 rounded-lg bg-bg border border-border px-3 py-1.5 text-sm text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+                  class="input-sm"
                   placeholder="Template name"
                 />
                 <button
-                  class="px-3 py-1.5 text-xs rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                  class="btn-secondary px-3 py-1.5 text-xs"
                   onclick={cancelNewTemplate}
                 >
                   Cancel
@@ -444,7 +441,7 @@
                 </h3>
                 {#if templateDirty}
                   <button
-                    class="px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer disabled:opacity-50"
+                    class="btn-primary px-3 py-1.5 text-xs"
                     onclick={saveTemplateContent}
                     disabled={isSavingTemplate}
                   >
@@ -484,15 +481,15 @@
             <p class="text-sm text-gray-200 mb-3">
               Delete template <strong>{confirmDeleteTemplate}</strong>?
             </p>
-            <div class="flex gap-2 justify-end">
+            <div class="btn-bar">
               <button
-                class="px-3 py-1.5 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 cursor-pointer"
+                class="btn-secondary px-3 py-1.5"
                 onclick={() => (confirmDeleteTemplate = null)}
               >
                 Cancel
               </button>
               <button
-                class="px-3 py-1.5 text-sm rounded-lg bg-error hover:bg-error/80 text-white cursor-pointer"
+                class="btn-danger"
                 onclick={() => handleDeleteTemplate(confirmDeleteTemplate!)}
               >
                 Delete
@@ -508,7 +505,7 @@
             Environments store API connection settings (URL, token, default model).
           </p>
           <button
-            class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-accent-hover text-black font-medium cursor-pointer"
+            class="btn-primary"
             onclick={() => (showEnvManager = true)}
           >
             Open Environment Manager

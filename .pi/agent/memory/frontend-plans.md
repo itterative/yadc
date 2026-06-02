@@ -14,7 +14,7 @@ All phases (1–4) are **implemented**.
 
 | File | Endpoints |
 |------|-----------|
-| `api_datasets.py` | Dataset/image CRUD, caption update, prompt preview |
+| `api_datasets.py` | Dataset/image CRUD, caption update, prompt preview, **add dataset (import TOML / create new)** |
 | `api_captioning.py` | Start/stop/status (SSE) captioning |
 | `api_envs.py` | Env CRUD + model list proxy |
 | `api_templates.py` | Template CRUD + variable extraction |
@@ -26,7 +26,7 @@ All phases (1–4) are **implemented**.
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Dataset/image types, CRUD, paginated store, captioning API, prompt preview |
+| `datasetImages.ts` | Dataset/image types, CRUD, paginated store, captioning API, prompt preview, **importDataset / createDataset** |
 | `envs.ts` | Env types + CRUD + model fetching |
 | `templates.ts` | Template types + CRUD + `extractVariables()` |
 | `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) |

@@ -1,0 +1,29 @@
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
+           transition-colors disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
+           transition-colors disabled:opacity-50 px-4 py-2 text-sm bg-accent hover:bg-accent-hover
+           text-black;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
+           transition-colors disabled:opacity-50 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600
+           text-gray-300;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
+           transition-colors disabled:opacity-50 px-3 py-1.5 text-sm bg-error hover:bg-error/80
+           text-white;
+  }
+
+  .btn-close {
+    @apply inline-flex items-center justify-center rounded-lg font-medium cursor-pointer
+           transition-colors disabled:opacity-50 p-1 text-gray-400 hover:text-white;
+  }
+}
