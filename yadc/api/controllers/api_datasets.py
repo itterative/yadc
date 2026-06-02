@@ -72,6 +72,23 @@ def api_datasets(
         result = datasets.list_datasets()
         return jsonify_dataclass(result)
 
+    @app.delete("/datasets/<name>")
+    def delete_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Unregister a dataset and delete its state dir."""
+        found = datasets.unregister_dataset(name)
+        if not found:
+            return jsonify({"error": "Dataset not found"}), 404
+        return jsonify({"status": "ok"})
+
+    @app.post("/datasets/<name>/rescan")
+    def rescan_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Force a rescan of a dataset's images."""
+        found = datasets.rescan_dataset(name)
+        if not found:
+            return jsonify({"error": "Dataset not found"}), 404
+        result = datasets.get_dataset(name)
+        return jsonify_dataclass(result)
+
     @app.get("/datasets/<name>/images")
     def list_images(name: str):  # pyright: ignore[reportUnusedFunction]
         """List images with captions/drafts (paginated)."""

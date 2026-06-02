@@ -1,5 +1,8 @@
 node_modules
 
+# Don't ignore src/lib/ — root .gitignore's `lib/` rule would catch it
+!src/lib/
+
 # Output
 .output
 .vercel

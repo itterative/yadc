@@ -17,10 +17,10 @@
 <div class="app-shell">
   <nav class="app-nav">
     <div class="nav-brand">
-      <a href="/">yadc</a>
+      <a href="#/">yadc</a>
     </div>
     <div class="nav-links">
-      <a href="/" class:active={!isDatasetPage}>Datasets</a>
+      <a href="#/" class:active={!isDatasetPage}>Datasets</a>
       {#if isDatasetPage && datasetName}
         <span class="nav-separator">/</span>
         <span class="nav-current">{datasetName}</span>

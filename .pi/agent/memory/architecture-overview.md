@@ -40,7 +40,9 @@ yadc/
       blueprints.py     # ApiBlueprint, AppBlueprint (@singleton injector classes)
       app_frontend.py   # @controller — serves SvelteKit build
       api_datasets.py   # @controller — dataset/image endpoints (wired to DatasetService)
-      api_captioning.py # @controller — captioning start/stop/status (stubs)
+      api_captioning.py # @controller — captioning start/stop/status, SSE stream via SSEEvents + CaptioningService
+      api_envs.py       # @controller — environment CRUD + model list proxy
+      api_templates.py  # @controller — template CRUD + Jinja2 variable extraction
       api_events.py     # @controller — SSE event stream
     modules/
       service.py            # base Service class (marker for DI auto-discovery)
@@ -52,8 +54,9 @@ yadc/
       db_migrations.py      # Step-based SQLite migration runner
       db_connection_factory.py # SQLite WAL, foreign keys, background init
     services/
-      __init__.py           # re-exports DatasetService, SettingsService
-      datasets.py           # DatasetService — filesystem scanning, SQLite indexing, paginated image queries, caption read/write
+      __init__.py           # re-exports CaptioningService, DatasetService, SettingsService
+      captioning.py        # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher
+      datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write
       settings.py           # SettingsService — KV store over SQLite settings table (JSON values)
 
   webui/             # SvelteKit frontend (Svelte 5 + Tailwind CSS v4 + TypeScript + Zod)
@@ -77,9 +80,9 @@ yadc/
           ImageDetail.svelte          # Image detail modal (full image + caption edit + TOML + drafts)
         icons/             # SVG icon components
       routes/
-        +layout.svelte    # App shell with breadcrumb nav
-        +layout.ts        # prerender=true, ssr=false (SPA mode)
-        +page.svelte      # Dataset listing → links to /datasets/{name}
+        layout.css        # Tailwind v4 imports + @source workaround + dark theme
+        +layout.svelte    # App shell with breadcrumb nav (hash routing links)
+        +page.svelte      # Dataset listing → links to #/datasets/{name}
         datasets/[name]/+page.svelte  # Dataset browser (masonry grid + image detail)
 
   cmd/                # pure logic (no click imports)
@@ -137,3 +140,6 @@ yadc/
 - **DatasetImage persistence**: `.txt` for caption, `.toml` for metadata extras, `.history~` for versioned history, `.<name>.draft~` for named drafts
 - **Platformdirs paths**: Config → `~/.config/yadc/`, State → `~/.local/state/yadc/`, Cache → `~/.cache/yadc/`
 - **Web UI DI with auto-discovery**: See `api-di-system` memory for full details. Short version: `Service` subclasses in `modules/` **and `services/`** and `@controller` functions in `controllers/` are auto-discovered — no hardcoded lists. Services are plain classes (no decorators), controllers use `@controller` from `controllers/__init__.py`.
+- **Web UI dataset model**: A "dataset" IS a TOML config file at `STATE_PATH/<name>/config.toml`. `import_dataset(name, toml_path)` copies TOML to state dir (resolving relative paths). `create_dataset(name, image_paths)` generates a new TOML. `name` is the unique key — no `path` column.
+- **Hash routing**: SvelteKit uses `router: { type: "hash" }` — all internal links use `#/` prefix. Flask only serves `GET /` + static assets.
+- **Tailwind @source workaround**: `layout.css` needs `@source '../lib'` and `@source '../routes'` because automatic content detection misses component files. See TODO comment in `layout.css`.

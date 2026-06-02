@@ -396,14 +396,23 @@ class DatasetService(Service):
             conn.close()
 
     def unregister_dataset(self, name: str) -> bool:
-        """Remove a dataset and its images from the index. Returns True if found."""
+        """Remove a dataset, its images from the index, and its state dir."""
+        import shutil
+
         conn = self._db.connection()
         try:
             cursor = conn.execute("DELETE FROM datasets WHERE name = ?", (name,))
             conn.commit()
-            return cursor.rowcount > 0
+            found = cursor.rowcount > 0
         finally:
             conn.close()
+
+        if found:
+            state_dir = _dataset_state_dir(name)
+            if state_dir.is_dir():
+                shutil.rmtree(state_dir, ignore_errors=True)
+
+        return found
 
     def _register(self, name: str, config_path: str) -> DatasetInfo:
         """Upsert a dataset record and scan its images."""
@@ -468,7 +477,7 @@ class DatasetService(Service):
         return raw
 
     def _load_config(self, config_path: Path) -> Config | None:
-        """Load and parse a dataset config file."""
+        """Load and parse a dataset config file using full CLI validation."""
         try:
             with open(config_path) as f:
                 raw = toml.load(f)
@@ -476,6 +485,45 @@ class DatasetService(Service):
         except Exception as e:
             self._logger.warning("Failed to parse config at %s: %s", config_path, e)
             return None
+
+    # TODO: refine TOML loading strategy — currently uses two paths:
+    #   1. _load_config() → full CLI validation (fails for webui TOMLs missing api_url/model/template)
+    #   2. _load_dataset_entries() → raw [[dataset]] extraction (no validation)
+    # The webui should ideally have its own relaxed config model that accepts
+    # partial TOMLs (no required api_url/model/template) while still validating
+    # dataset entry structure (path, images, extras).
+
+    def _load_dataset_entries(self, config_path: Path) -> list[dict[str, Any]]:
+        """Extract [[dataset]] entries from a TOML without CLI validation.
+
+        The webui doesn't need api_url, model_name, template, etc. — it only
+        cares about the ``[[dataset]]`` entries (image paths + extras). This
+        parses the raw TOML and returns the dataset list as-is.
+
+        NOTE: This needs refinement — see TODO above.
+        """
+        try:
+            with open(config_path) as f:
+                raw = toml.load(f)
+        except Exception as e:
+            self._logger.warning("Failed to read config at %s: %s", config_path, e)
+            return []
+
+        # v2: [[dataset]] array of tables
+        dataset = raw.get("dataset")
+        if isinstance(dataset, list):
+            return dataset
+
+        # v1: [dataset] with paths list
+        if isinstance(dataset, dict) and "paths" in dataset:
+            entries: list[dict[str, Any]] = []
+            for p in dataset["paths"]:
+                entries.append({"path": p})
+            if "images" in dataset:
+                entries.append({"images": dataset["images"]})
+            return entries
+
+        return []
 
     def _scan_dataset(
         self,
@@ -498,12 +546,25 @@ class DatasetService(Service):
 
         # Determine image directories from config (paths are already absolute)
         image_dirs: list[Path] = []
+        extras_per_dir: dict[str, dict[str, object]] = {}
+
         if config:
             for entry in config.dataset:
                 if entry.path:
                     p = Path(entry.path)
                     if p.is_dir():
                         image_dirs.append(p.resolve())
+                        extras_per_dir[str(p.resolve())] = entry.extras
+        else:
+            # Fallback: parse just [[dataset]] entries without CLI validation
+            entries = self._load_dataset_entries(config_file)
+            for entry in entries:
+                entry_path = entry.get("path", "")
+                if entry_path:
+                    p = Path(entry_path)
+                    if p.is_dir():
+                        image_dirs.append(p.resolve())
+                        extras_per_dir[str(p.resolve())] = entry.get("extras", {})
 
         if not image_dirs:
             return

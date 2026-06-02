@@ -109,8 +109,8 @@ yadc/api/
 ```
 yadc/webui/
   package.json            — SvelteKit + Svelte 5 + Tailwind CSS v4 + Zod
-  svelte.config.js        — adapter-static with SPA fallback
-  vite.config.ts          — tailwindcss + sveltekit plugins
+  svelte.config.js        — adapter-static, hash routing (`router: { type: "hash" }`)
+  vite.config.ts          — tailwindcss + sveltekit plugins, sourcemaps enabled
   tsconfig.json
   .npmrc
   .env                    — API_BASE="" (production: same-origin)
@@ -132,26 +132,35 @@ yadc/webui/
         Dialog.svelte
         Checkbox.svelte
     routes/
-      layout.css          — Tailwind imports + dark theme (Tokyo Night palette)
-      +layout.ts          — prerender=true, ssr=false
-      +layout.svelte      — Shell with nav bar
-      +page.svelte        — Main dashboard (fetches /api/datasets)
+      layout.css          — Tailwind v4 imports + @source directives (see Tailwind note) + dark theme (Tokyo Night palette)
+      +layout.svelte      — Shell with breadcrumb nav (links use `#/` prefix for hash routing)
+      +page.svelte        — Dataset listing (links to `#/datasets/{name}`)
+      datasets/[name]/+page.svelte  — Dataset browser (masonry grid + image detail modal)
   static/
     robots.txt
 ```
+
+#### Note: Tailwind v4 content detection workaround
+
+`layout.css` includes `@source '../lib'` and `@source '../routes'` directives because Tailwind v4's
+automatic content detection (via `@tailwindcss/vite`) fails to discover classes used in components
+under `src/lib/components/` and dynamic route pages under `src/routes/datasets/[name]/`. Without
+these directives, only classes from `+layout.svelte` and `+page.svelte` are generated. The
+reference project (`qwen-reranker-test`) does not need this workaround because its Tailwind-heavy
+components live directly in `src/routes/`. Root cause TBD — see TODO comment in `layout.css`.
 
 #### Deviations from original plan
 
 | Planned | Actual | Reason |
 |---------|--------|--------|
-| `$env/dynamic/public` for backend URL | `$lib/api.ts` with `API_BASE` constant | SvelteKit's `adapter-static` doesn't expose dynamic env vars at build time without more setup |
+| SvelteKit pathname routing | **Hash routing** (`router: { type: "hash" }`) | Eliminates Flask route hacks for SPA fallback — all navigation is client-side via `#/` |
 | `injector` DI in Phase 1 | ~~Simple module-level wiring~~ Full injector DI | Done — `Application(Module)` with `configure_services()`, `configure_controllers()`, `get_bindings()` |
 | `@inject` decorator on controllers | ~~Functions registered directly~~ `@controller` decorator | Done — controllers use `@controller` (in `controllers/__init__.py`) for auto-discovery + DI |
 | Full CORS with origin reflection | ~~Simple `Access-Control-Allow-Origin: *`~~ Origin-based CORS | Done — `CORSMiddleware` service, registered on `ApiBlueprint` |
 | Manual service/controller lists in `application.py` | ~~Hardcoded lists~~ Auto-discovery | Done — `discover_services()` / `discover_controllers()` scan packages; `application.py` has no hardcoded lists |
 | `@inject` / `@singleton` on Service classes | ~~Per-class decorators~~ Programmatic binding | Done — `Application.configure()` binds all services with `inject(cls)` + `scope=singleton`; Service classes are plain |
 | `api_cors.py` controller | ~~Controller with endpoints~~ `CORSMiddleware` service | CORS is infrastructure, not a controller — moved to `modules/cors_middleware.py` |
-| `app_frontend.py` serves `/_app/*` only | Serves `/_app/*` + SPA fallback via 404 handler | Matches reference more closely now |
+| `app_frontend.py` serves `/_app/*` only | Serves `/_app/*` + `GET /` for `index.html` | Hash routing means Flask only needs to serve the root — no SPA fallback or 404 handler |
 | `.prettierrc`, `.prettierignore`, `eslint.config.js` | ✅ Added | Done — matches reference |
 | Icon components (`SvgSpinner`, etc.) | ✅ Added (SvgSpinner, SvgClose, SvgImage, SvgLogout) | Done |
 
@@ -193,36 +202,40 @@ uv run yadc webui serve   # serves everything on :7860
 
 ---
 
-### Phase 2: Dataset Browsing API + UI
+### Phase 2: Dataset Browsing API + UI ✅ DONE
 
-1. ~~**Wire up injector**~~ ✅ — `injector`-based DI with auto-discovery; services bound programmatically (no `@inject`/`@singleton` decorators), controllers use `@controller` decorator
-2. ~~**Database layer**~~ ✅ — `DBMigrations` (step-based SQLite migrations) + `DBConnectionFactory` (WAL, foreign keys, background init); tables: `properties`, `settings`, `datasets`, `dataset_images`
-3. ~~`yadc/api/services/` — dataset & settings service/repos~~ ✅ — `DatasetService` (filesystem scanning + DB indexing + paginated queries + caption read/write) and `SettingsService` (KV store over `settings` table). Services live in `yadc/api/services/` package, auto-discovered alongside `modules/`.
-4. ~~`yadc/api/controllers/api_datasets.py` — wire up controller stubs to use `DatasetService`~~ ✅ — Full implementation: `GET /datasets`, `GET /datasets/<name>/images` (paginated), `GET .../media`, `GET .../thumbnail` (cached in `<cache_path>/thumbnails/` as WebP), `GET .../caption`, `PUT .../caption`. Extracted shared `DataclassJSONEncoder` + `jsonify_dataclass` into `yadc/api/json_utils.py` (also used by `api_events.py`).
-5. ~~`yadc/webui/src/lib/components/IntersectionObserverElement.svelte`~~ ✅ — copied from reference
+1. ~~**Wire up injector**~~ ✅
+2. ~~**Database layer**~~ ✅
+3. ~~`yadc/api/services/` — dataset & settings service/repos~~ ✅
+4. ~~`yadc/api/controllers/api_datasets.py` — wire up controller stubs~~ ✅
+5. ~~`IntersectionObserverElement.svelte`~~ ✅
 6. ~~Frontend: `DatasetBrowser.svelte` — masonry grid with lazy loading~~ ✅ — Masonry grid adapted from reference `GalleryContainer.svelte`/`GalleryItem.svelte`; uses `IntersectionObserverElement` for infinite scroll; responsive columns (2/3/4/5); loading stubs with deterministic layout
-7. ~~Frontend: `ImageDetail.svelte` — focused view with caption display~~ ✅ — Dialog modal showing full-size image + caption (view/edit), TOML extras, drafts, status badges. Caption editing via PUT endpoint with optimistic UI updates.
-8. ~~Wire up pagination with next_token pattern~~ ✅ — `createDatasetBrowserStore()` manages paginated loading via `after_id` cursor; `loadMore()` appends pages; auto-recreates on dataset navigation
+7. ~~Frontend: `ImageDetail.svelte` — focused view with caption display~~ ✅ — Dialog modal showing full-size image + caption (view/edit), TOML extras, drafts, status badges.
+8. ~~Wire up pagination with next_token pattern~~ ✅ — `createDatasetBrowserStore()` manages paginated loading via `after_id` cursor
 
 **Additional Phase 2 work:**
-- **DB migration step 4** — Added `width`/`height` columns to `dataset_images` table for masonry layout calculation
-- **`ImageInfo` expanded** — Now includes `width`/`height` fields; populated during filesystem scanning via PIL `Image.open()`
-- **`src/lib/stores/datasetImages.ts`** — Full type definitions (`DatasetInfo`, `ImageInfo`, `ImagePage`, `CaptionData`) + API helpers (`fetchDatasets`, `fetchImages`, `fetchCaption`, `updateCaption`, URL helpers) + `createDatasetBrowserStore` (paginated browsing store)
-- **`src/lib/components/DatasetImage.svelte`** — Thumbnail tile with aspect ratio, loading state, caption/TOML/draft badges
-- **`src/lib/components/DatasetBrowser.svelte`** — Masonry grid container with column distribution, loading stubs, infinite scroll
-- **`src/lib/components/ImageDetail.svelte`** — Full image detail dialog with caption editing, TOML extras display, draft viewing
-- **`src/routes/datasets/[name]/+page.svelte`** — Dataset detail page with masonry grid + image detail modal
-- **Updated `src/routes/+page.svelte`** — Dataset cards now link to `/datasets/{name}`; uses shared `fetchDatasets` API helper
-- **Updated `src/routes/+layout.svelte`** — Breadcrumb navigation showing current dataset name
-- **`svelte.config.js`** — Added SPA `fallback: 'index.html'` + `handleUnseenRoutes: 'warn'` for dynamic route support
+- **DB migration step 3** — Consolidated final schema: `datasets` table uses `name` as unique key (no `path` column); `dataset_images` includes `width`/`height` columns for masonry layout
+- **Dataset model rework** — A "dataset" IS a TOML config file (matching the CLI model). `DatasetService` has `import_dataset(name, toml_path)` and `create_dataset(name, image_paths)` — TOMLs are saved to `STATE_PATH/<name>/config.toml`. Relative paths in imported TOMLs are resolved to absolute.
+- **TOML loading** — `_load_dataset_entries()` as raw TOML fallback for webui TOMLs that lack `api_url`/`model_name`/`template` (full CLI validation would reject them)
+- **Extra API endpoints** — `POST /datasets` (import/create), `DELETE /datasets/<name>` (unregister + remove state dir), `POST /datasets/<name>/rescan`
+- **Hash routing** — Switched from pathname routing to `router: { type: "hash" }`; all internal links use `#/` prefix; Flask only serves `GET /` + static assets
+- **Tailwind `@source` workaround** — Added `@source '../lib'` and `@source '../routes'` to `layout.css` because automatic content detection misses component files (see note above)
+- **Frontend components** — `DatasetImage.svelte` (thumbnail tile), `DatasetBrowser.svelte` (masonry grid), `ImageDetail.svelte` (caption edit dialog), `datasetImages.ts` (types + API helpers + paginated store)
+- **Pagination fix** — `afterId` cursor: `!== undefined` check instead of falsy check (id `0` was being skipped); `next_token` from API used directly as `after_id` for next request
 
 ### Phase 3: Captioning Integration
 
 1. ~~`yadc/api/modules/event_dispatcher.py`~~ ✅ — Done (subscribe/dispatch, @event_handler decorator)
-2. `yadc/api/controllers/api_captioning.py` — start/stop captioning in background thread, SSE progress
-3. `CaptionSettings.svelte` — config form for captioning options
-4. Wire SSE events for real-time progress (images done, tokens, errors)
-5. Caption display updates as images are processed
+2. ~~`yadc/api/services/captioning.py` — `CaptioningService` + `CaptionJob` + `CaptionJobOptions`~~ ✅ — Pydantic `CaptionJobOptions` (validated via `model_validate` in controller, 400 on bad input), public `CaptionJob` runs in background thread, `CaptioningService` manages start/stop/status, env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher`
+3. ~~`yadc/api/controllers/api_captioning.py` — wire up controller~~ ✅ — POST/DELETE/GET endpoints connected to `CaptioningService`, SSE via `SSEEvents`, Pydantic validation with 400 on invalid body
+4. **Caption settings UI + supporting APIs** — ➡️ See **`plans/frontend-caption-settings.md`** for full breakdown:
+   - Environment CRUD API + manager UI
+   - Template CRUD API + Jinja2 editor (CodeMirror 6)
+   - `CaptionSettings.svelte` form (env → model → template → options)
+   - `CaptionProgress.svelte` with SSE wiring
+   - Live caption display updates in grid/detail
+5. ~~Wire SSE events for real-time progress (images done, tokens, errors)~~ → merged into item 4
+6. ~~Caption display updates as images are processed~~ → merged into item 4
 
 ### Phase 4: Config & Export Management
 
@@ -238,6 +251,9 @@ uv run yadc webui serve   # serves everything on :7860
 | Method | Path | Description | Phase |
 |--------|------|-------------|-------|
 | GET | `/api/datasets` | List available datasets | 2 |
+| POST | `/api/datasets` | Import or create dataset (JSON body) | 2 |
+| DELETE | `/api/datasets/{name}` | Delete dataset + state dir | 2 |
+| POST | `/api/datasets/{name}/rescan` | Force rescan of images | 2 |
 | GET | `/api/datasets/{name}/images` | List images with captions/drafts (paginated) | 2 |
 | GET | `/api/datasets/{name}/images/{id}/media` | Serve image file | 2 |
 | GET | `/api/datasets/{name}/images/{id}/thumbnail` | Serve/generated thumbnail | 2 |
@@ -246,6 +262,15 @@ uv run yadc webui serve   # serves everything on :7860
 | POST | `/api/datasets/{name}/caption` | Start captioning run | 3 |
 | GET | `/api/datasets/{name}/caption/status` | SSE stream for captioning progress | 3 |
 | DELETE | `/api/datasets/{name}/caption` | Stop captioning run | 3 |
+| GET | `/api/envs` | List environment names | 3 |
+| GET | `/api/envs/{name}` | Get env settings (token masked) | 3 |
+| PUT | `/api/envs/{name}` | Create or update environment | 3 |
+| DELETE | `/api/envs/{name}` | Delete environment | 3 |
+| POST | `/api/envs/{name}/models` | Fetch available models from env's API | 3 |
+| GET | `/api/templates` | List templates (user + builtin) | 3 |
+| GET | `/api/templates/{name}` | Get template content + metadata | 3 |
+| PUT | `/api/templates/{name}` | Create or update user template | 3 |
+| DELETE | `/api/templates/{name}` | Delete user template | 3 |
 | GET | `/api/configs` | List user configs | 4 |
 | GET | `/api/envs` | List environments | 4 |
 | GET | `/api/templates` | List prompt templates | 4 |
@@ -268,3 +293,6 @@ uv run yadc webui serve   # serves everything on :7860
 | Config | In-code dataclass defaults | TOML files + user configs + envs |
 | DI usage | Full injector from the start | Full injector + auto-discovery (`discover_services`/`discover_controllers`) |
 | Env vars | `$env/dynamic/public` | `$lib/api.ts` constant (simpler for static builds) |
+| Routing | Pathname routing (`/gallery`) | Hash routing (`#/datasets/foo`) — eliminates Flask SPA fallback hacks |
+| Tailwind | Works out of the box | Requires `@source` directives (see workaround note) |
+| Dataset identity | Directory path | TOML config file at `STATE_PATH/<name>/config.toml` |

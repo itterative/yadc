@@ -36,13 +36,3 @@ def app_frontend(configuration: Configuration, app: AppBlueprint, logging: Loggi
         response = send_from_directory(f"{configuration.app_frontend_build_path}/_app", path)
         response.headers.set("Cache-Control", configuration.app_frontend_cache_control)
         return response
-
-    @app.get("/datasets/<path:name>")
-    def spa_datasets(name: str):  # pyright: ignore[reportUnusedFunction]
-        """SPA fallback for dataset routes."""
-        index_file = f"{configuration.app_frontend_build_path}/index.html"
-        import os
-
-        if os.path.isfile(index_file):
-            return send_file(index_file)
-        return Response("Not Found", status=404)

@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
-:root {
+@theme {
   --color-bg: #0f1117;
   --color-surface: #1a1b26;
   --color-border: #2a2b3d;

@@ -93,8 +93,8 @@
   </div>
 {:else}
   <div class="dataset-grid">
-    {#each datasets as dataset}
-      <a href="/datasets/{dataset.name}" class="dataset-card">
+    {#each datasets as dataset (dataset.name)}
+      <a href="#/datasets/{dataset.name}" class="dataset-card">
         <h3>{dataset.name}</h3>
         <p class="text-dim">{dataset.image_count} images</p>
         {#if dataset.image_count > 0}

@@ -6,11 +6,9 @@ const config = {
   preprocess: vitePreprocess(),
 
   kit: {
-    adapter: adapter({
-      fallback: "index.html",
-    }),
-    prerender: {
-      handleUnseenRoutes: "warn",
+    adapter: adapter(),
+    router: {
+      type: "hash",
     },
   },
 

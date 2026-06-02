@@ -99,7 +99,8 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `JobScheduler` | `modules/` | Daemon threads for periodic jobs |
 | `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping |
 | `SettingsService` | `services/` | KV store over `settings` table (JSON values) |
-| `DatasetService` | `services/` | Filesystem scanning, SQLite indexing, paginated image queries, caption read/write |
+| `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan |
+| `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher` |
 
 ## CORS
 

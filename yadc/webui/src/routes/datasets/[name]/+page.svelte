@@ -23,43 +23,37 @@
   let hasMore = $state(true);
   let error: string | null = $state(null);
 
-  let lastAfterId = 0;
+  let nextToken: string | null = null;
   const PAGE_SIZE = 50;
 
   async function loadInitial(name: string) {
-    lastAfterId = 0;
+    nextToken = null;
     isLoading = true;
     error = null;
 
     try {
-      console.log("[dataset page] fetching images for", name);
-      const page = await fetchImages(name, { limit: PAGE_SIZE, afterId: 0 });
-      console.log("[dataset page] got", page.images.length, "images, next_token:", page.next_token);
+      const page = await fetchImages(name, { limit: PAGE_SIZE });
       images = page.images;
+      nextToken = page.next_token;
       hasMore = page.next_token !== null;
-      if (page.images.length > 0) {
-        lastAfterId = page.images[page.images.length - 1].id;
-      }
     } catch (e) {
       console.error("[dataset page] fetch failed", e);
       error = e instanceof Error ? e.message : "Failed to load images";
     } finally {
       isLoading = false;
-      console.log("[dataset page] loading done, images:", images.length);
     }
   }
 
   async function loadMore() {
-    if (isLoadingMore || !hasMore) return;
+    if (!datasetName) return;
+    if (isLoadingMore || !hasMore || nextToken === null) return;
     isLoadingMore = true;
 
     try {
-      const page = await fetchImages(datasetName, { limit: PAGE_SIZE, afterId: lastAfterId });
+      const page = await fetchImages(datasetName, { limit: PAGE_SIZE, afterId: parseInt(nextToken) });
       images = [...images, ...page.images];
+      nextToken = page.next_token;
       hasMore = page.next_token !== null;
-      if (page.images.length > 0) {
-        lastAfterId = page.images[page.images.length - 1].id;
-      }
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load more images";
     } finally {
@@ -70,8 +64,7 @@
   // React to dataset name changes
   $effect(() => {
     const name = datasetName;
-    if (!name) return;
-    console.log("[dataset page] loading images for", name);
+    if (!browser || !name) return;
     loadInitial(name);
   });
 
@@ -109,7 +102,7 @@
 <div class="space-y-4">
   <!-- Header -->
   <div class="flex items-center gap-4">
-    <a href="/" class="text-gray-400 hover:text-white transition-colors">
+    <a href="#/" class="text-gray-400 hover:text-white transition-colors">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
       </svg>
