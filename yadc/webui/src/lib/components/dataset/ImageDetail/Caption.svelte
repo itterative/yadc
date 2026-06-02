@@ -172,8 +172,34 @@
                     </button>
                 {/if}
 
-                <!-- Text area — only this part scrolls. -->
-                <div class="relative max-h-60 overflow-y-auto">
+                <!-- Text area — only this part scrolls. Overlays are siblings
+                     of the scroll container so they stay fixed over the visible
+                     area instead of scrolling with the content. -->
+                <div class="relative">
+                    <div class="max-h-60 overflow-y-auto">
+                        {#if isEditing}
+                            <textarea
+                                bind:value={editCaption}
+                                class="w-full resize-none bg-transparent p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+                                placeholder="Enter caption..."
+                                use:autosize
+                                oninput={(e) => {
+                                    const el = e.currentTarget;
+                                    el.style.height = 'auto';
+                                    el.style.height = Math.min(el.scrollHeight, 360) + 'px';
+                                }}
+                            ></textarea>
+                        {:else if captionData}
+                            {#if captionData.caption}
+                                <pre
+                                    class="p-3 pr-10 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
+                            {:else}
+                                <pre
+                                    class="p-3 text-sm whitespace-pre-wrap text-gray-500 italic">No caption</pre>
+                            {/if}
+                        {/if}
+                    </div>
+
                     {#if isCaptioning}
                         <div
                             class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-black/60 text-sm text-gray-300"
@@ -191,27 +217,6 @@
                         >
                             {captioningError}
                         </div>
-                    {/if}
-                    {#if isEditing}
-                        <textarea
-                            bind:value={editCaption}
-                            class="w-full resize-none bg-transparent p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
-                            placeholder="Enter caption..."
-                            use:autosize
-                            oninput={(e) => {
-                                const el = e.currentTarget;
-                                el.style.height = 'auto';
-                                el.style.height = Math.min(el.scrollHeight, 360) + 'px';
-                            }}
-                        ></textarea>
-                    {:else if captionData}
-                        {#if captionData.caption}
-                            <pre
-                                class="p-3 pr-10 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
-                        {:else}
-                            <pre
-                                class="p-3 text-sm whitespace-pre-wrap text-gray-500 italic">No caption</pre>
-                        {/if}
                     {/if}
                 </div>
 
