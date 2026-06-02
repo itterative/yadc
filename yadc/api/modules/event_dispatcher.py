@@ -1,7 +1,7 @@
 from inspect import signature
 from logging import Logger
 from threading import Lock
-from typing import Any, Callable, Concatenate, ParamSpec, TypeVar, cast
+from typing import Any, Callable, Concatenate, ParamSpec, TypeVar, cast, get_type_hints
 
 from ..events import Event
 from .logging_factory import LoggingFactory
@@ -32,23 +32,26 @@ def event_handler(
     def decorator(
         func: Callable[Concatenate[Any, E, P], R],
     ) -> Callable[Concatenate[Any, E, P], R]:
-        # Get the function's signature to validate the parameters
+        # Validate parameter count
         sig = signature(func)
         params = list(sig.parameters.values())
 
         if len(params) < 2:
             raise TypeError(f"Event handler must have at least two parameters (self and event), got {len(params)} parameters")
 
-        # The second parameter (index 1) should be the event
-        # We check if it has an annotation and if it matches our event class
-        event_param = params[1]
-        if event_param.annotation != event_param.empty:
-            # If there's an annotation, verify it's compatible with the event class
+        # Resolve annotations (handles `from __future__ import annotations` string-ification)
+        event_param_name = params[1].name
+        try:
+            hints = get_type_hints(func)
+            ann = hints.get(event_param_name)
+        except Exception:
+            ann = None
+
+        if ann is not None:
             from typing import get_origin
 
-            ann = event_param.annotation
             origin = get_origin(ann) or ann
-            # Check if the annotation is the event class or a subclass
+
             if origin is not event_cls and (origin != Any and not issubclass(origin, event_cls)):
                 raise TypeError(f"Event handler's second parameter must be of type {event_cls.__name__}, got {ann}")
 

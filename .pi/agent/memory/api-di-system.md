@@ -26,7 +26,7 @@ The web UI backend (`yadc/api/`) uses the `injector` library with automatic pack
 2. **`Application.configure_services()`** — called in `run()`:
    - Calls `injector.get()` for every discovered service — triggers instantiation
    - Because all types were bound first, inter-service dependencies are fully resolved regardless of discovery order
-   - Registers `CORSMiddleware` on `ApiBlueprint` (infrastructure, not a controller)
+   - Calls `EventDispatcher.register_service()` for each service — auto-discovers `@event_handler` methods
 
 3. **`Application.configure_controllers()`** — called in `run()`:
    - Calls `discover_controllers(controllers_pkg)` to find all `@controller` functions
@@ -103,14 +103,19 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
 | `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher` |
 
+## Startup Event
+
+A `StartupEvent` is dispatched after all services are instantiated but before `waitress.serve()`. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread, `CORSMiddleware` registers its `after_request` handler) do so via `@event_handler(StartupEvent)`. The event is dispatched after `configure_app()` (blueprints registered) so that handlers can interact with the fully-configured Flask app.
+
 ## CORS
 
-CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Service`, not a controller. It registers an `after_request` handler on `ApiBlueprint` during `configure_services()`. Configuration is via `Configuration.api_cors_*` fields.
+CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Service`, not a controller. It registers an `after_request` handler on `ApiBlueprint` on `StartupEvent`. Configuration is via `Configuration.api_cors_*` fields.
 
 ## Events System
 
-- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`
+- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`
 - `EventDispatcher` — `subscribe(event_cls, handler)`, `dispatch(event)`, `register_service(service)` (auto-scans for `@event_handler` methods), `@event_handler` decorator
+- `@event_handler` uses `typing.get_type_hints()` to resolve annotations — needed because `from __future__ import annotations` stringifies them, causing `issubclass()` to fail on plain `inspect.signature()` annotations
 - `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls)` generator, auto-ping via `JobScheduler`. Handles `CaptioningStatusEvent` and `DatasetChangedEvent`.
 - `DatasetWatcherService` — Uses `watchdog.Observer` to watch dataset image directories for filesystem changes (images + sidecars). Debounces events per-dataset (configurable via `Configuration.watcher_debounce_seconds`, default 1s). Dispatches `DatasetChangedEvent` via `EventDispatcher`.
 - Controllers receive `SSEEvents` as a dependency and use `receive()` for SSE endpoints

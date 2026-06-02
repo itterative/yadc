@@ -60,7 +60,7 @@ yadc/webui/
         settings/                       # Settings-domain sub-components
           EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props, reload trigger)
           ConfigEditor.svelte         # Full config CRUD panel (sidebar list + TOML editor + save/delete)
-          TemplateManager.svelte      # Full template CRUD panel (sidebar list + Jinja editor + new/save/delete)
+          TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
       icons/             # SVG icon components (SvgClose, SvgDelete, SvgEdit, SvgFile, SvgImage, SvgLogout, SvgPlus, SvgRefresh, SvgSpinner)
     routes/
       layout.css        # Tailwind v4 imports + @source workaround + dark theme
@@ -68,6 +68,9 @@ yadc/webui/
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
       AddDatasetDialog.svelte   # Co-located: create/import dataset dialog (used only by +page.svelte)
       EditDatasetDialog.svelte  # Co-located: edit dataset TOML config dialog (CodeMirror TOML editor)
+      templates/
+        +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing
+        EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
       datasets/[name]/
         +page.svelte              # Dataset browser (masonry grid + side panel)
         CaptionSettings.svelte    # Co-located: captioning settings side panel
@@ -94,6 +97,7 @@ yadc/webui/
 | `configs.ts` | Config CRUD + export API |
 | `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `clearPendingDatasetChange()` |
 | `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
+| `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved on "Start Captioning" |
 | `settings.ts` | UI settings (localStorage) |
 
 ## Key Patterns

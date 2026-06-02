@@ -41,6 +41,7 @@ dev = [
 yadc = "yadc.cli:cli"
 
 [tool.setuptools.package-data]
+"yadc.api" = ["banner.txt"]
 "yadc.templates.jinja" = ["*"]
 
 [tool.setuptools.packages.find]

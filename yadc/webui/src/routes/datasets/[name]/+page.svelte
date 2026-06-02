@@ -7,7 +7,7 @@
   import SidePanel from "./SidePanel.svelte";
   import SvgChevronLeft from "$lib/icons/SvgChevronLeft.svelte";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
-  import { pendingDatasetChanges, clearPendingDatasetChange } from "$lib/stores/events";
+  import { captioningStatus, pendingDatasetChanges, clearPendingDatasetChange, registerJobId } from "$lib/stores/events";
   import {
     fetchDatasets,
     fetchImages,
@@ -43,8 +43,34 @@
   // (see handleCaptioningDone). For live per-tile updates, the backend would
   // need to emit per-image events (e.g. CaptionedImageEvent with image_id).
 
-  let isCaptioning = $state(false);
   let captioningError: string | null = $state(null);
+  let captionDoneFired = $state(false);
+
+  // Derive captioning state from the global SSE store
+  let isCaptioning = $derived(
+    $captioningStatus?.dataset_name === datasetName &&
+    ($captioningStatus.status === "running" || $captioningStatus.status === "stopping"),
+  );
+
+  // Register job_id from incoming status events so dataset_changed events
+  // from our own captioning are suppressed
+  $effect(() => {
+    const s = $captioningStatus;
+    if (s?.dataset_name === datasetName && s.job_id && (s.status === "running" || s.status === "stopping")) {
+      registerJobId(s.job_id);
+    }
+  });
+
+  // Detect when captioning finishes (transition from active → terminal)
+  $effect(() => {
+    if (!isCaptioning && !captionDoneFired) {
+      captionDoneFired = true;
+      handleCaptioningDone();
+    }
+    if (isCaptioning) {
+      captionDoneFired = false;
+    }
+  });
 
   // Live caption options from CaptionSettings (updated reactively as settings change)
   let captionOptions: CaptionOptions = {};
@@ -143,6 +169,7 @@
   async function handleCaptionImage(imageId: number) {
     try {
       const result = await captionSingleImage(datasetName, imageId, captionOptions as Record<string, unknown>);
+      registerJobId(result.job_id);
       if (result.caption) {
         images = images.map((img) => (img.id === imageId ? { ...img, has_caption: true } : img));
       }
@@ -156,15 +183,14 @@
     captioningError = null;
     captionOptions = options;
     try {
-      await startCaptioning(datasetName, options as Record<string, unknown>);
-      isCaptioning = true;
+      const info = await startCaptioning(datasetName, options as Record<string, unknown>);
+      registerJobId(info.job_id);
     } catch (e) {
       captioningError = e instanceof Error ? e.message : "Failed to start captioning";
     }
   }
 
   function handleCaptioningDone() {
-    isCaptioning = false;
     // Refresh everything — caption counts and image states may have changed
     if (browser && datasetName) {
       loadInitial(datasetName);

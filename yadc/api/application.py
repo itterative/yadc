@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import override
 
 from flask import Flask
-from injector import Binder, Injector, Module, get_bindings, inject, singleton  # pyright: ignore[reportUnknownVariableType]
+from injector import Binder, Injector, Module, get_bindings, inject, singleton
+
+from yadc.api.modules import EventDispatcher
 
 from . import controllers as controllers_pkg
 from . import modules as modules_pkg
@@ -11,7 +14,7 @@ from . import services as services_pkg
 from .configuration import Configuration
 from .controllers.blueprints import ApiBlueprint, AppBlueprint
 from .discovery import discover_controllers, discover_services
-from .modules.cors_middleware import CORSMiddleware
+from .events import ShutdownEvent, StartupEvent
 from .modules.service import Service
 
 
@@ -59,9 +62,10 @@ class Application(Module):
             service = self.injector.get(service_cls)
             self.services.append(service)
 
-        # Register CORS middleware on the API blueprint
-        cors = self.injector.get(CORSMiddleware)
-        cors.register(self.injector.get(ApiBlueprint))
+        event_dispatcher = self.injector.get(EventDispatcher)
+
+        for service in self.services:
+            event_dispatcher.register_service(service)
 
     def configure_controllers(self):
         """Auto-discover and invoke all @controller functions."""
@@ -76,13 +80,40 @@ class Application(Module):
 
     def run(self) -> None:
         """Configure everything and start the server via waitress."""
+        import signal
+        from types import FrameType
+
         import waitress
 
         self.configure_services()
         self.configure_controllers()
-        self.configure_app()
+
+        if self.configuration.banner_enable:
+            banner_path = Path(__file__).parent / "banner.txt"
+            try:
+                print(banner_path.read_text())
+            except FileNotFoundError:
+                pass
 
         print(f"yadc web UI starting on http://{self.configuration.http_host}:{self.configuration.http_port}")
+
+        event_dispatcher = self.injector.get(EventDispatcher)
+        event_dispatcher.dispatch(StartupEvent())
+
+        # NOTE: the app must be configured before the cors middleware is set up (on startup event)
+        self.configure_app()
+
+        # Dispatch ShutdownEvent on Ctrl+C so SSE listeners unblock.
+        original_sigint = signal.getsignal(signal.SIGINT)
+
+        def _handle_sigint(sig: int, frame: FrameType | None) -> None:
+            event_dispatcher.dispatch(ShutdownEvent())
+            signal.signal(sig, original_sigint)
+            if callable(original_sigint):
+                original_sigint(sig, frame)
+
+        signal.signal(signal.SIGINT, _handle_sigint)
+
         waitress.serve(
             self.app,
             host=self.configuration.http_host,

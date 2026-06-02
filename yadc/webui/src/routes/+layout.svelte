@@ -14,14 +14,19 @@
 
   let { children }: Props = $props();
 
-  let currentPath = $derived($page.url.pathname);
-  let isDatasetPage = $derived(currentPath.startsWith("/datasets/"));
+  let currentHash = $derived($page.url.hash);
+  let isDatasetPage = $derived(currentHash === "#/" || currentHash.startsWith("#/datasets/"));
+  let isTemplatesPage = $derived(currentHash.startsWith("#/templates"));
   let datasetName = $derived(isDatasetPage ? $page.params.name : null);
 
   let showSettings = $state(false);
   let showExport = $state(false);
 
   let exportResult: ExportResult | null = $state(null);
+
+  $effect(() => {
+    document.getElementById("yadc-loading-screen")?.remove();
+  });
 
   function handleExported(result: ExportResult) {
     exportResult = result;
@@ -36,7 +41,8 @@
       <a href="#/">yadc</a>
     </div>
     <div class="nav-links">
-      <a href="#/" class:active={!isDatasetPage}>Datasets</a>
+      <a href="#/" class:active={isDatasetPage}>Datasets</a>
+      <a href="#/templates" class:active={isTemplatesPage}>Templates</a>
       {#if isDatasetPage && datasetName}
         <span class="nav-separator">/</span>
         <span class="nav-current">{datasetName}</span>
@@ -92,7 +98,7 @@
   .nav-links {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 1.25rem;
     flex: 1;
   }
 

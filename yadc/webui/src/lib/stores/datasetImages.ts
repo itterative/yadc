@@ -192,6 +192,7 @@ export function mediaUrl(datasetName: string, imageId: number): string {
 export interface CaptioningJobInfo {
   status: "idle" | "running" | "stopping" | "error" | "done";
   dataset_name: string;
+  job_id: string;
   processed: number;
   total: number;
   errors: number;
@@ -244,7 +245,7 @@ export async function captionSingleImage(
   datasetName: string,
   imageId: number,
   options: Record<string, unknown> = {},
-): Promise<{ caption: string }> {
+): Promise<{ caption: string; job_id: string }> {
   const res = await fetch(
     `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`,
     {

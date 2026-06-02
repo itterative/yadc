@@ -4,7 +4,7 @@ from threading import Condition
 from typing import Any
 
 from ..configuration import Configuration
-from ..events import CaptioningStatusEvent, DatasetChangedEvent, Event, PingEvent
+from ..events import CaptioningStatusEvent, DatasetChangedEvent, Event, PingEvent, ShutdownEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .job_scheduler import JobScheduler
 from .logging_factory import LoggingFactory
@@ -27,18 +27,24 @@ class SSEEvents(Service):
 
         self._queue_cv: Condition = Condition()
         self._queues: list[list[Event]] = []
+        self._shutdown: bool = False
 
         self._did_warn: bool = False
         self._did_error: bool = False
 
         job_scheduler.new_scheduled_job(5, self._send_ping)
 
-        event_dispatcher.register_service(self)
-
     def _send_ping(self):
         from datetime import datetime, timezone
 
         self.push(PingEvent(time=datetime.now(timezone.utc).isoformat()))
+
+    @event_handler(ShutdownEvent)
+    def on_shutdown(self, _event: ShutdownEvent):
+        self._logger.info("Shutdown event received, stopping %d listeners", len(self._queues))
+        with self._queue_cv:
+            self._shutdown = True
+            self._queue_cv.notify_all()
 
     @event_handler(CaptioningStatusEvent)
     def on_captioning_status(self, event: CaptioningStatusEvent):
@@ -89,9 +95,12 @@ class SSEEvents(Service):
                 self._did_error = False
 
         try:
-            while True:
+            while not self._shutdown:
                 with self._queue_cv:
-                    self._queue_cv.wait(timeout=5)
+                    self._queue_cv.wait(timeout=1)
+
+                    if self._shutdown:
+                        break
 
                     events: list[Event] = []
                     while queue:

@@ -1,10 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { browser } from "$app/environment";
-  import { API_BASE } from "$lib/api";
-  import { TypedEventSource } from "$lib/events";
-  import { CaptioningStatusZ, type CaptioningStatus } from "$lib/stores/captioning";
+  import { captioningStatus, type CaptioningStatus } from "$lib/stores/events";
   import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
+  import { API_BASE } from "$lib/api";
 
   interface Props {
     /** The dataset being captioned. */
@@ -15,22 +12,26 @@
 
   let { datasetName, ondone }: Props = $props();
 
-  // --- State ---
+  // --- Derived ---
 
-  let status: CaptioningStatus = $state({
-    status: "idle",
-    dataset_name: "",
-    processed: 0,
-    total: 0,
-    errors: 0,
-    error: null,
-  });
+  // Pick the latest status for *this* dataset from the global SSE store
+  let status: CaptioningStatus = $derived(
+    $captioningStatus?.dataset_name === datasetName
+      ? $captioningStatus
+      : { status: "idle" as const, dataset_name: "", processed: 0, total: 0, errors: 0, job_id: "", error: null },
+  );
 
   let isStopping = $state(false);
-  let isConnecting = $state(true);
-  let connectionError: string | null = $state(null);
 
-  // --- Derived ---
+  // Don't react to terminal states until we've seen the job go active (running/stopping).
+  // This prevents stale "done" events from previous runs from immediately dismissing the component.
+  let seenActive = $state(false);
+
+  $effect(() => {
+    if (status.status === "running" || status.status === "stopping") {
+      seenActive = true;
+    }
+  });
 
   let pct = $derived.by(() => {
     if (status.total <= 0) return 0;
@@ -42,61 +43,15 @@
     return "Starting…";
   });
 
-  let isTerminal = $derived(
-    status.status === "done" || status.status === "error" || status.status === "idle",
-  );
+  let isTerminal = $derived(seenActive && (status.status === "done" || status.status === "error"));
 
-  // --- SSE subscription ---
-
-  let es: TypedEventSource | null = $state(null);
-
+  // Fire ondone when the job reaches a terminal state
+  let prevTerminal = $state(false);
   $effect(() => {
-    const name = datasetName;
-    if (!browser || !name) return;
-
-    // Clean up previous connection
-    es?.close();
-    es = null;
-    isConnecting = true;
-    connectionError = null;
-
-    const url = `${API_BASE}/api/datasets/${encodeURIComponent(name)}/caption/status`;
-    const source = new TypedEventSource(url);
-    es = source;
-
-    source.listen(
-      "captioning_status",
-      CaptioningStatusZ,
-      (event) => {
-        status = event;
-        isConnecting = false;
-
-        if (event.status === "done" || event.status === "error") {
-          // Close after a short delay so the user sees the final state
-          setTimeout(() => {
-            source.close();
-            ondone?.();
-          }, 2000);
-        }
-      },
-      (err) => {
-        console.error("[CaptionProgress] SSE error:", err);
-        connectionError = err.message;
-        isConnecting = false;
-      },
-    );
-
-    source.onerror = () => {
-      // EventSource natively fires this on connection failure
-      isConnecting = false;
-      if (source.readyState === EventSource.CLOSED) {
-        connectionError = "Connection lost";
-      }
-    };
-
-    return () => {
-      source.close();
-    };
+    if (isTerminal && !prevTerminal) {
+      prevTerminal = true;
+      setTimeout(() => ondone?.(), 2000);
+    }
   });
 
   // --- Stop captioning ---
@@ -124,9 +79,9 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-2">
-      {#if isConnecting}
+      {#if !seenActive}
         <SvgSpinner class="h-4 w-4 animate-spin text-accent" />
-        <span class="text-sm font-medium text-gray-300">Connecting…</span>
+        <span class="text-sm font-medium text-gray-300">Starting…</span>
       {:else if status.status === "running"}
         <SvgSpinner class="h-4 w-4 animate-spin text-accent" />
         <span class="text-sm font-medium text-gray-300">
@@ -158,7 +113,7 @@
   </div>
 
   <!-- Progress bar -->
-  {#if status.total > 0 || isConnecting}
+  {#if status.total > 0}
     <div class="space-y-1">
       <div class="flex items-center justify-between text-xs text-gray-400">
         <span>{progressLabel}</span>
@@ -192,10 +147,5 @@
   <!-- Error detail -->
   {#if status.error}
     <p class="text-xs text-error bg-error/10 rounded-lg p-2">{status.error}</p>
-  {/if}
-
-  <!-- Connection error -->
-  {#if connectionError && !isConnecting}
-    <p class="text-xs text-error">{connectionError}</p>
   {/if}
 </div>

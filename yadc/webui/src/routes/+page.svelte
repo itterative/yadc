@@ -7,12 +7,14 @@
     thumbnailUrl,
     type DatasetInfo,
   } from "$lib/stores/datasetImages";
+  import { captioningStatus, type CaptioningStatus } from "$lib/stores/events";
   import AddDatasetDialog from "./AddDatasetDialog.svelte";
   import EditDatasetDialog from "./EditDatasetDialog.svelte";
   import ConfirmDelete from "$lib/components/ui/ConfirmDelete.svelte";
   import SvgDelete from "$lib/icons/SvgDelete.svelte";
   import SvgEdit from "$lib/icons/SvgEdit.svelte";
   import SvgPhoto from "$lib/icons/SvgPhoto.svelte";
+  import SvgSpinner from "$lib/icons/SvgSpinner.svelte";
 
   let datasets: DatasetInfo[] = $state([]);
   let loading = $state(true);
@@ -29,6 +31,13 @@
     if (!browser) return;
     loadDatasets();
   });
+
+  // Captioning status for a specific dataset (null if idle/not captioning)
+  function captionStatusFor(name: string): CaptioningStatus | null {
+    const s = $captioningStatus;
+    if (s && s.dataset_name === name && s.status !== "idle") return s;
+    return null;
+  }
 
   async function loadDatasets() {
     try {
@@ -90,7 +99,22 @@
           {/if}
           <div class="card-body">
             <h3 class="text-fg mb-1">{dataset.name}</h3>
-            {#if dataset.image_count > 0}
+            {#if captionStatusFor(dataset.name)}
+              {@const cs = captionStatusFor(dataset.name)!}
+              <div class="flex items-center gap-2 mt-2 text-sm">
+                {#if cs.status === "running"}
+                  <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
+                  <span class="text-accent">Captioning {cs.processed}/{cs.total}</span>
+                {:else if cs.status === "stopping"}
+                  <SvgSpinner class="h-3.5 w-3.5 animate-spin text-yellow-400" />
+                  <span class="text-yellow-300">Stopping…</span>
+                {:else if cs.status === "done"}
+                  <span class="text-success">✓ Complete</span>
+                {:else if cs.status === "error"}
+                  <span class="text-error">✗ Error</span>
+                {/if}
+              </div>
+            {:else if dataset.image_count > 0}
               <div class="flex items-center gap-1 mt-2 text-sm text-muted">
                 <span>{dataset.image_count} images</span>
                 <span class="dot-separator">·</span>

@@ -30,7 +30,7 @@ For frontend directory structure, stores, component organization, and general pa
 - **TomlEditor.svelte** (`ui/`): Wraps CodeMirror with TOML syntax, line wrapping, hidden gutters. `editable` prop (default `true`). Used in `ImageDetail` for TOML extras editing, `PromptPreview` for readonly template context display, and `EditDatasetDialog` for dataset config editing.
 - **JinjaEditor.svelte** (`ui/`): Wraps CodeMirror with Jinja2 syntax, variable extraction bar. Also uses `editable` prop (default `true`).
 - **PromptPreview.svelte** (`ui/`): Self-contained prompt preview — manages its own template loading, preview fetching, and expand/collapse state. Used in `ImageDetail`.
-- **EnvSelector.svelte** (`settings/`): Environment form with env dropdown, URL/token/model fields, model fetching. Uses `$bindable()` props for two-way value binding with parent. `reload` counter prop triggers env list refresh.
+- **EnvSelector.svelte** (`settings/`): Environment form with env dropdown, URL/token/model fields, model fetching. Uses `$bindable()` props for two-way value binding with parent. `reload` counter prop triggers env list refresh. **Auto-fetches models** when env loads (populates dropdown immediately).
 - **ConfigEditor.svelte** (`settings/`): Full config CRUD panel — sidebar list + TOML CodeMirror editor + save/delete. Self-contained, takes `open` prop to trigger data loading.
 - **TemplateManager.svelte** (`settings/`): Full template CRUD panel — sidebar list + JinjaEditor + new/save/delete. Self-contained, takes `open` prop to trigger data loading.
 

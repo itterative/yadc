@@ -1,6 +1,10 @@
 from logging import Logger
 
-from flask import Blueprint, Response, request
+from flask import Response, request
+
+from yadc.api.controllers.blueprints import ApiBlueprint
+from yadc.api.events import StartupEvent
+from yadc.api.modules.event_dispatcher import event_handler
 
 from ..configuration import Configuration
 from .logging_factory import LoggingFactory
@@ -8,14 +12,16 @@ from .service import Service
 
 
 class CORSMiddleware(Service):
-    def __init__(self, configuration: Configuration, logging: LoggingFactory):
+    def __init__(self, configuration: Configuration, blueprint: ApiBlueprint, logging: LoggingFactory):
         self._logger: Logger = logging.get_logger(__name__)
         self._configuration: Configuration = configuration
+        self._blueprint: ApiBlueprint = blueprint
 
-    def register(self, app: Blueprint):
+    @event_handler(StartupEvent)
+    def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
         """Register CORS after_request handler on a Flask blueprint."""
 
-        @app.after_request
+        @self._blueprint.after_request
         def after_request(response: Response):  # pyright: ignore[reportUnusedFunction]
             if not self._configuration.api_cors_enable:
                 return response

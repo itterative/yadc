@@ -21,6 +21,7 @@ export const CaptioningStatusZ = z.object({
   processed: z.number(),
   total: z.number(),
   errors: z.number(),
+  job_id: z.string().default(""),
   error: z.string().nullable(),
 });
 
@@ -30,6 +31,7 @@ export const PingEventZ = z.object({
 
 export const DatasetChangedEventZ = z.object({
   dataset_name: z.string(),
+  job_id: z.string().nullable().optional(),
 });
 
 // --- Types ---
@@ -45,10 +47,16 @@ const _captioningStatus = writable<CaptioningStatus>({
   processed: 0,
   total: 0,
   errors: 0,
+  job_id: "",
   error: null,
 });
 
 const _pendingDatasetChanges = writable<Set<string>>(new Set());
+
+/** Job IDs of captioning operations initiated by this frontend (bounded ring). */
+const _activeJobIds = writable<string[]>([]);
+
+const MAX_ACTIVE_JOB_IDS = 16;
 
 // --- Public readonly stores ---
 
@@ -64,6 +72,16 @@ export function clearPendingDatasetChange(datasetName: string): void {
     const next = new Set(set);
     next.delete(datasetName);
     return next;
+  });
+}
+
+/** Register a captioning job ID initiated by this frontend. */
+export function registerJobId(jobId: string): void {
+  _activeJobIds.update((ids) => {
+    if (ids.length >= MAX_ACTIVE_JOB_IDS) {
+      return [...ids.slice(ids.length - MAX_ACTIVE_JOB_IDS + 1), jobId];
+    }
+    return [...ids, jobId];
   });
 }
 
@@ -92,6 +110,12 @@ function connect() {
   });
 
   _eventSource.listen("dataset_changed", DatasetChangedEventZ, (data) => {
+    // Suppress events caused by our own captioning jobs (but not other clients')
+    if (data.job_id) {
+      let suppress = false;
+      _activeJobIds.subscribe((ids) => { suppress = ids.includes(data.job_id!); })();
+      if (suppress) return;
+    }
     _pendingDatasetChanges.update((set) => {
       const next = new Set(set);
       next.add(data.dataset_name);

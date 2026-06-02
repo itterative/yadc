@@ -29,6 +29,9 @@ class Configuration:
     sse_listeners_max: int = 100
     sse_listener_max_events: int = 100
 
+    # Display
+    banner_enable: bool = True
+
     # File watcher
     watcher_debounce_seconds: float = 1.0
 

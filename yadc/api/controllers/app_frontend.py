@@ -31,6 +31,25 @@ def app_frontend(configuration: Configuration, app: AppBlueprint, logging: Loggi
             return send_file(robots_file)
         return Response("User-agent: *\nDisallow: /\n", mimetype="text/plain")
 
+    @app.get("/site.webmanifest")
+    def webmanifest_endpoint():  # pyright: ignore[reportUnusedFunction]
+        import os
+
+        manifest_file = f"{configuration.app_frontend_build_path}/site.webmanifest"
+        if os.path.isfile(manifest_file):
+            return send_file(manifest_file, mimetype="application/manifest+json")
+        return Response("Not found", status=404)
+
+    @app.get("/<filename>")
+    def static_root_file_endpoint(filename: str):  # pyright: ignore[reportUnusedFunction]
+        import os
+
+        # Serve favicon and other static root files from the build directory
+        file_path = os.path.join(configuration.app_frontend_build_path, filename)
+        if os.path.isfile(file_path):
+            return send_file(file_path)
+        return Response("Not found", status=404)
+
     @app.get("/_app/<path:path>")
     def app_endpoint(path: str):  # pyright: ignore[reportUnusedFunction]
         response = send_from_directory(f"{configuration.app_frontend_build_path}/_app", path)

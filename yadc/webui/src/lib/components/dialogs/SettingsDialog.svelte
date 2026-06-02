@@ -2,7 +2,6 @@
   import Dialog from "$lib/components/ui/Dialog.svelte";
   import TabBar from "$lib/components/ui/TabBar.svelte";
   import ConfigEditor from "$lib/components/settings/ConfigEditor.svelte";
-  import TemplateManager from "$lib/components/settings/TemplateManager.svelte";
   import EnvManager from "$lib/components/dialogs/EnvManager.svelte";
   import SvgClose from "$lib/icons/SvgClose.svelte";
 
@@ -14,7 +13,7 @@
   let { open, onclose }: Props = $props();
 
   // --- Tabs ---
-  type Tab = "configs" | "templates" | "environments";
+  type Tab = "configs" | "environments";
   let activeTab: Tab = $state("configs");
 
   // --- Env state ---
@@ -43,7 +42,6 @@
       class="px-5 pt-3"
       tabs={[
         { value: "configs", label: "Configs" },
-        { value: "templates", label: "Templates" },
         { value: "environments", label: "Environments" },
       ]}
       selected={activeTab}
@@ -54,8 +52,6 @@
     <div class="flex-1 overflow-y-auto p-5 space-y-4">
       {#if activeTab === "configs"}
         <ConfigEditor {open} />
-      {:else if activeTab === "templates"}
-        <TemplateManager {open} />
       {:else if activeTab === "environments"}
         <div class="py-8 text-center">
           <p class="text-gray-400 text-sm mb-4">

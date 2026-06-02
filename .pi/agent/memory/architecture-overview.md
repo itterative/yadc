@@ -33,9 +33,10 @@ yadc/
   api/                # web UI backend (Flask + injector DI with auto-discovery)
     __init__.py
     application.py      # Application(Module) — DI container, auto-discovers services + controllers
-    configuration.py    # @dataclass config (http, cors, sse, yadc paths)
+    banner.txt           # ASCII art banner printed on startup (optional, --no-banner to disable)
+    configuration.py    # @dataclass config (http, cors, sse, yadc paths, banner_enable)
     discovery.py        # discover_services() / discover_controllers() — package scanning
-    events.py           # Event base class + PingEvent, CaptioningStatusEvent, DatasetChangedEvent
+    events.py           # Event base class + StartupEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent
     json_utils.py       # DataclassJSONEncoder + jsonify_dataclass (shared JSON utility)
     controllers/
       __init__.py          # @controller decorator (auto-discovery marker + @inject)

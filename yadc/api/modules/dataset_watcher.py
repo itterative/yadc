@@ -15,8 +15,8 @@ from typing import Any, Callable, override
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..events import DatasetChangedEvent
-from .event_dispatcher import EventDispatcher
+from ..events import DatasetChangedEvent, StartupEvent
+from .event_dispatcher import EventDispatcher, event_handler
 from .logging_factory import LoggingFactory
 from .service import Service
 
@@ -88,10 +88,15 @@ class DatasetWatcherService(Service):
         self._watches: dict[str, list[tuple[object, _DirEventHandler]]] = {}
         # dataset_name -> debounce Timer
         self._timers: dict[str, threading.Timer] = {}
+        # dataset_name -> job_id for expected changes
+        self._expected_sources: dict[str, str] = {}
         self._lock: threading.Lock = threading.Lock()
 
-        # Start the observer in a background thread
         self._thread: threading.Thread = threading.Thread(target=self._run_observer, daemon=True)
+
+    @event_handler(StartupEvent)
+    def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
+        # Start the observer in a background thread
         self._thread.start()
 
     def _run_observer(self) -> None:
@@ -133,12 +138,29 @@ class DatasetWatcherService(Service):
         with self._lock:
             self._unwatch_dataset_locked(dataset_name)
 
+    def expect_changes(self, dataset_name: str, job_id: str) -> None:
+        """Tag filesystem change events for *dataset_name* with *job_id* until cleared.
+
+        Called by captioning to mark that DatasetChangedEvents
+        are caused by a specific captioning job (so the initiating frontend can ignore them).
+        Remains active until ``clear_expected_changes()`` is called.
+        """
+        with self._lock:
+            self._expected_sources[dataset_name] = job_id
+
+    def clear_expected_changes(self, dataset_name: str) -> None:
+        """Remove the source tag for a dataset's change events."""
+        with self._lock:
+            self._expected_sources.pop(dataset_name, None)
+
     def _unwatch_dataset_locked(self, dataset_name: str) -> None:
         """Remove watches for a dataset (caller must hold self._lock)."""
         # Cancel any pending debounce timer
         timer = self._timers.pop(dataset_name, None)
         if timer is not None:
             timer.cancel()
+
+        self._expected_sources.pop(dataset_name, None)
 
         watches = self._watches.pop(dataset_name, [])
         for watch, _handler in watches:
@@ -166,6 +188,7 @@ class DatasetWatcherService(Service):
         """Dispatch a DatasetChangedEvent (called from debounce timer thread)."""
         with self._lock:
             self._timers.pop(dataset_name, None)
+            job_id = self._expected_sources.get(dataset_name)
 
-        self._logger.debug("Dispatching dataset_changed event. [dataset=%s]", dataset_name)
-        self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name))
+        self._logger.debug("Dispatching dataset_changed event. [dataset=%s, job_id=%s]", dataset_name, job_id)
+        self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name, job_id=job_id))

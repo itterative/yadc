@@ -80,6 +80,11 @@
         models = [];
         modelFetchDone = false;
         modelsError = null;
+
+        // Auto-fetch models so the dropdown populates immediately
+        if (!cancelled) {
+          await loadModels();
+        }
       } catch {
         if (cancelled) return;
         envInfo = null;

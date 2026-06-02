@@ -12,6 +12,7 @@ Usage from the API layer::
 """
 
 import threading
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from logging import Logger
@@ -30,6 +31,7 @@ from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.prediction import PredictionContext
 
 from ..events import CaptioningStatusEvent
+from ..modules.dataset_watcher import DatasetWatcherService
 from ..modules.event_dispatcher import EventDispatcher
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
@@ -48,6 +50,7 @@ class JobInfo:
 
     status: JobStatus
     dataset_name: str
+    job_id: str = ""
     processed: int = 0
     total: int = 0
     errors: int = 0
@@ -172,6 +175,7 @@ class CaptionJob:
         logger: Logger,
         options: CaptionJobOptions,
         on_done: Callable[[], None],
+        job_id: str = "",
     ):
         self._dataset_name: str = dataset_name
         self._dataset_service: DatasetService = dataset_service
@@ -179,6 +183,7 @@ class CaptionJob:
         self._logger: Logger = logger
         self._opts: CaptionJobOptions = options
         self._on_done: Callable[[], None] = on_done
+        self._job_id: str = job_id
 
         # State (guarded by _state_lock)
         self._state_lock: threading.Lock = threading.Lock()
@@ -214,6 +219,7 @@ class CaptionJob:
             return JobInfo(
                 status=self._status,
                 dataset_name=self._dataset_name,
+                job_id=self._job_id,
                 processed=self._processed,
                 total=self._total,
                 errors=self._errors,
@@ -410,6 +416,7 @@ class CaptionJob:
             processed=snap.processed,
             total=snap.total,
             errors=snap.errors,
+            job_id=snap.job_id,
             error=snap.error,
         )
         self._event_dispatcher.dispatch(event)
@@ -430,16 +437,23 @@ class CaptioningService(Service):
         self,
         dataset_service: DatasetService,
         event_dispatcher: EventDispatcher,
+        dataset_watcher: DatasetWatcherService,
         logging: LoggingFactory,
     ):
         self._dataset_service: DatasetService = dataset_service
         self._event_dispatcher: EventDispatcher = event_dispatcher
+        self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._logger: Logger = logging.get_logger(__name__)
 
         self._lock: threading.Lock = threading.Lock()
         self._jobs: dict[str, CaptionJob] = {}
+        self._active_single: set[str] = set()  # datasets with an active single-image caption
 
     # -- public API ----------------------------------------------------------
+
+    def _mark_expected_changes(self, dataset_name: str, job_id: str) -> None:
+        """Tag the next watcher events for this dataset with the captioning job ID."""
+        self._dataset_watcher.expect_changes(dataset_name, job_id)
 
     def start_job(self, dataset_name: str, options: CaptionJobOptions) -> JobInfo:
         """Start a captioning job for *dataset_name*.
@@ -451,9 +465,13 @@ class CaptioningService(Service):
         Raises:
             ValueError: If the dataset is unknown or a job is already running.
         """
+        job_id = uuid.uuid4().hex[:12]
+
         with self._lock:
             if dataset_name in self._jobs and self._jobs[dataset_name].alive:
                 raise ValueError(f"A captioning job is already running for dataset '{dataset_name}'")
+            if dataset_name in self._active_single:
+                raise ValueError(f"A single-image caption is in progress for dataset '{dataset_name}'")
 
             job = CaptionJob(
                 dataset_name=dataset_name,
@@ -462,8 +480,10 @@ class CaptioningService(Service):
                 logger=self._logger,
                 options=options,
                 on_done=lambda: self._cleanup(dataset_name),
+                job_id=job_id,
             )
             self._jobs[dataset_name] = job
+            self._mark_expected_changes(dataset_name, job_id)
             job.start()
 
         return self.get_status(dataset_name)
@@ -492,15 +512,31 @@ class CaptioningService(Service):
         """Caption a single image synchronously.
 
         Resolves the dataset config, creates a captioner, and captions the
-        specified image. Returns a dict with the resulting caption.
+        specified image. Returns a dict with the resulting caption and job_id.
 
         Raises:
-            ValueError: If the dataset or image is not found, or a batch job is running.
+            ValueError: If the dataset or image is not found, or another operation is running.
         """
-        # Block if a batch job is running for this dataset
+        job_id = uuid.uuid4().hex[:12]
+
+        # Block if another captioning operation is running for this dataset
         with self._lock:
             if dataset_name in self._jobs and self._jobs[dataset_name].alive:
                 raise ValueError(f"A batch captioning job is running for dataset '{dataset_name}'")
+            if dataset_name in self._active_single:
+                raise ValueError(f"A single-image caption is already in progress for dataset '{dataset_name}'")
+            self._active_single.add(dataset_name)
+
+        try:
+            result = self._caption_single_inner(dataset_name, image_id, options, job_id)
+            result["job_id"] = job_id
+            return result
+        finally:
+            with self._lock:
+                self._active_single.discard(dataset_name)
+
+    def _caption_single_inner(self, dataset_name: str, image_id: int, options: CaptionJobOptions, job_id: str) -> dict[str, Any]:
+        """Inner implementation of caption_single (caller handles locking)."""
 
         # Resolve dataset config
         ds_info = self._dataset_service.get_dataset(dataset_name)
@@ -575,6 +611,7 @@ class CaptioningService(Service):
         ).strip()
 
         if caption:
+            self._mark_expected_changes(dataset_name, job_id)
             if options.draft:
                 dataset_image.write_draft(options.draft, caption)
             else:
@@ -585,6 +622,8 @@ class CaptioningService(Service):
 
             # Update the image index
             self._dataset_service.refresh_image_index(dataset_name, image_id)
+            # Clear the source tag after the debounce window passes
+            threading.Timer(2.0, lambda: self._dataset_watcher.clear_expected_changes(dataset_name)).start()
 
         model.log_usage()
 
@@ -603,6 +642,7 @@ class CaptioningService(Service):
                 job = self._jobs.get(dataset_name)
                 if job is not None and not job.alive:
                     del self._jobs[dataset_name]
+            self._dataset_watcher.clear_expected_changes(dataset_name)
 
         t = threading.Thread(target=_delayed, daemon=True)
         t.start()

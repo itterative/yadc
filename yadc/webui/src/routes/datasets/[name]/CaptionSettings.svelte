@@ -12,6 +12,8 @@
     type TemplateListItem,
   } from "$lib/stores/templates";
   import type { CaptionOptions } from "$lib/stores/captionOptions";
+  import { captionSettings } from "$lib/stores/captionSettings";
+  import { get } from "svelte/store";
 
   // --- Props ---
 
@@ -84,11 +86,40 @@
   // --- Load data on mount ---
 
   let dataLoaded = $state(false);
+  // Stash the saved model/url so we can restore model once the env loads
+  let _pendingModelName = "";
+  let _pendingApiUrl = "";
 
   $effect(() => {
     if (!dataLoaded) {
       dataLoaded = true;
+
+      // Restore last-used settings from localStorage
+      const saved = get(captionSettings);
+      selectedEnv = saved.env;
+      maxTokens = saved.maxTokens;
+      imageQuality = saved.imageQuality;
+      draftName = saved.draftName;
+      overwrite = saved.overwrite;
+      rounds = saved.rounds;
+      reasoningEnabled = saved.reasoningEnabled;
+      reasoningEffort = saved.reasoningEffort;
+      selectedTemplate = saved.selectedTemplate;
+
+      // Stash model for URL-guarded restore after env loads
+      _pendingModelName = saved.apiModelName;
+      _pendingApiUrl = saved.apiUrl;
+
       loadTemplateList();
+    }
+  });
+
+  // Restore saved model once the env has loaded and the URL matches
+  $effect(() => {
+    if (_pendingModelName && envUrl && envUrl === _pendingApiUrl) {
+      envModelName = _pendingModelName;
+      _pendingModelName = "";
+      _pendingApiUrl = "";
     }
   });
 
@@ -218,6 +249,21 @@
   });
 
   function handleStart() {
+    // Persist settings to localStorage for next time
+    captionSettings.update((s) => ({
+      ...s,
+      env: selectedEnv,
+      maxTokens,
+      imageQuality,
+      draftName,
+      overwrite,
+      rounds,
+      reasoningEnabled,
+      reasoningEffort,
+      selectedTemplate: effectiveTemplateName || selectedTemplate,
+      apiUrl: envUrl.trim(),
+      apiModelName: envModelName.trim(),
+    }));
     onstart?.(_assembledOptions);
   }
 </script>

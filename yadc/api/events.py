@@ -5,6 +5,12 @@ from typing import ClassVar, Literal
 class Event:
     TYPE: ClassVar[str]
 
+class StartupEvent(Event):
+    TYPE: ClassVar[str] = "startup"
+
+
+class ShutdownEvent(Event):
+    TYPE: ClassVar[str] = "shutdown"
 
 @dataclass
 class PingEvent(Event):
@@ -20,6 +26,7 @@ class CaptioningStatusEvent(Event):
     processed: int
     total: int
     errors: int
+    job_id: str = ""
     error: str | None = None
 
 
@@ -27,3 +34,4 @@ class CaptioningStatusEvent(Event):
 class DatasetChangedEvent(Event):
     TYPE: ClassVar[str] = "dataset_changed"
     dataset_name: str
+    job_id: str | None = None
