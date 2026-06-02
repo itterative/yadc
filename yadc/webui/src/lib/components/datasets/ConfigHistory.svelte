@@ -5,7 +5,9 @@
         type ConfigHistoryEntry
     } from '$lib/stores/configs';
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
+    import SvgHistory from '$lib/icons/SvgHistory.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
+    import SvgVisibility from '$lib/icons/SvgVisibility.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
 
@@ -135,35 +137,14 @@
                 {@const isLast = i === entries.length - 1}
                 {@const showFull = isLast || showFullMap[entry.id]}
                 {@const prevEntry = isLast ? null : entries[i + 1]}
-                <div class="overflow-hidden rounded-lg border border-border">
-                    <!-- Section header -->
-                    <div
-                        class="flex items-center justify-between border-b border-border bg-gray-800/40 px-3 py-2"
-                    >
-                        <div class="min-w-0">
-                            <div class="text-xs font-medium text-gray-300">
-                                {relativeTime(entry.created_t)}
-                            </div>
-                            <div class="text-[11px] text-gray-500">
-                                {new Date(entry.created_t * 1000).toLocaleString()}
-                            </div>
+                <div class="overflow-hidden rounded-lg bg-gray-800">
+                    <!-- Small header — revision details (relative time + date) -->
+                    <div class="flex items-baseline justify-between gap-2 px-3 pt-2 pb-1">
+                        <div class="text-xs font-medium text-gray-300">
+                            {relativeTime(entry.created_t)}
                         </div>
-                        <div class="flex items-center gap-2">
-                            {#if !isLast}
-                                <button
-                                    class="btn-secondary px-2 py-0.5 text-xs"
-                                    onclick={() => toggleView(entry.id)}
-                                >
-                                    {showFull ? 'Show diff' : 'Show full'}
-                                </button>
-                            {/if}
-                            <button
-                                class="btn-secondary px-2 py-0.5 text-xs"
-                                onclick={() => handleRestore(entry)}
-                                disabled={restoringId === entry.id}
-                            >
-                                {restoringId === entry.id ? 'Restoring…' : 'Restore'}
-                            </button>
+                        <div class="text-[11px] text-gray-500">
+                            {new Date(entry.created_t * 1000).toLocaleString()}
                         </div>
                     </div>
                     <!-- Section body -->
@@ -173,6 +154,7 @@
                                 <TomlEditor
                                     class="text-sm"
                                     value={entry.content}
+                                    autoHeight
                                     editable={false}
                                 />
                             {:else if prevEntry}
@@ -181,10 +163,53 @@
                                     value={entry.content}
                                     original={prevEntry.content}
                                     editable={false}
+                                    autoHeight
                                     compactDiff
                                 />
                             {/if}
                         {/key}
+                    </div>
+                    <!-- Action bar — mirrors the Extras.svelte footer. The oldest
+                         entry has nothing to diff against, so Restore goes full-width. -->
+                    <div class="grid grid-cols-2 gap-2 bg-black/15 p-2 text-sm">
+                        {#if !isLast}
+                            <div class="flex items-center justify-center">
+                                <button
+                                    class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                    onclick={() => toggleView(entry.id)}
+                                >
+                                    <SvgVisibility class="h-4 w-4 shrink-0" />
+                                    <span class="min-w-0 truncate"
+                                        >{showFull ? 'Show diff' : 'Show full'}</span
+                                    >
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-center">
+                                <button
+                                    class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                                    onclick={() => handleRestore(entry)}
+                                    disabled={restoringId === entry.id}
+                                >
+                                    <SvgHistory class="h-4 w-4 shrink-0" />
+                                    <span class="min-w-0 truncate"
+                                        >{restoringId === entry.id ? 'Restoring…' : 'Restore'}</span
+                                    >
+                                </button>
+                            </div>
+                        {:else}
+                            <div class="col-span-2 flex items-center justify-center">
+                                <button
+                                    class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                                    onclick={() => handleRestore(entry)}
+                                    disabled={restoringId === entry.id}
+                                >
+                                    <SvgHistory class="h-4 w-4 shrink-0" />
+                                    <span class="min-w-0 truncate"
+                                        >{restoringId === entry.id ? 'Restoring…' : 'Restore'}</span
+                                    >
+                                </button>
+                            </div>
+                        {/if}
                     </div>
                 </div>
             {/each}
