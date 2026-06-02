@@ -350,7 +350,7 @@
             icon={SvgVisibility}
             class="h-full"
         >
-            <Preview {datasetName} {item} />
+            <Preview {datasetName} {captionData} {item} />
         </Tab>
         <Tab id="extras" label="Extras" icon={SvgEdit} class="h-full overflow-y-auto pt-0">
             <ExtrasTab {item} {captionData} {isSavingExtras} onSaveExtras={handleSaveExtras} />

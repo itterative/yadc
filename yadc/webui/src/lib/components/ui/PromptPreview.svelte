@@ -2,6 +2,7 @@
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import {
         fetchPromptPreview,
+        type CaptionData,
         type PromptPreview as PromptPreviewData
     } from '$lib/stores/datasetImages';
     import { captionOptions } from '$lib/stores/captionActions';
@@ -10,9 +11,10 @@
     interface Props {
         datasetName: string;
         imageId: number | null;
+        captionData: CaptionData | null;
     }
 
-    let { datasetName, imageId }: Props = $props();
+    let { datasetName, imageId, captionData }: Props = $props();
 
     let promptPreview: PromptPreviewData | null = $state(null);
     let isLoadingPreview = $state(false);
@@ -24,6 +26,8 @@
     let lastRenderedImageId: number | null = null;
 
     $effect(() => {
+        void captionData?.extras_raw;
+
         const id = imageId;
         const dsName = datasetName;
         // Read template fields so the effect re-runs when they change.

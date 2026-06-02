@@ -1,13 +1,14 @@
 <script lang="ts">
     import PromptPreview from '$lib/components/ui/PromptPreview.svelte';
-    import type { ImageInfo } from '$lib/stores/datasetImages';
+    import type { CaptionData, ImageInfo } from '$lib/stores/datasetImages';
 
     interface Props {
         datasetName: string;
+        captionData: CaptionData | null;
         item: ImageInfo;
     }
 
-    let { datasetName, item }: Props = $props();
+    let { datasetName, captionData, item }: Props = $props();
 </script>
 
-<PromptPreview {datasetName} imageId={item.id} />
+<PromptPreview {datasetName} {captionData} imageId={item.id} />
