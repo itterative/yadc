@@ -68,7 +68,7 @@ yadc/webui/
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview). Derives isCaptioning from currentlyCaptioning store. Calls captionActions.captionSingleImage directly.
+          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview). The caption section is a self-contained "caption box" (rounded container, scrollable text area on top, 2-column action bar of icon buttons at the bottom). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
         datasets/                       # Dataset creation/management components
           UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
           CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
@@ -91,7 +91,7 @@ yadc/webui/
         settings/                       # Settings-domain sub-components
           EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props). "Manage…" link opens SettingsDialog at the Environments tab.
           TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
-      icons/             # SVG icon components (Svg* prefix)
+      icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
     routes/
       layout.css        # Tailwind v4 imports + @theme block + typography plugin
       +layout.svelte    # App shell with left sidebar nav (icon-rail on desktop, slide-in overlay on mobile with burger menu). Brand uses android-chrome-192x192.png icon. Tooltip component for desktop hover labels.

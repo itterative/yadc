@@ -2,7 +2,7 @@
 name: dataset-config-ux-plan
 description: Improvements to dataset config editing UX — structured form overhaul, dataset entries editing, simplified/advanced views, shared components, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, and managed dataset lifecycle.
 status: In Progress
-last_history: 33
+last_history: 34
 category: meta
 ---
 
@@ -375,6 +375,7 @@ Post-implementation polish for issues discovered during use.
 - [x] 7.6: **Path editing watcher re-registration** — `rescan_dataset()` now calls `_watcher.watch_dataset()` after scanning to update the watched directories. Fixes the bug where changing a dataset path left the old directory watched (new files wouldn't trigger auto-rescan) and left the new directory unwatched.
 - [x] 7.7: **Form/Advanced view sync divergence** — Added a simple informational banner at the top of each view when the other view has unsaved changes. `otherViewDirty` state is snapshotted on tab switch, cleared on save/reload. No sync/merge logic — just a heads-up for the user.
 - [x] 7.8: **Prompt preview uses captionOptions directly** — Removed the duplicate template dropdown, "Render" button, and collapsible toggle from `PromptPreview.svelte` in the details tab. The preview now subscribes to the `captionOptions` store (kept in sync by `CaptionSettings`) and auto-renders whenever the image or template changes (200 ms debounce on template edits to avoid render-on-keystroke). Section is now a flat always-visible block matching Caption / TOML Extras / Drafts. Single source of truth for the template. See history entry 033.
+- [x] 7.9: **Caption section footer bar + single-image cancel** — Restructured the image-detail Caption section into a self-contained "caption box" (text area on top scrolls, action bar at the bottom stays put). The action bar is a 2-column grid with `rounded-lg` icon buttons: `[✨ Caption | Draft (NAME)]` · `[✏️ Edit]` while viewing, `[✕ Cancel] · [✓ Save]` while editing, full-width `[✕ Cancel]` while captioning. New `handleCancelSingleCaptioning` calls `stopCaptioning` (safe because `isCaptioning` is only set for single-image jobs, not batch). Caption label changed from `Caption → DRAFT` to `Draft (DRAFT)`. Copy button moved out of the scrollable text area to anchor to the caption box. Long draft names truncate with ellipsis. New icons: `SvgEdit`, `SvgClose`, `SvgSparkle`. See history entry 034.
 
 1. **Phase 1** (Dataset entries + extras) — highest user value
 2. **Phase 2** (Advanced settings fields) — fills gaps in the structured form

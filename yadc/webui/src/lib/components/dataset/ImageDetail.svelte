@@ -14,13 +14,19 @@
         type HistoryEntry,
         type ImageInfo
     } from '$lib/stores/datasetImages';
-    import { captionSingleImage as startSingleCaptioning } from '$lib/stores/captionActions';
+    import {
+        captionSingleImage as startSingleCaptioning,
+        stopCaptioning
+    } from '$lib/stores/captionActions';
     import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
     import { captionOptions } from '$lib/stores/captionActions';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgCheck from '$lib/icons/SvgCheck.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
+    import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import SvgClose from '$lib/icons/SvgClose.svelte';
+    import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
     import { confirmDialog } from '$lib/stores/confirm';
@@ -160,6 +166,23 @@
                 return;
             }
             captioningError = friendlyErrorMessage(e, 'Failed to caption image');
+        }
+    }
+
+    let isCancelling = $state(false);
+
+    /** Cancel a single-image captioning job. Only safe to call when `isCaptioning` is true
+     *  (which already implies single-image, not batch — `currentlyCaptioning` is only set
+     *  by `captionSingleImage`, not by batch captioning). */
+    async function handleCancelSingleCaptioning() {
+        if (item === null) {
+            return;
+        }
+        isCancelling = true;
+        try {
+            await stopCaptioning(datasetName);
+        } finally {
+            isCancelling = false;
         }
     }
 
@@ -337,60 +360,58 @@
 
             <!-- Caption -->
             <div>
-                <div class="mb-2 flex items-center justify-between">
-                    <h3 class="text-sm font-medium text-gray-300">Caption</h3>
-                    {#if captionData && !isEditing && !isCaptioning}
-                        <div class="flex items-center gap-3">
-                            {#if !isCaptioning}
-                                <button
-                                    class="cursor-pointer text-xs text-accent hover:text-accent-hover"
-                                    onclick={handleCaptionImage}
-                                >
-                                    {activeDraftName ? `Caption → ${activeDraftName}` : 'Caption'}
-                                </button>
-                            {/if}
-                            <button
-                                class="cursor-pointer text-xs text-accent hover:text-accent-hover"
-                                onclick={() => {
-                                    editCaption = captionData?.caption || '';
-                                    isEditing = true;
-                                }}
-                            >
-                                Edit
-                            </button>
-                        </div>
-                    {/if}
-                </div>
+                <h3 class="mb-2 text-sm font-medium text-gray-300">Caption</h3>
 
                 {#if isLoadingCaption}
                     <SpinnerBlock size="h-4 w-4" label="Loading caption..." />
                 {:else if captionError}
                     <p class="text-sm text-error">{captionError}</p>
                 {:else}
-                    <div class="relative">
-                        {#if isCaptioning}
-                            <div
-                                class="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-black/60 text-sm text-gray-300"
+                    <div
+                        class="relative overflow-hidden rounded-lg bg-gray-800"
+                    >
+                        <!-- Copy button — anchored to the caption box, not the scrollable
+                             text area, so it stays put while the user scrolls the text. -->
+                        {#if captionData && captionData.caption && !isEditing && !isCaptioning}
+                            <button
+                                type="button"
+                                class="absolute top-2 right-2 z-10 cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                aria-label="Copy caption"
+                                title="Copy caption"
+                                onclick={() => copyToClipboard(captionData!.caption!, 'caption')}
                             >
-                                <SvgSpinner class="h-4 w-4 animate-spin" />
-                                <span
-                                    >{activeDraftName
-                                        ? `Generating draft…`
-                                        : 'Generating caption…'}</span
-                                >
-                            </div>
-                        {:else if captioningError}
-                            <div
-                                class="absolute inset-x-0 top-0 z-10 rounded-t-lg bg-error/90 px-3 py-1.5 text-center text-sm text-white"
-                            >
-                                {captioningError}
-                            </div>
+                                {#if copiedKey === 'caption'}
+                                    <SvgCheck class="h-4 w-4 text-success" />
+                                {:else}
+                                    <SvgCopy class="h-4 w-4" />
+                                {/if}
+                            </button>
                         {/if}
-                        {#if isEditing}
-                            <div class="space-y-2">
+
+                        <!-- Text area — only this part scrolls. -->
+                        <div class="relative max-h-60 overflow-y-auto">
+                            {#if isCaptioning}
+                                <div
+                                    class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-black/60 text-sm text-gray-300"
+                                >
+                                    <SvgSpinner class="h-4 w-4 animate-spin" />
+                                    <span
+                                        >{activeDraftName
+                                            ? `Generating draft…`
+                                            : 'Generating caption…'}</span
+                                    >
+                                </div>
+                            {:else if captioningError}
+                                <div
+                                    class="absolute inset-x-0 top-0 z-10 bg-error/90 px-3 py-1.5 text-center text-sm text-white"
+                                >
+                                    {captioningError}
+                                </div>
+                            {/if}
+                            {#if isEditing}
                                 <textarea
                                     bind:value={editCaption}
-                                    class="max-h-60 w-full resize-none rounded-lg bg-gray-800 p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
+                                    class="w-full resize-none bg-transparent p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
                                     placeholder="Enter caption..."
                                     oninput={(e) => {
                                         const el = e.currentTarget;
@@ -399,48 +420,81 @@
                                     }}
                                     use:autosize
                                 ></textarea>
-                                <div class="btn-bar">
+                            {:else if captionData}
+                                {#if captionData.caption}
+                                    <pre
+                                        class="p-3 pr-10 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
+                                {:else}
+                                    <pre
+                                        class="p-3 text-sm whitespace-pre-wrap text-gray-500 italic">No caption</pre>
+                                {/if}
+                            {/if}
+                        </div>
+
+                        <!-- Action bar — footer of the caption box. Each flex child wraps
+                             the button in a padded cell so the hover background stays
+                             rounded and contained. -->
+                        <div class="grid grid-cols-2 gap-2 p-2 bg-black/15 text-sm">
+                            {#if isEditing}
+                                <div class="flex items-center justify-center">
                                     <button
-                                        class="btn-secondary px-3 py-1.5"
+                                        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
                                         onclick={handleCancelEdit}
                                         disabled={isSaving}
                                     >
-                                        Cancel
+                                        <SvgClose class="h-4 w-4 shrink-0" />
+                                        <span class="min-w-0 truncate">Cancel</span>
                                     </button>
+                                </div>
+                                <div class="flex items-center justify-center">
                                     <button
-                                        class="btn-primary px-3 py-1.5"
+                                        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                                         onclick={handleSave}
                                         disabled={isSaving}
                                     >
-                                        {isSaving ? 'Saving...' : 'Save'}
+                                        <SvgCheck class="h-4 w-4 shrink-0" />
+                                        <span class="min-w-0 truncate">{isSaving ? 'Saving…' : 'Save'}</span>
                                     </button>
                                 </div>
-                            </div>
-                        {:else if captionData}
-                            {#if captionData.caption}
-                                <pre
-                                    class="max-h-60 overflow-y-auto rounded-lg bg-gray-800 p-3 pr-10 text-sm whitespace-pre-wrap text-gray-200">{captionData.caption}</pre>
-                                {#if !isEditing && !isCaptioning}
+                            {:else if isCaptioning}
+                                <div class="flex items-center justify-center">
                                     <button
-                                        type="button"
-                                        class="absolute top-2 right-2 cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
-                                        aria-label="Copy caption"
-                                        title="Copy caption"
-                                        onclick={() =>
-                                            copyToClipboard(captionData!.caption!, 'caption')}
+                                        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-error transition-colors hover:bg-gray-700 hover:text-error/80 disabled:cursor-not-allowed disabled:opacity-50"
+                                        onclick={handleCancelSingleCaptioning}
+                                        disabled={isCancelling}
                                     >
-                                        {#if copiedKey === 'caption'}
-                                            <SvgCheck class="h-4 w-4 text-success" />
-                                        {:else}
-                                            <SvgCopy class="h-4 w-4" />
-                                        {/if}
+                                        <SvgClose class="h-4 w-4 shrink-0" />
+                                        <span class="min-w-0 truncate">{isCancelling ? 'Cancelling…' : 'Cancel'}</span>
                                     </button>
-                                {/if}
-                            {:else}
-                                <pre
-                                    class="rounded-lg bg-gray-800 p-3 text-sm whitespace-pre-wrap text-gray-500 italic">No caption</pre>
+                                </div>
+                            {:else if captionData}
+                                <div class="flex items-center justify-center">
+                                    <button
+                                        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                                        onclick={handleCaptionImage}
+                                    >
+                                        <SvgSparkle class="h-4 w-4 shrink-0" />
+                                        <span class="min-w-0 truncate"
+                                            >{activeDraftName
+                                                ? `Draft (${activeDraftName})`
+                                                : 'Caption'}</span
+                                        >
+                                    </button>
+                                </div>
+                                <div class="flex items-center justify-center">
+                                    <button
+                                        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                        onclick={() => {
+                                            editCaption = captionData?.caption || '';
+                                            isEditing = true;
+                                        }}
+                                    >
+                                        <SvgEdit class="h-4 w-4 shrink-0" />
+                                        <span class="min-w-0 truncate">Edit</span>
+                                    </button>
+                                </div>
                             {/if}
-                        {/if}
+                        </div>
                     </div>
                 {/if}
             </div>
