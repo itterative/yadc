@@ -17,7 +17,7 @@
         </div>
     {/if}
     <TomlEditor
-        class="rounded-md border border-border text-sm"
+        class="rounded-md border border-border bg-surface text-sm"
         bind:value={configState.rawContent}
         editable={true}
     />

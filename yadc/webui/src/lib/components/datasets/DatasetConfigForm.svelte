@@ -240,7 +240,7 @@
         {/if}
         <div class="max-h-[40vh] min-h-30 overflow-y-auto">
             <TomlEditor
-                class="rounded-md border border-border text-sm"
+                class="rounded-md border border-border bg-surface text-sm"
                 value={previewContent}
                 editable={false}
             />

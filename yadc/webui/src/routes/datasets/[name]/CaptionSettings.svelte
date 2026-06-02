@@ -575,7 +575,7 @@
                     <SpinnerBlock class="py-8" size="h-4 w-4" label="Loading template…" />
                 {:else}
                     <JinjaEditor
-                        class="rounded-md border border-border text-sm h-full"
+                        class="h-full rounded-md border border-border bg-surface text-sm"
                         bind:value={templateContent}
                         onchange={handleTemplateContentChange}
                     />

@@ -37,17 +37,17 @@
     <div>
         <h3 class="mb-1 text-sm font-medium text-gray-300">Image TOML</h3>
         <p class="text-xs text-gray-500">
-            Values are exposed as template variables in the prompt context
-            — useful for per-image context like <code class="text-gray-400">style</code>,
+            Values are exposed as template variables in the prompt context — useful for per-image
+            context like <code class="text-gray-400">style</code>,
             <code class="text-gray-400">characters</code>, or
             <code class="text-gray-400">context</code>.
         </p>
     </div>
 
     <div class="relative flex flex-1 flex-col overflow-hidden rounded-lg bg-gray-800">
-        <div class="relative flex-1 p-2 box-content">
+        <div class="relative box-content flex-1 p-2">
             <TomlEditor
-                class="extras-editor min-h-32 rounded-md border-0 text-sm"
+                class="min-h-32 rounded-md border-0 bg-gray-800 text-sm"
                 bind:value={editExtrasRaw}
                 editable={true}
                 autoHeight={false}
@@ -78,17 +78,3 @@
         </div>
     </div>
 </div>
-
-<style>
-    /* Match the caption box: gray-800 background and rounded corners on the
-       editor surface. The wrapper has `rounded-md` + `overflow-hidden`, but
-       `.cm-editor` paints its own `var(--color-surface)` background on top
-       of the wrapper, so we have to override it here. */
-    :global(.extras-editor .cm-editor),
-    :global(.extras-editor .cm-gutters) {
-        background: #1f2937 !important; /* gray-800 */
-    }
-    :global(.extras-editor .cm-editor) {
-        border-radius: 0.375rem; /* rounded-md */
-    }
-</style>

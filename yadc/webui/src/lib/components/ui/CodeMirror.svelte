@@ -1,6 +1,16 @@
 <!--
   Minimal CodeMirror 6 wrapper for Svelte 5.
   Based on the public-domain shim, converted to Svelte 5 runes API.
+
+  Sizing in this component has several non-obvious gotchas — the CSS
+  percentage-height trap, the flex/grid circular dependency, and the
+  absolute-positioning fallback that lets the editor fill its wrapper
+  regardless of the wrapper's own height. The editor background is
+  intentionally not set in the base theme; consumers set it on the
+  wrapper (`bg-surface`, `bg-gray-800`, etc.).
+
+  Read .pi/agent/memory/docs/codemirror-quirks.md before changing the
+  theme, the wrapper class, or any consumer's height context.
 -->
 
 <script lang="ts">
@@ -81,15 +91,28 @@
 
     // --- Base theme (dark background, uses Tailwind CSS variables) ---
 
-    const baseTheme = EditorView.theme({
+    const baseTheme: Record<string, Record<string, string>> = {
         '.cm-content': {
             fontFamily: 'var(--font-mono)',
             padding: '0.5rem 0',
+            // Fill the scroller so the entire editor area is clickable for
+            // cursor placement (not just the area covered by the text). In
+            // autoHeight mode this is a no-op because the scroller has no
+            // definite height for the percentage to resolve against.
+            minHeight: '100% !important'
+        },
+        '.cm-scroller': {
+            // Fill `.cm-editor` (which is `position: absolute; inset: 0`).
+            flex: '1 1 0 !important',
+            minHeight: '0 !important'
         },
         '&.cm-editor': {
-            background: 'var(--color-surface)',
             color: 'var(--color-fg)',
-            minHeight: '100% !important'
+            position: 'absolute !important',
+            top: '0 !important',
+            right: '0 !important',
+            bottom: '0 !important',
+            left: '0 !important'
         },
         '.cm-focused': {
             outline: '2px solid var(--color-accent)',
@@ -99,7 +122,6 @@
             borderLeftColor: 'var(--color-fg)'
         },
         '.cm-gutters': {
-            background: 'var(--color-surface)',
             borderRight: '1px solid var(--color-border)',
             color: 'var(--color-muted)'
         },
@@ -130,7 +152,7 @@
         '.cm-deletedChunk': {
             background: 'color-mix(in oklch, var(--color-red-500) 10%, transparent) !important'
         }
-    });
+    };
 
     // --- Dark syntax highlighting (Tokyo Night–inspired) ---
 
@@ -182,17 +204,27 @@
 
     // --- Auto-height theme override ---
 
-    const autoHeightTheme = EditorView.theme({
-        '&.cm-editor': { height: 'auto' },
-        '.cm-scroller': { overflow: 'visible' }
-    });
+    const autoHeightTheme: Record<string, Record<string, string>> = {
+        // Override the base absolute positioning so the editor sizes to its
+        // content rather than filling a `position: relative` wrapper.
+        '&.cm-editor': {
+            position: 'static !important',
+            height: 'auto !important'
+        },
+        '.cm-scroller': {
+            overflow: 'visible'
+        }
+    };
 
     $effect(() => {
-        const exts: Extension[] = [baseTheme, darkHighlightExt];
-        if (autoHeight) {
-            exts.push(autoHeightTheme);
-        }
-        exts.push(...extensions, EditorView.editable.of(editable));
+        const theme = !autoHeight ? baseTheme : Object.assign({}, baseTheme, autoHeightTheme);
+        const exts: Extension[] = [
+            ...extensions,
+            EditorView.theme(theme),
+            darkHighlightExt,
+            EditorView.editable.of(editable)
+        ];
+
         if (view) {
             view.dispatch({
                 effects: StateEffect.reconfigure.of(exts)
@@ -217,6 +249,8 @@
 </script>
 
 <div
-    class="{autoHeight ? 'overflow-hidden' : 'h-full overflow-hidden'} {klazz}"
+    class="{autoHeight
+        ? 'overflow-hidden'
+        : 'relative h-full min-h-32 flex-1 overflow-hidden'} {klazz}"
     bind:this={dom}
 ></div>

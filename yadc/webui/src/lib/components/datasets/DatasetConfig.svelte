@@ -229,7 +229,7 @@
 
     <!-- Footer: sticky save button -->
     {#if !isLoading && !error && activeView !== 'history'}
-        <div class="flex-shrink-0 border-t border-border p-4">
+        <div class="shrink-0 border-t border-border p-4">
             <div class="flex gap-2">
                 <button class="btn-secondary flex-1" onclick={loadConfig} disabled={isSaving}>
                     <SvgRefresh class="mr-1 inline-block h-4 w-4" />

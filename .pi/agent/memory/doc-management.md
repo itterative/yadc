@@ -28,6 +28,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** inside the agent memory 
 | [`template-system`](.pi/agent/memory/docs/template-system.md) | Jinja2 prompt template system — template resolution, loading, and variable context. |
 | [`yadc-config-v2`](.pi/agent/memory/docs/yadc-config-v2.md) | v2 dataset config format — `[[dataset]]` array-of-tables structure and v1 auto-conversion. |
 | [`webui-frontend`](.pi/agent/memory/docs/webui-frontend.md) | yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues. |
+| [`codemirror-quirks`](.pi/agent/memory/docs/codemirror-quirks.md) | CodeMirror 6 editor sizing quirks — the CSS percentage-height trap, the flex/grid circular dependency, the `minmax(0, 1fr)` pattern that breaks it, and the absolute-positioning fallback kept in CodeMirror.svelte. |
 
 ## Root-Level Reference Memories
 

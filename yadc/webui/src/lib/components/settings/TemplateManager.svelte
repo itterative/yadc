@@ -222,7 +222,7 @@
         {:else if selectedTemplateName || isNewTemplate}
             <div class="min-h-0 flex-1 overflow-hidden">
                 <JinjaEditor
-                    class="rounded-md border border-border"
+                    class="rounded-md border border-border bg-surface"
                     bind:value={templateContent}
                     onchange={handleTemplateContentChange}
                 />

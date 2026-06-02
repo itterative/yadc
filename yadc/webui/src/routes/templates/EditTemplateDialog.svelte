@@ -128,7 +128,7 @@
         {:else}
             <div class="h-[50vh] flex-1 overflow-y-auto">
                 <JinjaEditor
-                    class="rounded-md border border-border"
+                    class="rounded-md border border-border bg-surface"
                     bind:value={content}
                     bind:variables={templateVariables}
                 />
