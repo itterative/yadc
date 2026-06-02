@@ -96,6 +96,10 @@
             <span class="text-xs text-gray-500">Rendering…</span>
         {/if}
     </div>
+    <p class="mb-2 text-xs text-gray-500">
+        Live preview of the system and user prompts sent to the model. Updates automatically when
+        the image or prompt template changes.
+    </p>
     <div class="space-y-3">
         {#if previewError}
             <p class="text-sm text-error">{previewError}</p>

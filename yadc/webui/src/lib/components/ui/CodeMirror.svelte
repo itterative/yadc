@@ -5,7 +5,7 @@
 
 <script lang="ts">
     import { EditorView, minimalSetup } from 'codemirror';
-    import { StateEffect, type Extension } from '@codemirror/state';
+    import { StateEffect, Transaction, type Extension } from '@codemirror/state';
     import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
     import { tags } from '@lezer/highlight';
 
@@ -84,12 +84,12 @@
     const baseTheme = EditorView.theme({
         '.cm-content': {
             fontFamily: 'var(--font-mono)',
-            padding: '0.5rem 0'
+            padding: '0.5rem 0',
         },
         '&.cm-editor': {
             background: 'var(--color-surface)',
             color: 'var(--color-fg)',
-            height: '100%'
+            minHeight: '100% !important'
         },
         '.cm-focused': {
             outline: '2px solid var(--color-accent)',
@@ -202,7 +202,7 @@
 
     // --- Transaction handler ---
 
-    function handleTransactions(trs: readonly import('@codemirror/state').Transaction[]) {
+    function handleTransactions(trs: readonly Transaction[]) {
         if (!view) {
             return;
         }

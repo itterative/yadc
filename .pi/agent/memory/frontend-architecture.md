@@ -68,7 +68,12 @@ yadc/webui/
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (full image + caption edit + TOML viewer + history browser + drafts + PromptPreview). The caption section is a self-contained "caption box" (rounded container, scrollable text area on top, 2-column action bar of icon buttons at the bottom). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
+          ImageDetail.svelte          # Image detail side panel (header + tab system). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
+          ImageDetail/                 # Split into tabbed sub-components — see dataset-config-ux-plan history 035
+            ImageDetail.svelte         # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls)
+            Caption.svelte             # Caption box (with footer bar) + Drafts + History rendering
+            Preview.svelte             # Thin wrapper around PromptPreview
+            Extras.svelte                # Always-editable TOML editor for the image's extras_raw (Save/Cancel)
         datasets/                       # Dataset creation/management components
           UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
           CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
