@@ -1,5 +1,5 @@
 <script lang="ts">
-    import EnvSelector from '$lib/components/settings/EnvSelector.svelte';
+    import EnvSelector from '$lib/components/env/EnvSelector.svelte';
     import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
     import type { CaptionOptionsDiffDefaults } from '$lib/components/settings/CaptionOptionsFields.svelte';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';

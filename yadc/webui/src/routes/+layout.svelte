@@ -3,7 +3,7 @@
     import { page } from '$app/stores';
     import './layout.css';
     import SettingsDialog from '$lib/components/dialogs/SettingsDialog.svelte';
-    import ExportDialog from '$lib/components/dialogs/ExportDialog.svelte';
+    import ExportDialog from '$lib/components/export/ExportDialog.svelte';
     import PasswordPromptDialog from '$lib/components/dialogs/PasswordPromptDialog.svelte';
     import SvgMenu from '$lib/icons/SvgMenu.svelte';
     import SvgImage from '$lib/icons/SvgImage.svelte';

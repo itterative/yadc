@@ -5,7 +5,7 @@
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import { settingsDialog } from '$lib/stores/settings';
     import GeneralSettings from '$lib/components/dialogs/GeneralSettings.svelte';
-    import EnvironmentSettings from '$lib/components/dialogs/EnvironmentSettings.svelte';
+    import EnvironmentSettings from '$lib/components/env/EnvironmentSettings.svelte';
     import SecuritySettings from '$lib/components/dialogs/SecuritySettings.svelte';
 
     interface Props {
