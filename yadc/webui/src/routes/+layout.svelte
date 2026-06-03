@@ -2,7 +2,7 @@
     import type { Snippet } from 'svelte';
     import { page } from '$app/stores';
     import './layout.css';
-    import SettingsDialog from '$lib/components/dialogs/SettingsDialog.svelte';
+    import SettingsDialog from '$lib/components/settings/SettingsDialog.svelte';
     import ExportDialog from '$lib/components/export/ExportDialog.svelte';
     import PasswordPromptDialog from '$lib/components/dialogs/PasswordPromptDialog.svelte';
     import SvgMenu from '$lib/icons/SvgMenu.svelte';
