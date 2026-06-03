@@ -70,3 +70,9 @@ Multi-turn via `extra_messages: list[ReplyRound]`. Each ReplyRound has role (use
 - Config: `[reasoning]` section with enable, thinking_effort (low/medium/high), exclude_from_output
 - OpenAI: sets `reasoning_effort` in conversation, parses `reasoning_content` / `reasoning_details` from response
 - Gemini: sets `thinkingConfig` with `thinkingBudget` (512/1024/2048), parses `thought: true` parts
+
+## Streaming Captioning
+
+`AsyncCaptionJob._acaption_one()` (in `yadc/api/services/captioning.py`) consumes `model.predict_stream()` token-by-token via `async for`, re-raising `CancelledError` to support mid-flight cancellation. The job's `request_stop()` cooperates with this — `CaptioningService.stop_job_async()` calls `job.wait(timeout=30)` after `request_stop()` so a new job can be started immediately. `_cleanup_async` is scheduled as a background task so `_arun` returns promptly.
+
+Stream error handling: `predict`/`predict_stream` on both OpenAI and Gemini backends catch `httpx.RemoteProtocolError` / `httpx.ReadError`, log a warning, and raise a friendly `ValueError("Connection closed unexpectedly by the server. The API may have shut down or become unreachable.")` so the webui can surface a useful toast instead of an opaque httpx traceback.

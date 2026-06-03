@@ -10,23 +10,27 @@ keep_updated: true
 
 ## Storage Location
 
-All reference docs live in **`.pi/agent/memory/docs/`** inside the agent memory directory. These are **permanent reference documents** — architecture overviews, system descriptions, conventions, and workflow guides. They are separate from feature/design plans (which belong in `.pi/agent/memory/plans/`).
+All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.pi/agent/docs/` for brevity) inside the agent memory directory. These are **permanent reference documents** — architecture overviews, system descriptions, conventions, and workflow guides. They are separate from feature/design plans (which belong in `.pi/agent/memory/plans/`) and from the user-facing `docs/` directory at the repo root (which is for yadc end-users, not for the agent).
 
-## Doc Index
+## Doc Index (in `.pi/agent/docs/`)
 
 | Doc | Description |
 |-----|-------------|
+| `backend/` | **Folder** of per-domain structure files for the `yadc/` Python package. One file per area: `cli.md` (CLI entry points), `api.md` (Web UI backend), `cmd.md` (pure logic), `core.md` (business logic), `captioners.md` (API captioners), `templates.md` (built-in Jinja templates), `utils.md` (shared utilities). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
+| `frontend/` | **Folder** of per-area structure files for `yadc/webui/src/`. One file per area: `lib.md` (lib/ root modules), `styles.md` (lib/styles/), `stores.md` (lib/stores/), `components-ui.md` (lib/components/ui/), `components-domain.md` (lib/components/<domain>/), `routes.md` (routes/). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
 | [`api-di-system`](.pi/agent/memory/docs/api-di-system.md) | Web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones. |
-| [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Captioner hierarchy — `APICaptioner` auto-detection, inner captioner delegation, mixin pattern, and per-backend details. |
-| [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files`), event dispatch, and frontend suppression. |
+| [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Captioner hierarchy — `APICaptioner` auto-detection, inner captioner delegation, mixin pattern, streaming, stream error handling, and per-backend details. |
+| [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files` + `_expected_patterns`), event dispatch, and frontend suppression. |
+| [`dataset-system`](.pi/agent/memory/docs/dataset-system.md) | Dataset subsystem end-to-end — Web UI dataset model, three creation flows, managed dataset layout, upload pipeline (create/append/commit), source-id propagation, diff-scan rescan, background refresh, DatasetImage persistence. |
 | [`captioning-workflow`](.pi/agent/memory/docs/captioning-workflow.md) | End-to-end captioning workflow — dataset loading, filtering, prediction loop, saving. |
 | [`cli-cmd-structure`](.pi/agent/memory/docs/cli-cmd-structure.md) | How CLI commands and `cmd/` modules are structured — click commands vs pure logic split. |
 | [`debug-api-logging`](.pi/agent/memory/docs/debug-api-logging.md) | `YADC_DEBUG_CAPTION_RESPONSES=1` feature for logging caption API request/response pairs to JSONL files. |
 | [`export-system`](.pi/agent/memory/docs/export-system.md) | How the export system works — backends, formats, and the draft/caption source selection. |
+| [`frontend-patterns`](.pi/agent/memory/docs/frontend-patterns.md) | Frontend patterns — Tabs system, Z-index layers, Topbar pattern, Browser notifications, Drop-to-upload, SSE, Svelte 5 conventions. |
 | [`paths-and-storage`](.pi/agent/memory/docs/paths-and-storage.md) | File system paths used by yadc (platformdirs) and file storage conventions for `DatasetImage` persistence. |
 | [`repository-pattern`](.pi/agent/memory/docs/repository-pattern.md) | Repository pattern for API services — repos own SQL + data model, services own transactions + business logic. Covers the `DBConnectionFactory.connection`/`transaction` contract, the auto-enrollment mechanism, and what belongs in which layer. |
 | [`template-system`](.pi/agent/memory/docs/template-system.md) | Jinja2 prompt template system — template resolution, loading, and variable context. |
-| [`yadc-config-v2`](.pi/agent/memory/docs/yadc-config-v2.md) | v2 dataset config format — `[[dataset]]` array-of-tables structure and v1 auto-conversion. |
+| [`yadc-config-v2`](.pi/agent/memory/docs/yadc-config-v2.md) | v2 dataset config format — `[[dataset]]` array-of-tables structure, v1 auto-conversion, strict/relaxed validation. |
 | [`webui-frontend`](.pi/agent/memory/docs/webui-frontend.md) | yadc webui frontend setup — SvelteKit hash routing, Tailwind v4 configuration, Quart integration, and known issues. |
 | [`codemirror-quirks`](.pi/agent/memory/docs/codemirror-quirks.md) | CodeMirror 6 editor sizing quirks — the CSS percentage-height trap, the flex/grid circular dependency, the `minmax(0, 1fr)` pattern that breaks it, and the absolute-positioning fallback kept in CodeMirror.svelte. |
 
@@ -36,8 +40,8 @@ The following docs are kept at the `.pi/agent/memory/` root because they are con
 
 | Memory | Description |
 |--------|-------------|
-| `architecture-overview` | High-level project architecture and module organization. |
-| `frontend-architecture` | Frontend directory structure, stores, components, routes, and key patterns. |
+| `architecture-overview` | High-level project overview and doc index. Points to `backend-structure` and `frontend-structure` for file layout, and to focused docs (e.g. `dataset-system`, `captioner-architecture`) for subsystems. |
+| `frontend-architecture` | Frontend organization rules (component placement, feature folders, store sub-folders) and styling patterns. Points to `frontend-structure` and `frontend-patterns`. |
 | `dev-tools` | Dev tooling — ruff (linting & formatting) and basedpyright (type checking). |
 | `git-conventions` | Git commit message conventions used in the yadc project. |
 | `gitignored-files` | Files and directories ignored by git — must not be modified or included in changes. |
@@ -58,4 +62,4 @@ The following docs are kept at the `.pi/agent/memory/` root because they are con
 - **When a doc becomes obsolete**, move it to `.pi/agent/memory/docs/archive/` (create if needed) and remove it from the index.
 - **When a new doc is created**, add it to the index with a concise description and decide whether it belongs in `docs/` or at the root.
 - **When a doc's details change**, update the doc file itself and this index if the description needs updating.
-- **Reference style**: use `docs/<name>` in other memories for docs in the docs directory.
+- **Reference style**: use bare filenames (e.g. `api-di-system`) in section headings that declare the path, or full paths (e.g. `docs/api-di-system`) when the section is mid-document and the path isn't nearby. The path in question is `.pi/agent/memory/docs/` (often referred to as `.pi/agent/docs/` for brevity to distinguish from the user-facing `docs/` at the repo root).

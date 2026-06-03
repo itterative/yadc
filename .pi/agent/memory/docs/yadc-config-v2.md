@@ -35,3 +35,9 @@ keep_updated: true
 - `yadc/cli_caption.py` — `_load_dataset()` uses `parse_config()` + `resolve_dataset()`
 - `tests/core/test_dataset_resolver.py` — 17 tests for resolution and extras merging
 - `tests/core/test_config.py` — 10 tests for v1/v2 parsing
+
+## Strict vs Relaxed Validation
+
+`parse_config(raw)` is **strict by default** — it enforces CLI-level checks (`api.url` and `api.model_name` must exist, `prompt` must be specified). The webui provides these fields at caption time rather than at config edit time, so it calls `parse_config(raw, strict=False)` to skip those checks.
+
+The flag is threaded via **Pydantic validation context**, not via fields on the model — so the same `Config` model behaves differently depending on caller. The `ConfigV1.to_v2()` migration uses `model_construct()` to avoid re-running validators on already-validated data.
