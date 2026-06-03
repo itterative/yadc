@@ -9,6 +9,7 @@
     } from '$lib/stores/datasetImages';
     import { captioningStatus, type CaptioningStatus } from '$lib/stores/events';
     import Topbar from '$lib/components/ui/Topbar.svelte';
+    import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import AddDatasetDialog from './AddDatasetDialog.svelte';
     import EditDatasetDialog from './EditDatasetDialog.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
@@ -91,13 +92,16 @@
 {:else if error}
     <p class="text-error">Error: {error}</p>
 {:else if datasets.length === 0}
-    <div class="empty-state py-12">
-        <h2>No datasets found</h2>
-        <p>Import an existing TOML config or create a new dataset to get started.</p>
-        <button class="btn-primary mt-4" onclick={() => (showAddDataset = true)}>
-            Add Dataset
-        </button>
-    </div>
+    <EmptyState
+        title="No datasets found"
+        description="Import an existing TOML config or create a new dataset to get started."
+    >
+        {#snippet actions()}
+            <button class="btn-primary mt-4" onclick={() => (showAddDataset = true)}>
+                Add Dataset
+            </button>
+        {/snippet}
+    </EmptyState>
 {:else}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
         {#each datasets as dataset (dataset.name)}

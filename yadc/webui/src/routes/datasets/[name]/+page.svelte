@@ -7,12 +7,10 @@
     import SidePanel from './SidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
     import DropUploadZone from './DropUploadZone.svelte';
-    import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
-    import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
-    import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import DatasetTopbar from './DatasetTopbar.svelte';
     import SvgUpload from '$lib/icons/SvgUpload.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
-    import Topbar from '$lib/components/ui/Topbar.svelte';
+    import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import {
         captioningStatus,
         pendingDatasetChanges,
@@ -55,9 +53,8 @@
     // --- Mobile panel state ---
     let panelOpen = $state(false);
 
-    // --- Captioning state ---
+    // --- Captioning state (derived from the global SSE store) ---
 
-    // Derive batch captioning state from the global SSE store
     let isBatchCaptioning = $derived(
         $captioningStatus?.dataset_name === datasetName &&
             ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
@@ -97,6 +94,8 @@
         }
         return null;
     });
+
+    // --- Captioning side effects (extracted to useCaptioningEffects) ---
 
     // Register job_id from incoming status events so dataset_changed events
     // from our own captioning are suppressed
@@ -460,82 +459,19 @@
     <title>{datasetName} — yadc</title>
 </svelte:head>
 
-<Topbar>
-    <a href="#/" class="-ml-2 hidden p-2 text-gray-400 transition-colors hover:text-white md:flex">
-        <SvgChevronLeft class="h-6 w-6" />
-    </a>
-    <div class="relative min-w-0 flex-1">
-        <div class="flex items-center gap-3">
-            <h1 class="overflow-hidden text-xl font-bold text-nowrap text-ellipsis text-white">
-                {datasetName}
-            </h1>
-            {#if currentDataset}
-                {#if currentDataset.source === 'upload'}
-                    <span class="badge-muted badge-sm shrink-0">Managed</span>
-                {:else}
-                    <span class="badge-muted badge-sm shrink-0">External</span>
-                {/if}
-            {/if}
-            {#if isBatchCaptioning}
-                <SvgSpinner
-                    class="h-4 w-4 shrink-0 animate-spin {isStopping
-                        ? 'text-yellow-400'
-                        : 'text-accent'}"
-                />
-            {/if}
-        </div>
-        <div class="relative mt-0.5 flex items-center">
-            {#if isBatchCaptioning}
-                {#if isStopping}
-                    <span class="text-sm text-yellow-300">Stopping…</span>
-                {:else}
-                    <span class="text-sm text-gray-400">
-                        Captioning… {$captioningStatus.processed}/{$captioningStatus.total}
-                        ({captionPct}%)
-                    </span>
-                {/if}
-            {:else if currentDataset}
-                <p class="text-sm text-gray-400">
-                    {currentDataset.image_count} images · {currentDataset.has_caption} captioned ·
-                    {currentDataset.has_toml}
-                    with TOML
-                </p>
-            {:else}
-                <p class="text-sm text-gray-400">...</p>
-            {/if}
-
-            {#if isBatchCaptioning && !isStopping}
-                <div class="absolute right-0 -bottom-1 left-0 h-0.5 bg-bg">
-                    <div
-                        class="h-full rounded-full bg-accent transition-all duration-300 ease-out"
-                        style:width="{captionPct}%"
-                    ></div>
-                </div>
-            {/if}
-        </div>
-    </div>
-    {#if canUpload}
-        <button
-            class="shrink-0 cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
-            title="Add files to this dataset"
-            onclick={handleAddFilesClick}
-        >
-            <SvgUpload class="h-5 w-5" />
-        </button>
-    {/if}
-    <button
-        class="shrink-0 cursor-pointer rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        title="Refresh dataset from disk"
-        disabled={isRefreshing}
-        onclick={handleManualRefresh}
-    >
-        {#if isRefreshing}
-            <SvgSpinner class="h-5 w-5 animate-spin" />
-        {:else}
-            <SvgRefresh class="h-5 w-5" />
-        {/if}
-    </button>
-</Topbar>
+<DatasetTopbar
+    {datasetName}
+    {currentDataset}
+    {isBatchCaptioning}
+    {isStopping}
+    {captionPct}
+    captionProcessed={$captioningStatus?.processed ?? 0}
+    captionTotal={$captioningStatus?.total ?? 0}
+    {isRefreshing}
+    {canUpload}
+    onrefresh={handleManualRefresh}
+    onupload={handleAddFilesClick}
+/>
 
 <div class="flex h-full flex-col gap-4">
     <!-- SSE resumption failure notification -->
@@ -587,21 +523,26 @@
                 />
 
                 {#if !isLoading && images.length === 0}
-                    <div class="empty-state">
-                        <p class="text-lg">No images found</p>
-                        <p class="mt-1 text-sm">This dataset may be empty or not yet scanned.</p>
-                        {#if currentDataset?.source === 'upload'}
-                            <button
-                                class="btn-primary mt-4"
-                                onclick={handleAddFilesClick}
-                                type="button"
-                            >
-                                <SvgUpload class="h-4 w-4" />
-                                Add Files
-                            </button>
-                            <p class="mt-2 text-xs text-muted">Or drop files onto the image grid</p>
-                        {/if}
-                    </div>
+                    <EmptyState
+                        title="No images found"
+                        description="This dataset may be empty or not yet scanned."
+                    >
+                        {#snippet actions()}
+                            {#if currentDataset?.source === 'upload'}
+                                <button
+                                    class="btn-primary mt-4"
+                                    onclick={handleAddFilesClick}
+                                    type="button"
+                                >
+                                    <SvgUpload class="h-4 w-4" />
+                                    Add Files
+                                </button>
+                                <p class="mt-2 text-xs text-muted">
+                                    Or drop files onto the image grid
+                                </p>
+                            {/if}
+                        {/snippet}
+                    </EmptyState>
                 {/if}
             </DropUploadZone>
         {/if}

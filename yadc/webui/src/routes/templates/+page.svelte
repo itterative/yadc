@@ -15,6 +15,7 @@
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import { friendlyErrorMessage } from '$lib/api';
     import Topbar from '$lib/components/ui/Topbar.svelte';
+    import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
     let loading = $state(true);
     let error = $state('');
@@ -87,13 +88,16 @@
 {:else if error}
     <p class="text-error">Error: {error}</p>
 {:else if $templates.items.length === 0}
-    <div class="empty-state py-12">
-        <h2>No templates found</h2>
-        <p>Create a new Jinja2 template to get started.</p>
-        <button class="btn-primary mt-4" onclick={() => (showAddTemplate = true)}>
-            Add Template
-        </button>
-    </div>
+    <EmptyState
+        title="No templates found"
+        description="Create a new Jinja2 template to get started."
+    >
+        {#snippet actions()}
+            <button class="btn-primary mt-4" onclick={() => (showAddTemplate = true)}>
+                Add Template
+            </button>
+        {/snippet}
+    </EmptyState>
 {:else}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
         {#each $templates.items as template (template.name)}
