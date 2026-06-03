@@ -191,25 +191,13 @@
                             <div class="flex items-center gap-2">
                                 <span class="text-sm font-medium text-white">{env.name}</span>
                                 {#if env.api_url}
-                                    <span
-                                        class="rounded border border-gray-700/40 bg-gray-800/40 px-1.5 py-px text-[0.625rem] font-medium text-gray-400"
-                                    >
-                                        URL
-                                    </span>
+                                    <span class="badge-muted">URL</span>
                                 {/if}
                                 {#if env.has_token}
-                                    <span
-                                        class="rounded border border-accent/25 bg-accent/15 px-1.5 py-px text-[0.625rem] font-medium text-accent"
-                                    >
-                                        Token
-                                    </span>
+                                    <span class="badge-accent">Token</span>
                                 {/if}
                                 {#if env.api_model_name}
-                                    <span
-                                        class="rounded border border-gray-700/40 bg-gray-800/40 px-1.5 py-px text-[0.625rem] font-medium text-gray-400"
-                                    >
-                                        Model
-                                    </span>
+                                    <span class="badge-muted">Model</span>
                                 {/if}
                             </div>
                         </div>
