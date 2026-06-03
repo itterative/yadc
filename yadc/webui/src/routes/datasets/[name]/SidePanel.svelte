@@ -1,5 +1,5 @@
 <script lang="ts">
-    import CaptionSettings from './CaptionSettings.svelte';
+    import CaptionSettingsPanel from '$lib/components/caption/CaptionSettingsPanel.svelte';
     import DatasetConfig from '$lib/components/dataset/config/DatasetConfig.svelte';
     import ImageDetail from '$lib/components/dataset/detail/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
@@ -69,7 +69,7 @@
                 </button>
             {/snippet}
             <Tab id="caption" label="Caption" class="h-full overflow-y-auto">
-                <CaptionSettings
+                <CaptionSettingsPanel
                     {datasetName}
                     onclose={() => {
                         open = false;
