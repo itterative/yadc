@@ -3,9 +3,9 @@
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
-    import DatasetConfig from '$lib/components/datasets/DatasetConfig.svelte';
-    import DatasetManageTab from '$lib/components/datasets/DatasetManageTab.svelte';
-    import DatasetUploadPanel from '$lib/components/datasets/DatasetUploadPanel.svelte';
+    import DatasetConfig from '$lib/components/dataset/config/DatasetConfig.svelte';
+    import DatasetManageTab from '$lib/components/dataset/manage/DatasetManageTab.svelte';
+    import DatasetUploadPanel from '$lib/components/dataset/upload/DatasetUploadPanel.svelte';
 
     interface Props {
         open: boolean;

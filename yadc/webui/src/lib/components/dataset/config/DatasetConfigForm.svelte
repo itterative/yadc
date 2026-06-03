@@ -5,7 +5,7 @@
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import { templates } from '$lib/stores/templates';
-    import { configState } from './datasetConfig/state.svelte';
+    import { configState } from './state.svelte';
 
     interface Props {
         /** Dataset source — managed (upload) vs external (import/create). */

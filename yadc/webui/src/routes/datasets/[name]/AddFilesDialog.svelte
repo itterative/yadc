@@ -1,7 +1,7 @@
 <script lang="ts">
     import Dialog from '$lib/components/ui/Dialog.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
-    import DatasetUploadPanel from '$lib/components/datasets/DatasetUploadPanel.svelte';
+    import DatasetUploadPanel from '$lib/components/dataset/upload/DatasetUploadPanel.svelte';
     import type { DatasetInfo } from '$lib/stores/datasetImages';
 
     interface Props {

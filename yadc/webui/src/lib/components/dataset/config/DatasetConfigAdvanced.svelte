@@ -1,6 +1,6 @@
 <script lang="ts">
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
-    import { configState } from './datasetConfig/state.svelte';
+    import { configState } from './state.svelte';
 
     interface Props {
         /** Whether the dataset is managed (controls the path-warning text). */

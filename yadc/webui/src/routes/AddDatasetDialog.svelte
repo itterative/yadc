@@ -3,8 +3,8 @@
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
-    import UploadDatasetTab from '$lib/components/datasets/UploadDatasetTab.svelte';
-    import CreateDatasetTab from '$lib/components/datasets/CreateDatasetTab.svelte';
+    import UploadDatasetTab from '$lib/components/dataset/upload/UploadDatasetTab.svelte';
+    import CreateDatasetTab from '$lib/components/dataset/upload/CreateDatasetTab.svelte';
     import type { DatasetInfo } from '$lib/stores/datasetImages';
 
     interface Props {

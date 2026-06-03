@@ -1,7 +1,7 @@
 <script lang="ts">
     import CaptionSettings from './CaptionSettings.svelte';
-    import DatasetConfig from '$lib/components/datasets/DatasetConfig.svelte';
-    import ImageDetail from '$lib/components/dataset/ImageDetail/ImageDetail.svelte';
+    import DatasetConfig from '$lib/components/dataset/config/DatasetConfig.svelte';
+    import ImageDetail from '$lib/components/dataset/detail/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import type { ImageInfo } from '$lib/stores/datasetImages';

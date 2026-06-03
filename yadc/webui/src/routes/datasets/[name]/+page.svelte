@@ -3,7 +3,7 @@
     import { onMount, untrack } from 'svelte';
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
-    import DatasetBrowser from '$lib/components/dataset/DatasetBrowser.svelte';
+    import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
     import SidePanel from './SidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
     import DropUploadZone from './DropUploadZone.svelte';

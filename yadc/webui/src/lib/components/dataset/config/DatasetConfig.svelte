@@ -15,8 +15,8 @@
     import { refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
-    import { buildPatch, createPreviewScheduler } from './datasetConfig/patch';
-    import { configState } from './datasetConfig/state.svelte';
+    import { buildPatch, createPreviewScheduler } from './patch';
+    import { configState } from './state.svelte';
     import ConfigHistory from './ConfigHistory.svelte';
     import DatasetConfigAdvanced from './DatasetConfigAdvanced.svelte';
     import DatasetConfigForm from './DatasetConfigForm.svelte';
