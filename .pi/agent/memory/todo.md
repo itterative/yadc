@@ -55,6 +55,17 @@ The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on d
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
 - **Tooltip z-index / stacking context**: `Tooltip.svelte` was migrated to Tailwind but the tooltip label renders underneath `DatasetImage` tiles. The `DatasetBrowser` tiles use `transform` (hover scale) and `relative` positioning, which create new stacking contexts. The old tooltip had `z-index: 50` but that alone is not sufficient when the parent stacking contexts are lower. The tooltip should not hardcode its own z-index; it should be parent-driven (e.g. via a `class` prop on the wrapper `div` or a dedicated `zIndex` prop). Deciding the right API is deferred. Key files: `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`.
 
+## Split `stores/datasetImages.ts` (656 lines) — data-layer refactor
+
+Deferred from `plans/frontend-component-organization.md`. This is a single file holding: types (~60 lines), every API helper for datasets/images/captions/uploads (~400 lines), and the `createDatasetBrowserStore` factory (~100 lines). The "too big" problem is the same as the component-organization work but it's a data-layer concern. Proposed split:
+
+- `stores/datasetImages/types.ts` — `DatasetInfo`, `ImageInfo`, `ImagePage`, `CaptionData`, `HistoryEntry`, `DatasetUploadResult`, `UploadConflict`, `UploadProgressEvent`, `CaptioningJobInfo`, `DatasetBrowserState`, `DatasetFolder`
+- `stores/datasetImages/api.ts` — all the fetch/upload/update helpers (debounced + raw)
+- `stores/datasetImages/browser-store.ts` — `createDatasetBrowserStore` factory + URL helpers (`mediaUrl`, `thumbnailUrl`)
+- `stores/datasetImages/index.ts` — re-exports for back-compat (everything currently imported from `$lib/stores/datasetImages` continues to work)
+
+Risk: `+page.svelte` and several other files import the entire namespace from one barrel — if the import path changes mid-refactor, lots of `import type` lines need to update. Use the index.ts re-export strategy to keep the import surface stable.
+
 ## ~~Missing webui assets~~ **DONE** — Logo added (android-chrome-192x192.png used in sidebar)
 
 ## Webui code quality pass
