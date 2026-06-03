@@ -85,7 +85,7 @@
                         ondelete={onimagedelete}
                     />
                 {:else}
-                    <div class="h-full text-center py-4 text-sm text-gray-500">
+                    <div class="h-full py-4 text-center text-sm text-gray-500">
                         Select an image to view details
                     </div>
                 {/if}

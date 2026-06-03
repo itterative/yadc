@@ -44,7 +44,11 @@
     {@const variant = opts.variant ?? 'warning'}
     {@const Icon = variantIcon[variant]}
 
-    <Dialog class="dialog-panel w-full max-sm:max-w-sm max-md:max-w-md max-w-lg" open={true} onclose={handleCancel}>
+    <Dialog
+        class="dialog-panel w-full max-w-lg max-md:max-w-md max-sm:max-w-sm"
+        open={true}
+        onclose={handleCancel}
+    >
         <div class="space-y-4 p-5">
             <div class="dialog-header">
                 <h2 class="dialog-title">{opts.title ?? 'Confirm'}</h2>

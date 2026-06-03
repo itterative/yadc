@@ -1,5 +1,8 @@
 <script lang="ts">
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
+    import Card from '$lib/components/ui/Card.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgCheck from '$lib/icons/SvgCheck.svelte';
     import type { CaptionData, ImageInfo } from '$lib/stores/datasetImages';
@@ -44,7 +47,7 @@
         </p>
     </div>
 
-    <div class="relative flex flex-1 flex-col overflow-hidden rounded-lg bg-gray-800">
+    <Card class="relative flex flex-1 flex-col">
         <div class="relative box-content flex-1 p-2">
             <TomlEditor
                 class="min-h-32 rounded-md border-0 bg-gray-800 text-sm"
@@ -53,28 +56,23 @@
                 autoHeight={false}
             />
         </div>
-        <!-- Action bar — mirrors the caption box footer. -->
-        <div class="grid grid-cols-2 gap-2 bg-black/15 p-2 text-sm">
-            <div class="flex items-center justify-center">
-                <button
-                    class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={handleCancel}
-                    disabled={!isDirty || isSavingExtras}
-                >
-                    <SvgClose class="h-4 w-4 shrink-0" />
-                    <span class="min-w-0 truncate">Cancel</span>
-                </button>
-            </div>
-            <div class="flex items-center justify-center">
-                <button
-                    class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={handleSave}
-                    disabled={!isDirty || isSavingExtras}
-                >
-                    <SvgCheck class="h-4 w-4 shrink-0" />
-                    <span class="min-w-0 truncate">{isSavingExtras ? 'Saving…' : 'Save'}</span>
-                </button>
-            </div>
-        </div>
-    </div>
+        <ActionBar>
+            <ActionBarItem
+                onclick={handleCancel}
+                disabled={!isDirty || isSavingExtras}
+                icon={SvgClose}
+                variant="secondary"
+            >
+                Cancel
+            </ActionBarItem>
+            <ActionBarItem
+                onclick={handleSave}
+                disabled={!isDirty || isSavingExtras}
+                icon={SvgCheck}
+                variant="primary"
+            >
+                {isSavingExtras ? 'Saving…' : 'Save'}
+            </ActionBarItem>
+        </ActionBar>
+    </Card>
 </div>

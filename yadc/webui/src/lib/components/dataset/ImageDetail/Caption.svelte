@@ -6,6 +6,10 @@
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import Card from '$lib/components/ui/Card.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
+    import SvgHistory from '$lib/icons/SvgHistory.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
     import { captionOptions } from '$lib/stores/captionActions';
     import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/datasetImages';
@@ -153,7 +157,7 @@
         {:else if captionError}
             <p class="text-sm text-error">{captionError}</p>
         {:else}
-            <div class="relative overflow-hidden rounded-lg bg-gray-800">
+            <Card class="relative">
                 <!-- Copy button — anchored to the caption box, not the scrollable
                      text area, so it stays put while the user scrolls the text. -->
                 {#if captionData && captionData.caption && !isEditing && !isCaptioning}
@@ -221,69 +225,47 @@
                 </div>
 
                 <!-- Action bar — footer of the caption box. -->
-                <div class="grid grid-cols-2 gap-2 bg-black/15 p-2 text-sm">
+                <ActionBar>
                     {#if isEditing}
-                        <div class="flex items-center justify-center">
-                            <button
-                                class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-                                onclick={handleCancelEdit}
-                                disabled={isSavingCaption}
-                            >
-                                <SvgClose class="h-4 w-4 shrink-0" />
-                                <span class="min-w-0 truncate">Cancel</span>
-                            </button>
-                        </div>
-                        <div class="flex items-center justify-center">
-                            <button
-                                class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-                                onclick={handleSave}
-                                disabled={isSavingCaption}
-                            >
-                                <SvgCheck class="h-4 w-4 shrink-0" />
-                                <span class="min-w-0 truncate"
-                                    >{isSavingCaption ? 'Saving…' : 'Save'}</span
-                                >
-                            </button>
-                        </div>
+                        <ActionBarItem
+                            onclick={handleCancelEdit}
+                            disabled={isSavingCaption}
+                            icon={SvgClose}
+                            variant="secondary"
+                        >
+                            Cancel
+                        </ActionBarItem>
+                        <ActionBarItem
+                            onclick={handleSave}
+                            disabled={isSavingCaption}
+                            icon={SvgCheck}
+                            variant="primary"
+                        >
+                            {isSavingCaption ? 'Saving…' : 'Save'}
+                        </ActionBarItem>
                     {:else if isCaptioning}
-                        <div class="col-span-2 flex items-center justify-center">
-                            <button
-                                class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-error transition-colors hover:bg-gray-700 hover:text-error/80 disabled:cursor-not-allowed disabled:opacity-50"
-                                onclick={handleCancelSingleCaptioning}
-                                disabled={isCancelling}
-                            >
-                                <SvgClose class="h-4 w-4 shrink-0" />
-                                <span class="min-w-0 truncate"
-                                    >{isCancelling ? 'Cancelling…' : 'Cancel'}</span
-                                >
-                            </button>
-                        </div>
+                        <ActionBarItem
+                            onclick={handleCancelSingleCaptioning}
+                            disabled={isCancelling}
+                            icon={SvgClose}
+                            variant="danger"
+                        >
+                            {isCancelling ? 'Cancelling…' : 'Cancel'}
+                        </ActionBarItem>
                     {:else if captionData}
-                        <div class="flex items-center justify-center">
-                            <button
-                                class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-accent transition-colors hover:bg-gray-700 hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-                                onclick={handleCaptionImage}
-                            >
-                                <SvgSparkle class="h-4 w-4 shrink-0" />
-                                <span class="min-w-0 truncate"
-                                    >{activeDraftName
-                                        ? `Draft (${activeDraftName})`
-                                        : 'Caption'}</span
-                                >
-                            </button>
-                        </div>
-                        <div class="flex items-center justify-center">
-                            <button
-                                class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
-                                onclick={handleStartEdit}
-                            >
-                                <SvgEdit class="h-4 w-4 shrink-0" />
-                                <span class="min-w-0 truncate">Edit</span>
-                            </button>
-                        </div>
+                        <ActionBarItem
+                            onclick={handleCaptionImage}
+                            icon={SvgSparkle}
+                            variant="primary"
+                        >
+                            {activeDraftName ? `Draft (${activeDraftName})` : 'Caption'}
+                        </ActionBarItem>
+                        <ActionBarItem onclick={handleStartEdit} icon={SvgEdit} variant="secondary">
+                            Edit
+                        </ActionBarItem>
                     {/if}
-                </div>
-            </div>
+                </ActionBar>
+            </Card>
         {/if}
     </div>
 
@@ -345,31 +327,36 @@
                     <div class="mt-2 space-y-3">
                         {#each historyEntries as entry (entry.index)}
                             {@const hasExtras = Object.keys(entry.extras).length > 0}
-                            <div class="rounded-lg bg-gray-800 p-3">
-                                <div class="mb-1 flex items-center justify-between">
+                            <Card>
+                                <div class="px-3 pt-3 pb-1">
                                     <span class="text-xs font-medium text-gray-400"
                                         >Revision #{entry.index}</span
                                     >
-                                    <button
-                                        class="btn-secondary px-2 py-0.5 text-xs"
+                                </div>
+                                <div class="px-3 pb-3">
+                                    <pre
+                                        class="max-h-32 overflow-y-auto font-mono text-sm whitespace-pre-wrap text-gray-200">{entry.caption ||
+                                            '(empty)'}</pre>
+                                    {#if hasExtras}
+                                        <pre
+                                            class="mt-2 max-h-32 overflow-y-auto rounded bg-gray-900 p-2 text-xs text-gray-400">{JSON.stringify(
+                                                entry.extras,
+                                                null,
+                                                2
+                                            )}</pre>
+                                    {/if}
+                                </div>
+                                <ActionBar>
+                                    <ActionBarItem
                                         onclick={() => handleRestoreClick(entry.index)}
                                         disabled={isRestoring}
+                                        icon={SvgHistory}
+                                        variant="primary"
                                     >
-                                        {isRestoring ? 'Restoring...' : 'Restore'}
-                                    </button>
-                                </div>
-                                <pre
-                                    class="max-h-32 overflow-y-auto font-mono text-sm whitespace-pre-wrap text-gray-200">{entry.caption ||
-                                        '(empty)'}</pre>
-                                {#if hasExtras}
-                                    <pre
-                                        class="mt-2 max-h-32 overflow-y-auto rounded bg-gray-900 p-2 text-xs text-gray-400">{JSON.stringify(
-                                            entry.extras,
-                                            null,
-                                            2
-                                        )}</pre>
-                                {/if}
-                            </div>
+                                        {isRestoring ? 'Restoring…' : 'Restore'}
+                                    </ActionBarItem>
+                                </ActionBar>
+                            </Card>
                         {/each}
                     </div>
                 {:else}

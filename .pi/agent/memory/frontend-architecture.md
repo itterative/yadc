@@ -65,22 +65,25 @@ yadc/webui/
           SetTopbar.svelte            # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
           ToastContainer.svelte       # Fixed-position toast stack (mounted in +layout.svelte)
           ToastItem.svelte            # Single toast (message, variant, progress bar, dismiss, optional action button)
+          Card.svelte                 # Generic card wrapper (`rounded-lg bg-gray-800`). Body and footer (typically `ActionBar`) go in `children`.
+          ActionBar.svelte            # Footer flex container (`flex gap-2 bg-black/15`) for card action buttons. Items distribute evenly via `flex-1`.
+          ActionBarItem.svelte        # Standardized action button inside ActionBar — accepts icon, variant (`primary`/`secondary`/`danger`).
         dataset/                        # Dataset-domain components
           DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
           ImageDetail.svelte          # Image detail side panel (header + tab system). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
           ImageDetail/                 # Split into tabbed sub-components — see dataset-config-ux-plan history 035
             ImageDetail.svelte         # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls)
-            Caption.svelte             # Caption box (with footer bar) + Drafts + History rendering
+            Caption.svelte             # Caption box (ActionCard + ActionBar) + Drafts + History rendering
             Preview.svelte             # Thin wrapper around PromptPreview
-            Extras.svelte                # Always-editable TOML editor for the image's extras_raw (Save/Cancel)
+            Extras.svelte              # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
         datasets/                       # Dataset creation/management components
           UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
           CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
           DatasetConfig.svelte         # Co-located config editor tab. CompactPillTabs toggle between structured form (PATCH) and raw TOML editor (PUT). Uses CaptionOptionsFields, KeyValueEditor for dataset entries.
           DatasetConfigForm.svelte     # Structured form view of the config — fields are bound to a `configState` Svelte 5 `$state` rune exported from `datasetConfig/state.svelte.ts`.
           DatasetConfigAdvanced.svelte # Raw TOML editor view of the config (one tab of the CompactPillTabs in DatasetConfig). Binds to `configState.rawContent`; shows a warning when the structured form has unsaved changes.
-          ConfigHistory.svelte         # Config revision history browser (list, view, restore entries). Reads from `ConfigHistoryRepository` on the backend.
+          ConfigHistory.svelte         # Config revision history browser (list, view, restore entries). Uses ActionCard + ActionBar per entry. Reads from `ConfigHistoryRepository` on the backend.
           DatasetManageTab.svelte      # "Manage" tab inside the dataset creation dialog — list managed (upload-sourced) datasets with folder/image counts and delete actions.
           DatasetUploadPanel.svelte    # Shared upload panel (create + append modes). When `mode="append"`, accepts an `initialFiles` prop (consumed once via `untrack()`) to pre-populate the file list from a drop event on the page.
           datasetConfig/              # Helpers split out from DatasetConfig.svelte during the structural refactor

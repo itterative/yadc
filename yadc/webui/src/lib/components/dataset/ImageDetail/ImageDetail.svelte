@@ -265,7 +265,7 @@
     }
 </script>
 
-<div class="grid grid-cols-1 grid-rows-[min-content_minmax(0,1fr)] min-h-full h-fit flex-col p-4">
+<div class="grid h-fit min-h-full grid-cols-1 grid-rows-[min-content_minmax(0,1fr)] flex-col p-4">
     <!-- Header — always visible across all tabs -->
     <div class="space-y-4 pb-0">
         <!-- Filename -->
@@ -284,7 +284,7 @@
             {/if}
         </div>
         <!-- {#if source !== 'upload'} -->
-            <p class="-mt-3 truncate text-xs text-gray-500">{item.delete_path ?? item.path}</p>
+        <p class="-mt-3 truncate text-xs text-gray-500">{item.delete_path ?? item.path}</p>
         <!-- {/if} -->
         <!-- Dimensions & badges -->
         <div class="flex flex-wrap items-center gap-3">
@@ -302,7 +302,9 @@
                 </span>
             {/if}
             {#if item.width && item.height}
-                <span class="text-sm italic text-muted ml-auto mr-2">{item.width}×{item.height}</span>
+                <span class="mr-2 ml-auto text-sm text-muted italic"
+                    >{item.width}×{item.height}</span
+                >
             {/if}
         </div>
         <!-- Image -->
@@ -319,12 +321,7 @@
 
     <!-- Inner tabs: Caption / Preview / Edit -->
     <CompactPillTabs bind:value={activeTab} class="h-full pt-4">
-        <Tab
-            id="caption"
-            label="Caption"
-            icon={SvgSparkle}
-            class="h-full"
-        >
+        <Tab id="caption" label="Caption" icon={SvgSparkle} class="h-full">
             <Caption
                 {item}
                 {captionData}
@@ -344,12 +341,7 @@
                 onCopy={handleCopy}
             />
         </Tab>
-        <Tab
-            id="preview"
-            label="Preview"
-            icon={SvgVisibility}
-            class="h-full"
-        >
+        <Tab id="preview" label="Preview" icon={SvgVisibility} class="h-full">
             <Preview {datasetName} {captionData} {item} />
         </Tab>
         <Tab id="extras" label="Extras" icon={SvgEdit} class="h-full overflow-y-auto pt-0">

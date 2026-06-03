@@ -29,9 +29,9 @@
     }
 </script>
 
-<Dialog class="dialog-panel max-w-2xl max-sm:h-[90vh] h-[55vh]" {open} {onclose}>
-    <div class="grid grid-rows-[min-content_minmax(0,1fr)] h-full p-5">
-        <div class="shrink-0 dialog-header">
+<Dialog class="dialog-panel h-[55vh] max-w-2xl max-sm:h-[90vh]" {open} {onclose}>
+    <div class="grid h-full grid-rows-[min-content_minmax(0,1fr)] p-5">
+        <div class="dialog-header shrink-0">
             <h2 class="dialog-title">Edit {datasetName}</h2>
             <button class="btn-close" onclick={onclose}>
                 <SvgClose class="h-5 w-5" />
