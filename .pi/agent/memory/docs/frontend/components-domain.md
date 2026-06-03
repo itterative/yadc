@@ -40,6 +40,8 @@ yadc/webui/src/lib/components/dataset/
 ```
   caption/                        # Caption domain
     CaptionSettingsPanel.svelte   # The batch-captioning side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides. Auto-saves overrides to `captionSettings` localStorage via `deferred()` on any field change; flushes pending save before starting captioning.
+    OverridesSection.svelte       # Sub-section of the captioning panel: per-field reset/override UI for the localStorage-saved overrides
+    TemplateSection.svelte        # Sub-section of the captioning panel: prompt template selection + variable editor
 ```
 
 ## env/

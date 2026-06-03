@@ -16,8 +16,8 @@ All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.p
 
 | Doc | Description |
 |-----|-------------|
-| `backend/` | **Folder** of per-domain structure files for the `yadc/` Python package. One file per area: `cli.md` (CLI entry points), `api.md` (Web UI backend), `cmd.md` (pure logic), `core.md` (business logic), `captioners.md` (API captioners), `templates.md` (built-in Jinja templates), `utils.md` (shared utilities). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
-| `frontend/` | **Folder** of per-area structure files for `yadc/webui/src/`. One file per area: `lib.md` (lib/ root modules), `styles.md` (lib/styles/), `stores.md` (lib/stores/), `components-ui.md` (lib/components/ui/), `components-domain.md` (lib/components/<domain>/), `routes.md` (routes/). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
+| `backend/` | **Folder** of per-area structure files for the `yadc/` Python package. One file per area: `cli.md` (CLI entry points), `api.md` (Web UI backend), `cmd.md` (pure logic), `core.md` (business logic), `captioners.md` (API captioners). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
+| `frontend/` | **Folder** of per-area structure files for `yadc/webui/src/`. One file per area: `lib.md` (lib/ root modules), `stores.md` (lib/stores/), `components-ui.md` (lib/components/ui/), `components-domain.md` (lib/components/<domain>/), `routes.md` (routes/). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
 | [`api-di-system`](.pi/agent/memory/docs/api-di-system.md) | Web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones. |
 | [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Captioner hierarchy — `APICaptioner` auto-detection, inner captioner delegation, mixin pattern, streaming, stream error handling, and per-backend details. |
 | [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files` + `_expected_patterns`), event dispatch, and frontend suppression. |
@@ -40,8 +40,8 @@ The following docs are kept at the `.pi/agent/memory/` root because they are con
 
 | Memory | Description |
 |--------|-------------|
-| `architecture-overview` | High-level project overview and doc index. Points to `backend-structure` and `frontend-structure` for file layout, and to focused docs (e.g. `dataset-system`, `captioner-architecture`) for subsystems. |
-| `frontend-architecture` | Frontend organization rules (component placement, feature folders, store sub-folders) and styling patterns. Points to `frontend-structure` and `frontend-patterns`. |
+| `architecture-overview` | High-level project overview and doc index. Points to `backend/` and `frontend/` folders for file layout, and to focused docs (e.g. `dataset-system`, `captioner-architecture`) for subsystems. |
+| `frontend-architecture` | Frontend organization rules (component placement, feature folders, store sub-folders) and styling patterns. Points to `frontend/` folder and `frontend-patterns`. |
 | `dev-tools` | Dev tooling — ruff (linting & formatting) and basedpyright (type checking). |
 | `git-conventions` | Git commit message conventions used in the yadc project. |
 | `gitignored-files` | Files and directories ignored by git — must not be modified or included in changes. |

@@ -12,7 +12,7 @@ keep_updated: true
 
 **Backend reference**: See `architecture-overview` for the Quart API backend.
 
-**File-by-file structure**: See `frontend-structure` (full tree with one-line summaries per file).
+**File-by-file structure**: See `frontend/` folder (one file per area, each with one-line summaries per file).
 
 **Patterns**: See `frontend-patterns` (Tabs, Z-index, Topbar, Browser notifications, Drop-to-upload, SSE).
 
@@ -54,7 +54,7 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 - `dialogs/` — only `PasswordPromptDialog` (global utility).
 - `icons/` — `Svg*` SVG components (`viewBox="0 -960 960 960"`, sized/colored via Tailwind).
 
-Route-only components are co-located in `routes/<path>/`. Full listing in `frontend-structure`.
+Route-only components are co-located in `routes/<path>/`. Full listing in `frontend/routes.md`.
 
 ## Store Organization
 
@@ -74,7 +74,7 @@ A domain gets its own sub-folder when it has ≥2 related files AND they all ser
 - 5 domain sub-folders: `dataset/`, `caption/`, `config/`, `env/`, `templates/`.
 - 7 top-level singletons: `events.ts`, `toasts.ts`, `confirm.ts`, `passwordPrompt.ts`, `sessionPassword.ts`, `settings.ts`, `topbar.svelte.ts`, `storageStore.ts`.
 
-Full per-file summary in `frontend-structure`.
+Full per-file summary in `frontend/stores.md`.
 
 ### Imports
 

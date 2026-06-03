@@ -19,9 +19,9 @@ yadc/api/
   events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent, EnvironmentsChangedEvent, TemplatesChangedEvent, ImageCaptionedEvent (with caption text)
 
   controllers/        # HTTP endpoints — @controller + @inject, auto-discovered
+    __init__.py         # @controller decorator (auto-discovery marker + @inject)
     utils_json.py       # DataclassJSONEncoder + jsonify_dataclass + jsonify_error() (shared JSON utilities)
     models_errors.py    # APIErrorDetail + APIErrorResponse dataclasses, Pydantic ValidationError conversion
-    __init__.py         # @controller decorator (auto-discovery marker + @inject)
     blueprints.py       # ApiBlueprint, AppBlueprint (@singleton injector classes)
     app_frontend.py     # @controller — serves SvelteKit build
     api_datasets.py     # @controller — dataset/image endpoints (wired to DatasetService)
@@ -33,6 +33,7 @@ yadc/api/
     api_events.py       # @controller — SSE event stream with Last-Event-ID resumption support (replays from ring buffer on reconnect)
 
   modules/            # DI primitives + cross-cutting infrastructure
+    __init__.py           # (package marker; no auto-discovery here — only `service.py` is the DI marker)
     service.py            # base Service class (marker for DI auto-discovery)
     cors_middleware.py    # CORSMiddleware — origin-based CORS, registered on ApiBlueprint
     logging_factory.py    # LoggingFactory — get_logger()

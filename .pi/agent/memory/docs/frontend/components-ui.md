@@ -17,6 +17,8 @@ yadc/webui/src/lib/components/ui/
   CodeMirror.svelte            # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
   JinjaEditor.svelte           # Jinja2 template editor (CM6 + @codemirror/lang-jinja). Bindable `value` + `variables` (extracted template vars)
   TomlEditor.svelte            # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode). Bindable `value`
+  KeyValueEditor.svelte        # Key-value pair editor (e.g. for `extras` TOML fields)
+  EmptyState.svelte            # Reusable empty-state placeholder (icon + message + optional action)
   IntersectionObserverElement.svelte  # Infinite scroll sentinel
   tabs/                        # Tab system (Svelte 5 context + snippets)
     Tabs.svelte                # Generic container — tab bar layout, registration, bindable value
@@ -28,7 +30,7 @@ yadc/webui/src/lib/components/ui/
   SpinnerBlock.svelte          # Centered spinner with optional label and size
   PromptPreview.svelte         # Self-contained prompt preview (template selector + system/user prompt display)
   Tooltip.svelte               # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
-  SetTopbar.svelte             # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
+  Topbar.svelte                # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
   ToastContainer.svelte        # Fixed-position toast stack (mounted in +layout.svelte)
   ToastItem.svelte             # Single toast (message, variant, progress bar, dismiss, optional action button)
   Card.svelte                  # Generic card wrapper (`rounded-lg bg-gray-800`). Body and footer (typically `ActionBar`) go in `children`.

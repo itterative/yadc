@@ -24,4 +24,5 @@ yadc/cmd/
     keystorage_password.py  # PasswordKeyStorage — config-TOML private key, PBKDF2 + AES-256-GCM
     user_config.py  # UserConfig / UserConfigApi models (legacy)
   templates/        # user template CRUD in STATE_PATH/templates/
+    templates.py     # load/save user template files
 ```

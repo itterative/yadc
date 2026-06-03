@@ -1,6 +1,6 @@
 ---
 name: architecture-overview
-description: High-level project structure and cross-cutting conventions. Start here for structural work or cross-cutting changes. For file-by-file structure, see backend-structure and frontend-structure.
+description: High-level project structure and cross-cutting conventions. Start here for structural work or cross-cutting changes. For file-by-file structure, see `backend/` and `frontend/` folders.
 category: architecture
 priority: 1
 keep_updated: true

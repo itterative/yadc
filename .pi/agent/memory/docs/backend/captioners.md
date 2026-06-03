@@ -11,6 +11,7 @@ The actual captioner implementations. For the hierarchy, mixin pattern, streamin
 ```
 yadc/captioners/
   api/
+    __init__.py       # (package marker)
     api_captioner.py  # APICaptioner — auto-detects API type, delegates to inner captioner
     base.py           # BaseAPICaptioner — async_session, cache, response_logger setup
     async_session.py  # Async HTTP Session with retries, caching, capture_response for debug logging. Configurable connect/read/write/pool timeouts (defaults: 30s connect, None read, 30s write/pool) threaded through from `Configuration.http_timeout_*`.
@@ -22,12 +23,7 @@ yadc/captioners/
     openrouter.py     # OpenRouter backend
     vllm.py           # vLLM backend
     types.py          # Pydantic models for all API response types
-    utils/
-      cache.py              # HTTPResponseCache — file-based SHA256 keyed JSON cache
-      error_normalization.py # ErrorNormalizationMixin — normalizes API errors to strings
-      response_logger.py    # ResponseLogger — JSONL debug logging
-      thinking.py           # ThinkingMixin — strips thinking tokens from output
-      units.py              # size_units() formatter
+    utils/            # shared mixins and utilities (cache, error normalization, response logger, thinking, units)
 ```
 
 **Cross-references:**
