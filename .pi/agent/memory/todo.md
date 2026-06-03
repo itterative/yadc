@@ -7,24 +7,6 @@ priority: 3
 
 # TODO
 
-## ~~API request consolidation~~ **DONE**
-
-All 4 issues resolved. See **plans/api-request-consolidation-plan** for full details.
-
-- ✅ (a) `GET /api/envs` returns full `EnvInfo[]` details, not just names
-- ✅ (b) Dataset page requests consolidated via `debounce()` dedupe
-- ✅ (c) Env details loaded once via enriched list endpoint + SSE auto-refresh
-- ✅ (d) `ImageCaptionedEvent` includes `caption: str` — SSE caption prefetch
-
-## ~~Convert API backend to async (ASGI)~~ **DONE** — migrated to Quart + uvicorn
-
-The API backend was migrated from Flask/waitress to Quart/uvicorn in two phases:
-- **Phase 1**: Framework swap (Flask → Quart, waitress → uvicorn, `async def` on `send_file` routes).
-- **Phase 2**: Fully async SSE (`asyncio.Queue` per client, `EventDispatcher` async bridge, native `async for` in `/events`).
-- **Phase 4**: Graceful shutdown timeout (`timeout_graceful_shutdown=5`), integration tests for SSE connection cleanup, event delivery, and EventDispatcher thread-to-async bridging.
-
-All success criteria met: SSE connects/reconnects/resumes, Ctrl+C shuts down cleanly within 2s (hard timeout at 5s), no thread blocking, `pytest` passes.
-
 ## Test cleanup
 
 Several test files need structural cleanup:
@@ -45,25 +27,9 @@ When building wheels with `yadc/webui/__init__.py` present (needed for `package-
 
 ## Sidebar / topbar refactor (visual polish)
 
-The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). The structural move is done; this entry is now about **visual polish** (not part of `plans/frontend-component-organization.md` which is purely structural).
+The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). The structural move is done; this entry is now about **visual polish** (not part of `plans/archive/frontend-component-organization.md` which is purely structural).
 
 - **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
-- **Topbar padding / height inconsistency**: The dataset listing (`#/`) and templates (`#/templates`) pages feel cramped below the topbar because `.app-topbar` has `padding-bottom: 0`. Adding bottom padding globally causes the dataset browser (`#/datasets/:name`) to shift down because its subtitle row uses `min-h-7` to reserve space for the captioning status row, which is taller than the idle text line. The hamburger button and subtitle also shift slightly when captioning starts/stops. **Superseded by `captioning-status-bar-plan`** — moving the progress UI out of the topbar entirely.
-
-## ~~Frontend remaining cleanup~~ **DONE (Phase 1 of `plans/frontend-component-organization.md`)**
-
-The structural cleanup items (folder organization, `dataset/`+`datasets/` merge, dialogs/settings narrowing) are addressed by Phase 1. The 2 specific deferred items below are not part of that org work and are kept as their own follow-ups:
-
-- SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
-- **Tooltip z-index / stacking context**: `Tooltip.svelte` was migrated to Tailwind but the tooltip label renders underneath `DatasetImage` tiles. The `DatasetBrowser` tiles use `transform` (hover scale) and `relative` positioning, which create new stacking contexts. The old tooltip had `z-index: 50` but that alone is not sufficient when the parent stacking contexts are lower. The tooltip should not hardcode its own z-index; it should be parent-driven (e.g. via a `class` prop on the wrapper `div` or a dedicated `zIndex` prop). Deciding the right API is deferred. Key files: `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`.
-
-## ~~Split `stores/datasetImages.ts` (~615 lines)~~ **DONE (Phase 1 of `plans/frontend-store-organization.md`)**
-
-Split into `dataset/types.ts` (~75 lines) + `dataset/api.ts` (~540 lines) + `dataset/index.ts` (re-exporting barrel). The full Phase 1 of `plans/frontend-store-organization.md` also grouped the 14 other store files into 4 more domain sub-folders (`caption/`, `config/`, `env/`, `templates/`), so the flat 16-file namespace is now 5 sub-folders + 7 top-level files.
-
-Follow-up: extract the page's inline `images` / `isLoading` / `loadInitial` / `loadMore` runes into a reusable `dataset/browser-state.svelte.ts` module. Behavior refactor with a different risk profile — kept as a future item.
-
-## ~~Missing webui assets~~ **DONE** — Logo added (android-chrome-192x192.png used in sidebar)
 
 ## Webui code quality pass
 
@@ -89,16 +55,9 @@ The current UI is functional but needs a manual pass to improve overall look and
 
 ## Simplified dataset config editing
 
-See **plans/dataset-config-settings-plan** for full details. Mostly done:
+See **plans/dataset-config-settings-plan** for full details. Mostly done — remaining:
 
-- [x] `PATCH /configs/<name>` endpoint (JSON body, deep-merged into TOML)
-- [x] `rounds` wired through backend + frontend
-- [x] Frontend fetches config defaults + pre-fills fields
-- [x] Diff indicators (dots) + collapsible overrides section with reset
-- [x] Removed `ConfigEditor.svelte` from Settings dialog
-- [x] Phase 4: type-safe Config API (Pydantic validation on GET/PATCH, typed TS interfaces)
 - [ ] TOML multiline string serialization for templates
-- [x] "Save as dataset default" action (Config tab in side panel, PATCH via `DatasetConfig.svelte`)
 
 ## Test captioning flow in the webui
 
@@ -108,38 +67,13 @@ The full captioning workflow (start → progress → completion → result displ
 
 The dataset browser grid uses `overflow-y-auto` on its parent div, but images near the bottom get cut off because the scroll container's padding doesn't extend past the last items. The fix is to replace the padding-based spacing on the scroll container with margin-based spacing on the children (grid items), so the last row of images is fully visible when scrolled to the bottom.
 
-## Watchdog job_id tag cleanup strategy
-
-~~The `DatasetWatcherService._expected_sources` dict maps `dataset_name → job_id` so that `DatasetChangedEvent`s carry the `job_id` of the captioning operation that caused them. This lets the initiating frontend suppress the "Dataset files have changed" banner.~~ **DONE** — Replaced by the three-tier expected-change tracking system in `DatasetWatcherService` (see `docs/dataset-watcher.md`):
-
-- **Dataset-level** (`_expected_sources`): tags the dataset-level `job_id` for captioning jobs; cleared 5s after the job ends.
-- **File-level** (`_expected_files`): per-file TTL-based tracking via `expect_file_change(name, path, *, source)`. `source` is `"ui:<clientId>"` for webui edits (per-tab UUID) or `SELF_JOB_ID = "self"` for backend-only callers. Used by `DatasetService` (caption saves, extras updates, history restores, image deletes) and `AsyncCaptionJob._acaption_one()` (captioning writes).
-- **Pattern-level** (`_expected_patterns`): `fnmatch` globs for bulk deletions (`folder/*`, `STEM.*.draft~`); same TTL/deque semantics. Used by `ManagedDatasetsService.delete_items` (folder deletions) and the draft-delete path.
-
-All three are bounded deques (`watcher_expected_file_max`, default 256) with TTL expiry (`watcher_expected_file_ttl`, default 1.0s). Entries are NOT consumed on match because a single write can produce multiple inotify events. The frontend suppresses the event when the dispatched `job_id` matches its own `clientId`, an active captioning job_id, or the legacy `"self"` sentinel. The original race-condition concern is moot because file-level matching is the primary suppression mechanism — the dataset-level job_id is just a tag for downstream filtering.
-
-## SSE captioning event reliability / resumption
-
-**DONE** — Implemented `Last-Event-ID` based SSE event resumption:
-
-- **Backend**: `SSEEvents` maintains a configurable ring buffer (`sse_event_history_size`, default 128) of recent non-ping events with monotonic IDs. On reconnect, the controller reads `Last-Event-ID` from the request header and replays missed events from history. If the requested ID is too old (no longer in the buffer), a `ResumptionFailedEvent` is sent to the client.
-- **Backend**: `api_events.py` sends `id:` fields on every non-ping SSE event and `retry: 5000` at connection start so the browser auto-reconnects after 5s.
-- **Frontend**: Switched from manual close/reconnect to browser's built-in `EventSource` auto-reconnect, which automatically preserves and sends `Last-Event-ID`. Added `resumptionFailed` store and warning banner on the dataset detail page with Refresh/Dismiss actions.
-- Key files: `yadc/api/modules/sse_events.py`, `yadc/api/controllers/api_events.py`, `yadc/api/events.py` (`ResumptionFailedEvent`), `yadc/api/configuration.py` (`sse_event_history_size`), `yadc/webui/src/lib/stores/events.ts`, `yadc/webui/src/routes/datasets/[name]/+page.svelte`.
-
-### Remaining edge cases
-
-- ~~**Mid-captioning page load**: If a user opens the dataset page while captioning is already running, they won't see any progress until the next SSE event arrives.~~ **DONE** — Added `GET /datasets/<name>/caption` endpoint and a one-time fetch in the dataset page's `$effect` (guarded to only seed when the store is idle, so it never clobbers live SSE events).
-- ~~**WSGI thread exhaustion**: Each SSE connection still blocks a thread. The async migration (see top-level TODO) is the proper fix.~~ **DONE** — SSE is fully async since the Quart migration.
-
 ## Caption settings: dataset defaults integration
 
 See **plans/dataset-config-settings-plan** for full details. Phase 1 + 2 mostly done.
 
-Remaining:
-- "Save as dataset default" action — writes current settings back to TOML via `PATCH /configs/<name>`
-- Preset profiles, config diff banner (Phase 3 nice-to-haves)
-- ~~Phase 4: type-safe config API (Pydantic validation on GET/PATCH)~~ **DONE** — see `plans/dataset-config-settings-plan`
+Remaining (Phase 3 nice-to-haves):
+- Preset profiles
+- Config diff banner
 
 ## History restore UI and semantics
 
@@ -207,8 +141,6 @@ Research whether to standardize on thin events (notify-then-fetch) vs event-carr
 * errors when starting captions show up in both the toast and at the top (latter needs removal)
 * error toasts have no details (just says HTTP 502)
 * need to enable prettier
-* ~~need to fix the navbar at the top on mobile (it cuts off, export/settings not visible when selecting a dataset)~~
-* ~~on mobile, cannot edit datasets or templates (hover-only action buttons)~~
 * **Decide on `_metadata` field for env GET endpoints**: Consider grouping read-only metadata (`has_token`, `token_method`) under a `_metadata` key to make the PUT/GET shape symmetry explicit. Currently kept flat for simplicity, but worth revisiting if more read-only fields are added later.
 * **Firefox drag-and-drop broken on dataset browser**: File drops on the dataset browser page (`#/datasets/:name`) don't trigger in Firefox — the overlay never appears. Works fine in Chromium and works in the Add Files dialog (FileDropZone) in both browsers. A speculative `DOMStringList` fix was stashed but didn't resolve it. Needs real investigation. Stash: `wip: Firefox DOMStringList fix for dataset browser drag-and-drop`.
 * **SSE `/api/events` disconnects every ~60s in Firefox**: The browser closes the connection and auto-reconnects (no uvicorn logs, not a keep-alive timeout). Added `Cache-Control: no-cache` and `X-Accel-Buffering: no` headers (best practice for SSE, though they didn't fix this specific issue). Functionally harmless because of `Last-Event-ID` resumption, but root cause unknown. Tracking only — not actively investigating.

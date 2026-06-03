@@ -22,6 +22,6 @@ Added Phase 4 to the image-upload-dataset-creation plan: allow uploading `.txt` 
 
 ## Files Modified
 
-- `.pi/agent/memory/plans/image-upload-dataset-creation-plan.md`:
+- `.pi/agent/memory/plans/archive/image-upload-dataset-creation-plan.md`:
   - Added Phase 4 section
   - Updated API contract to note current vs. Phase 4 allowed file types

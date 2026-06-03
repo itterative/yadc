@@ -16,7 +16,7 @@ last_history: 001
 
 The frontend's `src/lib/stores/` has grown into a flat 16-file namespace (~2,233 lines) with no grouping by domain. Several files mix multiple concerns (types + API + actions + utility), and the `datasetImages.ts` file is 615 lines and was already deferred from the previous component-org plan for splitting. Lock down conventions and reorganize for consistency without changing behavior.
 
-This plan mirrors the conventions established in `plans/frontend-component-organization.md` — domain-grouped sub-folders for related concerns, single-purpose files at top level for global singletons, and re-export shims for back-compat.
+This plan mirrors the conventions established in `plans/archive/frontend-component-organization.md` — domain-grouped sub-folders for related concerns, single-purpose files at top level for global singletons, and re-export shims for back-compat.
 
 ## Conventions (locked-in)
 
@@ -171,7 +171,7 @@ Update `.pi/agent/memory/frontend-architecture.md`:
 - Update the "Store Modules" table to reflect the new file paths. Each row's "File" column changes to the new location; "Purpose" stays the same.
 
 Update `.pi/agent/memory/todo.md`:
-- Mark the "Split `stores/datasetImages.ts`" entry as **DONE (Phase 1 of `plans/frontend-store-organization.md`)**. Keep the "browser-state.svelte.ts" follow-up as a separate future item (it's a behavior refactor, not a structural one).
+- Mark the "Split `stores/datasetImages.ts`" entry as **DONE (Phase 1 of `plans/archive/frontend-store-organization.md`)**. Keep the "browser-state.svelte.ts" follow-up as a separate future item (it's a behavior refactor, not a structural one).
 
 ## Phase 2: optional cleanups (defer until needed)
 

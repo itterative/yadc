@@ -15,8 +15,11 @@ All project plans live in **`.pi/agent/memory/plans/`** inside the agent memory 
 
 ```
 plans/
-├── <name>.md                  # Active/completed plans (current state)
-├── archive/<name>.md          # Obsolete/superseded plans
+├── <name>.md                  # Active plans (current state)
+├── archive/<name>.md          # Completed/obsolete/superseded plans
+├── archive/history/<name>/    # History of plans that have been deleted (moved from history/<name>/)
+│   ├── 001-slug.md
+│   └── 002-slug.md
 └── history/<name>/            # Sidecar change records (per-entry files)
     ├── 001-slug.md
     └── 002-slug.md
@@ -28,20 +31,8 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 
 | Plan | Description | Status |
 |------|-------------|--------|
-| [`async-migration-plan`](.pi/agent/memory/plans/async-migration-plan.md) | Flask/waitress → Quart/uvicorn async migration | Complete |
-| [`captioner-async-migration-plan`](.pi/agent/memory/plans/captioner-async-migration-plan.md) | Migrate captioners and CaptioningService to asyncio for mid-flight cancellation | Complete |
-| [`api-request-consolidation-plan`](.pi/agent/memory/plans/api-request-consolidation-plan.md) | Consolidate redundant API requests — env list/details, dataset browser, SSE caption text | Complete |
-| [`captioning-status-bar-plan`](.pi/agent/memory/plans/captioning-status-bar-plan.md) | Refine captioning progress UI + consolidate caption logic into shared store | Complete |
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
-| [`file-based-private-key-plan`](.pi/agent/memory/plans/file-based-private-key-plan.md) | Replace keyring with password-encrypted config TOML storage | Complete |
-| [`image-upload-dataset-creation-plan`](.pi/agent/memory/plans/image-upload-dataset-creation-plan.md) | Upload images/folders from browser when creating a dataset via WebUI | Complete (phases 1–13, 5b); phase 14+ deferred |
-| [`selective-image-refresh-plan`](.pi/agent/memory/plans/selective-image-refresh-plan.md) | Per-image SSE events during captioning for live grid tile updates | Complete |
 | [`dataset-config-ux-plan`](.pi/agent/memory/plans/dataset-config-ux-plan.md) | Dataset config editing UX — structured form, entries/extras, simplified/advanced toggle, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, managed dataset lifecycle | In Progress (review pass done) |
-| [`repository-pattern-proposal`](.pi/agent/memory/plans/repository-pattern-proposal.md) | Introduce repository pattern for `DatasetService` and `SettingsService` SQL. Rebased onto `feature/svelte-frontend` so the `DBConnectionFactory.transaction()` infrastructure is already in place. | Complete (2026-06-01) |
-| [`drop-to-upload-dataset-browser-plan`](.pi/agent/memory/plans/drop-to-upload-dataset-browser-plan.md) | Drop-to-upload UX in the dataset browser — drag files onto the image grid to open an upload modal that appends to the current managed dataset. Extracted `DropUploadZone` component + warning overlay for blocked uploads + topbar upload icon + empty-state button. | Complete |
-| [`commit-history-cleanup-plan`](.pi/agent/memory/plans/commit-history-cleanup-plan.md) | Squash tmp commits and reword messages on `feature/svelte-frontend-dataset-config-editing-improvements` before merging to main. | In Progress |
-| [`frontend-component-organization`](.pi/agent/memory/plans/frontend-component-organization.md) | Restructure `src/lib/components/` for consistency — merge `dataset/`+`datasets/`, split caption settings, group by domain. Locks in "promote on second use" and "feature folder" rules. Phased: file moves first, then extractions. | Complete |
-| [`frontend-store-organization`](.pi/agent/memory/plans/frontend-store-organization.md) | Restructure `src/lib/stores/` for consistency — group by domain (dataset, caption, config, env, templates) into sub-folders, split `datasetImages.ts` into `types.ts` + `api.ts`. Top-level keeps global UI primitives (toasts, confirm, password, etc.) and the SSE event store. Drop deprecated `captioning.ts` re-export shim. | Complete (Phase 1) |
 
 ## When to Read Plans
 
@@ -53,11 +44,12 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 ## Maintenance
 
 - **New plan** → add to index with status.
-- **Plan completed** → set status to "Complete".
-- **Plan superseded** → move to `archive/`, remove from index; history stays in `history/`.
+- **Plan completed** → move to `archive/`, **move `history/<name>/` to `archive/history/<name>/`**, remove from index. History travels with the plan.
+- **Plan superseded** → move to `archive/`, **move `history/<name>/` to `archive/history/<name>/`**, remove from index.
+- **Plan deleted** (no longer relevant, e.g. obsolete workflow no longer in use) → delete the plan file entirely; **move the matching `history/<name>/` directory to `archive/history/<name>/`** so the change log is preserved. The deleted plan's history stays accessible but is not indexed.
 - **Historical content accumulated** → create numbered entry in `history/<name>/`, update `last_history` in plan frontmatter.
 - **Plan details changed** → update plan file, create history entry for deviations.
-- **Reference style**: `plans/<name>`, `history/<name>/<NNN>-<slug>`.
+- **Reference style**: `plans/<name>`, `plans/archive/<name>`, `history/<name>/<NNN>-<slug>`, `archive/history/<name>/<NNN>-<slug>`.
 
 ## History Entry Format
 

@@ -3,7 +3,7 @@ date: 2026-06-03
 ---
 # Phase 1: introduce 5 domain sub-folders in `lib/stores/`
 
-**Context:** All 16 store files (~2,233 lines) sat in a flat `src/lib/stores/` directory with no grouping by domain. The 615-line `datasetImages.ts` was already deferred from the prior component-org plan for splitting. The new `plans/frontend-store-organization.md` plan was approved and called for grouping stores by domain (dataset, caption, config, env, templates), with the 7 global UI singletons and `events.ts` staying at top level.
+**Context:** All 16 store files (~2,233 lines) sat in a flat `src/lib/stores/` directory with no grouping by domain. The 615-line `datasetImages.ts` was already deferred from the prior component-org plan for splitting. The new `plans/archive/frontend-store-organization.md` plan was approved and called for grouping stores by domain (dataset, caption, config, env, templates), with the 7 global UI singletons and `events.ts` staying at top level.
 
 **Decision:** Per the plan, one step per domain:
 

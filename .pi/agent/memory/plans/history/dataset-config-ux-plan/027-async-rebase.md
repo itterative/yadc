@@ -53,7 +53,7 @@ During a later rebase step, the old branch's sync imports (`threading`, `Caption
 The following memories/docs were updated to reflect async APIs:
 - `docs/captioning-workflow.md` — Model setup now shows `await APICaptioner.create(...)`
 - `docs/dataset-watcher.md` — `CaptionJob._caption_one()` → `AsyncCaptionJob._acaption_one()`, `_cleanup()` → `_cleanup_async()`
-- `plans/selective-image-refresh-plan.md` — All `CaptionJob` → `AsyncCaptionJob`, `_caption_one()` → `_acaption_one()`, `_do_run()` → `_ado_run()`
+- `plans/archive/selective-image-refresh-plan.md` — All `CaptionJob` → `AsyncCaptionJob`, `_caption_one()` → `_acaption_one()`, `_do_run()` → `_ado_run()`
 - `plans/history/selective-image-refresh-plan/004-active-image-indicator.md` — `_caption_one()` → `_acaption_one()`
 - `plans/history/dataset-config-ux-plan/026-watcher-captioning-improvements.md` — `_caption_one()` → `_acaption_one()`, `_cleanup()` → `_cleanup_async()`
 

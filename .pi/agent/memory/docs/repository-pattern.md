@@ -279,7 +279,7 @@ These came up in code review and are worth flagging:
 ## Related plans and history
 
 - The original proposal is in
-  `plans/repository-pattern-proposal.md` (status: in-progress).
+  `plans/archive/repository-pattern-proposal.md` (status: in-progress).
 - The history entry for the cycle fix is in
   `plans/history/dataset-config-ux-plan/029-managed-datasets-cycle-fix.md`
   (the cycle that motivated extracting `managed_paths.py`, and the
