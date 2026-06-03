@@ -16,7 +16,7 @@ yadc/api/
   configuration.py    # @dataclass config (http, cors, sse, watcher, http timeouts, dataset refresh, upload size, yadc paths, banner_enable)
   discovery.py        # discover_services() / discover_controllers() — package scanning
   watcher_base.py     # SinglePathWatcherService — shared base for filesystem watchers (debounce, observer lifecycle, create_event for subclasses)
-  events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent, EnvironmentsChangedEvent, TemplatesChangedEvent, ImageCaptionedEvent (with caption text)
+  events.py           # Event base class + StartupEvent, ShutdownEvent, PingEvent, CaptioningStatusEvent, DatasetChangedEvent, ResumptionFailedEvent, EnvironmentsChangedEvent, TemplatesChangedEvent, ImageCaptionedEvent (with caption text), ImageCaptionStartedEvent, ImageCaptionErrorEvent
 
   controllers/        # HTTP endpoints — @controller + @inject, auto-discovered
     __init__.py         # @controller decorator (auto-discovery marker + @inject)
@@ -25,7 +25,7 @@ yadc/api/
     blueprints.py       # ApiBlueprint, AppBlueprint (@singleton injector classes)
     app_frontend.py     # @controller — serves SvelteKit build
     api_datasets.py     # @controller — dataset/image endpoints (wired to DatasetService)
-    api_captioning.py   # @controller — captioning start/stop/status, SSE stream via SSEEvents + CaptioningService
+    api_captioning.py   # @controller — captioning start/stop/status + per-image caption (uses CaptioningService only — the SSE stream itself is in `api_events.py`)
     api_configs.py      # @controller — dataset config TOML CRUD (view/edit/delete)
     api_envs.py         # @controller — environment CRUD + model list proxy
     api_export.py       # @controller — export backends listing + run export
@@ -47,7 +47,7 @@ yadc/api/
     db_connection_factory.py # SQLite WAL, foreign keys, background init. `connection()` is a context manager that auto-enrolls in any active `transaction()`; standalone calls commit on success and close on exit. `transaction()` supports nested savepoints and is async/task-safe via `ContextVar`.
 
   services/           # Business logic + repositories (both auto-discovered as Service subclasses)
-    __init__.py           # re-exports all services + repositories (CaptioningService, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ManagedDatasetsService, SettingsService, SettingsRepository, UploadProgressEvent)
+    __init__.py           # re-exports all services + repositories (CaptioningService, CaptionJobOptions, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ManagedDatasetsService, SettingsService, SettingsRepository, UploadProgressEvent)
     captioning.py         # CaptioningService — background captioning jobs (start/stop/status), env/config/template resolution, CaptioningStatusEvent emission via EventDispatcher. Depends on `Configuration` (for HTTP timeouts). `AsyncCaptionJob` consumes `model.predict_stream()` token-by-token (CancelledError re-raises), registers expected file changes via `DatasetWatcherService.expect_file_change()` before writes, exposes `wait()` for proper job cancellation before restart, schedules `_cleanup_async` (final rescan) as a background task so `_arun` returns promptly.
     config_history.py     # ConfigHistoryService — high-level config revision operations; delegates SQL to `ConfigHistoryRepository`
     config_history_repository.py # ConfigHistoryRepository — owns `ConfigHistoryEntry` dataclass + all SQL for the `config_history` table (reads + writes + pruning)
@@ -57,7 +57,7 @@ yadc/api/
     dataset_upload_validation.py # Stateless validation helpers: `validate_image_stream`, `validate_toml_stream`, `unique_path`.
     datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService. Injects `DatasetRepository` (no SQL in this file). Background refresh via `JobScheduler` (interval from `Configuration.dataset_refresh_interval_seconds`); `_refresh_lock` serializes background + manual rescans. `_apply_disk_scan` does a diff scan (no per-image upsert when nothing changed) and returns `bool` (whether the index changed). `rescan_dataset(source=...)` dispatches `DatasetChangedEvent(job_id=source)` when the scan changed rows.
     managed_datasets.py   # ManagedDatasetsService — operations specific to managed (upload-sourced) datasets: `list_folders` (images/ + folders/* with image counts + can_delete flag) and `delete_items` (file + sidecars, or folder, with `expect_file_change`/`expect_pattern_change` for self-suppression)
-    managed_paths.py      # Layout constants and path builders for managed datasets: `MANAGED_IMAGES_PREFIX = "images"`, `MANAGED_FOLDERS_PREFIX = "folders"`, plus `managed_base_dir`/`managed_images_dir`/`managed_folders_dir` builders and `compute_delete_path` resolver. Single source of truth for the `<config_dir>/{images,folders}/...` layout — safe to import from anywhere (no service deps).
+    managed_paths.py      # Layout constants and path builders for managed datasets: `MANAGED_IMAGES_PREFIX = "images"`, `MANAGED_FOLDERS_PREFIX = "folders"`, plus `managed_base_dir(config_path)`/`managed_images_dir(config_path)`/`managed_folders_dir(config_path)` builders and `compute_delete_path(image_path, config_path)` resolver. Single source of truth for the `<config_dir>/{images,folders}/...` layout — safe to import from anywhere (no service deps).
     settings.py           # SettingsService — KV store over SQLite settings table (JSON encode/decode + business policy); delegates SQL to `SettingsRepository`
     settings_repository.py # SettingsRepository — owns all SQL for the `settings` table (get, upsert, delete, list_all). Values are stored as raw JSON strings.
 ```

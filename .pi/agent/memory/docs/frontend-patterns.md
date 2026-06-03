@@ -38,7 +38,7 @@ When adding new fixed/absolute layers, use the appropriate slot and avoid values
 
 ## Topbar Pattern
 
-The layout has a topbar (inside `app-content`, between sidebar and main). Pages set topbar content by defining a `{#snippet}` and passing it to `<SetTopbar>`. The snippet is stored in `topbar.svelte.ts` (a `$state` module). The layout reads it with `getTopbarContent()` and renders with `{@render}`.
+The layout has a topbar (inside `app-content`, between sidebar and main). Pages set topbar content by defining a `{#snippet}` and passing it to `<Topbar>`. The snippet is stored in `topbar.svelte.ts` (a `$state` module). The layout reads it with `getTopbarContent()` and renders with `{@render}`.
 
 - On mobile the topbar also houses the burger menu button.
 - On desktop, if no snippet is set, the topbar is hidden via `:empty`.

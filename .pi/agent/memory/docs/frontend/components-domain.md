@@ -79,6 +79,8 @@ yadc/webui/src/lib/components/dataset/
 
 ## icons/
 
+The icons live at `yadc/webui/src/lib/icons/` (sibling of `lib/components/`, not under it).
+
 ```
   icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
 ```

@@ -16,7 +16,7 @@ keep_updated: true
 
 **Patterns**: See `frontend-patterns` (Tabs, Z-index, Topbar, Browser notifications, Drop-to-upload, SSE).
 
-## Component Organization
+## Component Organization (in `yadc/webui/src/`)
 
 **Where a component lives** is decided by two rules:
 
@@ -45,18 +45,20 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 
 ### Current layout (one-liner per folder)
 
-- `ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`.
-- `dataset/` — dataset domain. Sub-folders per feature: `browser/`, `detail/`, `config/`, `upload/`, `manage/`.
-- `caption/` — `CaptionSettingsPanel` (the batch-captioning side panel).
-- `env/` — `EnvironmentSettings` (CRUD list), `EnvSelector` (caption-flow picker).
-- `export/` — `ExportDialog`.
-- `settings/` — `SettingsDialog` (host) + tabs (`GeneralSettings`/`SecuritySettings`) + `CaptionOptionsFields` widget. `TemplateManager.svelte` is **marked LEGACY** — superseded by `/templates` route.
-- `dialogs/` — only `PasswordPromptDialog` (global utility).
-- `icons/` — `Svg*` SVG components (`viewBox="0 -960 960 960"`, sized/colored via Tailwind).
+- `lib/components/ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`.
+- `lib/components/dataset/` — dataset domain. Sub-folders per feature: `browser/`, `detail/`, `config/`, `upload/`, `manage/`.
+- `lib/components/caption/` — `CaptionSettingsPanel` (the batch-captioning side panel).
+- `lib/components/env/` — `EnvironmentSettings` (CRUD list), `EnvSelector` (caption-flow picker).
+- `lib/components/export/` — `ExportDialog`.
+- `lib/components/settings/` — `SettingsDialog` (host) + tabs (`GeneralSettings`/`SecuritySettings`) + `CaptionOptionsFields` widget. `TemplateManager.svelte` is **marked LEGACY** — superseded by `/templates` route.
+- `lib/components/dialogs/` — only `PasswordPromptDialog` (global utility).
+- `lib/icons/` — `Svg*` SVG components (`viewBox="0 -960 960 960"`, sized/colored via Tailwind)
+
+Note: `lib/components/dialogs/` and `lib/icons/` are pragmatic exceptions to the Scope rule above — `dialogs/` holds global utilities (not a domain) and `icons/` lives outside `lib/components/` entirely.
 
 Route-only components are co-located in `routes/<path>/`. Full listing in `frontend/routes.md`.
 
-## Store Organization
+## Store Organization (in `yadc/webui/src/lib/stores/`)
 
 Mirrors the component organization conventions.
 
@@ -86,7 +88,7 @@ Full per-file summary in `frontend/stores.md`.
 
 Three-tier approach for mixing Tailwind utilities, reusable component classes, and scoped Svelte styles:
 
-### 1. `@layer components` in CSS files (`src/lib/styles/`)
+### 1. `@layer components` in CSS files (`yadc/webui/src/lib/styles/`)
 
 For **reusable UI abstractions** that appear across multiple components. Use `@apply` to compose Tailwind utilities into named classes.
 
@@ -113,6 +115,6 @@ For styles that genuinely can't be utilities:
 - **Complex structural layout** that's easier to read as CSS — e.g. the navbar layout in `+layout.svelte`
 
 **Anti-patterns to avoid**:
-- Using `@apply` inside Svelte `<style>` blocks — adds indirection without benefit. Either extract to `src/lib/styles/` (if reusable) or inline utilities (if one-off).
+- Using `@apply` inside Svelte `<style>` blocks — adds indirection without benefit. Either extract to `lib/styles/` (if reusable) or inline utilities (if one-off).
 - Creating component classes that include positioning (e.g. `.badge-corner` with `absolute`). Positioning is context-specific and should be inline.
 - Writing raw CSS for styles that map directly to existing utilities (e.g. `display: flex; align-items: center;` instead of `class="flex items-center"`).

@@ -48,8 +48,8 @@ For uploaded (`source="upload"`) datasets, the layout is `<config_dir>/{images,f
 
 - `MANAGED_IMAGES_PREFIX = "images"`
 - `MANAGED_FOLDERS_PREFIX = "folders"`
-- `managed_base_dir(name)`, `managed_images_dir(name)`, `managed_folders_dir(name)` — directory builders
-- `compute_delete_path(name, relative_path)` — populates `ImageInfo.delete_path` for the image-listing endpoint
+- `managed_base_dir(config_path)`, `managed_images_dir(config_path)`, `managed_folders_dir(config_path)` — directory builders (take the dataset's `config_path`, not the name)
+- `compute_delete_path(image_path, config_path)` — populates `ImageInfo.delete_path` for the image-listing endpoint (takes the image path and the dataset's `config_path`)
 
 This module is the single source of truth for the layout — no service deps, safe to import from anywhere. Pure layout math, not a service.
 
@@ -59,10 +59,7 @@ Three endpoints, all in `yadc/api/controllers/api_datasets.py`. All accept an op
 
 ### `POST /api/datasets/upload` (create)
 
-`multipart/form-data` with `name` + `files`. Two-stage image validation:
-
-1. `Image.verify()` — fast header check
-2. `Image.load()` — fallback for headers that pass verify but fail on full decode
+`multipart/form-data` with `name` + `files`. Image validation runs `Image.verify()` first; if that raises (e.g. some animated GIFs and progressive JPEGs), it falls back to a slower `Image.load()` check.
 
 Plus TOML syntax validation, orphan sidecar detection (`.<name>.draft~` for a file that wasn't uploaded), and atomic cleanup on failure (no partial state). Configurable `max_upload_size_bytes` limit from `Configuration`.
 
@@ -117,7 +114,7 @@ History is saved on every caption update (both captioning jobs and manual webui 
 
 **Endpoints** (in `yadc/api/controllers/api_datasets.py`):
 
-- `GET /images/<id>/history` — list history entries
-- `PUT /images/<id>/history/<index>/restore` — restore an entry (saves current state to history first)
-- `DELETE /images/<id>/history/<hash>` — delete a history entry by content hash (safe identification across renames)
-- `DELETE /images/<id>/drafts/<name>` — delete a named draft
+- `GET /datasets/<name>/images/<id>/history` — list history entries
+- `PUT /datasets/<name>/images/<id>/history/<index>/restore` — restore an entry (saves current state to history first)
+- `DELETE /datasets/<name>/images/<id>/history/<hash>` — delete a history entry by content hash (safe identification across renames)
+- `DELETE /datasets/<name>/images/<id>/drafts/<name>` — delete a named draft
