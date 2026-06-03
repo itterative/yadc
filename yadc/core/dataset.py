@@ -3,7 +3,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import ClassVar
 
-import toml
+import tomlkit
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
@@ -178,7 +178,7 @@ class DatasetImage(BaseModel):
                 continue
 
             try:
-                history_data = toml.loads(history_entry)
+                history_data = tomlkit.loads(history_entry)
                 history_data.setdefault("path", str(self.absolute_path))
                 history.append(DatasetImage.model_validate(history_data))
             except Exception:
@@ -232,4 +232,4 @@ class DatasetImage(BaseModel):
         if with_caption:
             toml_dict["caption"] = self.caption
 
-        return toml.dumps(toml_dict)
+        return tomlkit.dumps(toml_dict)

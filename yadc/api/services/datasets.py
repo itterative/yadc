@@ -234,7 +234,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras_raw = f.read()
                     f.seek(0)
-                    extras = tomlkit.loads(extras_raw)
+                    extras = toml_to_plain(tomlkit.loads(extras_raw))
             except Exception:
                 pass
 
@@ -274,7 +274,7 @@ class DatasetService(Service):
 
         # Apply extras as additional fields on the DatasetImage
         if extras:
-            dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+            dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
 
         # Read current caption from .txt file
         dataset_image.caption = dataset_image.read_caption()
@@ -323,7 +323,7 @@ class DatasetService(Service):
 
         result: list[HistoryEntry] = []
         for i, entry in enumerate(recent):
-            extras = dict(entry.__pydantic_extra__ or {})
+            extras = toml_to_plain(dict(entry.__pydantic_extra__ or {}))
             result.append(HistoryEntry(index=len(recent) - 1 - i, caption=entry.caption, extras=extras))
 
         # Re-index using absolute positions from the end of the full list
@@ -360,7 +360,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras = tomlkit.loads(f.read())
                 if extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
             except Exception:
                 pass
 
@@ -417,7 +417,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras = tomlkit.loads(f.read())
                 if extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
             except Exception:
                 pass
         dataset_image.caption = dataset_image.read_caption()
@@ -460,7 +460,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     current_extras = tomlkit.loads(f.read())
                 if current_extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **current_extras})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(current_extras)})
             except Exception:
                 pass
         dataset_image.caption = dataset_image.read_caption()

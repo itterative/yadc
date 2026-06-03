@@ -335,3 +335,151 @@ class TestApplyDiskScanOrchestration:
                 dataset_id=service._repo.get_dataset_row("alpha")[0],
                 config_path=str(config_path),
             )
+
+
+class TestUpdateExtrasHistoryRoundTrip:
+    """Regression tests for the webui extras update flow.
+
+    The webui loads current extras via ``tomlkit.loads()`` and passes them
+    to ``DatasetImage.model_validate()``. Because tomlkit wraps values in
+    its own types (``tomlkit.items.String``, etc.), the service must convert
+    them to plain Python types via ``toml_to_plain()`` before passing to
+    ``model_validate``. Without this conversion, ``toml.dumps()`` in
+    ``dump_toml()`` serializes strings as character lists (e.g.
+    ``artist = "abc"`` becomes ``artist = ["a", "b", "c"]``).
+
+    These tests exercise ``DatasetService.update_extras()`` end-to-end to
+    ensure the history file always contains correctly serialized values.
+    """
+
+    @pytest.fixture
+    def service(
+        self,
+        db_connection_factory,
+        test_configuration,
+        logging_factory,
+    ):
+        from yadc.api.modules.dataset_watcher import DatasetWatcherService
+        from yadc.api.modules.event_dispatcher import EventDispatcher
+
+        repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
+        watcher = MagicMock(spec=DatasetWatcherService)
+        event_dispatcher = MagicMock(spec=EventDispatcher)
+        return DatasetService(
+            db=db_connection_factory,
+            watcher=watcher,
+            configuration=test_configuration,
+            event_dispatcher=event_dispatcher,
+            logging=logging_factory,
+            repo=repo,
+        )
+
+    def _setup_dataset(self, service: DatasetService, tmp_path: Path) -> tuple[Path, str]:
+        """Register a dataset with one image and return (image_path, dataset_name)."""
+        from PIL import Image
+
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        img_path = img_dir / "photo.jpg"
+        Image.new("RGB", (1, 1), color="red").save(img_path, format="JPEG")
+
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'[[dataset]]\npath = "{img_dir}"\n')
+        service.register("test_ds", str(config_path), source="import")
+        return img_path, "test_ds"
+
+    def _get_image_id(self, service: DatasetService, dataset_name: str, img_path: Path) -> int:
+        info = service.get_image_by_path(dataset_name, str(img_path))
+        assert info is not None
+        return info.id
+
+    def test_history_preserves_string_extras_after_update(self, service, tmp_path):
+        """After updating extras, the history must contain the previous string value correctly."""
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+
+        # Write initial extras (simulating an existing TOML sidecar)
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('artist = "Monet"\nstyle = "impressionism"\n')
+
+        # Update extras through the service (webui flow)
+        new_extras = 'artist = "Picasso"\nstyle = "cubism"\n'
+        service.update_extras(ds_name, image_id, new_extras)
+
+        # Verify the current TOML has the new values
+        assert toml_path.read_text() == new_extras
+
+        # Verify history preserved the old values correctly
+        history = service.get_history(ds_name, image_id)
+        assert history is not None
+        assert len(history) == 1
+        extras = history[0].extras
+        assert extras["artist"] == "Monet"
+        assert isinstance(extras["artist"], str)
+        assert extras["style"] == "impressionism"
+
+    def test_history_preserves_integer_and_list_extras(self, service, tmp_path):
+        """After updating extras, history must correctly preserve int and list values."""
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+
+        # Write initial extras with mixed types
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('year = 1872\ntags = ["painting", "landscape"]\n')
+
+        # Update to new values
+        service.update_extras(ds_name, image_id, 'year = 1937\ntags = ["abstract"]\n')
+
+        history = service.get_history(ds_name, image_id)
+        assert history is not None
+        assert len(history) == 1
+        extras = history[0].extras
+        assert extras["year"] == 1872
+        assert isinstance(extras["year"], int)
+        assert extras["tags"] == ["painting", "landscape"]
+
+    def test_multiple_updates_produce_correct_history(self, service, tmp_path):
+        """Multiple extras updates should produce correct history entries."""
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+
+        # First update: create extras
+        service.update_extras(ds_name, image_id, 'artist = "A"\n')
+
+        # Second update: change extras
+        service.update_extras(ds_name, image_id, 'artist = "B"\n')
+
+        # Third update: change again
+        service.update_extras(ds_name, image_id, 'artist = "C"\n')
+
+        history = service.get_history(ds_name, image_id)
+        assert history is not None
+        assert len(history) == 3  # 3 history entries from the 3 updates
+        # Most recent first
+        assert history[0].extras.get("artist") == "B"
+        assert history[1].extras.get("artist") == "A"
+        assert history[2].extras.get("artist") is None  # first update had no prior extras
+
+    def test_update_caption_preserves_existing_extras_in_history(self, service, tmp_path):
+        """Updating a caption should save the current extras to history correctly."""
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+
+        # Write initial extras
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('artist = "Rembrandt"\n')
+
+        # Also write initial caption
+        caption_path = img_path.with_suffix(".txt")
+        caption_path.write_text("old caption")
+
+        # Update caption through the service
+        service.update_caption(ds_name, image_id, "new caption")
+
+        # History should preserve the extras
+        history = service.get_history(ds_name, image_id)
+        assert history is not None
+        assert len(history) == 1
+        assert history[0].extras.get("artist") == "Rembrandt"
+        assert isinstance(history[0].extras["artist"], str)
+        assert history[0].caption == "old caption"
