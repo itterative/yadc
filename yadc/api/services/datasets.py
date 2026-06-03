@@ -219,6 +219,42 @@ class DatasetService(Service):
                     names.add(part)
         return sorted(names)
 
+    def get_draft_summary(self, dataset_name: str) -> list[dict[str, Any]]:
+        """Return draft names with image counts for a dataset.
+
+        Returns a list of dicts with ``name`` and ``image_count`` keys,
+        sorted by name.
+        """
+        counts = self._repo.get_draft_name_counts(dataset_name)
+        return [{"name": name, "image_count": count} for name, count in sorted(counts.items())]
+
+    def delete_draft_all(self, dataset_name: str, draft_name: str, *, source: str = SELF_JOB_ID) -> int:
+        """Delete a named draft from all images in a dataset.
+
+        Returns the number of images from which the draft was deleted.
+        """
+        info = self.get_dataset(dataset_name)
+        if info is None:
+            return 0
+
+        # Get all images that have this draft name
+        image_rows = self._repo.search_by_draft_name(dataset_name, draft_name)
+        deleted = 0
+        for image_id, image_path_str in image_rows:
+            image_path = Path(image_path_str)
+            if not image_path.exists():
+                continue
+            dataset_image = DatasetImage(path=str(image_path))
+            draft_path = dataset_image.draft_path(draft_name)
+            self._watcher.expect_file_change(dataset_name, str(draft_path), source=source)
+            if dataset_image.delete_draft(draft_name):
+                deleted += 1
+                self.refresh_image_index(dataset_name, image_id)
+
+        if deleted:
+            self._logger.info("Deleted draft '%s' from %d image(s) [dataset=%s]", draft_name, deleted, dataset_name)
+        return deleted
+
     def get_caption(self, dataset_name: str, image_id: int) -> dict[str, Any] | None:
         """Read the caption text and TOML extras for an image.
 

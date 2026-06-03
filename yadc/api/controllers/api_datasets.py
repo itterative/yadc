@@ -299,6 +299,20 @@ def api_datasets(
         names = datasets.get_draft_names(name)
         return jsonify(names)
 
+    @app.get("/datasets/<name>/drafts/summary")
+    def list_dataset_drafts_summary(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Return draft names with image counts for a dataset."""
+        summary = datasets.get_draft_summary(name)
+        return jsonify(summary)
+
+    @app.delete("/datasets/<name>/drafts/<draft_name>")
+    async def delete_dataset_draft(name: str, draft_name: str):  # pyright: ignore[reportUnusedFunction]
+        """Delete a named draft from all images in a dataset."""
+        deleted = datasets.delete_draft_all(name, draft_name, source=request.args.get("source", ""))
+        if deleted == 0:
+            return jsonify_error("Draft not found", status=404)
+        return jsonify({"status": "ok", "deleted": deleted})
+
     @app.get("/datasets/<name>/images")
     def list_images(name: str):  # pyright: ignore[reportUnusedFunction]
         """List images with captions/drafts (paginated)."""

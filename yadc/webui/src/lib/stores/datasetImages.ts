@@ -331,6 +331,33 @@ export async function fetchFolders(name: string): Promise<DatasetFolder[]> {
     return res.json();
 }
 
+export interface DraftSummary {
+    name: string;
+    image_count: number;
+}
+
+/** List draft names with image counts for a dataset. */
+export async function fetchDraftSummary(name: string): Promise<DraftSummary[]> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/drafts/summary`);
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+/** Delete a named draft from all images in a dataset. */
+export async function deleteDraftAll(name: string, draftName: string): Promise<number> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(name)}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
+        { method: 'DELETE' }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    const data = await res.json();
+    return data.deleted;
+}
+
 /** Delete/unregister a dataset. */
 export async function deleteDataset(name: string): Promise<void> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}`, {

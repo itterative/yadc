@@ -42,10 +42,10 @@
             <Tab id="config" label="Config" class="h-full">
                 <DatasetConfig {datasetName} {source} onsaved={handleConfigSaved} />
             </Tab>
+            <Tab id="manage" label="Manage" class="h-full overflow-y-auto">
+                <DatasetManageTab {datasetName} {source} onchanged={handleConfigSaved} />
+            </Tab>
             {#if source === 'upload'}
-                <Tab id="manage" label="Manage" class="h-full overflow-y-auto">
-                    <DatasetManageTab {datasetName} onchanged={handleConfigSaved} />
-                </Tab>
                 <Tab id="upload" label="Upload" class="h-full overflow-y-auto">
                     <DatasetUploadPanel
                         mode="append"

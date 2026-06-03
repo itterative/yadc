@@ -180,6 +180,14 @@ The API captioning service (`CaptioningService` / `AsyncCaptionJob`) reuses CLI-
 - A TOML AST-aware library that preserves comments and formatting (e.g. `taplo`/Python bindings if they exist)
 - Accept the limitation and document it (comments are not preserved when editing configs through the webui)
 
+## Normalize draft_names storage in SQLite
+
+The `draft_names` column in `dataset_images` stores draft names as a comma-separated string (e.g. `"gemma,qwen"`). This is fragile — LIKE-based queries need 4 OR clauses to match a single draft name (`search_by_draft_name`), and counting/splitting happens in Python, not SQL. Should be normalized to a proper join table (`draft_names` → `image_drafts` table with `image_id` + `draft_name` columns).
+
+This was highlighted when adding `get_draft_name_counts()` and `search_by_draft_name()` to `DatasetRepository` — both work around the CSV format with Python-side splitting or 4-way LIKE matching.
+
+Key files: `yadc/api/services/dataset_repository.py` (schema + queries), `yadc/api/modules/db_migrations.py` (migration), `yadc/api/services/datasets.py` (service methods that read/write `draft_names`).
+
 ## SSE event pattern standardization
 
 Research whether to standardize on thin events (notify-then-fetch) vs event-carried state transfer (fat events) for SSE. See `todo/thin-events-vs-fat-events.md` for full context.

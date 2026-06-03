@@ -292,6 +292,62 @@ class DatasetRepository(Service):
             ).fetchall()
         return [csv for (csv,) in rows]
 
+    def get_draft_name_counts(self, dataset_name: str) -> dict[str, int]:
+        """Return a mapping of draft name → number of images that have that draft.
+
+        Splits the comma-separated ``draft_names`` column into individual
+        names and counts occurrences across all images in the dataset.
+        """
+        with self._db.connection() as conn:
+            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
+            if row is None:
+                return {}
+            dataset_id: int = row[0]
+            rows = conn.execute(
+                "SELECT draft_names FROM dataset_images WHERE dataset_id = ? AND draft_names != ''",
+                (dataset_id,),
+            ).fetchall()
+        counts: dict[str, int] = {}
+        for (csv,) in rows:
+            for part in csv.split(","):
+                part = part.strip()
+                if part:
+                    counts[part] = counts.get(part, 0) + 1
+        return counts
+
+    def search_by_draft_name(self, dataset_name: str, draft_name: str) -> list[tuple[int, str]]:
+        """Return (id, path) for all images that have a specific draft name.
+
+        Searches the comma-separated ``draft_names`` column for an exact
+        match of ``draft_name`` as one of the comma-delimited parts.
+        """
+        with self._db.connection() as conn:
+            row = conn.execute("SELECT id FROM datasets WHERE name = ?", (dataset_name,)).fetchone()
+            if row is None:
+                return []
+            dataset_id: int = row[0]
+            # Match draft_name as a complete comma-delimited part
+            # Use LIKE with comma-boundary matching
+            rows = conn.execute(
+                """
+                SELECT id, path FROM dataset_images
+                WHERE dataset_id = ? AND (
+                    draft_names = ?
+                    OR draft_names LIKE ?
+                    OR draft_names LIKE ?
+                    OR draft_names LIKE ?
+                )
+                """,
+                (
+                    dataset_id,
+                    draft_name,  # exact match: only draft
+                    f"{draft_name},%",  # starts with: "gemma,"
+                    f"%,{draft_name}",  # ends with: ",gemma"
+                    f"%,{draft_name},%",  # middle: ",gemma,"
+                ),
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
     def list_image_paths(self, dataset_id: int) -> dict[str, int]:
         """Return (path → id) for every image in a dataset.
 
