@@ -1,9 +1,8 @@
-import { API_BASE, apiErrorMessage, friendlyErrorMessage } from '$lib/api';
+import { API_BASE, apiErrorMessage } from '$lib/api';
 import { upload, type UploadProgress } from '$lib/upload';
 import { debounce } from '$lib/async';
 import { clientId } from './events';
 import { sessionPassword } from './sessionPassword';
-import { writable } from 'svelte/store';
 
 // --- Types matching the backend API dataclasses ---
 
@@ -613,100 +612,4 @@ export async function captionSingleImage(
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
-}
-
-// --- Store for paginated image browsing ---
-
-export interface DatasetBrowserState {
-    images: ImageInfo[];
-    isLoading: boolean;
-    isLoadingMore: boolean;
-    error: string | null;
-    hasMore: boolean;
-}
-
-export function createDatasetBrowserStore(datasetName: string, pageSize = 50) {
-    const { subscribe, set, update } = writable<DatasetBrowserState>({
-        images: [],
-        isLoading: false,
-        isLoadingMore: false,
-        error: null,
-        hasMore: true
-    });
-
-    let lastAfterId = 0;
-
-    async function loadInitial() {
-        lastAfterId = 0;
-        update((s) => ({ ...s, isLoading: true, error: null }));
-
-        try {
-            const page = await fetchImages(datasetName, { limit: pageSize, afterId: 0 });
-
-            if (page.images.length > 0) {
-                lastAfterId = page.images[page.images.length - 1].id;
-            }
-
-            set({
-                images: page.images,
-                isLoading: false,
-                isLoadingMore: false,
-                error: null,
-                hasMore: page.next_token !== null
-            });
-        } catch (e) {
-            update((s) => ({
-                ...s,
-                isLoading: false,
-                error: friendlyErrorMessage(e, 'Failed to load images')
-            }));
-        }
-    }
-
-    async function loadMore() {
-        let currentState: DatasetBrowserState | undefined;
-        update((s) => {
-            currentState = s;
-            return { ...s, isLoadingMore: true };
-        });
-
-        if (!currentState || currentState.isLoadingMore || !currentState.hasMore) {
-            return;
-        }
-
-        try {
-            const page = await fetchImages(datasetName, { limit: pageSize, afterId: lastAfterId });
-
-            if (page.images.length > 0) {
-                lastAfterId = page.images[page.images.length - 1].id;
-            }
-
-            update((s) => ({
-                ...s,
-                images: [...s.images, ...page.images],
-                isLoadingMore: false,
-                hasMore: page.next_token !== null
-            }));
-        } catch (e) {
-            update((s) => ({
-                ...s,
-                isLoadingMore: false,
-                error: friendlyErrorMessage(e, 'Failed to load more images')
-            }));
-        }
-    }
-
-    function updateImage(imageId: number, patch: Partial<ImageInfo>) {
-        update((s) => ({
-            ...s,
-            images: s.images.map((img) => (img.id === imageId ? { ...img, ...patch } : img))
-        }));
-    }
-
-    return {
-        subscribe,
-        loadInitial,
-        loadMore,
-        updateImage
-    };
 }

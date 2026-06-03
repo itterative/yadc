@@ -94,11 +94,13 @@ The dataset page subscribes to these stores in a `$effect` and updates the grid.
 
 - Subscribe to `lastCaptionedImage` store
 - When event arrives with matching `dataset_name`:
-  - Call `browserStore.updateImage(event.image.id, event.image)` to update the tile in-place
-  - The `updateImage` function already exists on `createDatasetBrowserStore` and does a shallow merge
+  - Update the image in `+page.svelte`'s `images` `$state` array in-place (find by id, shallow-merge the patch into the existing object)
+  - `DatasetImage` reads the image data from props — a reactive update to the array entry triggers re-render
 - Subscribe to `lastCaptionError` store
   - When event arrives with matching `dataset_name`, mark the tile with a warning state
   - Add an `error` field to the tile's display (simple warning badge for now)
+
+Note: an earlier revision of this plan referenced `createDatasetBrowserStore.updateImage()`, but that factory was dead code (the page reimplements the same logic inline with Svelte 5 runes) and has since been removed.
 
 #### 4. DatasetImage tile (`yadc/webui/src/lib/components/dataset/DatasetImage.svelte`)
 

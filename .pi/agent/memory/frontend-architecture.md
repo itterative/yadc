@@ -42,7 +42,7 @@ yadc/webui/
         captionOptions.ts  # CaptionOptions type (mirrors backend CaptionJobOptions)
         captionSettings.ts # Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.)
         confirm.ts         # Promise-based confirmation dialog store
-        datasetImages.ts   # Types + API helpers (debounced) + deleteDataset + createDatasetBrowserStore + uploadDataset/appendUploadDataset/commitStagingUpload
+        datasetImages.ts   # Types + API helpers (debounced) + deleteDataset + uploadDataset/appendUploadDataset/commitStagingUpload
         configs.ts         # Config CRUD + export API. `fetchConfig` debounced
         envs.ts            # Environment types + CRUD + model fetching. `fetchEnvs`/`fetchModels` debounced
         templates.ts       # Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced
@@ -175,7 +175,7 @@ yadc/webui/
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent) + API helpers (debounced via `debounce()`) + deleteDataset + createDatasetBrowserStore + `uploadDataset()` (create) + `appendUploadDataset()` (append to managed) + `commitStagingUpload()` (resolve conflicts). `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
+| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent, CaptioningJobInfo, DatasetFolder) + API helpers (debounced via `debounce()`) + deleteDataset + `uploadDataset()` (create) + `appendUploadDataset()` (append to managed) + `commitStagingUpload()` (resolve conflicts). `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
 | `envs.ts` | Env types + CRUD + model fetching. Store holds `EnvInfo[]` (full details from `GET /api/envs`, not just names). `fetchEnvs`/`fetchModels` debounced. |
 | `templates.ts` | Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced. |
 | `captionActions.ts` | Caption action store — `captionOptions` (writable, reactively synced from CaptionSettings), `startBatchCaptioning()`, `captionSingleImage()`, `stopCaptioning()` (with toasts + optional onError callback), `lastStartedJobId` (for completion toast tracking). Reads options from store, handles password retry, registers job IDs, seeds SSE stores. |

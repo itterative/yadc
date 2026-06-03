@@ -57,14 +57,15 @@ The structural cleanup items (folder organization, `dataset/`+`datasets/` merge,
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
 - **Tooltip z-index / stacking context**: `Tooltip.svelte` was migrated to Tailwind but the tooltip label renders underneath `DatasetImage` tiles. The `DatasetBrowser` tiles use `transform` (hover scale) and `relative` positioning, which create new stacking contexts. The old tooltip had `z-index: 50` but that alone is not sufficient when the parent stacking contexts are lower. The tooltip should not hardcode its own z-index; it should be parent-driven (e.g. via a `class` prop on the wrapper `div` or a dedicated `zIndex` prop). Deciding the right API is deferred. Key files: `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`.
 
-## Split `stores/datasetImages.ts` (656 lines) — data-layer refactor
+## Split `stores/datasetImages.ts` (~615 lines) — data-layer refactor
 
-Deferred from `plans/frontend-component-organization.md`. This is a single file holding: types (~60 lines), every API helper for datasets/images/captions/uploads (~400 lines), and the `createDatasetBrowserStore` factory (~100 lines). The "too big" problem is the same as the component-organization work but it's a data-layer concern. Proposed split:
+Deferred from `plans/frontend-component-organization.md`. The dead `createDatasetBrowserStore` factory and `DatasetBrowserState` interface were removed as a quick cleanup (the page reimplements the same logic with Svelte 5 runes inline), so the file is now ~615 lines. Still a single file holding: types (~75 lines) and every API helper for datasets/images/captions/uploads (~540 lines). The "too big" problem is the same as the component-organization work but it's a data-layer concern. Proposed split:
 
-- `stores/datasetImages/types.ts` — `DatasetInfo`, `ImageInfo`, `ImagePage`, `CaptionData`, `HistoryEntry`, `DatasetUploadResult`, `UploadConflict`, `UploadProgressEvent`, `CaptioningJobInfo`, `DatasetBrowserState`, `DatasetFolder`
+- `stores/datasetImages/types.ts` — `DatasetInfo`, `ImageInfo`, `ImagePage`, `CaptionData`, `HistoryEntry`, `DatasetUploadResult`, `UploadConflict`, `UploadProgressEvent`, `CaptioningJobInfo`, `DatasetFolder`
 - `stores/datasetImages/api.ts` — all the fetch/upload/update helpers (debounced + raw)
-- `stores/datasetImages/browser-store.ts` — `createDatasetBrowserStore` factory + URL helpers (`mediaUrl`, `thumbnailUrl`)
 - `stores/datasetImages/index.ts` — re-exports for back-compat (everything currently imported from `$lib/stores/datasetImages` continues to work)
+
+Note: the original proposal also had `browser-store.ts` for `createDatasetBrowserStore` — dropped since the factory was removed. The page's inline `images` / `isLoading` / `loadInitial` / `loadMore` / `updateImage`-equivalent state could be extracted to `stores/datasetImages/browser-state.svelte.ts` (a Svelte 5 runes module) as a follow-up, but that's a behavior refactor with a different risk profile.
 
 Risk: `+page.svelte` and several other files import the entire namespace from one barrel — if the import path changes mid-refactor, lots of `import type` lines need to update. Use the index.ts re-export strategy to keep the import surface stable.
 
