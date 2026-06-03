@@ -21,6 +21,7 @@
         stopCaptioning
     } from '$lib/stores/captionActions';
     import { promptNotificationsOnce } from '$lib/notifications';
+    import { deferred } from '$lib/async';
     import { fetchConfig } from '$lib/stores/configs';
     import { get } from 'svelte/store';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
@@ -428,9 +429,9 @@
         captionOptionsStore.set(_assembledOptions);
     });
 
-    async function handleStart() {
-        captionSettings.update((s) => ({
-            ...s,
+    function _buildSettings(): import('$lib/stores/captionSettings').CaptionSettings {
+        return {
+            $version: 1,
             env: selectedEnv,
             maxTokens: maxTokens ?? 512,
             imageQuality: imageQuality ?? 'auto',
@@ -442,7 +443,37 @@
             selectedTemplate: effectiveTemplateName || selectedTemplate,
             apiUrl: envUrl.trim(),
             apiModelName: envModelName.trim()
-        }));
+        };
+    }
+
+    const persistSettings = deferred(() => {
+        captionSettings.set(_buildSettings());
+    }, 300);
+
+    $effect(() => {
+        if (!dataLoaded) {
+            return;
+        }
+        // Track every field we want to persist so the effect re-runs on change.
+        void selectedEnv;
+        void maxTokens;
+        void imageQuality;
+        void draftName;
+        void overwrite;
+        void rounds;
+        void reasoningEnabled;
+        void reasoningEffort;
+        void selectedTemplate;
+        void effectiveTemplateName;
+        void envUrl;
+        void envModelName;
+
+        persistSettings();
+    });
+
+    async function handleStart() {
+        // Ensure any pending debounced save is flushed before starting.
+        persistSettings();
 
         promptNotificationsOnce();
         try {

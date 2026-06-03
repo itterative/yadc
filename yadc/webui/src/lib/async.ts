@@ -132,3 +132,25 @@ export function delayed<R, T extends (...args: unknown[]) => Promise<R>>(cb: T, 
         await cb(...args);
     };
 }
+
+/**
+ * Returns a debounced wrapper around a synchronous callback.
+ *
+ * Each call resets the timer.  The callback only executes after `delay`
+ * milliseconds have elapsed without any new calls.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function deferred<T extends (...args: any[]) => void>(
+    cb: T,
+    delay: number = 10
+): (...args: Parameters<T>) => void {
+    let cbTimeout: number | null = null;
+
+    return (...args: Parameters<T>) => {
+        if (cbTimeout) {
+            window.clearTimeout(cbTimeout);
+        }
+
+        cbTimeout = window.setTimeout(() => cb(...args), delay);
+    };
+}
