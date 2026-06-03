@@ -1,6 +1,6 @@
 <script lang="ts">
     import PromptPreview from '$lib/components/ui/PromptPreview.svelte';
-    import type { CaptionData, ImageInfo } from '$lib/stores/datasetImages';
+    import type { CaptionData, ImageInfo } from '$lib/stores/dataset';
 
     interface Props {
         datasetName: string;

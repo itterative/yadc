@@ -3,7 +3,7 @@
         fetchConfigHistory,
         restoreConfigHistory,
         type ConfigHistoryEntry
-    } from '$lib/stores/configs';
+    } from '$lib/stores/config';
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import Card from '$lib/components/ui/Card.svelte';
     import ActionBar from '$lib/components/ui/ActionBar.svelte';

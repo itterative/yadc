@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createDataset, importDataset, type DatasetInfo } from '$lib/stores/datasetImages';
+    import { createDataset, importDataset, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
 
     interface Props {

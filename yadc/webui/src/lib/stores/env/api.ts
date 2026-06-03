@@ -1,45 +1,8 @@
 import { API_BASE, apiErrorMessage } from '$lib/api';
 import { debounce } from '$lib/async';
 import { get } from 'svelte/store';
-import { writable, readonly, type Readable } from 'svelte/store';
-import { sessionPassword } from './sessionPassword';
-
-// --- Types matching the backend API ---
-
-export interface EnvInfo {
-    name: string;
-    api_url: string | null;
-    api_token: string | null; // masked as [REDACTED]
-    api_model_name: string | null;
-    has_token: boolean;
-    token_method: 'none' | 'keyring' | 'password';
-}
-
-export interface EnvListResult {
-    models: string[];
-    default?: string;
-}
-
-// --- Reactive store ---
-
-export interface EnvStoreState {
-    loaded: boolean;
-    items: EnvInfo[];
-}
-
-const _envs = writable<EnvStoreState>({ loaded: false, items: [] });
-
-/** Reactive store for environments. */
-export const envs: Readable<EnvStoreState> = readonly(_envs);
-
-/** Fetch all environments from the API and update the store. */
-export async function refreshEnvs(): Promise<EnvInfo[]> {
-    const items = await fetchEnvs();
-    _envs.set({ loaded: true, items });
-    return items;
-}
-
-// --- API helpers ---
+import { sessionPassword } from '../sessionPassword';
+import type { EnvInfo, EnvListResult } from './store';
 
 async function _fetchEnvs(): Promise<EnvInfo[]> {
     const res = await fetch(`${API_BASE}/api/envs`);

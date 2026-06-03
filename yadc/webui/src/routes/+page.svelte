@@ -6,7 +6,7 @@
         deleteDataset,
         thumbnailUrl,
         type DatasetInfo
-    } from '$lib/stores/datasetImages';
+    } from '$lib/stores/dataset';
     import { captioningStatus, type CaptioningStatus } from '$lib/stores/events';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import EmptyState from '$lib/components/ui/EmptyState.svelte';

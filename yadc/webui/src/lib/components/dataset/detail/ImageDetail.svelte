@@ -12,11 +12,11 @@
         type CaptionData,
         type HistoryEntry,
         type ImageInfo
-    } from '$lib/stores/datasetImages';
+    } from '$lib/stores/dataset';
     import {
         captionSingleImage as startSingleCaptioning,
         stopCaptioning
-    } from '$lib/stores/captionActions';
+    } from '$lib/stores/caption';
     import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';

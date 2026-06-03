@@ -6,13 +6,13 @@
         captionOptions as captionOptionsStore,
         startBatchCaptioning,
         stopCaptioning
-    } from '$lib/stores/captionActions';
-    import type { CaptionOptions } from '$lib/stores/captionOptions';
-    import { captionSettings } from '$lib/stores/captionSettings';
+    } from '$lib/stores/caption';
+    import type { CaptionOptions } from '$lib/stores/caption';
+    import { captionSettings } from '$lib/stores/caption';
     import { captioningStatus } from '$lib/stores/events';
     import { promptNotificationsOnce } from '$lib/notifications';
     import { deferred } from '$lib/async';
-    import { fetchConfig } from '$lib/stores/configs';
+    import { fetchConfig } from '$lib/stores/config';
     import { get } from 'svelte/store';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
@@ -87,9 +87,7 @@
     // --- Computed ---
 
     let effectiveModelName = $derived(envModelName.trim());
-    let effectiveTemplateName = $derived(
-        isNewTemplate ? newTemplateName.trim() : selectedTemplate
-    );
+    let effectiveTemplateName = $derived(isNewTemplate ? newTemplateName.trim() : selectedTemplate);
 
     let templateOverridden = $derived(selectedTemplate !== datasetDefaults.selectedTemplate);
 
@@ -202,8 +200,7 @@
                 overwrite: p.overwrite_captions ?? HARDCODED_DEFAULTS.overwrite,
                 rounds: p.rounds ?? HARDCODED_DEFAULTS.rounds,
                 reasoningEnabled: p.reasoning?.enable ?? HARDCODED_DEFAULTS.reasoningEnabled,
-                reasoningEffort:
-                    p.reasoning?.thinking_effort ?? HARDCODED_DEFAULTS.reasoningEffort,
+                reasoningEffort: p.reasoning?.thinking_effort ?? HARDCODED_DEFAULTS.reasoningEffort,
                 storeConversation: false,
                 reasoningExcludeOutput: true,
                 selectedTemplate: p.prompt?.name ?? HARDCODED_DEFAULTS.selectedTemplate
@@ -308,7 +305,7 @@
         captionOptionsStore.set(_assembledOptions);
     });
 
-    function _buildSettings(): import('$lib/stores/captionSettings').CaptionSettings {
+    function _buildSettings(): import('$lib/stores/caption').CaptionSettings {
         return {
             $version: 1,
             env: selectedEnv,

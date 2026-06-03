@@ -13,7 +13,7 @@
         saveEnv,
         envs,
         type EnvInfo
-    } from '$lib/stores/envs';
+    } from '$lib/stores/env';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
     import {
         withPasswordRetry,

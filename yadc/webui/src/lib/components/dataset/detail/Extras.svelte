@@ -5,7 +5,7 @@
     import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgCheck from '$lib/icons/SvgCheck.svelte';
-    import type { CaptionData, ImageInfo } from '$lib/stores/datasetImages';
+    import type { CaptionData, ImageInfo } from '$lib/stores/dataset';
 
     interface Props {
         item: ImageInfo;

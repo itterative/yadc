@@ -41,6 +41,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 | [`drop-to-upload-dataset-browser-plan`](.pi/agent/memory/plans/drop-to-upload-dataset-browser-plan.md) | Drop-to-upload UX in the dataset browser — drag files onto the image grid to open an upload modal that appends to the current managed dataset. Extracted `DropUploadZone` component + warning overlay for blocked uploads + topbar upload icon + empty-state button. | Complete |
 | [`commit-history-cleanup-plan`](.pi/agent/memory/plans/commit-history-cleanup-plan.md) | Squash tmp commits and reword messages on `feature/svelte-frontend-dataset-config-editing-improvements` before merging to main. | In Progress |
 | [`frontend-component-organization`](.pi/agent/memory/plans/frontend-component-organization.md) | Restructure `src/lib/components/` for consistency — merge `dataset/`+`datasets/`, split caption settings, group by domain. Locks in "promote on second use" and "feature folder" rules. Phased: file moves first, then extractions. | Complete |
+| [`frontend-store-organization`](.pi/agent/memory/plans/frontend-store-organization.md) | Restructure `src/lib/stores/` for consistency — group by domain (dataset, caption, config, env, templates) into sub-folders, split `datasetImages.ts` into `types.ts` + `api.ts`. Top-level keeps global UI primitives (toasts, confirm, password, etc.) and the SSE event store. Drop deprecated `captioning.ts` re-export shim. | Complete (Phase 1) |
 
 ## When to Read Plans
 

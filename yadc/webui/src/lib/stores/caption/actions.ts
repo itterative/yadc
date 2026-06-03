@@ -3,11 +3,11 @@ import {
     startCaptioning,
     captionSingleImage as apiCaptionSingleImage,
     stopCaptioning as apiStopCaptioning
-} from './datasetImages';
-import { registerJobId, setCaptioningStatus, setCurrentlyCaptioning } from './events';
-import { withPasswordRetry } from './passwordPrompt';
-import { toast } from './toasts';
-import type { CaptionOptions } from './captionOptions';
+} from '../dataset/api';
+import { registerJobId, setCaptioningStatus, setCurrentlyCaptioning } from '../events';
+import { withPasswordRetry } from '../passwordPrompt';
+import { toast } from '../toasts';
+import type { CaptionOptions } from './options';
 
 // --- Caption options store ---
 

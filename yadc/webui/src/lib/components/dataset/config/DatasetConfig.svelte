@@ -11,7 +11,7 @@
         patchConfig,
         updateConfig,
         type ConfigValidationError
-    } from '$lib/stores/configs';
+    } from '$lib/stores/config';
     import { refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';

@@ -3,7 +3,7 @@
     import DatasetImage from '$lib/components/dataset/browser/DatasetImage.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import { random } from '$lib/random';
-    import type { ImageInfo } from '$lib/stores/datasetImages';
+    import type { ImageInfo } from '$lib/stores/dataset';
 
     interface Props {
         class?: string;

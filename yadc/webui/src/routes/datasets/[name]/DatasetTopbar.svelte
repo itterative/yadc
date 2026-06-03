@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { DatasetInfo } from '$lib/stores/datasetImages';
+    import type { DatasetInfo } from '$lib/stores/dataset';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';

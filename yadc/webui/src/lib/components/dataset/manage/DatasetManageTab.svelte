@@ -11,7 +11,7 @@
         deleteDraftAll,
         type DatasetFolder,
         type DraftSummary
-    } from '$lib/stores/datasetImages';
+    } from '$lib/stores/dataset';
 
     interface Props {
         datasetName: string;

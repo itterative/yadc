@@ -11,7 +11,7 @@
         type DatasetInfo,
         type UploadProgressEvent,
         type UploadConflict
-    } from '$lib/stores/datasetImages';
+    } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
 
     const UPLOAD_EXTENSIONS = [

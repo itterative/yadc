@@ -12,7 +12,7 @@
  */
 
 import type { KeyValueEntry } from '$lib/components/ui/KeyValueEditor.svelte';
-import type { Config, ConfigDatasetEntry } from '$lib/stores/configs';
+import type { Config, ConfigDatasetEntry } from '$lib/stores/config';
 
 export interface DatasetEntry {
     path: string;

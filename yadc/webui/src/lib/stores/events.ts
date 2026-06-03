@@ -21,7 +21,7 @@ import { generateId } from '$lib/random';
 export const clientId = browser ? `ui:${generateId()}` : '';
 import { API_BASE } from '$lib/api';
 import { TypedEventSource } from '$lib/events';
-import { refreshEnvs } from '$lib/stores/envs';
+import { refreshEnvs } from '$lib/stores/env';
 import { refreshTemplates } from '$lib/stores/templates';
 import { writable, readonly, get, type Readable } from 'svelte/store';
 import { z } from 'zod';

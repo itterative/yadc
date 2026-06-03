@@ -9,8 +9,8 @@
         runExport,
         type ExportBackend,
         type ExportResult
-    } from '$lib/stores/configs';
-    import { fetchDatasets, type DatasetInfo } from '$lib/stores/datasetImages';
+    } from '$lib/stores/config';
+    import { fetchDatasets, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
 
     interface Props {

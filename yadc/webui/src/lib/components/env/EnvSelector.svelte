@@ -1,7 +1,7 @@
 <script lang="ts">
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
-    import { envs, refreshEnvs, fetchModels } from '$lib/stores/envs';
+    import { envs, refreshEnvs, fetchModels } from '$lib/stores/env';
     import { settingsDialog } from '$lib/stores/settings';
     import { friendlyErrorMessage } from '$lib/api';
 

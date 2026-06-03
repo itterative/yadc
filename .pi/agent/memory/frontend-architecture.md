@@ -35,23 +35,36 @@ yadc/webui/
         utilities.css      # .btn-bar
         animations.css     # spin keyframes etc.
       stores/
-        settings.ts        # UI settings (storable)
-        events.ts          # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges, storedCaptions). Auto-refreshes envs/templates on change events. Caption text cached from SSE events (LRU).
-        captioning.ts      # Re-export shim from events.ts for backward compatibility
-        captionActions.ts  # Caption action store — captionOptions writable, startBatchCaptioning/captionSingleImage/stopCaptioning (with toasts + optional onError callback), lastStartedJobId
-        captionOptions.ts  # CaptionOptions type (mirrors backend CaptionJobOptions)
-        captionSettings.ts # Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.)
-        confirm.ts         # Promise-based confirmation dialog store
-        datasetImages.ts   # Types + API helpers (debounced) + deleteDataset + uploadDataset/appendUploadDataset/commitStagingUpload
-        configs.ts         # Config CRUD + export API. `fetchConfig` debounced
-        envs.ts            # Environment types + CRUD + model fetching. `fetchEnvs`/`fetchModels` debounced
-        templates.ts       # Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced
-        passwordPrompt.ts  # Global password prompt store
-        sessionPassword.ts # Tab-scoped in-memory password store
-        settings.ts        # UI settings (storable) + `settingsDialog` open-state
-        storageStore.ts    # Generic `localStorage`/`sessionStorage`-backed writable factory
-        toasts.ts          # Toast notification store
-        topbar.svelte.ts   # Topbar `Snippet` shared via $state
+        dataset/                       # Dataset domain — types + API split
+          index.ts                     # Re-exports for `$lib/stores/dataset`
+          types.ts                     # DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent, CaptioningJobInfo, DatasetFolder, DraftSummary, PromptPreview
+          api.ts                       # All fetch/CRUD/upload/captioning helpers (debounced via `debounce()`)
+        caption/                       # Caption domain — actions + type + persisted settings
+          index.ts                     # Re-exports for `$lib/stores/caption`
+          actions.ts                   # captionOptions + lastStartedJobId + startBatchCaptioning/captionSingleImage/stopCaptioning (with toasts + optional onError callback)
+          options.ts                   # CaptionOptions type (mirrors backend CaptionJobOptions)
+          settings.ts                  # Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.)
+        config/                        # Config domain — types + API split
+          index.ts                     # Re-exports for `$lib/stores/config`
+          types.ts                     # Config + ConfigApi/ConfigPrompt/ConfigSettings/ConfigReasoning/ConfigDatasetEntry + DatasetConfig/Detail + ExportBackend/Result + ConfigHistoryEntry
+          api.ts                       # Config CRUD + export API + drafts API. `fetchConfig`/`fetchConfigHistory` debounced.
+        env/                           # Env domain — store + API split
+          index.ts                     # Re-exports for `$lib/stores/env`
+          store.ts                     # `envs` writable + `refreshEnvs` action + types
+          api.ts                       # Env CRUD + model fetching + key-mode. `fetchEnvs`/`fetchModels` debounced.
+        templates/                     # Templates domain — store + API + pure helper
+          index.ts                     # Re-exports for `$lib/stores/templates`
+          store.ts                     # `templates` writable + `refreshTemplates` action + types
+          api.ts                       # Template CRUD. `fetchTemplates`/`fetchTemplate` debounced.
+          jinja.ts                     # Pure `extractVariables()` (Jinja2 regex helpers)
+        events.ts                      # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges, storedCaptions). Auto-refreshes envs/templates on change events. Caption text cached from SSE events (LRU).
+        toasts.ts                      # Toast notification store + `toast.{info,success,warning,error}()` helpers
+        confirm.ts                     # Promise-based confirmation dialog store
+        passwordPrompt.ts              # Global password prompt store + `withPasswordRetry` + `PasswordPromptCancelled`
+        sessionPassword.ts             # Tab-scoped in-memory password store
+        storageStore.ts                # Generic `localStorage`/`sessionStorage`-backed writable factory
+        settings.ts                    # UI settings (storable) + `settingsDialog` open-state
+        topbar.svelte.ts               # Topbar `Snippet` shared via $state
       components/
         ui/                            # Atomic, reusable primitives (no domain logic)
           Dialog.svelte                # Modal dialog (HTML <dialog>)
@@ -171,24 +184,43 @@ yadc/webui/
 - `routes/datasets/[name]/AddFilesDialog.svelte` — co-located: dialog wrapping `dataset/upload/DatasetUploadPanel` in `mode="append"`.
 - `routes/datasets/[name]/DropUploadZone.svelte` — co-located: drop-target wrapper with a slot. **Owns drag/drop state + `webkitGetAsEntry` file collection. Reused only here today — co-locate until a second consumer appears.**
 
+## Store Organization
+
+Mirrors the component organization conventions. Two rules:
+
+1. **Scope rule (placement):**
+   - `lib/stores/<domain>/` — stores serving a single domain (dataset, caption, config, env, templates). Each sub-folder has a re-exporting `index.ts` so callers import from `$lib/stores/<domain>`.
+   - `lib/stores/` (top-level) — global UI primitives (toasts, confirm, password dialog, session password, settings, topbar) and the SSE event backbone. Singletons that don't form a coherent feature.
+2. **Sub-folder rule (when to introduce a domain sub-folder):** A domain gets its own sub-folder when it has ≥2 related files (types + API + store + actions) AND they all serve the same domain. Inside the folder: `index.ts` (re-exporting barrel for back-compat), `types.ts` (data shapes), `api.ts` (transport — fetch/CRUD), plus `store.ts`/`actions.ts` when reactive state is involved, plus pure helpers (e.g. `jinja.ts`).
+
+**Current `lib/stores/` layout:**
+
+- `dataset/` — types (`types.ts`) + API (`api.ts`) + re-export (`index.ts`).
+- `caption/` — actions (`actions.ts`) + options type (`options.ts`) + persisted settings (`settings.ts`) + re-export.
+- `config/` — types + API + re-export.
+- `env/` — store (`store.ts`) + API (`api.ts`) + re-export.
+- `templates/` — store + API + pure `jinja.ts` helper + re-export.
+- Top-level (singletons, no sub-folder): `events.ts`, `toasts.ts`, `confirm.ts`, `passwordPrompt.ts`, `sessionPassword.ts`, `settings.ts`, `topbar.svelte.ts`, `storageStore.ts`.
+
+**Imports:** `$lib/stores/<domain>` (re-exporting barrel) for cross-boundary refs, `./<file>` relative for files inside the same sub-folder. No file in `lib/` imports from `routes/` — preserved by the existing rule.
+
 ## Store Modules
+
+The 16 flat store files are organized into **5 domain sub-folders** (each with a re-exporting `index.ts` so callers import from `$lib/stores/<domain>`) and **7 top-level files** (global UI primitives + the SSE event store). The old `captioning.ts` re-export shim was dropped (0 callers).
 
 | File | Purpose |
 |------|---------|
-| `datasetImages.ts` | Types (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent, CaptioningJobInfo, DatasetFolder) + API helpers (debounced via `debounce()`) + deleteDataset + `uploadDataset()` (create) + `appendUploadDataset()` (append to managed) + `commitStagingUpload()` (resolve conflicts). `stopCaptioning` is a raw API call (toast-wrapped version in `captionActions.ts`). |
-| `envs.ts` | Env types + CRUD + model fetching. Store holds `EnvInfo[]` (full details from `GET /api/envs`, not just names). `fetchEnvs`/`fetchModels` debounced. |
-| `templates.ts` | Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced. |
-| `captionActions.ts` | Caption action store — `captionOptions` (writable, reactively synced from CaptionSettings), `startBatchCaptioning()`, `captionSingleImage()`, `stopCaptioning()` (with toasts + optional onError callback), `lastStartedJobId` (for completion toast tracking). Reads options from store, handles password retry, registers job IDs, seeds SSE stores. |
-| `captionOptions.ts` | `CaptionOptions` type (mirrors `CaptionJobOptions`) — used by `captionActions.ts` and `CaptionSettings.svelte` |
-| `configs.ts` | Config CRUD + export API. `fetchConfig` debounced. |
+| `dataset/` | Dataset domain. `types.ts` (DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent, CaptioningJobInfo, DatasetFolder, DraftSummary, PromptPreview) + `api.ts` (all fetch/CRUD/upload/captioning helpers, debounced via `debounce()`). Includes `deleteDataset`, `uploadDataset()` (create), `appendUploadDataset()` (append to managed), `commitStagingUpload()` (resolve conflicts), `startCaptioning`/`stopCaptioning`/`captionSingleImage` (raw API). |
+| `caption/` | Caption domain. `actions.ts` (captionOptions writable, startBatchCaptioning/captionSingleImage/stopCaptioning with toasts + optional onError callback, lastStartedJobId) + `options.ts` (CaptionOptions type mirroring backend CaptionJobOptions) + `settings.ts` (last-used caption settings persisted to localStorage — env, maxTokens, imageQuality, etc. — restored on panel open, saved automatically on field change via `deferred()` (300 ms); priority: localStorage override → dataset config default → hardcoded default). |
+| `config/` | Config domain. `types.ts` (Config + nested ConfigApi/ConfigPrompt/ConfigSettings/ConfigReasoning/ConfigDatasetEntry + DatasetConfig/Detail + ExportBackend/Result + ConfigHistoryEntry) + `api.ts` (config CRUD + export API + drafts API; `fetchConfig`/`fetchConfigHistory` debounced). |
+| `env/` | Env domain. `store.ts` (`envs` writable holding full `EnvInfo[]` details from `GET /api/envs`, not just names; `refreshEnvs` action) + `api.ts` (env CRUD + model fetching + key-mode; `fetchEnvs`/`fetchModels` debounced). |
+| `templates/` | Templates domain. `store.ts` (`templates` writable; `refreshTemplates` action) + `api.ts` (template CRUD; `fetchTemplates`/`fetchTemplate` debounced) + `jinja.ts` (pure `extractVariables()` — Jinja2 regex helpers, no API/store dependencies). |
 | `events.ts` | Self-connecting SSE store — opens `TypedEventSource` on module load (browser), validates with Zod, pipes into `readonly` writable stores. Exports `captioningStatus`, `pendingDatasetChanges`, `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`, `currentlyCaptioning`, `storedCaptions` (LRU cache of captions from SSE), `getStoredCaption()`, `clearStoredCaption()`, `clearPendingDatasetChange()`, `clearResumptionFailed()`, `setCaptioningStatus()`, `setCurrentlyCaptioning()`. Listens for `environments_changed` and `templates_changed` events to auto-refresh their stores. Uses browser's built-in `EventSource` auto-reconnect (preserves `Last-Event-ID`). |
 | `toasts.ts` | Toast notification store — manages a reactive list of active toasts with auto-dismiss. Exports `toasts` readable store, `addToast()`, `dismissToast()`, and `toast.success/error/warning/info()` convenience helpers. |
-| `captioning.ts` | Re-export shim from `events.ts` for backward compatibility |
-| `captionSettings.ts` | Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.) — restored on panel open, saved automatically on field change via `deferred()` (300 ms). Priority: localStorage override → dataset config default → hardcoded default. |
 | `confirm.ts` | Promise-based confirmation dialog store — manages dialog state with `confirm()` → `Promise<boolean>`. Exports `confirmState` readable store, `confirmDialog.danger/warning/info()` convenience helpers. Supports string messages and Svelte snippet bodies. |
-| `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`). `settingsDialog` store tracks open state + active tab (`general`/`environments`/`security`). |
 | `passwordPrompt.ts` | Global password prompt store — `requestPassword()` returns `Promise<string>`, `withPasswordRetry(action)` catches `PasswordRequiredError` and retries once after dialog. Module-level `pendingPromise` deduplicates concurrent callers. |
 | `sessionPassword.ts` | Tab-scoped in-memory password store (Svelte writable, never persisted to localStorage). Captioning requests read from it automatically. |
+| `settings.ts` | UI settings (localStorage) — `notifications` tri-state (`"unset"` / `"enabled"` / `"disabled"`). `settingsDialog` store tracks open state + active tab (`general`/`environments`/`security`). |
 | `topbar.svelte.ts` | `$state` module holding the current page's topbar `Snippet`. Pages set it via `<SetTopbar>` (which uses `$effect` lifecycle to set/clear). Layout reads it with `getTopbarContent()` and renders with `{@render}`. |
 | `storageStore.ts` | Generic `localStorage`/`sessionStorage`-backed writable store factory. |
 

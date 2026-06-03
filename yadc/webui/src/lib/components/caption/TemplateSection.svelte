@@ -1,5 +1,10 @@
 <script lang="ts">
-    import { templates, refreshTemplates, fetchTemplate, saveTemplate } from '$lib/stores/templates';
+    import {
+        templates,
+        refreshTemplates,
+        fetchTemplate,
+        saveTemplate
+    } from '$lib/stores/templates';
     import { friendlyErrorMessage } from '$lib/api';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';

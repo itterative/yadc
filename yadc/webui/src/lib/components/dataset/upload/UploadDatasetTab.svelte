@@ -1,6 +1,6 @@
 <script lang="ts">
     import DatasetUploadPanel from './DatasetUploadPanel.svelte';
-    import type { DatasetInfo } from '$lib/stores/datasetImages';
+    import type { DatasetInfo } from '$lib/stores/dataset';
 
     interface Props {
         oncreated: (dataset: DatasetInfo) => void;

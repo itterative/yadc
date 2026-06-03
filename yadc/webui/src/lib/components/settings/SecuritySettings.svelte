@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { fetchKeyMode, setKeyMode, changeKeyPassword } from '$lib/stores/envs';
+    import { fetchKeyMode, setKeyMode, changeKeyPassword } from '$lib/stores/env';
     import { friendlyErrorMessage } from '$lib/api';
 
     let keyMode: 'keyring' | 'password' = $state('keyring');

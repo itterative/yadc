@@ -8,7 +8,7 @@
  * Pure functions, no Svelte dependencies — easy to test in isolation.
  */
 
-import { previewConfig, type Config, type ConfigDatasetEntry } from '$lib/stores/configs';
+import { previewConfig, type Config, type ConfigDatasetEntry } from '$lib/stores/config';
 import { configState, type DatasetEntry } from './state.svelte';
 
 /** Build the patch dict from current field values.

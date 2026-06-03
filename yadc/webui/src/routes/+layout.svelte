@@ -11,7 +11,7 @@
     import SvgUpload from '$lib/icons/SvgUpload.svelte';
     import SvgSettings from '$lib/icons/SvgSettings.svelte';
     import Tooltip from '$lib/components/ui/Tooltip.svelte';
-    import type { ExportResult } from '$lib/stores/configs';
+    import type { ExportResult } from '$lib/stores/config';
     import { getTopbarContent } from '$lib/stores/topbar.svelte';
     import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
     import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';

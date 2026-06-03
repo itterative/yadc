@@ -4,7 +4,7 @@
     import ImageDetail from '$lib/components/dataset/detail/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
-    import type { ImageInfo } from '$lib/stores/datasetImages';
+    import type { ImageInfo } from '$lib/stores/dataset';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
 

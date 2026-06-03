@@ -13,8 +13,8 @@
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgUpgrade from '$lib/icons/SvgUpgrade.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
-    import { captionOptions } from '$lib/stores/captionActions';
-    import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/datasetImages';
+    import { captionOptions } from '$lib/stores/caption';
+    import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
 

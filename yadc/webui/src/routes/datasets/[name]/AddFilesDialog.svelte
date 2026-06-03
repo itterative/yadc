@@ -2,7 +2,7 @@
     import Dialog from '$lib/components/ui/Dialog.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import DatasetUploadPanel from '$lib/components/dataset/upload/DatasetUploadPanel.svelte';
-    import type { DatasetInfo } from '$lib/stores/datasetImages';
+    import type { DatasetInfo } from '$lib/stores/dataset';
 
     interface Props {
         open: boolean;

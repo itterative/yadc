@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ImageInfo } from '$lib/stores/datasetImages';
+    import type { ImageInfo } from '$lib/stores/dataset';
     import SvgWarning from '$lib/icons/SvgWarning.svelte';
 
     interface Props {

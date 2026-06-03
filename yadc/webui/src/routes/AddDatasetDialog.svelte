@@ -5,7 +5,7 @@
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import UploadDatasetTab from '$lib/components/dataset/upload/UploadDatasetTab.svelte';
     import CreateDatasetTab from '$lib/components/dataset/upload/CreateDatasetTab.svelte';
-    import type { DatasetInfo } from '$lib/stores/datasetImages';
+    import type { DatasetInfo } from '$lib/stores/dataset';
 
     interface Props {
         open: boolean;

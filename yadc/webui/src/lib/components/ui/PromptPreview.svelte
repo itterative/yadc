@@ -4,8 +4,8 @@
         fetchPromptPreview,
         type CaptionData,
         type PromptPreview as PromptPreviewData
-    } from '$lib/stores/datasetImages';
-    import { captionOptions } from '$lib/stores/captionActions';
+    } from '$lib/stores/dataset';
+    import { captionOptions } from '$lib/stores/caption';
     import { friendlyErrorMessage } from '$lib/api';
 
     interface Props {

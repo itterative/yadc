@@ -23,7 +23,7 @@
         lastCaptionError,
         currentlyCaptioning
     } from '$lib/stores/events';
-    import { lastStartedJobId } from '$lib/stores/captionActions';
+    import { lastStartedJobId } from '$lib/stores/caption';
     import { toast, dismissToast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
     import {
@@ -33,7 +33,7 @@
         rescanDataset,
         type DatasetInfo,
         type ImageInfo
-    } from '$lib/stores/datasetImages';
+    } from '$lib/stores/dataset';
 
     let datasetName = $derived($page.params.name ?? '');
 
