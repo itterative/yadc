@@ -22,7 +22,7 @@ yadc/webui/
       api.ts               # API_BASE constant, structured error response parsing (isAPIErrorResponse / isAPIErrorDetail / apiErrorMessage), and user-friendly HTTP status messages. Exports `ResponseLike` interface so `apiErrorMessage()` works with both native `fetch` `Response` and `UploadResponse`.
       events.ts            # TypedEventSource — SSE with Zod validation
       async.ts             # debounce (async debounce+dedupe), sleep, synchronized, delayed helpers
-      notifications.ts   # Browser Notification API helpers (permission, sending, first-use prompt)
+      notifications.ts     # Browser Notification API helpers (permission, sending, first-use prompt)
       storable.js          # localStorage-backed writable store
       random.ts            # Seeded PRNG for deterministic stub layouts
       upload.ts            # Promise-based XMLHttpRequest wrapper with upload progress tracking and AbortSignal support. Returns `UploadResponse` which implements `ResponseLike`.
@@ -33,86 +33,100 @@ yadc/webui/
         forms.css          # .input
         overlays.css       # .dialog-panel, .alert-{error,warning,success,info}
         utilities.css      # .btn-bar
+        animations.css     # spin keyframes etc.
       stores/
-        settings.ts       # UI settings (storable)
-        events.ts         # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges, storedCaptions). Auto-refreshes envs/templates on change events. Caption text cached from SSE events (LRU).
-        captioning.ts     # Re-export shim from events.ts for backward compatibility
-        captionOptions.ts # CaptionJobOptions type for caption settings dialog
-        datasetImages.ts  # Types (DatasetInfo, ImageInfo, ImagePage, CaptionData) + API helpers (debounced) + deleteDataset
-        configs.ts        # Config CRUD API helpers + export backend types. `fetchConfig` debounced.
-        envs.ts           # Environment types + CRUD + model fetching. Store holds `EnvInfo[]` (full details). `fetchEnvs`/`fetchModels` debounced.
-        templates.ts      # Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced.
+        settings.ts        # UI settings (storable)
+        events.ts          # Self-connecting SSE store — opens TypedEventSource on load, pipes events into readonly writable stores (captioningStatus, pendingDatasetChanges, storedCaptions). Auto-refreshes envs/templates on change events. Caption text cached from SSE events (LRU).
+        captioning.ts      # Re-export shim from events.ts for backward compatibility
+        captionActions.ts  # Caption action store — captionOptions writable, startBatchCaptioning/captionSingleImage/stopCaptioning (with toasts + optional onError callback), lastStartedJobId
+        captionOptions.ts  # CaptionOptions type (mirrors backend CaptionJobOptions)
+        captionSettings.ts # Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.)
+        confirm.ts         # Promise-based confirmation dialog store
+        datasetImages.ts   # Types + API helpers (debounced) + deleteDataset + createDatasetBrowserStore + uploadDataset/appendUploadDataset/commitStagingUpload
+        configs.ts         # Config CRUD + export API. `fetchConfig` debounced
+        envs.ts            # Environment types + CRUD + model fetching. `fetchEnvs`/`fetchModels` debounced
+        templates.ts       # Template types + CRUD + `extractVariables()`. `fetchTemplates`/`fetchTemplate` debounced
+        passwordPrompt.ts  # Global password prompt store
+        sessionPassword.ts # Tab-scoped in-memory password store
+        settings.ts        # UI settings (storable) + `settingsDialog` open-state
+        storageStore.ts    # Generic `localStorage`/`sessionStorage`-backed writable factory
+        toasts.ts          # Toast notification store
+        topbar.svelte.ts   # Topbar `Snippet` shared via $state
       components/
-        ui/                           # Atomic, reusable primitives
-          Dialog.svelte               # Modal dialog (HTML <dialog>)
-          Alert.svelte                # Inline alert (info/warning/error/success, dismissable, optional actions snippet)
-          FileDropZone.svelte         # Drag-and-drop + file/folder picker with client-side validation, recursive directory traversal, and `allowedExtensions` filtering
-          Checkbox.svelte             # Checkbox component
-          CodeMirror.svelte           # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
-          JinjaEditor.svelte          # Jinja2 template editor (CM6 + @codemirror/lang-jinja). Bindable `value` + `variables` (extracted template vars)
-          TomlEditor.svelte           # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode). Bindable `value`
+        ui/                            # Atomic, reusable primitives (no domain logic)
+          Dialog.svelte                # Modal dialog (HTML <dialog>)
+          Alert.svelte                 # Inline alert (info/warning/error/success, dismissable, optional actions snippet)
+          FileDropZone.svelte          # Drag-and-drop + file/folder picker with client-side validation, recursive directory traversal, and `allowedExtensions` filtering
+          Checkbox.svelte              # Checkbox component
+          CodeMirror.svelte            # CodeMirror 6 wrapper (Svelte 5 runes, doc/ext sync)
+          JinjaEditor.svelte           # Jinja2 template editor (CM6 + @codemirror/lang-jinja). Bindable `value` + `variables` (extracted template vars)
+          TomlEditor.svelte            # TOML editor (CM6 + @codemirror/legacy-modes, optional readonly mode). Bindable `value`
           IntersectionObserverElement.svelte  # Infinite scroll sentinel
-          tabs/                     # Tab system (Svelte 5 context + snippets)
-            Tabs.svelte             # Generic container — tab bar layout, registration, bindable value
-            PillTabs.svelte         # Pre-styled pill variant (wraps Tabs with rounded-full buttons)
-            CompactPillTabs.svelte  # Compact segmented control variant (bg-gray-800/50 container, rounded-md buttons, icon support)
-            Tab.svelte              # Child that auto-registers via context, shows/hides content. Supports optional icon prop.
-            TabsContext.svelte.ts   # Symbol key + state factory + typed helpers. TabItem has optional icon (Component).
-          ConfirmDialog.svelte        # Global confirmation dialog (Promise-based, mounted in layout, supports string + snippet body, variant: danger/warning/info)
-          SpinnerBlock.svelte         # Centered spinner with optional label and size
-          PromptPreview.svelte        # Self-contained prompt preview (template selector + system/user prompt display)
-          Tooltip.svelte              # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
-          SetTopbar.svelte            # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
-          ToastContainer.svelte       # Fixed-position toast stack (mounted in +layout.svelte)
-          ToastItem.svelte            # Single toast (message, variant, progress bar, dismiss, optional action button)
-          Card.svelte                 # Generic card wrapper (`rounded-lg bg-gray-800`). Body and footer (typically `ActionBar`) go in `children`.
-          ActionBar.svelte            # Footer flex container (`flex gap-2 bg-black/15`) for card action buttons. Items distribute evenly via `flex-1`.
-          ActionBarItem.svelte        # Standardized action button inside ActionBar — accepts icon, variant (`primary`/`secondary`/`danger`).
-        dataset/                        # Dataset-domain components
-          DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
-          DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-          ImageDetail.svelte          # Image detail side panel (header + tab system). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
-          ImageDetail/                 # Split into tabbed sub-components — see dataset-config-ux-plan history 035
-            ImageDetail.svelte         # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
-            Caption.svelte             # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
-            Preview.svelte             # Thin wrapper around PromptPreview
-            Extras.svelte              # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
-        datasets/                       # Dataset creation/management components
-          UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
-          CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
-          DatasetConfig.svelte         # Co-located config editor tab. CompactPillTabs toggle between structured form (PATCH) and raw TOML editor (PUT). Uses CaptionOptionsFields, KeyValueEditor for dataset entries.
-          DatasetConfigForm.svelte     # Structured form view of the config — fields are bound to a `configState` Svelte 5 `$state` rune exported from `datasetConfig/state.svelte.ts`.
-          DatasetConfigAdvanced.svelte # Raw TOML editor view of the config (one tab of the CompactPillTabs in DatasetConfig). Binds to `configState.rawContent`; shows a warning when the structured form has unsaved changes.
-          ConfigHistory.svelte         # Config revision history browser (list, view, restore entries). Uses ActionCard + ActionBar per entry. Reads from `ConfigHistoryRepository` on the backend.
-          DatasetManageTab.svelte      # "Manage" tab inside the dataset creation dialog — list managed (upload-sourced) datasets with folder/image counts and delete actions.
-          DatasetUploadPanel.svelte    # Shared upload panel (create + append modes). When `mode="append"`, accepts an `initialFiles` prop (consumed once via `untrack()`) to pre-populate the file list from a drop event on the page.
-          datasetConfig/              # Helpers split out from DatasetConfig.svelte during the structural refactor
-            patch.ts                  # Pure TOML patch helpers (e.g. `assemblePatchFromForm`) — no Svelte/DOM dependencies, testable in isolation.
-            state.svelte.ts           # Svelte 5 `$state` rune module holding the form / raw content state shared between `DatasetConfigForm` and `DatasetConfigAdvanced`. Exposes `simplifiedDirty` flag.
-        dialogs/                        # Dialog-shaped components
-          ExportDialog.svelte         # Export dialog (backend + draft/caption source selection)
-          SettingsDialog.svelte       # App settings dialog (tab container)
-          GeneralSettings.svelte      # General settings tab (browser notifications, thumbnails)
-          EnvironmentSettings.svelte  # Environment CRUD tab (env list, inline edit, token reveal)
-          SecuritySettings.svelte     # Security settings tab (key-mode switch, password change, YADC_PASSWORD warning)
-          PasswordPromptDialog.svelte # Global password prompt modal (driven by passwordPrompt.ts store)
-        settings/                       # Settings-domain sub-components
-          EnvSelector.svelte          # Environment form (env dropdown + URL/token/model, bindable props). "Manage…" link opens SettingsDialog at the Environments tab.
-          TemplateManager.svelte      # (LEGACY) Full template CRUD panel — now superseded by dedicated /templates route
-      icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
+          tabs/                        # Tab system (Svelte 5 context + snippets)
+            Tabs.svelte                # Generic container — tab bar layout, registration, bindable value
+            PillTabs.svelte            # Pre-styled pill variant (wraps Tabs with rounded-full buttons)
+            CompactPillTabs.svelte     # Compact segmented control variant (bg-gray-800/50 container, rounded-md buttons, icon support)
+            Tab.svelte                 # Child that auto-registers via context, shows/hides content. Supports optional icon prop.
+            TabsContext.svelte.ts      # Symbol key + state factory + typed helpers. TabItem has optional icon (Component).
+          ConfirmDialog.svelte         # Global confirmation dialog (Promise-based, mounted in layout, supports string + snippet body, variant: danger/warning/info)
+          SpinnerBlock.svelte          # Centered spinner with optional label and size
+          PromptPreview.svelte         # Self-contained prompt preview (template selector + system/user prompt display)
+          Tooltip.svelte               # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
+          SetTopbar.svelte             # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)
+          ToastContainer.svelte        # Fixed-position toast stack (mounted in +layout.svelte)
+          ToastItem.svelte             # Single toast (message, variant, progress bar, dismiss, optional action button)
+          Card.svelte                  # Generic card wrapper (`rounded-lg bg-gray-800`). Body and footer (typically `ActionBar`) go in `children`.
+          ActionBar.svelte             # Footer flex container (`flex gap-2 bg-black/15`) for card action buttons. Items distribute evenly via `flex-1`.
+          ActionBarItem.svelte         # Standardized action button inside ActionBar — accepts icon, variant (`primary`/`secondary`/`danger`).
+        dataset/                        # Dataset domain — one sub-folder per feature
+          browser/                      # Image grid + tile
+            DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
+            DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
+          detail/                       # Image detail (tab host + tabs)
+            ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
+            Caption.svelte              # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
+            Preview.svelte              # Thin wrapper around PromptPreview
+            Extras.svelte               # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
+          config/                       # Dataset config editor (tab host + tabs + helpers)
+            DatasetConfig.svelte        # Tab system host (Form / Advanced / History) + data fetching + save orchestration
+            DatasetConfigForm.svelte    # Structured form view of the config — fields bound to `configState` Svelte 5 `$state` rune from `state.svelte.ts`
+            DatasetConfigAdvanced.svelte # Raw TOML editor view of the config. Binds to `configState.rawContent`; shows a warning when the structured form has unsaved changes.
+            ConfigHistory.svelte        # Config revision history browser (list, view, restore entries). Uses ActionCard + ActionBar per entry. Reads from `ConfigHistoryRepository` on the backend.
+            patch.ts                    # Pure TOML patch helpers (e.g. `assemblePatchFromForm`) — no Svelte/DOM dependencies, testable in isolation.
+            state.svelte.ts             # Svelte 5 `$state` rune module holding the form / raw content state shared between `DatasetConfigForm` and `DatasetConfigAdvanced`. Exposes `simplifiedDirty` flag.
+          upload/                       # Dataset upload (panel + slim tab wrappers)
+            DatasetUploadPanel.svelte   # Shared upload panel (create + append modes). When `mode="append"`, accepts an `initialFiles` prop (consumed once via `untrack()`) to pre-populate the file list from a drop event on the page.
+            UploadDatasetTab.svelte     # Upload tab — file selection, progress bar, cancel upload, toast warnings
+            CreateDatasetTab.svelte     # Create/Import tab — radio toggle between "Add image paths" and "Import TOML config"
+          manage/                       # Dataset manage (delete + folder ops)
+            DatasetManageTab.svelte     # "Manage" tab inside the dataset creation dialog — list managed (upload-sourced) datasets with folder/image counts and delete actions.
+        caption/                        # Caption domain
+          CaptionSettingsPanel.svelte   # The batch-captioning side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides. Auto-saves overrides to `captionSettings` localStorage via `deferred()` on any field change; flushes pending save before starting captioning.
+        env/                            # Env domain
+          EnvironmentSettings.svelte    # Environment CRUD tab (env list, inline edit, token reveal)
+          EnvSelector.svelte            # Environment form (env dropdown + URL/token/model, bindable props). "Manage…" link opens SettingsDialog at the Environments tab.
+        export/                         # Export domain
+          ExportDialog.svelte           # Export dialog (backend + draft/caption source selection)
+        settings/                       # Settings domain (dialog + tabs + shared widget + legacy)
+          SettingsDialog.svelte         # App settings dialog (tab container)
+          GeneralSettings.svelte        # General settings tab (browser notifications, thumbnails)
+          SecuritySettings.svelte       # Security settings tab (key-mode switch, password change, YADC_PASSWORD warning)
+          CaptionOptionsFields.svelte   # Shared widget — caption option fields (max tokens, image quality, rounds, reasoning, etc.) with optional diff-dot override indicators
+          TemplateManager.svelte        # (LEGACY) Full template CRUD panel — superseded by dedicated /templates route
+        dialogs/                        # Global utility dialogs
+          PasswordPromptDialog.svelte   # Global password prompt modal (driven by passwordPrompt.ts store)
+        icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
     routes/
       layout.css        # Tailwind v4 imports + @theme block + typography plugin
       +layout.svelte    # App shell with left sidebar nav (icon-rail on desktop, slide-in overlay on mobile with burger menu). Brand uses android-chrome-192x192.png icon. Tooltip component for desktop hover labels.
       +page.svelte      # Dataset listing (cards with edit/delete, add-dataset dashed card) → links to #/datasets/{name}
       AddDatasetDialog.svelte   # Co-located: dataset creation dialog shell. Two tabs: Upload (via UploadDatasetTab) and Create/Import (via CreateDatasetTab)
-      EditDatasetDialog.svelte  # Co-located: edit dataset TOML config dialog (CodeMirror TOML editor)
+      EditDatasetDialog.svelte  # Co-located: edit dataset dialog (Config / Manage / Upload tabs)
       templates/
         +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing
         EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
       datasets/[name]/
         +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line + topbar upload icon)
-        CaptionSettings.svelte    # Co-located: captioning settings side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides. Auto-saves overrides to `captionSettings` localStorage via `deferred()` on any field change; flushes pending save before starting captioning.
-        DatasetConfig.svelte      # Co-located: dataset config editor tab. CompactPillTabs toggle between structured form (PATCH) and raw TOML editor (PUT). Uses CaptionOptionsFields, KeyValueEditor for dataset entries.
         SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.
         AddFilesDialog.svelte     # Co-located: dialog wrapping DatasetUploadPanel in `mode="append"` for adding files to an existing managed dataset. Pre-populates the file list from dropped files.
         DropUploadZone.svelte     # Co-located: drop-target wrapper with a slot. Owns drag/drop state + `webkitGetAsEntry` file collection. Renders a full-area overlay (accent for allowed drops, warning for blocked). Emits `ondrop(files)` / `onblockeddrop(reason)`. Reused only here today — co-locate until a second consumer appears.
@@ -120,12 +134,42 @@ yadc/webui/
 
 ## Component Organization
 
-- `ui/` — atomic reusable primitives, no domain logic
-- `dataset/` — dataset-domain components shared across routes
-- `dialogs/` — dialog-shaped components (opened from layout/nav or multiple places)
-- `settings/` — sub-components shared by SettingsDialog and CaptionSettings
-- Route-only components (used by a single `+page.svelte`) are co-located next to that page, not in `src/lib/`
-- Imports: `$lib/` absolute paths for cross-boundary refs, `./` relative for co-located files
+**Where a component lives** is decided by two rules:
+
+1. **Scope rule (placement):**
+   - `lib/components/ui/` — atomic UI primitives, no domain concepts, no API calls.
+   - `lib/components/<domain>/` — domain components, used in ≥2 places OR used by a `lib/` component.
+   - `routes/<path>/` (co-located) — used by exactly one route AND not by anything in `lib/`. **Promote to `lib/` on the second consumer.**
+2. **Feature-folder rule (sub-folder for parent + children):** A feature gets its own sub-folder when it has ≥3 related `.svelte` files forming a coherent unit (a host component + its tabs/sections), all of which are used only by that host. Folder name = feature name. The host file shares the folder name. Inside the folder: `Feature.svelte`, `FeatureTab.svelte`, `state.svelte.ts` (if shared runes), `helpers.ts` (if pure helpers used by multiple files in the folder). Pure helpers used **outside** the folder stay in `lib/` proper.
+
+**Current `lib/components/` layout:**
+
+- `ui/` — atomic primitives: `Dialog`, `Alert`, `Tabs`/`Tab`/`PillTabs`/`CompactPillTabs` (in `tabs/` sub-folder), `CodeMirror`, `SpinnerBlock`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `KeyValueEditor`, `PromptPreview`, `Topbar`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`.
+- `dataset/` — dataset domain. Sub-folders per feature:
+  - `browser/` — `DatasetBrowser`, `DatasetImage` (masonry grid + tile)
+  - `detail/` — `ImageDetail` (tab host) + `Caption`, `Preview`, `Extras` (tabs)
+  - `config/` — `DatasetConfig` (tab host) + `DatasetConfigForm`/`DatasetConfigAdvanced`/`ConfigHistory` (tabs) + `patch.ts` + `state.svelte.ts`
+  - `upload/` — `DatasetUploadPanel` (the main create+append+conflict panel) + `UploadDatasetTab`/`CreateDatasetTab` (slim wrappers for dialog entry points)
+  - `manage/` — `DatasetManageTab` (manage tab in the Edit dialog)
+- `caption/` — caption domain: `CaptionSettingsPanel` (the batch-captioning side panel — promoted from `routes/datasets/[name]/`).
+- `env/` — env domain: `EnvironmentSettings` (CRUD list + edit), `EnvSelector` (env picker for the caption flow).
+- `export/` — export domain: `ExportDialog` (export dialog).
+- `settings/` — settings domain: `SettingsDialog` (host) + `GeneralSettings`/`EnvironmentSettings`-via-env/`SecuritySettings` (tabs) + `CaptionOptionsFields` (settings widget). `TemplateManager.svelte` is also here, **marked LEGACY** — superseded by the dedicated `/templates` route + `EditTemplateDialog`.
+- `dialogs/` — only `PasswordPromptDialog` (global utility dialog mounted in `+layout.svelte`).
+- `icons/` — `Svg*` SVG components, all with `viewBox="0 -960 960 960"`, sized/colored via Tailwind via the `class` prop.
+
+**Imports:** `$lib/` absolute paths for cross-boundary refs, `./` relative for co-located files. No file in `lib/` imports from `routes/` — preserved by the "promote on second use" rule.
+
+**Route-only components** (co-located next to the route that uses them, not in `src/lib/`):
+
+- `routes/+layout.svelte` — app shell with left sidebar + topbar + global dialogs.
+- `routes/+page.svelte` — dataset listing (cards with edit/delete, add-dataset dashed card).
+- `routes/AddDatasetDialog.svelte` — co-located: dataset creation dialog shell (Upload / Create tabs).
+- `routes/EditDatasetDialog.svelte` — co-located: edit dataset dialog (Config / Manage / Upload tabs).
+- `routes/datasets/[name]/+page.svelte` — dataset browser page.
+- `routes/datasets/[name]/SidePanel.svelte` — co-located: tabbed side panel (caption/details/config).
+- `routes/datasets/[name]/AddFilesDialog.svelte` — co-located: dialog wrapping `dataset/upload/DatasetUploadPanel` in `mode="append"`.
+- `routes/datasets/[name]/DropUploadZone.svelte` — co-located: drop-target wrapper with a slot. **Owns drag/drop state + `webkitGetAsEntry` file collection. Reused only here today — co-locate until a second consumer appears.**
 
 ## Store Modules
 

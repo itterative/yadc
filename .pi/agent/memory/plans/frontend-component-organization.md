@@ -1,7 +1,7 @@
 ---
 name: frontend-component-organization
 description: Restructure src/lib/components/ for consistency — merge dataset/+datasets/, split caption settings, group by domain. Established "promote on second use" and "feature folder" rules.
-last_history: 005
+last_history: 006
 ---
 
 # Frontend component organization

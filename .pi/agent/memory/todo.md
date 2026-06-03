@@ -43,14 +43,16 @@ Key files changed: `yadc/api/application.py`, `yadc/api/controllers/`, `yadc/api
 
 When building wheels with `yadc/webui/__init__.py` present (needed for `package-data` to include `build/**/*`), setuptools discovers `yadc/webui/node_modules/flatted/python/flatted.py` as a submodule and includes it in the wheel. This is a harmless 3.7KB file but shouldn't be there. `exclude-package-data` doesn't work because setuptools treats it as a module, not data. Proper fix: use explicit `packages = [...]` list in pyproject.toml instead of `packages.find`, or filter out node_modules at the sdist level.
 
-## Sidebar / topbar refactor
+## Sidebar / topbar refactor (visual polish)
 
-The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). This is functional but needs cleanup:
+The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). The structural move is done; this entry is now about **visual polish** (not part of `plans/frontend-component-organization.md` which is purely structural).
 
 - **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
 - **Topbar padding / height inconsistency**: The dataset listing (`#/`) and templates (`#/templates`) pages feel cramped below the topbar because `.app-topbar` has `padding-bottom: 0`. Adding bottom padding globally causes the dataset browser (`#/datasets/:name`) to shift down because its subtitle row uses `min-h-7` to reserve space for the captioning status row, which is taller than the idle text line. The hamburger button and subtitle also shift slightly when captioning starts/stops. **Superseded by `captioning-status-bar-plan`** — moving the progress UI out of the topbar entirely.
 
-## Frontend remaining cleanup
+## ~~Frontend remaining cleanup~~ **DONE (Phase 1 of `plans/frontend-component-organization.md`)**
+
+The structural cleanup items (folder organization, `dataset/`+`datasets/` merge, dialogs/settings narrowing) are addressed by Phase 1. The 2 specific deferred items below are not part of that org work and are kept as their own follow-ups:
 
 - SidePanel should accept a `class` prop — its positioning (inline vs fixed, width, etc.) is controlled by the parent page, not internal to the component
 - **Tooltip z-index / stacking context**: `Tooltip.svelte` was migrated to Tailwind but the tooltip label renders underneath `DatasetImage` tiles. The `DatasetBrowser` tiles use `transform` (hover scale) and `relative` positioning, which create new stacking contexts. The old tooltip had `z-index: 50` but that alone is not sufficient when the parent stacking contexts are lower. The tooltip should not hardcode its own z-index; it should be parent-driven (e.g. via a `class` prop on the wrapper `div` or a dedicated `zIndex` prop). Deciding the right API is deferred. Key files: `Tooltip.svelte`, `DatasetBrowser.svelte`, `DatasetImage.svelte`.
