@@ -84,6 +84,14 @@ class HistoryEntry:
     index: int
     caption: str = ""
     extras: dict[str, Any] = field(default_factory=dict)
+    hash: str = field(init=False, default="")
+
+    def __post_init__(self) -> None:
+        import hashlib
+        import json as _json
+
+        content = self.caption + "\0" + _json.dumps(self.extras, sort_keys=True)
+        self.hash = hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
 @dataclass
@@ -324,7 +332,8 @@ class DatasetService(Service):
         result: list[HistoryEntry] = []
         for i, entry in enumerate(recent):
             extras = toml_to_plain(dict(entry.__pydantic_extra__ or {}))
-            result.append(HistoryEntry(index=len(recent) - 1 - i, caption=entry.caption, extras=extras))
+            he = HistoryEntry(index=len(recent) - 1 - i, caption=entry.caption, extras=extras)
+            result.append(he)
 
         # Re-index using absolute positions from the end of the full list
         total = len(all_entries)
@@ -393,6 +402,58 @@ class DatasetService(Service):
 
         self._update_image_index(image_id, has_caption=True)
         return True
+
+    def delete_history(self, dataset_name: str, image_id: int, entry_hash: str, *, source: str = SELF_JOB_ID) -> bool:
+        """Delete a single history entry for an image by content hash.
+
+        Returns True on success, False if image or entry not found.
+        """
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return False
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return False
+
+        dataset_image = DatasetImage(path=str(image_path))
+
+        # Register expected file change so the watcher suppresses the notification.
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.history_path), source=source)
+
+        # Find the entry matching the hash
+        all_entries = dataset_image.read_history()
+        for i, entry in enumerate(all_entries):
+            extras = toml_to_plain(dict(entry.__pydantic_extra__ or {}))
+            he = HistoryEntry(index=i, caption=entry.caption, extras=extras)
+            if he.hash == entry_hash:
+                return dataset_image.delete_history_entry(i)
+
+        return False
+
+    def delete_draft(self, dataset_name: str, image_id: int, draft_name: str, *, source: str = SELF_JOB_ID) -> bool:
+        """Delete a named draft for an image.
+
+        Returns True on success, False if image or draft not found.
+        """
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return False
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return False
+
+        dataset_image = DatasetImage(path=str(image_path))
+
+        # Register expected file change so the watcher suppresses the notification.
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.draft_path(draft_name)), source=source)
+
+        deleted = dataset_image.delete_draft(draft_name)
+        if deleted:
+            # Refresh the index to update draft_names
+            self.refresh_image_index(dataset_name, image_id)
+        return deleted
 
     def update_caption(self, dataset_name: str, image_id: int, caption: str, *, source: str = SELF_JOB_ID) -> bool:
         """Update the caption file for an image. Saves history first. Returns True on success."""

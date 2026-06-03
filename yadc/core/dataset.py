@@ -103,6 +103,21 @@ class DatasetImage(BaseModel):
         """
         self.draft_path(name).write_text(content)
 
+    def delete_draft(self, name: str) -> bool:
+        """Delete a named draft file.
+
+        Args:
+            name (str): The name of the draft to delete.
+
+        Returns:
+            bool: True if the draft was deleted, False if it didn't exist.
+        """
+        path = self.draft_path(name)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
     def read_all_drafts(self) -> dict[str, str]:
         """
         Reads all draft files associated with this image.
@@ -163,6 +178,35 @@ class DatasetImage(BaseModel):
 
         with open(self.history_path, "a") as f:
             f.write(self._serialize_toml_history())
+
+    def delete_history_entry(self, index: int) -> bool:
+        """Delete a history entry by index.
+
+        Re-writes the history file without the entry at the given index.
+
+        Args:
+            index (int): 0-based index into the history list (oldest=0).
+
+        Returns:
+            bool: True if the entry was deleted, False if index was out of range.
+        """
+        entries = self.read_history()
+        if index < 0 or index >= len(entries):
+            return False
+
+        entries.pop(index)
+
+        # Re-write the entire history file
+        if not entries:
+            self.history_path.unlink(missing_ok=True)
+        else:
+            with open(self.history_path, "w") as f:
+                for entry in entries:
+                    buffer = entry.dump_toml(with_caption=True).strip()
+                    f.write(buffer)
+                    f.write(f"\n{HISTORY_MARKER}\n")
+
+        return True
 
     def read_history(self) -> list["DatasetImage"]:
         if not self.history_path.exists():

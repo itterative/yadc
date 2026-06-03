@@ -72,6 +72,7 @@ export interface HistoryEntry {
     index: number;
     caption: string;
     extras: Record<string, unknown>;
+    hash: string;
 }
 
 // --- API helpers ---
@@ -428,6 +429,34 @@ export async function restoreHistory(
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${historyIndex}/restore?source=${encodeURIComponent(clientId)}`,
         { method: 'PUT', headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+}
+
+export async function deleteHistory(
+    datasetName: string,
+    imageId: number,
+    entryHash: string
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${entryHash}?source=${encodeURIComponent(clientId)}`,
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+}
+
+export async function deleteDraft(
+    datasetName: string,
+    imageId: number,
+    draftName: string
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));

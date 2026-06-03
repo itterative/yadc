@@ -73,8 +73,8 @@ yadc/webui/
           DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
           ImageDetail.svelte          # Image detail side panel (header + tab system). Derives isCaptioning from the `currentlyCaptioning` store. Calls `captionActions.captionSingleImage` directly.
           ImageDetail/                 # Split into tabbed sub-components — see dataset-config-ux-plan history 035
-            ImageDetail.svelte         # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls)
-            Caption.svelte             # Caption box (ActionCard + ActionBar) + Drafts + History rendering
+            ImageDetail.svelte         # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
+            Caption.svelte             # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
             Preview.svelte             # Thin wrapper around PromptPreview
             Extras.svelte              # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
         datasets/                       # Dataset creation/management components

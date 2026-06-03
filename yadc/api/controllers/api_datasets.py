@@ -374,6 +374,22 @@ def api_datasets(
             return jsonify_error("Image or history entry not found", status=404)
         return jsonify({"status": "ok"})
 
+    @app.delete("/datasets/<name>/images/<int:image_id>/history/<entry_hash>")
+    async def delete_image_history(name: str, image_id: int, entry_hash: str):  # pyright: ignore[reportUnusedFunction]
+        """Delete a single history entry for an image by content hash."""
+        ok = datasets.delete_history(name, image_id, entry_hash, source=request.args.get("source", ""))
+        if not ok:
+            return jsonify_error("Image or history entry not found", status=404)
+        return jsonify({"status": "ok"})
+
+    @app.delete("/datasets/<name>/images/<int:image_id>/drafts/<draft_name>")
+    async def delete_image_draft(name: str, image_id: int, draft_name: str):  # pyright: ignore[reportUnusedFunction]
+        """Delete a named draft for an image."""
+        ok = datasets.delete_draft(name, image_id, draft_name, source=request.args.get("source", ""))
+        if not ok:
+            return jsonify_error("Image or draft not found", status=404)
+        return jsonify({"status": "ok"})
+
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
     async def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the TOML extras sidecar for an image."""

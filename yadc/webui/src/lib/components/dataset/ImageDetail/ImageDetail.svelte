@@ -1,6 +1,8 @@
 <script lang="ts">
     import {
         deleteDatasetItems,
+        deleteDraft as deleteDraftApi,
+        deleteHistory as deleteHistoryApi,
         fetchCaption,
         fetchHistory,
         mediaUrl,
@@ -42,11 +44,9 @@
     let isLoadingCaption = $state(false);
     let captionError: string | null = $state(null);
     let historyEntries: HistoryEntry[] = $state([]);
-    let isLoadingHistory = $state(false);
     let isRestoring = $state(false);
     let isDeleting = $state(false);
     let isSavingExtras = $state(false);
-    let isHistoryExpanded = $state(false);
     let copiedKey: string | null = $state(null);
     let copyTimeout: ReturnType<typeof setTimeout> | null = null;
     let wasCaptioning = $state(false);
@@ -66,7 +66,6 @@
             captionData = null;
             captionError = null;
             historyEntries = [];
-            isHistoryExpanded = false;
             return;
         }
 
@@ -77,15 +76,18 @@
         captionError = null;
         captionData = null;
         historyEntries = [];
-        isHistoryExpanded = false;
 
         (async () => {
             try {
-                const data = await fetchCaption(dsName, id);
+                const [data, hist] = await Promise.all([
+                    fetchCaption(dsName, id),
+                    fetchHistory(dsName, id)
+                ]);
                 if (cancelled) {
                     return;
                 }
                 captionData = data;
+                historyEntries = hist;
                 clearStoredCaption(id);
             } catch (e) {
                 if (cancelled) {
@@ -188,17 +190,40 @@
         }
     }
 
-    async function handleHistoryToggle() {
-        isHistoryExpanded = !isHistoryExpanded;
-        if (isHistoryExpanded && historyEntries.length === 0 && item !== null) {
-            isLoadingHistory = true;
-            try {
-                historyEntries = await fetchHistory(datasetName, item.id);
-            } catch (e) {
-                captionError = friendlyErrorMessage(e, 'Failed to load history');
-            } finally {
-                isLoadingHistory = false;
-            }
+    async function handleDeleteHistory(entryHash: string) {
+        if (item === null) {
+            return;
+        }
+        const ok = await confirmDialog.danger(
+            'Delete this history revision? This cannot be undone.'
+        );
+        if (!ok) {
+            return;
+        }
+        try {
+            await deleteHistoryApi(datasetName, item.id, entryHash);
+            historyEntries = await fetchHistory(datasetName, item.id);
+        } catch (e) {
+            captionError = friendlyErrorMessage(e, 'Failed to delete history entry');
+        }
+    }
+
+    async function handleDeleteDraft(draftName: string) {
+        if (item === null) {
+            return;
+        }
+        const ok = await confirmDialog.danger(
+            `Delete draft "${draftName}"? This cannot be undone.`
+        );
+        if (!ok) {
+            return;
+        }
+        try {
+            await deleteDraftApi(datasetName, item.id, draftName);
+            const data = await fetchCaption(datasetName, item.id);
+            captionData = data;
+        } catch (e) {
+            captionError = friendlyErrorMessage(e, 'Failed to delete draft');
         }
     }
 
@@ -329,15 +354,15 @@
                 {captionError}
                 {isCaptioning}
                 {historyEntries}
-                {isLoadingHistory}
                 {isRestoring}
-                {isHistoryExpanded}
                 {copiedKey}
                 onCaptioningStart={handleCaptioningStart}
                 onCaptioningCancel={handleCaptioningCancel}
                 onSaveCaption={handleSaveCaption}
                 onRestoreHistory={handleRestoreHistory}
-                onHistoryToggle={handleHistoryToggle}
+                onDeleteHistory={handleDeleteHistory}
+                onDeleteDraft={handleDeleteDraft}
+                onPromoteDraft={handleSaveCaption}
                 onCopy={handleCopy}
             />
         </Tab>
