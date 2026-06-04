@@ -30,7 +30,7 @@ import { z } from 'zod';
 // --- Zod schemas ---
 
 export const CaptioningStatusZ = z.object({
-    status: z.enum(['idle', 'running', 'stopping', 'error', 'done', 'cancelled']),
+    status: z.enum(['idle', 'starting', 'running', 'stopping', 'error', 'done', 'cancelled']),
     dataset_name: z.string(),
     processed: z.number(),
     total: z.number(),

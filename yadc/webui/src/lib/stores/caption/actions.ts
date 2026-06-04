@@ -25,6 +25,16 @@ export const lastStartedJobId: Writable<string> = writable('');
  *  handles password retry, registers the job, and seeds the SSE stores
  *  for immediate UI feedback. Returns the job ID. */
 export async function startBatchCaptioning(datasetName: string): Promise<string> {
+    setCaptioningStatus({
+        status: 'starting',
+        dataset_name: datasetName,
+        processed: 0,
+        total: 0,
+        errors: 0,
+        job_id: '',
+        error: null,
+        error_messages: []
+    });
     const options = get(captionOptions);
     const info = await withPasswordRetry(() =>
         startCaptioning(datasetName, options as Record<string, unknown>)
@@ -55,6 +65,17 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
  *  handles password retry, registers the job, and seeds the SSE stores
  *  for immediate spinner feedback in ImageDetail. */
 export async function captionSingleImage(datasetName: string, imageId: number): Promise<string> {
+    setCaptioningStatus({
+        status: 'starting',
+        dataset_name: datasetName,
+        processed: 0,
+        total: 1,
+        errors: 0,
+        job_id: '',
+        error: null,
+        error_messages: []
+    });
+    setCurrentlyCaptioning({ dataset_name: datasetName, image_id: imageId });
     const options = get(captionOptions);
     const info = await withPasswordRetry(() =>
         apiCaptionSingleImage(datasetName, imageId, options as Record<string, unknown>)

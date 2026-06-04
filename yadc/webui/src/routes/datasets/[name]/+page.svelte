@@ -57,7 +57,9 @@
 
     let isBatchCaptioning = $derived(
         $captioningStatus?.dataset_name === datasetName &&
-            ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
+            ($captioningStatus.status === 'starting' ||
+                $captioningStatus.status === 'running' ||
+                $captioningStatus.status === 'stopping')
     );
 
     // ID of the image currently being captioned (for pulsing animation)

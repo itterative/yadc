@@ -100,6 +100,8 @@
             {#if isBatchCaptioning}
                 {#if isStopping}
                     <span class="text-sm text-yellow-300">Stopping…</span>
+                {:else if $captioningStatus.status === 'starting'}
+                    <span class="text-sm text-gray-400">Starting…</span>
                 {:else}
                     <span class="text-sm text-gray-400">
                         Captioning… {captionProcessed}/{captionTotal} ({captionPct}%)

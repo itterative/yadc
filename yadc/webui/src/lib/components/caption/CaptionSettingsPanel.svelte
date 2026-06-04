@@ -34,7 +34,9 @@
     // Derive batch captioning state from the global SSE store
     let isBatchCaptioning = $derived(
         $captioningStatus?.dataset_name === _datasetName &&
-            ($captioningStatus.status === 'running' || $captioningStatus.status === 'stopping')
+            ($captioningStatus.status === 'starting' ||
+                $captioningStatus.status === 'running' ||
+                $captioningStatus.status === 'stopping')
     );
 
     // --- State: Environment (managed by EnvSelector via bindings) ---

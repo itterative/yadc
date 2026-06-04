@@ -88,7 +88,7 @@ export interface PromptPreview {
 }
 
 export interface CaptioningJobInfo {
-    status: 'idle' | 'running' | 'stopping' | 'error' | 'done' | 'cancelled';
+    status: 'idle' | 'starting' | 'running' | 'stopping' | 'error' | 'done' | 'cancelled';
     dataset_name: string;
     job_id: string;
     processed: number;

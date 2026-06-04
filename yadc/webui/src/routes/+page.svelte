@@ -131,7 +131,10 @@
                         {#if captionStatusFor(dataset.name)}
                             {@const cs = captionStatusFor(dataset.name)!}
                             <div class="mt-2 flex items-center gap-2 text-sm">
-                                {#if cs.status === 'running'}
+                                {#if cs.status === 'starting'}
+                                    <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
+                                    <span class="text-accent">Starting…</span>
+                                {:else if cs.status === 'running'}
                                     <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
                                     <span class="text-accent"
                                         >Captioning {cs.processed}/{cs.total}</span
