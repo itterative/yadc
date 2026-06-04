@@ -1,11 +1,13 @@
 <script lang="ts">
     import { fetchKeyMode, setKeyMode, changeKeyPassword } from '$lib/stores/env';
-    import { friendlyErrorMessage } from '$lib/api';
+    import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
+    import Alert from '$lib/components/ui/Alert.svelte';
 
     let keyMode: 'keyring' | 'password' = $state('keyring');
     let desiredKeyMode: 'keyring' | 'password' = $state('keyring');
     let keyModeLoading = $state(false);
     let keyModeError: string | null = $state(null);
+    let keyModeSuccess: string | null = $state(null);
     let keyModePassword = $state('');
     let keyModeOldPassword = $state('');
     let keyModeConfirmPassword = $state('');
@@ -29,12 +31,14 @@
     async function handleKeyModeAction() {
         keyModeLoading = true;
         keyModeError = null;
+        keyModeSuccess = null;
         try {
             if (keyMode === 'password' && desiredKeyMode === 'password') {
                 await changeKeyPassword(keyModeOldPassword, keyModePassword);
                 keyModePassword = '';
                 keyModeOldPassword = '';
                 keyModeConfirmPassword = '';
+                keyModeSuccess = 'Password changed successfully.';
             } else {
                 const password = desiredKeyMode === 'password' ? keyModePassword : undefined;
                 const oldPassword = keyMode === 'password' ? keyModeOldPassword : undefined;
@@ -43,9 +47,17 @@
                 keyModePassword = '';
                 keyModeOldPassword = '';
                 keyModeConfirmPassword = '';
+                keyModeSuccess =
+                    desiredKeyMode === 'password'
+                        ? 'Switched to password-protected key storage.'
+                        : 'Switched to system keyring.';
             }
         } catch (e) {
-            keyModeError = friendlyErrorMessage(e, 'Failed to update key storage');
+            if (e instanceof PasswordRequiredError) {
+                keyModeError = 'Current password is incorrect. Please try again.';
+            } else {
+                keyModeError = friendlyErrorMessage(e, 'Failed to update key storage');
+            }
         } finally {
             keyModeLoading = false;
         }
@@ -79,7 +91,25 @@
         <p class="text-xs text-gray-500">Choose how your API token encryption keys are stored.</p>
 
         {#if keyModeError}
-            <div class="alert-error text-sm">{keyModeError}</div>
+            <Alert
+                variant="error"
+                class="text-sm"
+                dismissable
+                ondismiss={() => (keyModeError = null)}
+            >
+                {keyModeError}
+            </Alert>
+        {/if}
+
+        {#if keyModeSuccess}
+            <Alert
+                variant="info"
+                class="text-sm"
+                dismissable
+                ondismiss={() => (keyModeSuccess = null)}
+            >
+                {keyModeSuccess}
+            </Alert>
         {/if}
 
         {#if envPasswordSet}

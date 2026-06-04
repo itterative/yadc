@@ -6,6 +6,7 @@ from quart import jsonify, request
 # so it's loaded once, not on every request.
 from yadc.cmd import config as cmd_config
 from yadc.cmd import envs as cmd_envs
+from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core.env import YADC_PASSWORD
 
 from ..modules.logging_factory import LoggingFactory
@@ -247,6 +248,13 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
             else:
                 _logger.info("Key storage mode switched to '%s'.", mode)
             return jsonify({"mode": mode})
+        except PasswordRequiredError as e:
+            _logger.warning("Wrong password supplied for key mode change: %s", e)
+            return jsonify_error(
+                "Current password is incorrect.",
+                status=403,
+                code=ErrorCode.PASSWORD_REQUIRED,
+            )
         except Exception as e:
             _logger.error("Failed to set key storage mode: %s", e)
             return jsonify_error(str(e), status=500, code=ErrorCode.INTERNAL_ERROR)
