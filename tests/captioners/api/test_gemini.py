@@ -55,31 +55,32 @@ def gemini(load_test_data):
     return _gemini
 
 
-@pytest.mark.asyncio
-async def test_gemini(gemini, load_test_data):
-    captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
-    await captioner.load_model("gemini-2.5-flash")
+class TestGemini:
+    """Gemini captioner — basic prediction, streaming, and error paths."""
 
-    expected = load_test_data("nonstreaming/gemini_result.txt")
-    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    @pytest.mark.asyncio
+    async def test_predict(self, gemini, load_test_data):
+        captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
+        await captioner.load_model("gemini-2.5-flash")
 
-    assert got == expected, "bad prediction"
+        expected = load_test_data("nonstreaming/gemini_result.txt")
+        got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
+        assert got == expected, "bad prediction"
 
-@pytest.mark.asyncio
-async def test_gemini_streaming(gemini, load_test_data):
-    captioner: APICaptioner = gemini("streaming/gemini.txt", "gemini-2.5-flash")
-    await captioner.load_model("gemini-2.5-flash")
+    @pytest.mark.asyncio
+    async def test_streaming(self, gemini, load_test_data):
+        captioner: APICaptioner = gemini("streaming/gemini.txt", "gemini-2.5-flash")
+        await captioner.load_model("gemini-2.5-flash")
 
-    expected = load_test_data("streaming/gemini_result.txt")
-    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
+        expected = load_test_data("streaming/gemini_result.txt")
+        got = "".join([token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))])
 
-    assert got == expected, "bad prediction"
+        assert got == expected, "bad prediction"
 
+    @pytest.mark.asyncio
+    async def test_raises_error_on_bad_model(self, gemini):
+        captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
 
-@pytest.mark.asyncio
-async def test_gemini_raises_error_on_bad_model(gemini):
-    captioner: APICaptioner = gemini("nonstreaming/gemini.txt", "gemini-2.5-flash")
-
-    with pytest.raises(ValueError, match=re.compile("model not found: .*")):
-        await captioner.load_model("unknown")
+        with pytest.raises(ValueError, match=re.compile("model not found: .*")):
+            await captioner.load_model("unknown")

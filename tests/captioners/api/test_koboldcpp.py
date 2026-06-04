@@ -45,42 +45,43 @@ def koboldcpp(load_test_data):
     return _koboldcpp
 
 
-@pytest.mark.asyncio
-async def test_koboldcpp(koboldcpp, load_test_data):
-    captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b")
-    await captioner.load_model("koboldcpp/gemma-3-27b")
+class TestKoboldcpp:
+    """KoboldCpp captioner — basic prediction, streaming, model loading, and error paths."""
 
-    expected = load_test_data("nonstreaming/koboldcpp_result.txt")
-    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    @pytest.mark.asyncio
+    async def test_predict(self, koboldcpp, load_test_data):
+        captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b")
+        await captioner.load_model("koboldcpp/gemma-3-27b")
 
-    assert got == expected, "bad prediction"
+        expected = load_test_data("nonstreaming/koboldcpp_result.txt")
+        got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
+        assert got == expected, "bad prediction"
 
-@pytest.mark.asyncio
-async def test_koboldcpp_streaming(koboldcpp, load_test_data):
-    captioner: APICaptioner = koboldcpp("streaming/koboldcpp.txt", "koboldcpp/gemma-3-27b")
-    await captioner.load_model("koboldcpp/gemma-3-27b")
+    @pytest.mark.asyncio
+    async def test_streaming(self, koboldcpp, load_test_data):
+        captioner: APICaptioner = koboldcpp("streaming/koboldcpp.txt", "koboldcpp/gemma-3-27b")
+        await captioner.load_model("koboldcpp/gemma-3-27b")
 
-    expected = load_test_data("streaming/koboldcpp_result.txt")
-    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
+        expected = load_test_data("streaming/koboldcpp_result.txt")
+        got = "".join([token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))])
 
-    assert got == expected, "bad prediction"
+        assert got == expected, "bad prediction"
 
+    @pytest.mark.asyncio
+    async def test_load_model_when_not_loaded(self, koboldcpp, load_test_data):
+        """If the model isn't pre-loaded, ``load_model`` should activate it via the admin API."""
+        captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b", loaded=False)
+        await captioner.load_model("koboldcpp/gemma-3-27b")
 
-@pytest.mark.asyncio
-async def test_koboldcpp_should_load_model(koboldcpp, load_test_data):
-    captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b", loaded=False)
-    await captioner.load_model("koboldcpp/gemma-3-27b")
+        expected = load_test_data("nonstreaming/koboldcpp_result.txt")
+        got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
-    expected = load_test_data("nonstreaming/koboldcpp_result.txt")
-    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+        assert got == expected, "bad prediction"
 
-    assert got == expected, "bad prediction"
+    @pytest.mark.asyncio
+    async def test_raises_error_on_bad_model(self, koboldcpp):
+        captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b", loaded=False)
 
-
-@pytest.mark.asyncio
-async def test_koboldcpp_should_raise_error_on_bad_model(koboldcpp):
-    captioner: APICaptioner = koboldcpp("nonstreaming/koboldcpp.txt", "koboldcpp/gemma-3-27b", loaded=False)
-
-    with pytest.raises(ValueError, match=re.compile("model not found: .*")):
-        await captioner.load_model("koboldcpp/unknown")
+        with pytest.raises(ValueError, match=re.compile("model not found: .*")):
+            await captioner.load_model("koboldcpp/unknown")

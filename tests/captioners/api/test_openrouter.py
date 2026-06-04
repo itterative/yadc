@@ -36,53 +36,53 @@ def openrouter(load_test_data):
     return _openrouter
 
 
-@pytest.mark.asyncio
-async def test_openrouter_gpt_5_mini(openrouter, load_test_data):
-    captioner: APICaptioner = openrouter("nonstreaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
-    await captioner.load_model("openai/gpt-5-mini")
+class TestOpenRouter:
+    """OpenRouter captioner — basic prediction and streaming across multiple
+    upstream models, plus error paths."""
 
-    expected = load_test_data("nonstreaming/openrouter_gpt_5_mini_result.txt")
-    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+    @pytest.mark.asyncio
+    async def test_predict_gpt_5_mini(self, openrouter, load_test_data):
+        captioner: APICaptioner = openrouter("nonstreaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
+        await captioner.load_model("openai/gpt-5-mini")
 
-    assert got == expected, "bad prediction"
+        expected = load_test_data("nonstreaming/openrouter_gpt_5_mini_result.txt")
+        got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
+        assert got == expected, "bad prediction"
 
-@pytest.mark.asyncio
-async def test_openrouter_gpt_5_mini_streaming(openrouter, load_test_data):
-    captioner: APICaptioner = openrouter("streaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
-    await captioner.load_model("openai/gpt-5-mini")
+    @pytest.mark.asyncio
+    async def test_streaming_gpt_5_mini(self, openrouter, load_test_data):
+        captioner: APICaptioner = openrouter("streaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
+        await captioner.load_model("openai/gpt-5-mini")
 
-    expected = load_test_data("streaming/openrouter_gpt_5_mini_result.txt")
-    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
+        expected = load_test_data("streaming/openrouter_gpt_5_mini_result.txt")
+        got = "".join([token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))])
 
-    assert got == expected, "bad prediction"
+        assert got == expected, "bad prediction"
 
+    @pytest.mark.asyncio
+    async def test_predict_qwen3_vl(self, openrouter, load_test_data):
+        captioner: APICaptioner = openrouter("nonstreaming/openrouter_qwen3_vl.txt", "qwen/qwen3-vl-235b-a22b-thinking")
+        await captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
 
-@pytest.mark.asyncio
-async def test_openrouter_qwen3_vl(openrouter, load_test_data):
-    captioner: APICaptioner = openrouter("nonstreaming/openrouter_qwen3_vl.txt", "qwen/qwen3-vl-235b-a22b-thinking")
-    await captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
+        expected = load_test_data("nonstreaming/openrouter_qwen3_vl_result.txt")
+        got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
 
-    expected = load_test_data("nonstreaming/openrouter_qwen3_vl_result.txt")
-    got = await captioner.predict(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))
+        assert got == expected, "bad prediction"
 
-    assert got == expected, "bad prediction"
+    @pytest.mark.asyncio
+    async def test_streaming_qwen3_vl(self, openrouter, load_test_data):
+        captioner: APICaptioner = openrouter("streaming/openrouter_qwen3_vl.txt", "qwen/qwen3-vl-235b-a22b-thinking")
+        await captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
 
+        expected = load_test_data("streaming/openrouter_qwen3_vl_result.txt")
+        got = "".join([token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg"))])
 
-@pytest.mark.asyncio
-async def test_openrouter_qwen3_vl_streaming(openrouter, load_test_data):
-    captioner: APICaptioner = openrouter("streaming/openrouter_qwen3_vl.txt", "qwen/qwen3-vl-235b-a22b-thinking")
-    await captioner.load_model("qwen/qwen3-vl-235b-a22b-thinking")
+        assert got == expected, "bad prediction"
 
-    expected = load_test_data("streaming/openrouter_qwen3_vl_result.txt")
-    got = "".join([ token async for token in captioner.predict_stream(mock.MagicMock(spec=DatasetImage, path="test_image.jpg")) ])
+    @pytest.mark.asyncio
+    async def test_raises_error_on_bad_model(self, openrouter):
+        captioner: APICaptioner = openrouter("nonstreaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
 
-    assert got == expected, "bad prediction"
-
-
-@pytest.mark.asyncio
-async def test_openrouter_raises_error_on_bad_model(openrouter):
-    captioner: APICaptioner = openrouter("nonstreaming/openrouter_gpt_5_mini.txt", "openai/gpt-5-mini")
-
-    with pytest.raises(ValueError, match=re.compile("model not found: .*")):
-        await captioner.load_model("unknown")
+        with pytest.raises(ValueError, match=re.compile("model not found: .*")):
+            await captioner.load_model("unknown")
