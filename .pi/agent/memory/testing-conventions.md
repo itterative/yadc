@@ -50,3 +50,39 @@ To run: `uv run pytest -m "integration_test"` (may skip individual tests if requ
 - Config tests cover v1→v2 conversion and validation edge cases
 - Dataset resolver tests cover extras merging, inline image overrides
 - CLI tests likely use Click's test runner (`CliRunner`)
+
+## Mocking with `patch()`
+
+For tests that patch module-level imports in the code under test (e.g. `cmd_config`, `cmd_envs` imported into a controller), follow a three-step pattern that keeps the test refactor-friendly. Reference: `tests/api/test_envs.py`.
+
+1. **Centralize patch target paths as module-level constants** so the import path lives in exactly one place. If the code under test renames an import, only the constant needs to change.
+   ```python
+   _PATCH_CMD_CONFIG = "yadc.api.controllers.api_envs.cmd_config"
+   _PATCH_CMD_ENVS = "yadc.api.controllers.api_envs.cmd_envs"
+   _PATCH_YADC_PASSWORD = "yadc.api.controllers.api_envs.YADC_PASSWORD"
+   ```
+
+2. **Wrap each patch target in a module-level fixture** that yields the mock. Tests take the fixture as a parameter instead of writing inline `with patch(...)` blocks. Prefer module-level over class-scoped fixtures so they're shared across test classes.
+   ```python
+   @pytest.fixture
+   def patched_cmd_config():
+       with patch(_PATCH_CMD_CONFIG) as mock_config:
+           yield mock_config
+   ```
+
+3. **For patches where the value varies per test** (e.g. `YADC_PASSWORD` is `None` in one test, `"secret"` in another), use a factory fixture that returns a callable producing the `patch(...)` context manager:
+   ```python
+   @pytest.fixture
+   def yadc_password():
+       def _patch(value):
+           return patch(_PATCH_YADC_PASSWORD, value)
+       return _patch
+
+   # Test usage:
+   with yadc_password(None):
+       ...
+   ```
+
+## API Endpoint Tests
+
+Controller tests use a Quart test client fixture that registers the blueprint under test. See `tests/api/test_envs.py` for a representative example: a `client` fixture builds a Quart app, instantiates the blueprint with a mocked `LoggingFactory`, and returns `app.test_client()`. Group tests in classes by endpoint (e.g. `TestGetKeyMode`, `TestPutKeyMode`) with a one-line docstring describing what the endpoint does.
