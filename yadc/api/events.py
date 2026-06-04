@@ -34,6 +34,8 @@ class CaptioningStatusEvent(Event):
     job_id: str = ""
     error: str | None = None
     error_messages: list[str] = dataclasses.field(default_factory=list)
+    api_url: str = ""
+    api_model_name: str = ""
 
 
 @dataclass
@@ -64,6 +66,9 @@ class ImageCaptionedEvent(Event):
     draft_names: list[str] = dataclasses.field(default_factory=list)
     last_modified_t: float | None = None
     caption: str = ""
+    duration_ms: int = 0
+    api_url: str = ""
+    api_model_name: str = ""
 
 
 @dataclass
@@ -94,3 +99,6 @@ class ImageCaptionErrorEvent(Event):
     job_id: str
     image_id: int
     error: str
+    duration_ms: int = 0
+    api_url: str = ""
+    api_model_name: str = ""

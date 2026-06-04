@@ -23,7 +23,8 @@ import { API_BASE } from '$lib/api';
 import { TypedEventSource } from '$lib/events';
 import { refreshEnvs } from '$lib/stores/env';
 import { refreshTemplates } from '$lib/stores/templates';
-import { writable, readonly, get, type Readable } from 'svelte/store';
+import { writable, readonly, derived, get, type Readable } from 'svelte/store';
+import storable from '$lib/storable.js';
 import { z } from 'zod';
 
 // --- Zod schemas ---
@@ -36,7 +37,9 @@ export const CaptioningStatusZ = z.object({
     errors: z.number(),
     job_id: z.string().default(''),
     error: z.string().nullable(),
-    error_messages: z.array(z.string()).default([])
+    error_messages: z.array(z.string()).default([]),
+    api_url: z.string().optional(),
+    api_model_name: z.string().optional()
 });
 
 export const PingEventZ = z.object({
@@ -64,14 +67,20 @@ export const ImageCaptionedEventZ = z.object({
     height: z.number(),
     draft_names: z.array(z.string()),
     last_modified_t: z.number().nullable(),
-    caption: z.string().default('')
+    caption: z.string().default(''),
+    duration_ms: z.number().default(0),
+    api_url: z.string().optional(),
+    api_model_name: z.string().optional()
 });
 
 export const ImageCaptionErrorEventZ = z.object({
     dataset_name: z.string(),
     job_id: z.string(),
     image_id: z.number(),
-    error: z.string()
+    error: z.string(),
+    duration_ms: z.number().default(0),
+    api_url: z.string().optional(),
+    api_model_name: z.string().optional()
 });
 
 export const ImageCaptionStartedEventZ = z.object({
@@ -146,6 +155,19 @@ const MAX_STORED_CAPTIONS = 64;
 
 const MAX_ACTIVE_JOB_IDS = 16;
 
+const MAX_TIMING_SAMPLES = 32;
+
+interface TimingRingData {
+    $version: number;
+    timings: Record<string, number[]>;
+}
+
+/** Per-API+model ring buffer of successful caption durations (ms), persisted to localStorage. */
+const _captionTimingRing = storable<TimingRingData>('yadc/captionTimingRing', {
+    $version: 1,
+    timings: {}
+});
+
 // --- Public readonly stores ---
 
 /** Latest captioning job status received via SSE. */
@@ -171,6 +193,12 @@ export const currentlyCaptioning: Readable<{ dataset_name: string; image_id: num
 
 /** Captions received via SSE, keyed by image ID. */
 export const storedCaptions: Readable<Map<number, string>> = readonly(_storedCaptions);
+
+/** Per-API+model ring buffer of successful caption durations (ms). */
+export const captionTimingRing: Readable<Record<string, number[]>> = derived(
+    _captionTimingRing,
+    ($r) => $r.timings
+);
 
 /** Return a caption received via SSE for the given image, if any.
  *  Promotes the entry to most-recently-used (LRU eviction ordering). */
@@ -338,6 +366,17 @@ function connect() {
             }
             return next;
         });
+        // Record successful caption timing for ETA estimation.
+        if (data.duration_ms > 0 && data.api_url && data.api_model_name) {
+            const key = `${data.api_url}#${data.api_model_name}`;
+            _captionTimingRing.update((ring) => {
+                const arr = [...(ring.timings[key] ?? []), data.duration_ms];
+                if (arr.length > MAX_TIMING_SAMPLES) {
+                    arr.shift();
+                }
+                return { ...ring, timings: { ...ring.timings, [key]: arr } };
+            });
+        }
         // Clear the "currently captioning" indicator for this image (it just finished).
         _currentlyCaptioning.update((cur) => {
             if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.id) {

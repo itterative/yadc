@@ -51,16 +51,12 @@ class ConfigHistoryRepository(Service):
         with self._db.connection() as conn:
             if before_id is not None:
                 rows = conn.execute(
-                    "SELECT id, dataset_name, content, created_t "
-                    "FROM config_history WHERE dataset_name = ? AND id < ? "
-                    "ORDER BY id DESC LIMIT ?",
+                    "SELECT id, dataset_name, content, created_t FROM config_history WHERE dataset_name = ? AND id < ? ORDER BY id DESC LIMIT ?",
                     (dataset_name, before_id, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT id, dataset_name, content, created_t "
-                    "FROM config_history WHERE dataset_name = ? "
-                    "ORDER BY id DESC LIMIT ?",
+                    "SELECT id, dataset_name, content, created_t FROM config_history WHERE dataset_name = ? ORDER BY id DESC LIMIT ?",
                     (dataset_name, limit),
                 ).fetchall()
 
@@ -131,8 +127,7 @@ class ConfigHistoryRepository(Service):
 
             excess = count - keep_count
             conn.execute(
-                "DELETE FROM config_history WHERE dataset_name = ? "
-                "AND id IN (SELECT id FROM config_history WHERE dataset_name = ? ORDER BY id ASC LIMIT ?)",
+                "DELETE FROM config_history WHERE dataset_name = ? AND id IN (SELECT id FROM config_history WHERE dataset_name = ? ORDER BY id ASC LIMIT ?)",
                 (dataset_name, dataset_name, excess),
             )
             self._logger.debug("Pruned %d old config history entries for '%s'.", excess, dataset_name)

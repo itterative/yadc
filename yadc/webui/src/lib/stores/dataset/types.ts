@@ -96,4 +96,6 @@ export interface CaptioningJobInfo {
     errors: number;
     error: string | null;
     error_messages: string[];
+    api_url?: string;
+    api_model_name?: string;
 }

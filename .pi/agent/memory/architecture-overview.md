@@ -12,7 +12,7 @@ keep_updated: true
 
 Yet Another Dataset Captioner — a CLI tool for captioning image datasets using remote AI APIs (OpenAI, Gemini, OpenRouter, vLLM, llama.cpp, koboldcpp, Ollama).
 
-## See also (in `.pi/agent/docs/`)
+## See also (in `.pi/agent/memory/docs/`)
 
 - `backend/` — folder of per-area structure files for the `yadc/` Python package (CLI, `api/`, `cmd/`, `core/`, `captioners/`, `templates/`, `utils/`)
 - `frontend/` — folder of per-area structure files for `yadc/webui/src/` (`lib/`, `styles/`, `stores/`, `components-ui/`, `components-domain/`, `routes/`)

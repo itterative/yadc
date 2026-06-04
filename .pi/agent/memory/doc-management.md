@@ -10,9 +10,9 @@ keep_updated: true
 
 ## Storage Location
 
-All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.pi/agent/docs/` for brevity) inside the agent memory directory. These are **permanent reference documents** — architecture overviews, system descriptions, conventions, and workflow guides. They are separate from feature/design plans (which belong in `.pi/agent/memory/plans/`) and from the user-facing `docs/` directory at the repo root (which is for yadc end-users, not for the agent).
+All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.pi/agent/memory/docs/` for brevity) inside the agent memory directory. These are **permanent reference documents** — architecture overviews, system descriptions, conventions, and workflow guides. They are separate from feature/design plans (which belong in `.pi/agent/memory/plans/`) and from the user-facing `docs/` directory at the repo root (which is for yadc end-users, not for the agent).
 
-## Doc Index (in `.pi/agent/docs/`)
+## Doc Index (in `.pi/agent/memory/docs/`)
 
 | Doc | Description |
 |-----|-------------|
@@ -62,4 +62,4 @@ The following docs are kept at the `.pi/agent/memory/` root because they are con
 - **When a doc becomes obsolete**, move it to `.pi/agent/memory/docs/archive/` (create if needed) and remove it from the index.
 - **When a new doc is created**, add it to the index with a concise description and decide whether it belongs in `docs/` or at the root.
 - **When a doc's details change**, update the doc file itself and this index if the description needs updating.
-- **Reference style**: use bare filenames (e.g. `api-di-system`) in section headings that declare the path, or full paths (e.g. `docs/api-di-system`) when the section is mid-document and the path isn't nearby. The path in question is `.pi/agent/memory/docs/` (often referred to as `.pi/agent/docs/` for brevity to distinguish from the user-facing `docs/` at the repo root).
+- **Reference style**: use bare filenames (e.g. `api-di-system`) in section headings that declare the path, or full paths (e.g. `docs/api-di-system`) when the section is mid-document and the path isn't nearby. The path in question is `.pi/agent/memory/docs/` (often referred to as `.pi/agent/memory/docs/` for brevity to distinguish from the user-facing `docs/` at the repo root).

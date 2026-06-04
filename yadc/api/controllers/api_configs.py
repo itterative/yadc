@@ -309,7 +309,7 @@ def api_configs(
                     if isinstance(ds_entry, dict):
                         path_val = str(ds_entry.get("path", ""))
                         if path_val.startswith("folders/"):
-                            folder_name = path_val[len("folders/"):]
+                            folder_name = path_val[len("folders/") :]
                             if not (base_dir / "folders" / folder_name).exists():
                                 warnings.append(f"Folder '{folder_name}' is referenced in config but no longer exists on disk.")
         except Exception:

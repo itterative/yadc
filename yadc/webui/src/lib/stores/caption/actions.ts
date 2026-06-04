@@ -31,6 +31,23 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
     );
     registerJobId(info.job_id);
     lastStartedJobId.set(info.job_id);
+    // Seed the status immediately so the progress bar / ETA appear without
+    // waiting for the first SSE event. Fast completions may finish before
+    // the HTTP response, so only seed when the job is actually running.
+    if (info.status === 'running' || info.status === 'stopping') {
+        setCaptioningStatus({
+            status: info.status,
+            dataset_name: info.dataset_name,
+            processed: info.processed,
+            total: info.total,
+            errors: info.errors,
+            job_id: info.job_id,
+            error: info.error,
+            error_messages: [],
+            api_url: info.api_url,
+            api_model_name: info.api_model_name
+        });
+    }
     return info.job_id;
 }
 
@@ -58,7 +75,9 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
             errors: info.errors,
             job_id: info.job_id,
             error: info.error,
-            error_messages: []
+            error_messages: [],
+            api_url: info.api_url,
+            api_model_name: info.api_model_name
         });
         setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
     }

@@ -255,9 +255,7 @@ class DatasetWatcherService(Service):
         ``"/path/folders/train/*"``.
         """
         with self._lock:
-            buf = self._expected_patterns.setdefault(
-                dataset_name, deque(maxlen=self._configuration.watcher_expected_file_max)
-            )
+            buf = self._expected_patterns.setdefault(dataset_name, deque(maxlen=self._configuration.watcher_expected_file_max))
             buf.append(ExpectedPatternEntry(pattern, time.monotonic(), source))
             self._logger.debug(
                 "Registered expected pattern change. [dataset=%s, pattern=%s, source=%s, queue=%d]",

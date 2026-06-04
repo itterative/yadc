@@ -13,6 +13,7 @@ Usage from the API layer::
 
 import asyncio
 import inspect
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -59,6 +60,8 @@ class JobInfo:
     errors: int = 0
     error: str | None = None
     error_messages: list[str] = field(default_factory=list)
+    api_url: str = ""
+    api_model_name: str = ""
 
 
 class CaptionJobOptions(pydantic.BaseModel):
@@ -210,6 +213,9 @@ class AsyncCaptionJob:
         self._error: str | None = None
         self._error_messages: list[str] = []
 
+        self._api_url: str = ""
+        self._api_model_name: str = ""
+
         self._task: asyncio.Task[Any] | None = None
 
     # -- lifecycle -----------------------------------------------------------
@@ -249,6 +255,8 @@ class AsyncCaptionJob:
                 errors=self._errors,
                 error=self._error,
                 error_messages=self._error_messages.copy(),
+                api_url=self._api_url,
+                api_model_name=self._api_model_name,
             )
 
     # -- main loop -----------------------------------------------------------
@@ -305,6 +313,9 @@ class AsyncCaptionJob:
             raise ValueError(f"Invalid dataset config: {exc}") from exc
 
         config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
+
+        self._api_url = config.api.url
+        self._api_model_name = config.api.model_name
 
         images = resolve_dataset(config.dataset, config.caption_suffix, base_dir=str(config_path.parent))
         if not images:
@@ -389,21 +400,24 @@ class AsyncCaptionJob:
                 break
 
             self._emit_image_started(img)
+            t0 = time.monotonic()
 
             try:
                 await self._acaption_one(model, img, config.settings, conversation_overrides)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                duration_ms = int((time.monotonic() - t0) * 1000)
                 self._logger.warning("Failed to caption %s: %s", img.path, exc)
                 await self._record_error(str(exc))
                 await self._emit_status()
-                self._emit_image_error(img, str(exc))
+                self._emit_image_error(img, str(exc), duration_ms)
                 continue
 
+            duration_ms = int((time.monotonic() - t0) * 1000)
             await self._increment_processed()
             await self._emit_status()
-            self._emit_image_captioned(img)
+            self._emit_image_captioned(img, duration_ms)
 
         model.log_usage()
 
@@ -516,6 +530,8 @@ class AsyncCaptionJob:
             job_id=snap.job_id,
             error=snap.error,
             error_messages=snap.error_messages,
+            api_url=snap.api_url,
+            api_model_name=snap.api_model_name,
         )
         self._event_dispatcher.dispatch(event)
 
@@ -532,7 +548,7 @@ class AsyncCaptionJob:
             )
         )
 
-    def _emit_image_captioned(self, dataset_image: DatasetImage) -> None:
+    def _emit_image_captioned(self, dataset_image: DatasetImage, duration_ms: int = 0) -> None:
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         if info is None:
             return
@@ -554,10 +570,13 @@ class AsyncCaptionJob:
                 draft_names=info.draft_names,
                 last_modified_t=info.last_modified_t,
                 caption=dataset_image.caption,
+                duration_ms=duration_ms,
+                api_url=self._api_url,
+                api_model_name=self._api_model_name,
             )
         )
 
-    def _emit_image_error(self, dataset_image: DatasetImage, error: str) -> None:
+    def _emit_image_error(self, dataset_image: DatasetImage, error: str, duration_ms: int = 0) -> None:
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         image_id = info.id if info is not None else -1
         self._event_dispatcher.dispatch(
@@ -566,6 +585,9 @@ class AsyncCaptionJob:
                 job_id=self._job_id,
                 image_id=image_id,
                 error=error,
+                duration_ms=duration_ms,
+                api_url=self._api_url,
+                api_model_name=self._api_model_name,
             )
         )
 

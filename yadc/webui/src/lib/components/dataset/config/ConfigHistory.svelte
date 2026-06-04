@@ -4,6 +4,7 @@
         restoreConfigHistory,
         type ConfigHistoryEntry
     } from '$lib/stores/config';
+    import { formatRelativeTime, formatDateTime } from '$lib/format';
     import TomlEditor from '$lib/components/ui/TomlEditor.svelte';
     import Card from '$lib/components/ui/Card.svelte';
     import ActionBar from '$lib/components/ui/ActionBar.svelte';
@@ -33,21 +34,6 @@
     let showFullMap = $state<Record<number, boolean>>({});
 
     const PAGE_SIZE = 5;
-
-    function relativeTime(epochSeconds: number): string {
-        const now = Date.now() / 1000;
-        const diff = now - epochSeconds;
-        if (diff < 60) {
-            return 'just now';
-        }
-        if (diff < 3600) {
-            return `${Math.floor(diff / 60)}m ago`;
-        }
-        if (diff < 86400) {
-            return `${Math.floor(diff / 3600)}h ago`;
-        }
-        return `${Math.floor(diff / 86400)}d ago`;
-    }
 
     async function loadHistory(append = false) {
         loading = true;
@@ -143,10 +129,10 @@
                 <Card>
                     <div class="flex items-baseline justify-between gap-2 px-3 pt-2 pb-1">
                         <div class="text-xs font-medium text-gray-300">
-                            {relativeTime(entry.created_t)}
+                            {formatRelativeTime(entry.created_t)}
                         </div>
                         <div class="text-[11px] text-gray-500">
-                            {new Date(entry.created_t * 1000).toLocaleString()}
+                            {formatDateTime(entry.created_t)}
                         </div>
                     </div>
                     <div>
