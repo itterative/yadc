@@ -48,10 +48,12 @@ cli.add_command(cli_<name>.<name>)
 
 | CLI file | cmd package | Click group name |
 |---|---|---|
-| `cli_caption.py` | (uses captioners directly) | `caption` |
+| `cli_caption.py` | `core/captioning/` (shared with the API) | `caption` |
 | `cli_cache.py` | `cmd/cache/` | `cache` |
 | `cli_configs.py` | `cmd/configs/` | `configs` |
 | `cli_draft.py` | (uses core directly) | `draft` |
 | `cli_envs.py` | `cmd/envs/` | `envs` |
 | `cli_export.py` | (uses core directly) | `export` |
 | `cli_templates.py` | `cmd/templates/` | `templates` |
+
+The `caption` command's pure logic lives in `yadc/core/captioning/` rather than a `cmd/caption/` package because the API also uses it (via `AsyncCaptionJob` and `CaptioningService`). See `captioning-runner` for the shared loop and `captioning-workflow` for the end-to-end flow.

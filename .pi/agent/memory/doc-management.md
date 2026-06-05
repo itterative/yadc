@@ -23,6 +23,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.p
 | [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files` + `_expected_patterns`), event dispatch, and frontend suppression. |
 | [`dataset-system`](.pi/agent/memory/docs/dataset-system.md) | Dataset subsystem end-to-end — Web UI dataset model, three creation flows, managed dataset layout, upload pipeline (create/append/commit), source-id propagation, diff-scan rescan, background refresh, DatasetImage persistence. |
 | [`captioning-workflow`](.pi/agent/memory/docs/captioning-workflow.md) | End-to-end captioning workflow — dataset loading, filtering, prediction loop, saving. |
+| [`captioning-runner`](.pi/agent/memory/docs/captioning-runner.md) | Shared captioning runner (`yadc.core.captioning.CaptioningRunner`) used by both the CLI and the API. |
 | [`cli-cmd-structure`](.pi/agent/memory/docs/cli-cmd-structure.md) | How CLI commands and `cmd/` modules are structured — click commands vs pure logic split. |
 | [`debug-api-logging`](.pi/agent/memory/docs/debug-api-logging.md) | `YADC_DEBUG_CAPTION_RESPONSES=1` feature for logging caption API request/response pairs to JSONL files. |
 | [`export-system`](.pi/agent/memory/docs/export-system.md) | How the export system works — backends, formats, and the draft/caption source selection. |

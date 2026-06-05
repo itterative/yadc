@@ -14,7 +14,7 @@ yadc/
   __main__.py         # entry point → yadc.cli:cli
   cli.py              # click group registration, version command
 
-  cli_caption.py      # main captioning command (largest CLI module)
+  cli_caption.py      # `yadc caption` — interactive captioning command; delegates the stream/save loop to yadc.core.captioning.CaptioningRunner and implements the interactive action menu on top
   cli_cache.py        # cache management CLI
   cli_common.py       # shared click options (--log-level, --env)
   cli_configs.py      # user configs management CLI

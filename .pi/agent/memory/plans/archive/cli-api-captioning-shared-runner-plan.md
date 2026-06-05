@@ -1,14 +1,8 @@
 ---
 name: cli-api-captioning-shared-runner-plan
 description: Share a CaptioningRunner core between the CLI's `yadc caption` command and the API's `AsyncCaptionJob` — both currently re-implement the same model-create / stream / save loop. First step toward unifying the CLI and API captioning flows.
-status: Phase 4 done
-decisions:
-  shared_core_location: yadc/core/captioning/
-  cli_stdin: drop
-  cli_di: none
-  logging_refactor: deferred_phase (decisions pending after runner implementation)
-phases_complete: [1, 2, 3, 4]
-last_history: 4
+status: Complete
+last_history: 7
 ---
 
 # Shared Captioning Runner — CLI ↔ API
@@ -234,6 +228,14 @@ The CLI is the more interesting case because of the interactive flow. Goal: keep
 
 ### Phase 5 — Cleanup
 
+**Status: done.** No code changes — the dead code was already removed in Phases 3 and 4. See `plans/history/cli-api-captioning-shared-runner/005-phase-5-cleanup-and-docs.md`. Documentation updates:
+
+- New `docs/captioning-runner.md` — canonical doc for the shared runner
+- Rewrote `docs/captioning-workflow.md` — now describes the shared loader + runner plus per-side concerns
+- Updated `docs/backend/core.md`, `docs/backend/cli.md`, `docs/backend/api.md` — file-tree / descriptions reflect the runner
+- Updated `docs/cli-cmd-structure.md` — `caption` row notes `core/captioning/` is shared with the API
+- Updated `architecture-overview.md` and `doc-management.md` — new doc added to indices
+
 1. Remove dead code:
    - `_resolve_template` in `cli_caption.py` (replaced by loader + runner)
    - The duplicate HTTP session / model creation blocks
@@ -253,6 +255,12 @@ The CLI is the more interesting case because of the interactive flow. Goal: keep
 **Files touched:** `yadc/cli_caption.py` (dead code removal), `yadc/api/services/captioning.py` (re-export cleanup), `docs/backend/{cli,api}.md`, `docs/captioning-workflow.md`, `docs/cli-cmd-structure.md`, `docs/captioning-runner.md` (new).
 
 ### Phase 6 — Unify CLI + API logging (deferred)
+
+**Status: extracted.** Lifted into its own plan: `plans/cli-api-logging-unification-plan.md`. The runner plan is archived at `plans/archive/cli-api-captioning-shared-runner-plan.md`. See history entry `006-archive-and-extract-logging-plan.md` for the rationale.
+
+The original Phase 6 sketch is preserved below for historical context; consult the new plan for the up-to-date design and decisions.
+
+---
 
 **Rationale for last phase:** the captioner code (`yadc/captioners/api/utils/*.py`) uses `yadc.core.logging` directly. Once the runner is in place, the surface area of what the unified logger needs to do is fully visible, and we can make interface decisions (Protocol vs ABC, default-factory vs explicit, API factory shape) with the right context.
 
@@ -345,3 +353,6 @@ These need a decision before / during the relevant phase. Listed in order of imp
 - **2026-06-04 — Phase 2 done.** `CaptioningRunner` + `CaptioningCallbacks` Protocol + `HTTPTTimeouts` dataclass in `yadc/core/captioning/runner.py`. 22 unit tests. Four deviations from the plan documented in history entry `002-phase-2-runner-deviations.md` (drop `on_status`/`on_usage` callbacks, Protocol instead of dataclass, drop `stop_event`, add `prediction_context`).
 - **2026-06-04 — Phase 3 done.** `AsyncCaptionJob` now implements `CaptioningCallbacks` and delegates to `CaptioningRunner`. `preflight_images` uses `load_dataset_config`. The API's local `CaptionJobOptions` / `apply_config_overrides` / `resolve_template` are deleted. Six deviations from the plan documented in history entry `003-phase-3-async-caption-job-migration.md` (lock type change, `_set_state`/`_emit_status` now sync, extracted `_expected_change_registrar` method, config stored on `self._config`, deleted local helpers in Phase 3 not 5, `# pyright: ignore` for unused `token`). 24 unit tests in `tests/api/test_captioning_unit.py` (replaces the 9 obsolete ones from before).
 - **2026-06-04 — Phase 4 done.** `cli_caption.py` now delegates to `CaptioningRunner` + `load_dataset_config`. The CLI's interactive action menu stays in `cli_caption.py`; the captioning mechanics underneath are the shared runner. `click.File("r")` → `click.Path(...)` (drops stdin). `_resolve_template` and `cmd_envs.load_env` calls removed (loader handles both). `model.log_usage()` and `async_session.aclose()` now happen in the runner's `__aexit__`. Eight deviations from the plan documented in history entry `004-phase-4-cli-caption-migration.md` (added `save_caption` and `model` property to runner; used `PromptRenderer` directly for the "prompts" action; pre-parse for top-level config defaults; removed CLI's local helpers). Verified end-to-end via `uv run yadc caption test_pedro.dataset --no-stream/--stream` against the `integration-tests-local-llamacpp` env.
+- **2026-06-04 — Phase 5 done.** No code changes (the dead code was already removed in Phases 3 and 4). Doc pass: new `docs/captioning-runner.md`, rewrote `docs/captioning-workflow.md` to describe the shared loader + runner, updated `docs/backend/{core,cli,api}.md` and `docs/cli-cmd-structure.md`, added the new doc to the `architecture-overview.md` and `doc-management.md` indices. See `005-phase-5-cleanup-and-docs.md`.
+- **2026-06-04 — Plan archived; Phase 6 extracted.** Phases 1–5 are complete. The logging unification work (Phase 6) is its own workstream with enough surface to live in its own plan; it was extracted to `plans/cli-api-logging-unification-plan.md`. The runner plan is archived to `plans/archive/cli-api-captioning-shared-runner-plan.md` (history directory moved with it). See `006-archive-and-extract-logging-plan.md`.
+- **2026-06-04 — Reverted Phase 3 deviation #1.** The `threading.Lock` + sync state-update deviation in `003-phase-3-async-caption-job-migration.md` is reverted. `CaptioningCallbacks` Protocol methods are now `async def`; `AsyncCaptionJob`'s state lock is `asyncio.Lock`; state helpers (`_set_state`, `_emit_status`, `_snapshot_locked`) are `async def`. CLI's `CLICallbacks` and the runner's internal call sites are updated. Tests updated: runner tests use `AsyncMock(spec=CaptioningCallbacks)`; API unit tests' `TestCaptioningCallbacks` is now `async` with `await`. See `007-revert-sync-lock-deviation.md`.

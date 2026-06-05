@@ -11,6 +11,10 @@ The model layer and core business logic. The API backend (`yadc/api/`) wraps the
 ```
 yadc/core/
   captioner.py        # Abstract Captioner base class (Jinja2 prompts, image encoding)
+  captioning/         # Shared captioning core — used by both the CLI and the API
+    options.py        #   CaptionJobOptions (Pydantic model)
+    loader.py         #   apply_config_overrides, resolve_template, load_dataset_config
+    runner.py         #   CaptioningRunner (async context manager) + CaptioningCallbacks (Protocol)
   config.py           # Config models (v1/v2), parse_config()
   dataset.py          # DatasetImage model (path, caption, drafts, history, TOML persistence)
   dataset_resolver.py # resolve_dataset() — scans paths, merges images, applies extras
@@ -27,6 +31,8 @@ yadc/core/
 **Cross-references:**
 - Config models and v1/v2 format: `yadc-config-v2`
 - Captioner base + per-backend details: `captioner-architecture`
+- Shared captioning runner (CLI + API): `captioning-runner`
+- End-to-end captioning flow: `captioning-workflow`
 - DatasetImage persistence: `paths-and-storage` (file conventions) and `dataset-system` (endpoints)
 - Exporters: `export-system`
 - Logging conventions: `logging-format`

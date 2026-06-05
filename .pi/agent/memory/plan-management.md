@@ -33,7 +33,7 @@ Plan frontmatter may include `last_history: <N>` — the latest history entry nu
 |------|-------------|--------|
 | [`dataset-config-settings-plan`](.pi/agent/memory/plans/dataset-config-settings-plan.md) | Caption settings ↔ dataset TOML config integration | Mostly implemented |
 | [`dataset-config-ux-plan`](.pi/agent/memory/plans/dataset-config-ux-plan.md) | Dataset config editing UX — structured form, entries/extras, simplified/advanced toggle, revision history, TOML serialization, edit dialog rewrite with upload/manage tabs, staging conflict handling, managed dataset lifecycle | In Progress (review pass done) |
-| [`cli-api-captioning-shared-runner-plan`](.pi/agent/memory/plans/cli-api-captioning-shared-runner-plan.md) | Extract `CaptioningRunner` core shared between CLI `caption` command and API `AsyncCaptionJob`. First step toward CLI/API unification. | Phase 4 done (phases 5–6 pending) |
+| [`cli-api-logging-unification-plan`](.pi/agent/memory/plans/cli-api-logging-unification-plan.md) | Unify the two parallel logger systems (`yadc.core.logging` and `yadc.api.modules.logging_factory`) into one. The CLI installs a `ClickHandler`; the API installs a structured `StreamHandler`; captioner code stops being a third class of code on a different logger. | Proposed |
 
 ## When to Read Plans
 
