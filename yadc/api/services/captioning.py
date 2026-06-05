@@ -4,6 +4,11 @@ Each dataset can have at most one active captioning job at a time. Jobs run as
 ``asyncio.Task`` instances and emit ``CaptioningStatusEvent`` via the
 ``EventDispatcher`` as images are processed.
 
+The actual model-create / stream / save loop lives in
+``yadc.core.captioning.CaptioningRunner``. This module orchestrates the
+runner: preflight (config + image resolution), per-image event
+emission, state tracking, and lifecycle.
+
 Usage from the API layer::
 
     await svc.start_job_async("my_dataset", options)
@@ -13,25 +18,21 @@ Usage from the API layer::
 
 import asyncio
 import inspect
-import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
-import pydantic
-import toml
-
-from yadc.captioners.api import APICaptioner
-from yadc.captioners.api.async_session import AsyncSession
-from yadc.cmd import envs as cmd_envs
-from yadc.cmd import templates as cmd_templates
-from yadc.core.config import ConfigSettings, parse_config
+from yadc.core.captioning import (
+    CaptionJobOptions,
+    HTTPTTimeouts,
+    load_dataset_config,
+)
+from yadc.core.captioning.runner import CaptioningRunner
+from yadc.core.config import Config
 from yadc.core.dataset import DatasetImage
-from yadc.core.dataset_resolver import resolve_dataset
-from yadc.core.prediction import PredictionContext
 
 from ..configuration import Configuration
 from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent, ImageCaptionStartedEvent
@@ -64,122 +65,18 @@ class JobInfo:
     api_model_name: str = ""
 
 
-class CaptionJobOptions(pydantic.BaseModel):
-    """All configurable parameters for a single captioning run.
-
-    Extra keys in the input dict are silently ignored (``extra="ignore"``).
-    """
-
-    # API connection
-    api_url: str = ""
-    api_token: str = ""
-    api_model_name: str = ""
-
-    # Environment / config resolution
-    env: str = "default"
-
-    # Captioning behaviour
-    prompt_template: str = ""
-    prompt_name: str = ""
-    max_tokens: int = 512
-    image_quality: str = "auto"
-    store_conversation: bool = False
-    overwrite: bool = False
-    rounds: int = 1
-    draft: str = ""
-
-    # Reasoning
-    reasoning: bool = False
-    reasoning_effort: str = "low"
-    reasoning_exclude_output: bool = True
-
-    # Password for decrypting password-mode environment settings
-    password: str | None = None
-
-    # If set, only caption these specific image IDs (single-image mode)
-    image_ids: list[int] | None = None
-
-    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="ignore")
-
-
-# ---------------------------------------------------------------------------
-# Config resolution helpers
-# ---------------------------------------------------------------------------
-
-
-def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict[str, Any]:
-    """Merge env/config overrides from *opts* into the raw TOML dict."""
-    env_name = opts.env or raw.get("env", "default")
-    user_env = cmd_envs.load_env(env_name, password=opts.password)
-
-    raw.setdefault("api", {})
-    api: dict[str, Any] = raw["api"]
-
-    # Apply overrides: CLI option > env > existing TOML
-    api["url"] = opts.api_url or user_env.api.url or api.get("url", "")
-    api["token"] = opts.api_token or user_env.api.token or api.get("token", "")
-    api["model_name"] = opts.api_model_name or user_env.api.model_name or api.get("model_name", "")
-
-    # Apply prompt overrides
-    raw.setdefault("prompt", {})
-    if opts.prompt_name:
-        raw["prompt"]["name"] = opts.prompt_name
-        raw["prompt"].pop("template", None)
-    if opts.prompt_template:
-        raw["prompt"]["template"] = opts.prompt_template
-        raw["prompt"].pop("name", None)
-
-    # Apply other option overrides
-    if opts.max_tokens != 512:
-        raw.setdefault("settings", {})
-        raw["settings"]["max_tokens"] = opts.max_tokens
-
-    if opts.image_quality != "auto":
-        raw.setdefault("settings", {})
-        raw["settings"]["image_quality"] = opts.image_quality
-
-    if opts.reasoning:
-        raw.setdefault("reasoning", {})
-        raw["reasoning"]["enable"] = True
-        raw["reasoning"]["thinking_effort"] = opts.reasoning_effort
-        raw["reasoning"]["exclude_from_output"] = opts.reasoning_exclude_output
-
-    if opts.rounds != 1:
-        raw["rounds"] = opts.rounds
-
-    return raw
-
-
-def resolve_template(prompt_name: str, prompt_template: str, logger: Logger | None = None) -> str:
-    """Resolve a prompt template through the fallback chain."""
-    if prompt_template:
-        return prompt_template
-
-    for loader in (cmd_templates.load_user_template, cmd_templates.load_builtin_template):
-        try:
-            return loader(prompt_name)
-        except Exception:
-            continue
-
-    if prompt_name:
-        available = cmd_templates.list_user_template()
-        raise ValueError(
-            f"Prompt template '{prompt_name}' not found. Available: {', '.join(available)}" if available else f"Prompt template '{prompt_name}' not found."
-        )
-
-    # No template specified — use default
-    if logger:
-        logger.warning("No prompt template specified, using default.")
-    return cmd_templates.default_template()
-
-
 # ---------------------------------------------------------------------------
 # Async job runner
 # ---------------------------------------------------------------------------
 
 
 class AsyncCaptionJob:
-    """Runs a single captioning pass over a dataset as an asyncio task."""
+    """Runs a single captioning pass over a dataset as an asyncio task.
+
+    Implements the ``CaptioningCallbacks`` Protocol — pass ``self`` to
+    ``CaptioningRunner.caption_image`` and the job's event emission /
+    state tracking hooks into the runner's lifecycle.
+    """
 
     def __init__(
         self,
@@ -203,7 +100,9 @@ class AsyncCaptionJob:
         self._on_done: Callable[[], Any] = on_done
         self._job_id: str = job_id
 
-        # State (guarded by _state_lock)
+        # State (guarded by _state_lock). An asyncio.Lock because the
+        # CaptioningCallbacks methods are async and run on the event
+        # loop thread.
         self._state_lock: asyncio.Lock = asyncio.Lock()
         self._status: JobStatus = "running"
         self._stop_event: asyncio.Event = asyncio.Event()
@@ -215,6 +114,7 @@ class AsyncCaptionJob:
 
         self._api_url: str = ""
         self._api_model_name: str = ""
+        self._config: Config | None = None  # set by preflight_images
 
         self._task: asyncio.Task[Any] | None = None
 
@@ -245,6 +145,9 @@ class AsyncCaptionJob:
     # -- snapshot ------------------------------------------------------------
 
     async def snapshot(self) -> JobInfo:
+        return await self._snapshot_locked()
+
+    async def _snapshot_locked(self) -> JobInfo:
         async with self._state_lock:
             return JobInfo(
                 status=self._status,
@@ -259,6 +162,30 @@ class AsyncCaptionJob:
                 api_model_name=self._api_model_name,
             )
 
+    # -- CaptioningCallbacks Protocol ----------------------------------------
+
+    async def on_token(self, token: str) -> None:  # pyright: ignore[reportUnusedParameter]
+        # The API doesn't stream tokens to clients; the final caption is
+        # included in ImageCaptionedEvent.caption.
+        pass
+
+    async def on_image_started(self, image: DatasetImage) -> None:
+        self._emit_image_started(image)
+
+    async def on_image_captioned(self, image: DatasetImage, duration_ms: int) -> None:
+        async with self._state_lock:
+            self._processed += 1
+        self._emit_image_captioned(image, duration_ms)
+        await self._emit_status()
+
+    async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None:
+        self._logger.warning("Failed to caption %s: %s", image.path, error)
+        async with self._state_lock:
+            self._errors += 1
+            self._error_messages.append(error)
+        self._emit_image_error(image, error, duration_ms)
+        await self._emit_status()
+
     # -- main loop -----------------------------------------------------------
 
     async def _arun(self) -> None:
@@ -271,10 +198,9 @@ class AsyncCaptionJob:
             await self._emit_status()
         except Exception as exc:
             self._logger.exception("Captioning job for '%s' failed: %s", self._dataset_name, exc)
-            msg = str(exc)
-            await self._set_state(error=msg, status="error", set_error=True)
+            await self._set_state(error=str(exc), status="error", set_error=True)
             async with self._state_lock:
-                self._error_messages.append(msg)
+                self._error_messages.append(str(exc))
             await self._emit_status()
         finally:
             # Schedule cleanup as a background task so _arun returns
@@ -288,8 +214,12 @@ class AsyncCaptionJob:
     def preflight_images(self) -> list[DatasetImage]:
         """Synchronously resolve the dataset and filter images.
 
-        Performs steps 1-6 of captioning (config → images → filtering).
-        Returns the list of images that would be processed.  Callers can use
+        Performs config loading, override application, and dataset
+        resolution via :func:`load_dataset_config`. Stores the parsed
+        :class:`Config` on ``self._config`` for use by
+        :meth:`_ado_run` (which builds the runner from it).
+
+        Returns the list of images to be processed. Callers can use
         ``len(result)`` to know the total before the async task starts.
 
         Raises ``ValueError`` on configuration / resolution errors.
@@ -302,49 +232,22 @@ class AsyncCaptionJob:
         if not config_path.exists():
             raise ValueError(f"Config file not found: {config_path}")
 
-        with open(config_path) as f:
-            raw = toml.load(f)
-
-        raw = self._apply_overrides(raw)
-
-        try:
-            config = parse_config(raw)
-        except Exception as exc:
-            raise ValueError(f"Invalid dataset config: {exc}") from exc
-
-        config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
+        config, images = load_dataset_config(
+            config_path,
+            self._opts,
+            image_path_resolver=self._image_path_resolver,
+        )
 
         self._api_url = config.api.url
         self._api_model_name = config.api.model_name
+        self._config = config
 
-        images = resolve_dataset(config.dataset, config.caption_suffix, base_dir=str(config_path.parent))
-        if not images:
-            return []
+        return images
 
-        if self._opts.image_ids:
-            target_paths: set[Path] = set()
-            for image_id in self._opts.image_ids:
-                info = self._dataset_service.get_image(self._dataset_name, image_id)
-                if info:
-                    target_paths.add(Path(info.path))
-            images = [img for img in images if Path(img.path) in target_paths]
-            if not images:
-                raise ValueError(f"Specified image(s) not found in dataset '{self._dataset_name}'")
-
-        to_do: list[DatasetImage] = []
-        for img in images:
-            if self._opts.image_ids:
-                to_do.append(img)
-                continue
-            if self._opts.draft:
-                if not self._opts.overwrite and img.draft_path(self._opts.draft).exists():
-                    continue
-            else:
-                if not self._opts.overwrite and img.caption_path.exists():
-                    continue
-            to_do.append(img)
-
-        return to_do
+    def _image_path_resolver(self, image_id: int) -> Path | None:
+        """Resolve an image ID to its filesystem path for the loader's image_ids filter."""
+        info = self._dataset_service.get_image(self._dataset_name, image_id)
+        return Path(info.path) if info else None
 
     async def _ado_run(self) -> None:
         to_do = self.preflight_images()
@@ -358,68 +261,32 @@ class AsyncCaptionJob:
             await self._emit_status()
             return
 
-        # Re-parse config for the model creation (cheap).
-        ds_info = self._dataset_service.get_dataset(self._dataset_name)
-        config_path = Path(ds_info.config_path) if ds_info and ds_info.config_path else Path()
-        with open(config_path) as f:
-            raw = toml.load(f)
-        raw = self._apply_overrides(raw)
-        config = parse_config(raw)
-        config.prompt.template = self._resolve_template(config.prompt.name, config.prompt.template)
+        assert self._config is not None, "preflight_images must be called first"
 
-        # Create the captioner with an async session
-        async_headers: dict[str, str] = {}
-        if config.api.token:
-            async_headers["Authorization"] = f"Bearer {config.api.token}"
-
-        model = await APICaptioner.create(
-            api_url=config.api.url,
-            api_token=config.api.token,
-            prompt_template=config.prompt.template,
-            store_conversation=config.settings.store_conversation,
-            image_quality=config.settings.image_quality,
-            reasoning=config.reasoning.enable,
-            reasoning_effort=config.reasoning.thinking_effort,
-            reasoning_exclude_output=config.reasoning.exclude_from_output,
-            async_session=AsyncSession(
-                config.api.url,
-                headers=async_headers,
-                connect_timeout=self._configuration.http_timeout_connect,
-                read_timeout=self._configuration.http_timeout_read,
-                write_timeout=self._configuration.http_timeout_write,
-                pool_timeout=self._configuration.http_timeout_pool,
+        runner = CaptioningRunner(
+            self._config,
+            self._opts,
+            expected_change_registrar=self._expected_change_registrar,
+            logger=self._logger,
+            http_timeouts=HTTPTTimeouts(
+                connect=self._configuration.http_timeout_connect,
+                read=self._configuration.http_timeout_read,
+                write=self._configuration.http_timeout_write,
+                pool=self._configuration.http_timeout_pool,
             ),
         )
-        await model.load_model(config.api.model_name)
 
-        # Caption each image
-        conversation_overrides = config.settings.advanced.model_dump()
-
-        for img in to_do:
-            if self._check_stop():
-                break
-
-            self._emit_image_started(img)
-            t0 = time.monotonic()
-
-            try:
-                await self._acaption_one(model, img, config.settings, conversation_overrides)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                self._logger.warning("Failed to caption %s: %s", img.path, exc)
-                await self._record_error(str(exc))
-                await self._emit_status()
-                self._emit_image_error(img, str(exc), duration_ms)
-                continue
-
-            duration_ms = int((time.monotonic() - t0) * 1000)
-            await self._increment_processed()
-            await self._emit_status()
-            self._emit_image_captioned(img, duration_ms)
-
-        model.log_usage()
+        async with runner:
+            for img in to_do:
+                if self._check_stop():
+                    break
+                try:
+                    await runner.caption_image(img, self)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Error already recorded via on_image_error callback.
+                    continue
 
         if self._check_stop():
             await self._set_state(status="cancelled")
@@ -435,59 +302,14 @@ class AsyncCaptionJob:
             self._errors,
         )
 
-    async def _acaption_one(
-        self,
-        model: APICaptioner,
-        dataset_image: DatasetImage,
-        settings: ConfigSettings,
-        conversation_overrides: dict[str, Any],
-    ) -> str:
-        """Caption a single image, saving the result."""
-        caption_parts: list[str] = []
-        try:
-            async for token in model.predict_stream(
-                dataset_image,
-                max_new_tokens=settings.max_tokens,
-                conversation_overrides=conversation_overrides,
-                prefill=settings.advanced.assistant_prefill,
-                drafts=dataset_image.read_all_drafts() or None,
-                prediction_context=PredictionContext(),
-            ):
-                caption_parts.append(token)
-        except asyncio.CancelledError:
-            self._logger.debug("Captioning of %s was cancelled", dataset_image.path)
-            raise
+    def _expected_change_registrar(self, paths: list[str]) -> None:
+        """Register upcoming file writes with the watcher so it suppresses inotify events.
 
-        caption = "".join(caption_parts).strip()
-
-        if not caption:
-            return ""
-
-        if self._opts.draft:
-            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.draft_path(self._opts.draft)))
-            dataset_image.write_draft(self._opts.draft, caption)
-        else:
-            # Register all files that will be written so the watcher suppresses
-            # the resulting inotify events for this captioning job.
-            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.caption_path))
-            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.toml_path))
-            self._dataset_watcher.expect_file_change(self._dataset_name, str(dataset_image.history_path))
-
-            # Save history of previous caption if present
-            if dataset_image.caption:
-                dataset_image.save_history(when_not_exists=True)
-            dataset_image.update_caption(caption)
-            dataset_image.save_history(when_not_exists=False)
-
-        return caption
-
-    # -- config resolution helpers -------------------------------------------
-
-    def _apply_overrides(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return apply_config_overrides(raw, self._opts)
-
-    def _resolve_template(self, prompt_name: str, prompt_template: str) -> str:
-        return resolve_template(prompt_name, prompt_template, self._logger)
+        Called by ``CaptioningRunner._save_caption`` before writing
+        caption/TOML/history (or the draft file in draft mode).
+        """
+        for path in paths:
+            self._dataset_watcher.expect_file_change(self._dataset_name, path)
 
     # -- state helpers -------------------------------------------------------
 
@@ -496,7 +318,7 @@ class AsyncCaptionJob:
         *,
         status: JobStatus | None = None,
         total: int | None = None,
-        error: str | None | None = None,
+        error: str | None = None,
         set_error: bool = False,
     ) -> None:
         async with self._state_lock:
@@ -507,20 +329,13 @@ class AsyncCaptionJob:
             if set_error:
                 self._error = error
 
-    async def _increment_processed(self) -> None:
-        async with self._state_lock:
-            self._processed += 1
-
-    async def _record_error(self, message: str) -> None:
-        async with self._state_lock:
-            self._errors += 1
-            self._error_messages.append(message)
-
     def _check_stop(self) -> bool:
         return self._stop_event.is_set()
 
+    # -- event emission ------------------------------------------------------
+
     async def _emit_status(self) -> None:
-        snap = await self.snapshot()
+        snap = await self._snapshot_locked()
         event = CaptioningStatusEvent(
             status=snap.status,
             dataset_name=snap.dataset_name,
@@ -548,7 +363,7 @@ class AsyncCaptionJob:
             )
         )
 
-    def _emit_image_captioned(self, dataset_image: DatasetImage, duration_ms: int = 0) -> None:
+    def _emit_image_captioned(self, dataset_image: DatasetImage, duration_ms: int) -> None:
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         if info is None:
             return
@@ -576,7 +391,7 @@ class AsyncCaptionJob:
             )
         )
 
-    def _emit_image_error(self, dataset_image: DatasetImage, error: str, duration_ms: int = 0) -> None:
+    def _emit_image_error(self, dataset_image: DatasetImage, error: str, duration_ms: int) -> None:
         info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
         image_id = info.id if info is not None else -1
         self._event_dispatcher.dispatch(

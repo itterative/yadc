@@ -1,25 +1,42 @@
+"""Caption command — caption a dataset using a remote vision-capable AI.
+
+The captioning loop (model-create / stream / save) lives in
+``yadc.core.captioning.CaptioningRunner``. This module builds a
+runner from the click args, supplies click-emitting callbacks, and
+implements the interactive action menu on top.
+"""
+
 import asyncio
 import sys
-from typing import Any, TextIO, cast
+from pathlib import Path
+from typing import Any
 
 import click
-import pydantic
 import toml
 
-from yadc.captioners.api import APICaptioner, APITypes
-from yadc.captioners.api.async_session import AsyncSession
+from yadc.captioners.api import APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
 from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import cache as cmd_cache
 from yadc.cmd import configs as cmd_configs
-from yadc.cmd import envs as cmd_envs
 from yadc.cmd import status as cmd_status
-from yadc.cmd import templates as cmd_templates
 from yadc.core import logging
-from yadc.core.captioner import ROLE_ASSISTANT, ROLE_USER, CaptionerRound, ReplyRound
-from yadc.core.config import ConfigSettings, parse_config
+from yadc.core.captioner import (
+    ROLE_ASSISTANT,
+    ROLE_USER,
+    CaptionerRound,
+    PromptRenderer,
+    ReplyRound,
+)
+from yadc.core.captioning import (
+    CaptioningCallbacks,
+    CaptioningRunner,
+    CaptionJobOptions,
+    load_dataset_config,
+)
+from yadc.core.config import Config
 from yadc.core.dataset import DatasetImage
-from yadc.core.dataset_resolver import reapply_dataset_extras, resolve_dataset
+from yadc.core.dataset_resolver import reapply_dataset_extras
 from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
 from yadc.core.prediction import PredictionContext
 
@@ -29,106 +46,38 @@ from .core import utils
 _logger = logging.get_logger(__name__)
 
 
-# --- Template resolution ---
+# --- CLI callbacks implementing the CaptioningCallbacks Protocol ---
 
 
-def _resolve_template(prompt_name: str, prompt_template: str) -> str:
-    """Resolve a prompt template through the fallback chain: user → builtin → default."""
-    if prompt_template:
-        return prompt_template
+class CLICallbacks:
+    """Click-emitting implementation of :class:`CaptioningCallbacks`.
 
-    for loader, label in [
-        (cmd_templates.load_user_template, "user"),
-        (cmd_templates.load_builtin_template, "built-in"),
-    ]:
-        try:
-            return loader(prompt_name)
-        except Exception:
-            _logger.debug("No %s template found: %s", label, prompt_name)
+    Each ``on_token`` call is routed to ``click.echo`` (streaming) or
+    buffered for end-of-call output (no-stream). Per-image lifecycle
+    events are logged but don't print directly — the outer action loop
+    prints the image metadata before invoking the runner.
+    """
 
-    if prompt_name:
-        if user_templates := cmd_templates.list_user_template():
-            _logger.error(
-                "Error: prompt template could not be loaded: %s; available templates: %s",
-                prompt_name,
-                ", ".join(user_templates),
-            )
+    def __init__(self, do_stream: bool):
+        self._do_stream: bool = do_stream
+        self._buffer: list[str] = []
+
+    async def on_token(self, token: str) -> None:
+        if self._do_stream:
+            click.echo(token, nl=False)
         else:
-            _logger.error("Error: prompt template could not be loaded: %s", prompt_name)
-        sys.exit(cmd_status.STATUS_USER_ERROR)
+            self._buffer.append(token)
 
-    _logger.warning("No prompt template defined. Will use the default.")
+    async def on_image_started(self, image: DatasetImage) -> None:  # pyright: ignore[reportUnusedParameter]
+        # No-op: the outer action loop prints metadata before invoking the runner.
+        pass
 
-    try:
-        return cmd_templates.default_template()
-    except Exception:
-        _logger.error("Error: default prompt template could not be loaded")
-        sys.exit(cmd_status.STATUS_ERROR)
+    async def on_image_captioned(self, image: DatasetImage, duration_ms: int) -> None:  # pyright: ignore[reportUnusedParameter]
+        # Not called for ``caption_image_dry_run``; the outer loop logs per-image timing.
+        pass
 
-
-# --- Dataset loading ---
-
-
-def _load_dataset(
-    dataset_stream: TextIO,
-    env: str | None,
-    user_config: str | None,
-    user_template: str | None,
-    api_url: str | None,
-    api_token: str | None,
-    api_model_name: str | None,
-):
-    dataset_toml_raw: dict[str, Any] = toml.load(dataset_stream)
-
-    try:
-        if user_config is not None:
-            _logger.info("Using %s user config.", user_config)
-            dataset_toml_raw = cmd_configs.merge_user_config(user_config, dataset_toml_raw)
-    except ValueError:
-        if user_configs := cmd_configs.list_user_config():
-            _logger.error(
-                "Error: failed to load user config: %s; available configs: %s",
-                user_config,
-                ", ".join(user_configs),
-            )
-        else:
-            _logger.error("Error: failed to load user config: %s", user_config)
-        sys.exit(cmd_status.STATUS_USER_ERROR)
-
-    # merge with user env
-    env = env or dataset_toml_raw.get("env", "default")
-    assert isinstance(env, str), "invalid dataset toml env"
-
-    _logger.info("Using %s user environment.", env)
-    user_env = cmd_envs.load_env(env=env)
-
-    dataset_toml_raw.setdefault("api", {})
-    dataset_toml_raw_api: dict[str, Any] = dataset_toml_raw["api"]
-    assert isinstance(dataset_toml_raw_api, dict), "invalid dataset toml api section"
-
-    dataset_toml_raw_api["url"] = api_url or user_env.api.url or dataset_toml_raw_api.get("url", "")
-    dataset_toml_raw_api["token"] = api_token or user_env.api.token or dataset_toml_raw_api.get("token", "")
-    dataset_toml_raw_api["model_name"] = api_model_name or user_env.api.model_name or dataset_toml_raw_api.get("model_name", "")
-
-    dataset_toml_raw.setdefault("prompt", {})
-
-    if user_template is not None:
-        dataset_toml_raw["prompt"]["name"] = user_template
-        dataset_toml_raw["prompt"].pop("template", None)
-
-    # parse config with v1/v2 duck-typing
-    try:
-        dataset_toml = parse_config(dataset_toml_raw)
-    except pydantic.ValidationError as e:
-        raise ValueError(f"invalid configuration: {e}")
-
-    # resolve dataset entries into images
-    dataset_toml._resolved_images = resolve_dataset(  # pyright: ignore[reportAttributeAccessIssue]
-        dataset_toml.dataset,
-        dataset_toml.caption_suffix,
-    )
-
-    return dataset_toml
+    async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None:  # pyright: ignore[reportUnusedParameter]
+        _logger.warning("Failed to caption %s: %s", image.path, error)
 
 
 # --- Interactive prompts ---
@@ -178,155 +127,39 @@ def _print_dataset_image_meta(dataset_image: DatasetImage):
         _logger.info("")
 
 
-# --- Captioning ---
+# --- Captioning (interactive loop) ---
 
 
-async def _predict_caption_one_shot(
-    model: APICaptioner,
-    dataset_image: DatasetImage,
-    settings: ConfigSettings,
-    do_stream: bool,
-    conversation_overrides: dict[str, Any],
-    drafts: dict[str, str] | None = None,
+async def _stream_one_round(
+    runner: CaptioningRunner,
+    image: DatasetImage,
+    callbacks: CaptioningCallbacks,
+    *,
+    caption_rounds: list[CaptionerRound] | None = None,
     extra_messages: list[ReplyRound] | None = None,
     prediction_context: PredictionContext | None = None,
-) -> str:
-    """Single-round caption prediction with streaming output."""
-    caption_parts: list[str] = []
+) -> tuple[str, float]:
+    """Stream one caption, return ``(caption_text, elapsed_seconds)``.
 
-    try:
-        with utils.Timer() as timer:
-            if do_stream:
-                async for token in model.predict_stream(
-                    dataset_image,
-                    max_new_tokens=settings.max_tokens,
-                    conversation_overrides=conversation_overrides,
-                    prefill=settings.advanced.assistant_prefill,
-                    drafts=drafts,
-                    extra_messages=extra_messages,
-                    prediction_context=prediction_context,
-                ):
-                    caption_parts.append(token)
-                    click.echo(token, nl=False)
-            else:
-                caption = await model.predict(
-                    dataset_image,
-                    max_new_tokens=settings.max_tokens,
-                    conversation_overrides=conversation_overrides,
-                    prefill=settings.advanced.assistant_prefill,
-                    drafts=drafts,
-                    extra_messages=extra_messages,
-                    prediction_context=prediction_context,
-                )
-                caption_parts.append(caption)
-                click.echo(caption, nl=False)
-
-    except ValueError as e:
-        _logger.error("Error: %s", e)
-        raise KeyboardInterrupt
-    except KeyboardInterrupt:
-        if do_stream:
-            click.echo("")
-        raise
-
-    click.echo("")
-    _logger.info("Captioning done (%.3f sec)", timer.elapsed)
-    _logger.info("")
-
-    return "".join(caption_parts).strip()
-
-
-async def _predict_caption_rounds(
-    model: APICaptioner,
-    dataset_image: DatasetImage,
-    settings: ConfigSettings,
-    do_stream: bool,
-    conversation_overrides: dict[str, Any],
-    rounds: int,
-    caption_rounds: list[CaptionerRound],
-    interactive: bool,
-    drafts: dict[str, str] | None = None,
-) -> str:
-    """Multi-round caption prediction with intermediate acceptance prompts."""
-    j = 0
-    if caption_rounds:
-        j = rounds  # reuse accepted rounds, skip to final
-    else:
-        _logger.info("Doing %d rounds...", rounds)
-
-    try:
-        while j < rounds:
-            j += 1
-            new_caption = _prompt_for_override(f"round #{j}", "", interactive)
-
-            if not new_caption:
-                with utils.Timer() as timer_round:
-                    new_caption = (
-                        await model.predict(
-                            dataset_image,
-                            max_new_tokens=settings.max_tokens,
-                            use_cache=True,
-                            conversation_overrides=conversation_overrides,
-                            prefill=settings.advanced.assistant_prefill,
-                            drafts=drafts,
-                        )
-                    ).strip()
-
-                if interactive:
-                    _logger.info(new_caption)
-
-                _logger.info("Round #%d done. (%.3f sec)", j, timer_round.elapsed)
-
-                if not _prompt_for_yes("Accept caption?", True, interactive):
-                    j -= 1
-                    caption_rounds.pop()
-                    continue
-
-            caption_rounds.append(CaptionerRound(iteration=j, caption=new_caption))
-
-        # final round using accepted caption_rounds
-        fresh_image = DatasetImage(path=dataset_image.path)
-        caption_parts: list[str] = []
-
-        _logger.info("")
-
-        predict_kwargs: dict[str, Any] = dict(
+    Wraps :meth:`CaptioningRunner.caption_image_dry_run` with the
+    per-image timer the CLI has always emitted.
+    """
+    with utils.Timer() as timer:
+        caption = await runner.caption_image_dry_run(
+            image,
+            callbacks,
             caption_rounds=caption_rounds,
-            max_new_tokens=settings.max_tokens,
-            conversation_overrides=conversation_overrides,
+            extra_messages=extra_messages,
+            prediction_context=prediction_context,
         )
-        if drafts:
-            predict_kwargs["drafts"] = drafts
-
-        with utils.Timer() as timer_end_round:
-            if do_stream:
-                async for token in model.predict_stream(fresh_image, **predict_kwargs):
-                    caption_parts.append(token)
-                    click.echo(token, nl=False)
-            else:
-                caption = await model.predict(fresh_image, **predict_kwargs)
-                caption_parts.append(caption)
-                click.echo(caption, nl=False)
-
-    except ValueError as e:
-        _logger.error("Error: %s", e)
-        raise KeyboardInterrupt
-    except KeyboardInterrupt:
-        if do_stream:
-            click.echo("")
-        raise
-
-    click.echo("")
-    _logger.info("End round done. (%.3f sec)", timer_end_round.elapsed)
-    _logger.info("")
-
-    return "".join(caption_parts).strip()
+    click.echo("")  # newline after streaming
+    return caption, timer.elapsed
 
 
 async def _caption(
+    runner: CaptioningRunner,
     dataset: list[DatasetImage],
-    model: APICaptioner,
-    settings: ConfigSettings,
+    config: Config,
     do_stream: bool,
     interactive: bool,
     rounds: int,
@@ -336,10 +169,13 @@ async def _caption(
     do_print_separator = False
     return_code = cmd_status.STATUS_OK
 
-    if settings.advanced.assistant_prefill and model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
+    if config.settings.advanced.assistant_prefill and runner.model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
         _logger.warning("Warning: assistant prefill is set, but the API might not support it")
 
-    conversation_overrides = settings.advanced.model_dump()
+    callbacks = CLICallbacks(do_stream=do_stream)
+    # The "prompts" action renders the same Jinja2 template the model
+    # would render, so we don't need to invoke the model for it.
+    renderer = PromptRenderer(prompt_template=config.prompt.template)
 
     for dataset_image in dataset:
         if do_quit:
@@ -460,15 +296,13 @@ async def _caption(
                             f.write(dataset_image_current.dump_toml())
 
                         _logger.info("Dataset image toml was updated.")
-                        break
-
                     caption_rounds = []
                     reply_history = []
                     last_prediction_context = None
                     continue
 
                 case "prompts":
-                    system_prompt, user_prompt = model.prompts_from_image(dataset_image_current, drafts=drafts)
+                    system_prompt, user_prompt = renderer.render(dataset_image_current, drafts=drafts)
                     _logger.info("SYSTEM PROMPT")
                     _logger.info(system_prompt)
                     _logger.info("")
@@ -494,28 +328,57 @@ async def _caption(
                 prediction_context = PredictionContext()
 
                 if rounds <= 1 or extra_messages:
-                    caption = await _predict_caption_one_shot(
-                        model,
+                    caption, elapsed = await _stream_one_round(
+                        runner,
                         dataset_image_current,
-                        settings,
-                        do_stream,
-                        conversation_overrides,
-                        drafts=drafts,
+                        callbacks,
                         extra_messages=extra_messages,
                         prediction_context=prediction_context,
                     )
+                    _logger.info("Captioning done (%.3f sec)", elapsed)
+                    _logger.info("")
                 else:
-                    caption = await _predict_caption_rounds(
-                        model,
+                    j = 0
+                    if caption_rounds:
+                        j = rounds  # reuse accepted rounds, skip to final
+                    else:
+                        _logger.info("Doing %d rounds...", rounds)
+
+                    while j < rounds:
+                        j += 1
+                        new_caption = _prompt_for_override(f"round #{j}", "", interactive)
+
+                        if not new_caption:
+                            new_caption, elapsed = await _stream_one_round(
+                                runner,
+                                dataset_image_current,
+                                callbacks,
+                                caption_rounds=None,
+                                prediction_context=PredictionContext(),
+                            )
+                            if interactive:
+                                _logger.info(new_caption)
+
+                            _logger.info("Round #%d done. (%.3f sec)", j, elapsed)
+
+                            if not _prompt_for_yes("Accept caption?", True, interactive):
+                                j -= 1
+                                if caption_rounds:
+                                    caption_rounds.pop()
+                                continue
+
+                        caption_rounds.append(CaptionerRound(iteration=j, caption=new_caption))
+
+                    _logger.info("")
+                    caption, elapsed = await _stream_one_round(
+                        runner,
                         dataset_image_current,
-                        settings,
-                        do_stream,
-                        conversation_overrides,
-                        rounds,
-                        caption_rounds,
-                        interactive,
-                        drafts=drafts,
+                        callbacks,
+                        caption_rounds=caption_rounds,
+                        prediction_context=PredictionContext(),
                     )
+                    _logger.info("End round done. (%.3f sec)", elapsed)
+                    _logger.info("")
 
                 last_prediction_context = prediction_context
 
@@ -537,18 +400,22 @@ async def _caption(
         if not caption:
             continue
 
+        # Commit the accepted caption. The dry-run already streamed it;
+        # save_caption writes the files (caption + TOML + history, or
+        # the draft file in draft mode) via the runner. We pass
+        # ``dataset_image_current`` (not the original) so any TOML
+        # edits made via the "edit" action are preserved in the
+        # re-serialized sidecar.
+        try:
+            runner.save_caption(dataset_image_current, caption)
+        except Exception as e:
+            _logger.warning("Failed to save caption for %s: %s", dataset_image.path, e)
+            continue
+
         if save_draft:
-            dataset_image.write_draft(save_draft, caption)
             _logger.info("Draft saved as %s.", save_draft)
             _logger.info("")
         else:
-            # save current toml history if it hasn't been saved before
-            if dataset_image.caption:
-                dataset_image.save_history(when_not_exists=True)
-
-            dataset_image_current.update_caption(caption)
-            dataset_image_current.save_history(when_not_exists=False)
-
             _logger.info("")
 
         caption = ""
@@ -563,7 +430,7 @@ async def _caption(
     short_help="Caption a dataset",
     help="Caption a dataset. A dataset config is necessary in order to start captioning. See documentation for details: https://github.com/itterative/yadc",
 )
-@click.argument("dataset", type=click.File("r"))
+@click.argument("dataset", type=click.Path(exists=True, dir_okay=False, readable=True))
 @click.option("--env", type=str, default=None, help="Configuration environment")
 @click.option("--api-url", type=str, default=None, help="Override API url")
 @click.option("--api-token", type=str, default=None, help="Override API auth token")
@@ -577,131 +444,121 @@ async def _caption(
 @click.option("--rounds", type=click.IntRange(min=1, max_open=True), default=None, required=False, help="How many captioning rounds to do")
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
 @cli_common.log_level
-def caption(dataset: TextIO, **kwargs: Any):
+def caption(dataset: str, **kwargs: Any):
     return asyncio.run(_caption_async(dataset, **kwargs))
 
 
-async def _caption_async(dataset: TextIO, **kwargs: Any):
+def _resolve_config_defaults(dataset_path: Path, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Resolve click kwargs against the config's top-level defaults.
+
+    The loader needs a fully-resolved ``CaptionJobOptions`` (the
+    overwrite/draft filter reads ``options.overwrite``). For values
+    the user didn't pass on the command line, fall back to the
+    config's top-level field.
+    """
+    raw = toml.load(dataset_path)
+    return {
+        "overwrite": kwargs["overwrite"] if kwargs.get("overwrite") is not None else raw.get("overwrite_captions", True),
+        "rounds": kwargs["rounds"] if kwargs.get("rounds") is not None else raw.get("rounds", 1),
+        "interactive": kwargs["interactive"] if kwargs.get("interactive") is not None else raw.get("interactive", False),
+    }
+
+
+async def _caption_async(dataset: str, **kwargs: Any):
     _logger.info("Using python %d.%d.%d.", sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
 
+    dataset_path = Path(dataset)
+
+    # Resolve top-level defaults from the config so the loader's
+    # overwrite/draft filter sees the user's intent.
+    defaults = _resolve_config_defaults(dataset_path, kwargs)
+
+    user_config = kwargs.get("user_config")
+    if user_config is not None:
+        _logger.info("Using %s user config.", user_config)
+
+    options = CaptionJobOptions(
+        api_url=kwargs.get("api_url") or "",
+        api_token=kwargs.get("api_token") or "",
+        api_model_name=kwargs.get("api_model_name") or "",
+        env=kwargs.get("env") or "default",
+        prompt_name=kwargs.get("user_template") or "",
+        overwrite=defaults["overwrite"],
+        rounds=defaults["rounds"],
+        draft=kwargs.get("draft") or "",
+    )
+
     try:
-        dataset_toml = _load_dataset(
-            dataset,
-            env=kwargs.get("env"),
-            user_config=kwargs.get("user_config"),
-            user_template=kwargs.get("user_template"),
-            api_url=kwargs.get("api_url"),
-            api_token=kwargs.get("api_token"),
-            api_model_name=kwargs.get("api_model_name"),
+        config, dataset_to_do = load_dataset_config(
+            dataset_path,
+            options,
+            user_config=user_config,
         )
-    except (AssertionError, ValueError) as e:
+    except FileNotFoundError as e:
+        _logger.error("Error: %s", e)
+        sys.exit(cmd_status.STATUS_ERROR)
+    except ValueError as e:
+        if user_config is not None:
+            if user_configs := cmd_configs.list_user_config():
+                _logger.error(
+                    "Error: failed to load user config: %s; available configs: %s",
+                    user_config,
+                    ", ".join(user_configs),
+                )
+            else:
+                _logger.error("Error: failed to load user config: %s", user_config)
+            sys.exit(cmd_status.STATUS_USER_ERROR)
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
-    # resolve CLI overrides with config defaults
     do_stream = kwargs.get("stream") or False
-    interactive = kwargs.get("interactive") or dataset_toml.interactive
-    rounds = kwargs.get("rounds") or dataset_toml.rounds
-    overwrite_captions = kwargs.get("overwrite") or dataset_toml.overwrite_captions
-    cache_flag = kwargs.get("cache", True)
-    save_draft = kwargs.get("draft") or ""
+    interactive = defaults["interactive"]
 
-    # resolve prompt template
-    dataset_toml.prompt.template = _resolve_template(dataset_toml.prompt.name, dataset_toml.prompt.template)
+    if config.prompt.name:
+        _logger.info("Using prompt template: %s", config.prompt.name)
 
-    if dataset_toml.prompt.name:
-        _logger.info("Using prompt template: %s", dataset_toml.prompt.name)
-
-    resolved_images = cast("list[DatasetImage]", dataset_toml._resolved_images)  # pyright: ignore[reportAttributeAccessIssue]
-
-    # filter out already-captioned images
-    dataset_to_do: list[DatasetImage] = []
-    skipped = 0
-
-    for dataset_image in resolved_images:
-        if save_draft:
-            if not overwrite_captions and dataset_image.draft_path(save_draft).exists():
-                skipped += 1
-                continue
-        else:
-            if not overwrite_captions and dataset_image.caption_path.exists():
-                skipped += 1
-                continue
-        dataset_to_do.append(dataset_image)
-
-    _logger.info("Found %d images.", len(resolved_images))
-
-    if skipped:
-        _logger.info("Skipped %d images.", skipped)
-
+    _logger.info("Found %d images.", len(dataset_to_do))
     if not dataset_to_do:
         _logger.info("Nothing to do.")
         sys.exit(cmd_status.STATUS_OK)
 
     cache: HTTPResponseCache | None = None
-    if cache_flag:
+    if kwargs.get("cache", True):
         cache = HTTPResponseCache(cache_dir=cmd_cache.api_requests_cache_dir())
 
-    # resolve debug logger
     response_logger: ResponseLogger | None = None
-    assert isinstance(dataset.name, str)
     if DEBUG_CAPTION_RESPONSES:
-        if dataset.name == "-":
-            _logger.error("Error: when debugging api responses, dataset argument must be a file path, not stdin")
-            sys.exit(cmd_status.STATUS_USER_ERROR)
-
-        log_dir = cmd_cache.debug_log_dir(dataset.name)
+        log_dir = cmd_cache.debug_log_dir(str(dataset_path))
         response_logger = ResponseLogger(log_dir, log_body=DEBUG_CAPTION_REQUESTS_BODY)
         _logger.info("API response debug logging enabled: %s", response_logger.log_dir)
 
     _logger.info("Loading model...")
 
-    async_headers: dict[str, str] = {}
-    if dataset_toml.api.token:
-        async_headers["Authorization"] = f"Bearer {dataset_toml.api.token}"
+    async with CaptioningRunner(
+        config,
+        options,
+        cache=cache,
+        response_logger=response_logger,
+    ) as runner:
+        _logger.info("")
+        _logger.info("Captioning...")
 
-    async_session = AsyncSession(dataset_toml.api.url, headers=async_headers)
+        save_draft = options.draft
+        if save_draft:
+            _logger.info("Saving captions as draft: %s", save_draft)
 
-    try:
-        model = await APICaptioner.create(
-            api_url=dataset_toml.api.url,
-            api_token=dataset_toml.api.token,
-            prompt_template=dataset_toml.prompt.template,
-            store_conversation=dataset_toml.settings.store_conversation,
-            image_quality=dataset_toml.settings.image_quality,
-            reasoning=dataset_toml.reasoning.enable,
-            reasoning_effort=dataset_toml.reasoning.thinking_effort,
-            reasoning_exclude_output=dataset_toml.reasoning.exclude_from_output,
-            reasoning_start_token=dataset_toml.reasoning.advanced.thinking_start,
-            reasoning_end_token=dataset_toml.reasoning.advanced.thinking_end,
-            cache=cache,
-            response_logger=response_logger,
-            async_session=async_session,
-        )
-        await model.load_model(dataset_toml.api.model_name)
-    except ValueError as e:
-        _logger.error("Error: failed to load model: %s", e)
-        sys.exit(cmd_status.STATUS_ERROR)
+        with utils.Timer() as timer:
+            return_code = await _caption(
+                runner=runner,
+                dataset=dataset_to_do,
+                config=config,
+                do_stream=do_stream,
+                interactive=interactive,
+                rounds=options.rounds,
+                save_draft=save_draft,
+            )
 
-    _logger.info("")
-    _logger.info("Captioning...")
-
-    if save_draft:
-        _logger.info("Saving captions as draft: %s", save_draft)
-
-    with utils.Timer() as timer:
-        return_code = await _caption(
-            dataset=dataset_to_do,
-            model=model,
-            settings=dataset_toml.settings,
-            do_stream=do_stream,
-            interactive=interactive,
-            rounds=rounds,
-            save_draft=save_draft,
-        )
-
-    model.log_usage()
-    await async_session.aclose()
+    # Runner's __aexit__ already called model.log_usage() and aclose.
     _logger.info("Done. (%.1f sec)", timer.elapsed)
 
     sys.exit(return_code)

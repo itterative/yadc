@@ -1,12 +1,14 @@
 ---
 name: cli-api-captioning-shared-runner-plan
 description: Share a CaptioningRunner core between the CLI's `yadc caption` command and the API's `AsyncCaptionJob` — both currently re-implement the same model-create / stream / save loop. First step toward unifying the CLI and API captioning flows.
-status: Approved (with decisions)
+status: Phase 4 done
 decisions:
   shared_core_location: yadc/core/captioning/
   cli_stdin: drop
   cli_di: none
   logging_refactor: deferred_phase (decisions pending after runner implementation)
+phases_complete: [1, 2, 3, 4]
+last_history: 4
 ---
 
 # Shared Captioning Runner — CLI ↔ API
@@ -60,17 +62,11 @@ yadc/core/captioning/
 
 ### `options.py` — `CaptionJobOptions`
 
-Move the existing Pydantic model from `yadc/api/services/captioning.py` to `yadc/core/captioning/options.py` verbatim. This model is the canonical "all knobs for one captioning run" object — both the API's JSON body and the CLI's click kwargs can be coerced into it.
-
-Re-export from `yadc/api/services/captioning.py` for backward compatibility:
-```python
-# yadc/api/services/captioning.py
-from yadc.core.captioning import CaptionJobOptions  # re-export
-```
+**Copy** the existing Pydantic model from `yadc/api/services/captioning.py` to `yadc/core/captioning/options.py` verbatim. The API keeps its own copy for now (it's deleted in Phase 3 when the API switches to importing from the new location). The two classes are structurally identical — both have the same fields and `extra="ignore"` — so code that does `CaptionJobOptions.model_validate(raw)` works the same way after the API switches.
 
 ### `loader.py` — config loading + overrides + template resolution
 
-Move the two existing free functions from the API and add a new top-level helper:
+**Copy** the two existing free functions from the API to `yadc/core/captioning/loader.py` and add the new `load_dataset_config()` helper:
 
 ```python
 # yadc/core/captioning/loader.py
@@ -167,37 +163,36 @@ class CaptioningRunner:
 ### Phase 1 — Extract shared core (foundation, no behaviour change)
 
 1. Create `yadc/core/captioning/` package with `__init__.py` re-exports.
-2. Move `CaptionJobOptions` from `yadc/api/services/captioning.py` to `yadc/core/captioning/options.py`. Re-export from the API module for backward compat.
-3. Move `apply_config_overrides` and `resolve_template` to `yadc/core/captioning/loader.py`. Re-export from the API.
+2. **Copy** (not move) `CaptionJobOptions` from `yadc/api/services/captioning.py` to `yadc/core/captioning/options.py`. The API keeps its own copy for now — it gets deleted in Phase 3 when the API switches to importing from the new location. This keeps Phase 1 strictly additive: no import paths change, no internal usage is touched.
+3. **Copy** (not move) `apply_config_overrides` and `resolve_template` to `yadc/core/captioning/loader.py`. Same rationale — deleted from the API in Phase 3.
 4. Add `load_dataset_config()` to `loader.py` — currently inlined in CLI's `_load_dataset` and API's `preflight_images` + `_ado_run`. Pick the CLI's behaviour as canonical (it has more knobs: `user_config` merge).
-5. Run full test suite — everything must still pass with only import-path changes.
+5. Run full test suite — everything must still pass with no changes to the API module.
 
-**Files touched:** `yadc/core/captioning/{__init__,options,loader}.py` (new), `yadc/api/services/captioning.py` (re-exports + a few imports removed).
+**Files touched:** `yadc/core/captioning/{__init__,options,loader}.py` (new only — `yadc/api/services/captioning.py` is untouched in Phase 1).
 
 ### Phase 2 — Create `CaptioningRunner`
 
-1. Implement `CaptioningCallbacks`, `CaptioningStatus`, and `CaptioningRunner` in `yadc/core/captioning/runner.py` per the design above.
-2. Add `stop_event: asyncio.Event | None = None` to `CaptionJobOptions` (and to the loader's option-merge path if needed).
-3. Add `tests/core/captioning/test_runner.py` with unit tests:
-   - `__aenter__` creates the model with the expected kwargs
+**Status: done.** See `plans/history/cli-api-captioning-shared-runner/002-phase-2-runner-deviations.md` for the four design deviations from the plan (dropped `on_status`/`on_usage`/`CaptioningStatus`, dropped `stop_event` parameter, added `prediction_context` kwarg, runner always uses `predict_stream()`).
+
+1. Implement `CaptioningCallbacks`, `HTTPTTimeouts`, and `CaptioningRunner` in `yadc/core/captioning/runner.py` per the design above (with the deviations in the history entry).
+2. Re-export the new symbols from `yadc/core/captioning/__init__.py`.
+3. Add `tests/core/captioning/test_runner.py` with unit tests covering:
+   - `__aenter__` creates the model + session with the expected kwargs
+   - `__aenter__` propagates `ValueError` from `APICaptioner.create`
+   - `__aexit__` calls `model.log_usage()` and `async_session.aclose()`
    - `caption_image` streams tokens and invokes `on_token` for each
    - `caption_image` invokes `on_image_started` before and `on_image_captioned` after
    - `caption_image` invokes `on_image_error` + re-raises on model exception
+   - `caption_image` does not invoke `on_image_error` on `CancelledError` (re-raises only)
    - `caption_image` saves caption/TOML/history; uses draft path when `options.draft` is set
-   - `caption_image` calls `expected_change_registrar` with the right paths before writes
-   - `__aexit__` calls `model.log_usage()` and `async_session.aclose()`
-   - `caption_image_dry_run` does not write any files
-   - Cancellation: setting `stop_event` between images stops the batch cleanly
-4. Add `tests/core/captioning/test_loader.py` for `load_dataset_config`:
-   - Loads TOML, parses Config
-   - Applies `CaptionJobOptions` overrides (api url/token/model_name, prompt, max_tokens, image_quality, reasoning, rounds)
-   - Merges user_config (CLI path)
-   - Resolves template via the user/builtin/default chain
-   - Resolves images and applies the overwrite/draft filter
-   - Raises on missing config file
-5. Run full test suite. New tests pass; existing tests untouched.
+   - `caption_image` calls `expected_change_registrar` with the right paths *before* the writes
+   - Empty caption → no save, no `on_image_captioned`, no `expected_change_registrar` call
+   - `caption_image_dry_run` does not write files, does not call `expected_change_registrar`, does not fire `on_image_captioned`
+   - `caption_rounds`, `extra_messages`, `prediction_context` are forwarded to the model
+   - Calling `caption_image` / `caption_image_dry_run` outside `async with` raises `AssertionError`
+4. Run full test suite — all 387 tests pass; lint + type-check clean.
 
-**Files touched:** `yadc/core/captioning/runner.py` (new), `yadc/core/captioning/options.py` (add `stop_event`), `tests/core/captioning/test_runner.py` (new), `tests/core/captioning/test_loader.py` (new).
+**Files touched:** `yadc/core/captioning/runner.py` (new), `yadc/core/captioning/__init__.py` (re-exports), `tests/core/captioning/test_runner.py` (new, 33 tests).
 
 ### Phase 3 — Refactor `AsyncCaptionJob` to use the runner
 
@@ -214,7 +209,11 @@ The API's `AsyncCaptionJob` is currently a self-contained job class. After this 
 
 **Files touched:** `yadc/api/services/captioning.py` (substantial rewrite of `_ado_run`, delete `_acaption_one`).
 
+**Phase 3 complete.** Done in commit following this entry. `AsyncCaptionJob` now implements the `CaptioningCallbacks` Protocol, `_ado_run` uses `CaptioningRunner` + `load_dataset_config`. See history entry `003-phase-3-async-caption-job-migration.md` for the 6 deviations from this plan.
+
 ### Phase 4 — Refactor `cli_caption.py` to use the runner (the user's stated goal)
+
+**Status: done.** See `plans/history/cli-api-captioning-shared-runner/004-phase-4-cli-caption-migration.md` for the eight design deviations from this phase.
 
 The CLI is the more interesting case because of the interactive flow. Goal: keep every existing interactive feature (retry, edit, prompts, reply, multi-round, draft, overwrite) working unchanged from the user's perspective, but rewire the captioning mechanics to use the shared runner.
 
@@ -342,3 +341,7 @@ These need a decision before / during the relevant phase. Listed in order of imp
 - **2026-06-04 — Proposed.** Initial plan created after codebase investigation.
 - **2026-06-04 — Approved with decisions.** User confirmed: (1) shared core lives in `yadc/core/captioning/`, (2) drop stdin support for the dataset arg (loader always takes a path), (3) no DI in the CLI, (4) multi-round / reply history plumbing is done via extra kwargs on `caption_image` / `caption_image_dry_run` rather than on `CaptionJobOptions`.
 - **2026-06-04 — Phase 6 added (logging unification).** User asked to add a logging refactor as the last phase, with the implementation shape sketched but specific design decisions deferred until after the captioning runner lands. The runner's logging surface will inform the choice of Protocol vs ABC, default-factory vs explicit, and API factory shape.
+- **2026-06-04 — Phase 1 done.** New `yadc/core/captioning/` package with `CaptionJobOptions`, `apply_config_overrides`, `resolve_template`, and the new `load_dataset_config` helper. 22 unit tests in `tests/core/captioning/test_loader.py`. The API's existing helpers are unchanged — they get deleted in Phase 3.
+- **2026-06-04 — Phase 2 done.** `CaptioningRunner` + `CaptioningCallbacks` Protocol + `HTTPTTimeouts` dataclass in `yadc/core/captioning/runner.py`. 22 unit tests. Four deviations from the plan documented in history entry `002-phase-2-runner-deviations.md` (drop `on_status`/`on_usage` callbacks, Protocol instead of dataclass, drop `stop_event`, add `prediction_context`).
+- **2026-06-04 — Phase 3 done.** `AsyncCaptionJob` now implements `CaptioningCallbacks` and delegates to `CaptioningRunner`. `preflight_images` uses `load_dataset_config`. The API's local `CaptionJobOptions` / `apply_config_overrides` / `resolve_template` are deleted. Six deviations from the plan documented in history entry `003-phase-3-async-caption-job-migration.md` (lock type change, `_set_state`/`_emit_status` now sync, extracted `_expected_change_registrar` method, config stored on `self._config`, deleted local helpers in Phase 3 not 5, `# pyright: ignore` for unused `token`). 24 unit tests in `tests/api/test_captioning_unit.py` (replaces the 9 obsolete ones from before).
+- **2026-06-04 — Phase 4 done.** `cli_caption.py` now delegates to `CaptioningRunner` + `load_dataset_config`. The CLI's interactive action menu stays in `cli_caption.py`; the captioning mechanics underneath are the shared runner. `click.File("r")` → `click.Path(...)` (drops stdin). `_resolve_template` and `cmd_envs.load_env` calls removed (loader handles both). `model.log_usage()` and `async_session.aclose()` now happen in the runner's `__aexit__`. Eight deviations from the plan documented in history entry `004-phase-4-cli-caption-migration.md` (added `save_caption` and `model` property to runner; used `PromptRenderer` directly for the "prompts" action; pre-parse for top-level config defaults; removed CLI's local helpers). Verified end-to-end via `uv run yadc caption test_pedro.dataset --no-stream/--stream` against the `integration-tests-local-llamacpp` env.

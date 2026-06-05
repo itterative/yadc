@@ -1,4 +1,4 @@
-from .captioning import CaptioningService, CaptionJobOptions
+from .captioning import CaptioningService
 from .config_history import ConfigHistoryService
 from .config_history_repository import ConfigHistoryRepository
 from .dataset_repository import DatasetRepository
@@ -9,7 +9,6 @@ from .settings import SettingsService
 from .settings_repository import SettingsRepository
 
 __all__ = [
-    "CaptionJobOptions",
     "CaptioningService",
     "ConfigHistoryRepository",
     "ConfigHistoryService",

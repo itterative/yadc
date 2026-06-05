@@ -4,9 +4,10 @@ import pydantic
 from quart import jsonify, request
 
 from yadc.cmd import envs as cmd_envs
+from yadc.core.captioning import CaptionJobOptions
 
 from ..modules.logging_factory import LoggingFactory
-from ..services.captioning import CaptioningService, CaptionJobOptions, JobInfo
+from ..services.captioning import CaptioningService, JobInfo
 from . import controller
 from .blueprints import ApiBlueprint
 from .models_errors import APIErrorDetail
