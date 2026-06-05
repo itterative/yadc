@@ -12,11 +12,13 @@
     import SvgHistory from '$lib/icons/SvgHistory.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgUpgrade from '$lib/icons/SvgUpgrade.svelte';
+    import ContextMenu from '$lib/components/ui/ContextMenu.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
     import { captionOptions } from '$lib/stores/caption';
     import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
+    import { toast } from '$lib/stores/toasts';
 
     interface Props {
         item: ImageInfo;
@@ -171,6 +173,30 @@
         resize();
         return { update: resize };
     }
+
+    function escapeParentheses(text: string): string {
+        return text.replace(/([()])/g, '\\$1');
+    }
+
+    async function copyText(text: string, escape = false) {
+        if (!text) {
+            return;
+        }
+        const toCopy = escape ? escapeParentheses(text) : text;
+        try {
+            await navigator.clipboard.writeText(toCopy);
+            toast.success(escape ? 'Copied with escaped parentheses' : 'Copied to clipboard');
+        } catch {
+            toast.warning('Failed to copy to clipboard');
+        }
+    }
+
+    function makeCopyItems(text: string) {
+        return [
+            { label: 'Copy', onClick: () => copyText(text) },
+            { label: 'Copy with escape', onClick: () => copyText(text, true) }
+        ];
+    }
 </script>
 
 <div class="space-y-4">
@@ -187,19 +213,21 @@
                 <!-- Copy button — anchored to the caption box, not the scrollable
                      text area, so it stays put while the user scrolls the text. -->
                 {#if captionData && captionData.caption && !isEditing && !isCaptioning}
-                    <button
-                        type="button"
-                        class="absolute top-2 right-2 z-10 cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
-                        aria-label="Copy caption"
-                        title="Copy caption"
-                        onclick={() => onCopy('caption', captionData!.caption!)}
-                    >
-                        {#if copiedKey === 'caption'}
-                            <SvgCheck class="h-4 w-4 text-success" />
-                        {:else}
-                            <SvgCopy class="h-4 w-4" />
-                        {/if}
-                    </button>
+                    <ContextMenu class="absolute top-2 right-2 z-10" items={makeCopyItems(captionData.caption)}>
+                        <button
+                            type="button"
+                            class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                            aria-label="Copy caption"
+                            title="Copy caption"
+                            onclick={() => onCopy('caption', captionData!.caption!)}
+                        >
+                            {#if copiedKey === 'caption'}
+                                <SvgCheck class="h-4 w-4 text-success" />
+                            {:else}
+                                <SvgCopy class="h-4 w-4" />
+                            {/if}
+                        </button>
+                    </ContextMenu>
                 {/if}
 
                 <!-- Text area — only this part scrolls. Overlays are siblings
@@ -311,19 +339,21 @@
                         <div class="flex items-center justify-between px-3 pt-3 pb-1">
                             <span class="text-xs font-medium text-accent">{name}</span>
                             {#if text}
-                                <button
-                                    type="button"
-                                    class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
-                                    aria-label={`Copy draft "${name}"`}
-                                    title={`Copy draft "${name}"`}
-                                    onclick={() => onCopy(draftKey, text)}
-                                >
-                                    {#if copiedKey === draftKey}
-                                        <SvgCheck class="h-4 w-4 text-success" />
-                                    {:else}
-                                        <SvgCopy class="h-4 w-4" />
-                                    {/if}
-                                </button>
+                                <ContextMenu items={makeCopyItems(text)}>
+                                    <button
+                                        type="button"
+                                        class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
+                                        aria-label={`Copy draft "${name}"`}
+                                        title={`Copy draft "${name}"`}
+                                        onclick={() => onCopy(draftKey, text)}
+                                    >
+                                        {#if copiedKey === draftKey}
+                                            <SvgCheck class="h-4 w-4 text-success" />
+                                        {:else}
+                                            <SvgCopy class="h-4 w-4" />
+                                        {/if}
+                                    </button>
+                                </ContextMenu>
                             {/if}
                         </div>
                         <div class="px-3 pb-3">
