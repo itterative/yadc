@@ -43,7 +43,7 @@ yadc/api/
     env_watcher.py        # EnvWatcherService — watchdog-based watcher for config.toml, emits EnvironmentsChangedEvent (extends SinglePathWatcherService)
     template_watcher.py   # TemplateWatcherService — watchdog-based watcher for *.jinja files, emits TemplatesChangedEvent (extends SinglePathWatcherService)
     dataset_watcher.py    # DatasetWatcherService — watchdog-based filesystem watcher for dataset dirs, debounced DatasetChangedEvent emission
-    db_migrations.py      # Step-based SQLite migration runner
+    db_migrations.py      # File-based SQLite migration runner with rollback support, transactional upgrades, and auto-downgrade on app rollback
     db_connection_factory.py # SQLite WAL, foreign keys, background init. `connection()` is a context manager that auto-enrolls in any active `transaction()`; standalone calls commit on success and close on exit. `transaction()` supports nested savepoints and is async/task-safe via `ContextVar`.
 
   services/           # Business logic + repositories (both auto-discovered as Service subclasses)

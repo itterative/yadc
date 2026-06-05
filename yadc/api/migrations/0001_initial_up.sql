@@ -1,0 +1,3 @@
+-- Step 1: The properties table is created by the migration system (_ensure_tables).
+-- This step exists as a baseline for the migration history.
+-- Add any initial seed data here if needed.

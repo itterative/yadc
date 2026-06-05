@@ -1,0 +1,1 @@
+-- Step 1 downgrade: no-op since the properties table is owned by the migration system.
