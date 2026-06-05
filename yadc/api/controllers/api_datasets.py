@@ -306,7 +306,7 @@ def api_datasets(
         return jsonify(summary)
 
     @app.delete("/datasets/<name>/drafts/<draft_name>")
-    async def delete_dataset_draft(name: str, draft_name: str):  # pyright: ignore[reportUnusedFunction]
+    def delete_dataset_draft(name: str, draft_name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a named draft from all images in a dataset."""
         deleted = datasets.delete_draft_all(name, draft_name, source=request.args.get("source", ""))
         if deleted == 0:
@@ -381,7 +381,7 @@ def api_datasets(
         return jsonify_dataclass(result)
 
     @app.put("/datasets/<name>/images/<int:image_id>/history/<int:history_index>/restore")
-    async def restore_image_history(name: str, image_id: int, history_index: int):  # pyright: ignore[reportUnusedFunction]
+    def restore_image_history(name: str, image_id: int, history_index: int):  # pyright: ignore[reportUnusedFunction]
         """Restore caption + extras from a history entry."""
         ok = datasets.restore_history(name, image_id, history_index, source=request.args.get("source", ""))
         if not ok:
@@ -389,7 +389,7 @@ def api_datasets(
         return jsonify({"status": "ok"})
 
     @app.delete("/datasets/<name>/images/<int:image_id>/history/<entry_hash>")
-    async def delete_image_history(name: str, image_id: int, entry_hash: str):  # pyright: ignore[reportUnusedFunction]
+    def delete_image_history(name: str, image_id: int, entry_hash: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a single history entry for an image by content hash."""
         ok = datasets.delete_history(name, image_id, entry_hash, source=request.args.get("source", ""))
         if not ok:
@@ -397,7 +397,7 @@ def api_datasets(
         return jsonify({"status": "ok"})
 
     @app.delete("/datasets/<name>/images/<int:image_id>/drafts/<draft_name>")
-    async def delete_image_draft(name: str, image_id: int, draft_name: str):  # pyright: ignore[reportUnusedFunction]
+    def delete_image_draft(name: str, image_id: int, draft_name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a named draft for an image."""
         ok = datasets.delete_draft(name, image_id, draft_name, source=request.args.get("source", ""))
         if not ok:

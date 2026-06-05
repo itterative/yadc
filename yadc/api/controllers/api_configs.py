@@ -246,7 +246,7 @@ def api_configs(
         )
 
     @app.post("/configs/<name>/history/<int:entry_id>/restore")
-    async def restore_config_history(name: str, entry_id: int):  # pyright: ignore[reportUnusedFunction]
+    def restore_config_history(name: str, entry_id: int):  # pyright: ignore[reportUnusedFunction]
         """Restore a config from a history snapshot.
 
         Saves the current config to history first, then overwrites with the
