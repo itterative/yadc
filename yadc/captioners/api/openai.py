@@ -13,6 +13,7 @@ from yadc.core import DatasetImage, logging
 from yadc.core.prediction import PredictionContext
 
 from .base import BaseAPICaptioner
+from .constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from .types import (
     OpenAIChatCompletionChunkResponse,
     OpenAIChatCompletionResponse,
@@ -180,33 +181,38 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         if self._current_model == model_repo:
             return
 
-        async with self._async_session.get("models", cache_ttl=1800) as model_resp:
+        available_models = await self.list_models()
+
+        if model_repo in available_models:
+            self._current_model = model_repo
+            return
+
+        if not available_models:
+            raise ValueError(f"model not found: {model_repo}; no models available")
+
+        if len(available_models) > 5:
+            raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models[:5])}, +{len(available_models) - 1} more")
+
+        raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
+
+    @override
+    async def list_models(self, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS) -> list[str]:
+        """Fetch available model IDs from the OpenAI-compatible ``/models`` endpoint."""
+        assert self._async_session is not None, "async session not available"
+
+        async with self._async_session.get("models", cache_ttl=cache_ttl) as model_resp:
             assert isinstance(model_resp, httpx.Response)
             model_resp.raise_for_status()
 
             model_resp_json = model_resp.json()
-            assert isinstance(model_resp_json, dict)
+            assert isinstance(model_resp_json, dict), f"bad models response type; expected dict, got {type(model_resp_json)}"
 
             try:
                 models = OpenAIModelsResponse.model_validate(model_resp_json)
-                available_models: list[str] = []
             except pydantic.ValidationError as e:
                 raise ValueError("failed to parse model list response") from e
 
-            for model in models.data:
-                available_models.append(model.id)
-
-                if model.id == model_repo:
-                    self._current_model = model_repo
-
-            if not self._current_model:
-                if len(available_models) > 5:
-                    raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models[:5])}, +{len(available_models) - 1} more")
-
-                if available_models:
-                    raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
-
-                raise ValueError(f"model not found: {model_repo}; no models available")
+            return [model.id for model in models.data]
 
     @override
     def unload_model(self):

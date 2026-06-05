@@ -19,6 +19,7 @@ from .envs import (
 from .keystorage import KeyStorage
 from .keystorage_keyring import KeyringKeyStorage
 from .keystorage_password import PasswordKeyStorage, PasswordRequiredError
+from .models import list_models
 from .setting import EncryptionMethod
 from .user_config import UserConfig, UserConfigApi
 
@@ -38,6 +39,7 @@ __all__ = [
     "get_env",
     "get_storage",
     "list_all_env",
+    "list_models",
     "load_env",
     "reset_encryption",
     "reset_envs",

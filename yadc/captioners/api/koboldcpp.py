@@ -48,30 +48,18 @@ class KoboldcppCaptioner(OpenAICaptioner):
                 self._current_model = model_current.result
                 return
 
-        async with self._async_session.get("/api/admin/list_options") as model_options_resp:
-            assert isinstance(model_options_resp, httpx.Response)
-            assert model_options_resp.status_code < 400
+        available_models = await self.list_models()
 
-            model_options_resp_json = model_options_resp.json()
-            assert isinstance(model_options_resp_json, list)
+        for model in available_models:
+            if model == model_repo or model == model_kcpss:
+                self._current_model = model
+                break
 
-            models = KoboldAdminSettingsReponse.model_validate({"data": model_options_resp_json})
-            available_models: list[str] = []
+        if not self._current_model:
+            if available_models:
+                raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
 
-            for model in models.data:
-                if model == "unload_model":
-                    continue
-
-                available_models.append(model)
-
-                if model == model_repo or model == model_kcpss:
-                    self._current_model = model
-
-            if not self._current_model:
-                if available_models:
-                    raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
-
-                raise ValueError(f"model not found: {model_repo}; no models available")
+            raise ValueError(f"model not found: {model_repo}; no models available")
 
         async with self._async_session.post("/api/admin/reload_config", json={"filename": self._current_model}) as model_reload_resp:
             assert isinstance(model_reload_resp, httpx.Response)
@@ -108,6 +96,29 @@ class KoboldcppCaptioner(OpenAICaptioner):
                 continue
         else:
             raise TimeoutError(f"failed to load model in time: {model_repo}")
+
+    @override
+    async def list_models(self, cache_ttl: float | None = None) -> list[str]:
+        """Fetch the list of available model filenames from Koboldcpp's admin endpoint.
+
+        Koboldcpp's model list is not cached — the admin endpoint returns
+        the current on-disk state and the *cache_ttl* parameter is ignored.
+        """
+        if cache_ttl is not None:
+            _logger.debug("Koboldcpp list_models ignores cache_ttl=%s (admin endpoint is not cached).", cache_ttl)
+
+        assert self._async_session is not None, "async session not available"
+
+        async with self._async_session.get("/api/admin/list_options") as model_options_resp:
+            assert isinstance(model_options_resp, httpx.Response)
+            assert model_options_resp.status_code < 400
+
+            model_options_resp_json = model_options_resp.json()
+            assert isinstance(model_options_resp_json, list), "bad koboldcpp list_options response"
+
+            models = KoboldAdminSettingsReponse.model_validate({"data": model_options_resp_json})
+
+            return [m for m in models.data if m != "unload_model"]
 
     @override
     def conversation(self, image: DatasetImage, stream: bool = False, **kwargs: Any) -> dict[str, Any]:

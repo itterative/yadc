@@ -6,6 +6,7 @@ Migrations are stored as numbered SQL file pairs (``<NNNN>_<name>_up.sql`` /
 in order, and supports rolling back to an earlier step using the stored downgrade
 SQL.
 """
+
 from __future__ import annotations
 
 import logging
@@ -45,6 +46,7 @@ class DBMigrations(Service):
       step so that rollbacks work even if the package source is no longer available
       (e.g. frozen executables).
     """
+
     def __init__(self, logging: LoggingFactory) -> None:
         self.current_migration: int = -1
         self._logger: logging.Logger = logging.get_logger(__name__)
@@ -134,9 +136,7 @@ class DBMigrations(Service):
             latest = max(available, key=lambda m: m.step)
 
             if self.current_migration > latest.step:
-                self._logger.info(
-                    "DB is at step %d but latest available migration is %d — rolling back", self.current_migration, latest
-                )
+                self._logger.info("DB is at step %d but latest available migration is %d — rolling back", self.current_migration, latest)
                 self.rollback(conn, latest.step, _ensure=False)
 
             for migration in available:
@@ -226,7 +226,9 @@ class _Migration:
             return None
         return self.down_file.read_text("utf-8")
 
+
 _SQL_COMMENT_RE = re.compile(r"^\s*--")
+
 
 def _split_statements(sql: str) -> list[str]:
     """Split SQL into individual statements by accumulating lines and yielding at ``;``.
@@ -260,8 +262,10 @@ def _split_statements(sql: str) -> list[str]:
 
     return statements
 
+
 # Pre-computed at import time — the migrations package is read-only data.
 _MIGRATIONS: list[_Migration] | None = None
+
 
 def _discover_migrations() -> list[_Migration]:
     """Build sorted :class:`_Migration` objects from the migrations package."""

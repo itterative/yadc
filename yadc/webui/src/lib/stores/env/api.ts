@@ -40,8 +40,18 @@ export async function deleteEnv(name: string): Promise<void> {
 }
 
 async function _fetchModels(name: string): Promise<EnvListResult> {
+    // POST so we can supply the session password in the body when the env
+    // is password-mode. The endpoint also accepts GET (no body) for the
+    // simple case where ``YADC_PASSWORD`` is set in the server env.
+    const body: Record<string, unknown> = {};
+    const password = get(sessionPassword);
+    if (password) {
+        body.password = password;
+    }
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}/models`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));

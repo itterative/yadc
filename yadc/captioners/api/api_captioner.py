@@ -11,6 +11,7 @@ from yadc.core import DatasetImage
 
 from .async_session import AsyncSession
 from .base import BaseAPICaptioner
+from .constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from .gemini import GeminiCaptioner
 from .koboldcpp import KoboldcppCaptioner
 from .llamacpp import LlamacppCaptioner
@@ -264,3 +265,7 @@ class APICaptioner(BaseAPICaptioner):
     async def predict_stream(self, image: DatasetImage, **kwargs: Any) -> AsyncGenerator[str, None]:
         async for token in self.inner_captioner.predict_stream(image, **kwargs):
             yield token
+
+    @override
+    async def list_models(self, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS) -> list[str]:
+        return await self.inner_captioner.list_models(cache_ttl=cache_ttl)

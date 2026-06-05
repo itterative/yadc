@@ -44,6 +44,7 @@ class TestDiscoverSteps:
             pytest.skip("no migration files found")
         assert steps == list(range(steps[0], steps[-1] + 1)), "migration steps should be contiguous"
 
+
 # ------------------------------------------------------------------
 # Upgrade
 # ------------------------------------------------------------------

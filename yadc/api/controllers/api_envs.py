@@ -1,5 +1,6 @@
 """Environment CRUD endpoints — backed by the ``cmd.envs`` module."""
 
+import httpx
 from quart import jsonify, request
 
 # cmd.envs is a heavy import (keyring, cryptography) — keep it at module level
@@ -9,6 +10,7 @@ from yadc.cmd import envs as cmd_envs
 from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core.env import YADC_PASSWORD
 
+from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
@@ -34,7 +36,7 @@ def _format_env(name: str, env_data) -> dict[str, object]:
 
 
 @controller
-def api_envs(app: ApiBlueprint, logging: LoggingFactory):
+def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFactory):
     _logger = logging.get_logger(__name__)
 
     @app.get("/envs")
@@ -123,91 +125,74 @@ def api_envs(app: ApiBlueprint, logging: LoggingFactory):
         _logger.info("Environment '%s' deleted.", name)
         return jsonify({"status": "ok"})
 
-    @app.post("/envs/<name>/models")
-    def list_models(name: str):  # pyright: ignore[reportUnusedFunction]
+    @app.route("/envs/<name>/models", methods=["GET", "POST"])
+    async def list_models(name: str):  # pyright: ignore[reportUnusedFunction]
         """Fetch available models from the environment's API.
 
-        Proxies a ``GET /models`` request to the env's ``api_url`` so the
-        frontend doesn't need direct CORS access to the inference API.
-        """
-        import requests as http_requests
+        Accepts both ``GET`` and ``POST``:
 
+        - ``GET``: no body. The ``YADC_PASSWORD`` env var is the only way
+          to decrypt a password-mode env's token.
+        - ``POST``: optional ``{"password": "..."}`` body. Lets the client
+          supply the decryption password explicitly when the backend can't
+          read it from the env. Matches the body shape of
+          ``POST /envs/<name>/reveal`` and ``PUT /envs/key-mode``.
+
+        Both methods delegate to :func:`yadc.cmd.envs.models.list_models`,
+        which decrypts the env's token and forwards the request to the
+        captioner system's ``list_models`` helper. The captioner handles
+        backend detection, HTTP retries, response parsing, and per-backend
+        quirks (OpenAI / Gemini / Ollama / Koboldcpp / etc.).
+
+        The cache TTL is read from ``Configuration.api_models_cache_ttl``.
+
+        .. note::
+            This dual-method route is intentionally awkward — it exists
+            only because ``GET`` can't carry a body. The medium-term plan
+            is to standardize on a single ``X-YADC-Password`` header
+            across all password-passing endpoints. See the ``todo`` memory
+            for details.
+        """
         env_data = cmd_envs.get_env(name)
         if env_data is None:
             return jsonify_error("Environment not found", status=404, code=ErrorCode.NOT_FOUND)
 
-        api_url = env_data.api_url.value
-        if not api_url:
+        # Distinguish a misconfigured env (no api_url) from an upstream
+        # error — the former is a 400 (client fix), the latter is a 502.
+        # The orchestrator's ValueError covers both, so we short-circuit
+        # here to keep the status codes meaningful.
+        if not env_data.api_url.value:
             return jsonify_error("Environment has no API URL configured", status=400, code=ErrorCode.BAD_REQUEST)
 
-        api_token = env_data.api_token
-        api_model_name = env_data.api_model_name.value
-
-        url = f"{api_url.rstrip('/')}/models"
-        headers: dict[str, str] = {}
-        if api_token.value:
-            if api_token.is_encrypted:
-                method = cmd_envs.EncryptionMethod(api_token.method)
-                try:
-                    decrypted = cmd_envs.decrypt_setting(api_token.value, method=method)
-                except cmd_envs.PasswordRequiredError:
-                    return jsonify_error(
-                        "Password required to decrypt environment settings",
-                        status=403,
-                        code=ErrorCode.PASSWORD_REQUIRED,
-                    )
-                if decrypted:
-                    headers["Authorization"] = f"Bearer {decrypted}"
-            else:
-                headers["Authorization"] = f"Bearer {api_token.value}"
+        # POST can carry an explicit password; GET can't.
+        password: str | None = None
+        if request.method == "POST":
+            body = await request.get_json(silent=True) or {}
+            password = body.get("password")
 
         try:
-            resp = http_requests.get(url, headers=headers, timeout=10)
-            resp.raise_for_status()
-        except http_requests.ConnectionError:
-            return jsonify_error(f"Could not connect to {url}", status=502, code=ErrorCode.UPSTREAM_ERROR)
-        except http_requests.Timeout:
-            return jsonify_error(f"Connection to {url} timed out", status=504, code=ErrorCode.UPSTREAM_ERROR)
-        except http_requests.HTTPError as e:
+            models = await cmd_envs.list_models(
+                name,
+                password=password,
+                cache_ttl=configuration.api_models_cache_ttl,
+            )
+        except PasswordRequiredError:
+            return jsonify_error(
+                "Password required to decrypt environment settings",
+                status=403,
+                code=ErrorCode.PASSWORD_REQUIRED,
+            )
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            return jsonify_error(f"Could not reach API: {e}", status=502, code=ErrorCode.UPSTREAM_ERROR)
+        except httpx.HTTPStatusError as e:
             return jsonify_error(f"API returned {e.response.status_code}", status=502, code=ErrorCode.UPSTREAM_ERROR)
-        except Exception as e:
-            _logger.warning("Failed to fetch models from '%s': %s", url, e)
+        except ValueError as e:
+            _logger.warning("Failed to fetch models for env '%s': %s", name, e)
             return jsonify_error(str(e), status=502, code=ErrorCode.UPSTREAM_ERROR)
 
-        data = resp.json()
-
-        # Normalize: extract model IDs from common response shapes
-        models: list[str] = []
-
-        # OpenAI-compatible: {"data": [{"id": "model-name", ...}, ...]}
-        if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
-            for item in data["data"]:
-                if isinstance(item, dict) and "id" in item:
-                    models.append(item["id"])
-        # Ollama: {"models": [{"name": "model-name", ...}, ...]}
-        elif isinstance(data, dict) and "models" in data and isinstance(data["models"], list):
-            for item in data["models"]:
-                if isinstance(item, dict) and "name" in item:
-                    models.append(item["name"])
-        # Fallback: plain list of strings
-        elif isinstance(data, list):
-            for item in data:
-                if isinstance(item, str):
-                    models.append(item)
-                elif isinstance(item, dict):
-                    # Try common keys
-                    models.append(item.get("id") or item.get("name") or item.get("model", ""))
-            models = [m for m in models if m]
-
-        if not models:
-            _logger.warning("Could not parse models from response: %s", type(data).__name__)
-            return jsonify_error("Could not parse model list from API response", status=502, code=ErrorCode.UPSTREAM_ERROR)
-
-        models.sort()
-
         response_payload: dict[str, object] = {"models": models}
-        if api_model_name:
-            response_payload["default"] = api_model_name
+        if env_data.api_model_name.value:
+            response_payload["default"] = env_data.api_model_name.value
 
         return jsonify(response_payload)
 

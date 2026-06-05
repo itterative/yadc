@@ -4,6 +4,7 @@ from typing import Any
 from yadc.core import Captioner, logging
 from yadc.core.prediction import PredictionContext
 
+from .constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from .utils.cache import HTTPResponseCache
 from .utils.response_logger import ResponseLogger
 
@@ -68,4 +69,18 @@ class BaseAPICaptioner(Captioner, abc.ABC):
 
     @abc.abstractmethod
     def log_usage(self) -> None:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def list_models(self, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS) -> list[str]:
+        """Return the list of model IDs available on this backend.
+
+        Subclasses override this to query their backend-specific endpoint
+        (e.g. ``GET /models`` for OpenAI-compatible, paginated ``models``
+        for Gemini, ``/api/admin/list_options`` for Koboldcpp).
+
+        *cache_ttl* is forwarded to the per-request cache lookup so callers
+        (e.g. the API's ``Configuration.api_models_cache_ttl``) can tune
+        the freshness tradeoff per environment. ``None`` disables caching.
+        """
         raise NotImplementedError

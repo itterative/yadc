@@ -1,6 +1,6 @@
 import copy
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,7 @@ from yadc.core import DatasetImage, logging
 from yadc.core.prediction import PredictionContext
 
 from .base import BaseAPICaptioner
+from .constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from .types import (
     GeminiContentResponse,
     GeminiModel,
@@ -219,7 +220,9 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
 
         model_repo = model_repo.removeprefix("models/")
 
-        async with self._async_session.get(f"models/{model_repo}", cache_ttl=1800) as model_resp:
+        # Fast path: fetch the model directly. This is the common case and
+        # gives us the ``thinking`` flag in one round-trip.
+        async with self._async_session.get(f"models/{model_repo}", cache_ttl=DEFAULT_MODELS_CACHE_TTL_SECONDS) as model_resp:
             assert isinstance(model_resp, httpx.Response)
             if model_resp.status_code < 400:
                 model_resp_json = model_resp.json()
@@ -232,22 +235,80 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 self._is_thinking_model = model.thinking
                 self._current_model = model.name.removeprefix("models/")
                 _logger.info("Model set to %s.", self._current_model)
+                self._warn_if_reasoning_unsupported()
 
                 return
 
+        # Discovery path: walk the paginated ``/models`` list and find the
+        # requested one. We iterate the raw ``GeminiModel`` objects so we
+        # can capture the ``thinking`` flag of the matched model — that
+        # flag drives ``thinkingConfig`` in :meth:`conversation` and would
+        # be wrong if we just checked unprefixed name membership.
+        #
+        # Capability filtering (``generateContent``) is handled implicitly
+        # by :meth:`_iter_generate_content_models` — unlike the fast path
+        # above, we don't need a separate ``generateContent`` check here.
+        matched_thinking: bool | None = None
         available_models: list[str] = []
-        model_found = False
+        async for model in self._iter_generate_content_models():
+            model_id = model.name.removeprefix("models/")
+            available_models.append(model_id)
+            if model_id == model_repo and matched_thinking is None:
+                matched_thinking = model.thinking
+
+        if matched_thinking is None:
+            if available_models:
+                raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
+
+            raise ValueError(f"model not found: {model_repo}; no models available")
+
+        self._is_thinking_model = matched_thinking
+        self._current_model = model_repo
+        _logger.info("Model set to %s.", self._current_model)
+        self._warn_if_reasoning_unsupported()
+
+    def _warn_if_reasoning_unsupported(self) -> None:
+        """Log a warning if the user enabled reasoning but the loaded
+        model does not support thinking.
+
+        Called by both the fast and discovery paths of :meth:`_load_model`
+        after ``_is_thinking_model`` has been set, so the warning fires
+        regardless of which path loaded the model.
+        """
+        if self._reasoning and not self._is_thinking_model:
+            _logger.warning("Warning: selected a model without reasoning capabilities, but reasoning is enabled.")
+
+    @override
+    async def list_models(self, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS) -> list[str]:
+        """Fetch the list of model IDs from Gemini's paginated ``/models`` endpoint.
+
+        Filters to models that support ``generateContent`` and strips the
+        ``models/`` prefix from each name. Paginates via ``nextPageToken``
+        until exhausted.
+        """
+        return [model.name.removeprefix("models/") async for model in self._iter_generate_content_models(cache_ttl=cache_ttl)]
+
+    async def _iter_generate_content_models(
+        self, *, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS
+    ) -> AsyncIterator[GeminiModel]:
+        """Yield ``GeminiModel`` objects that support ``generateContent``.
+
+        Shared by :meth:`list_models` (which only needs the names) and
+        :meth:`_load_model` (which needs the ``thinking`` flag of the
+        matched model). The raw objects are yielded so each caller picks
+        the fields it cares about.
+        """
+        assert self._async_session is not None, "async session not available"
+
         next_token: str | None = None
 
-        model_repo_prefixed = f"models/{model_repo}"
-
-        while not model_found:
+        while True:
             if next_token is not None:
                 models_url_path = f"models?pageToken={next_token}"
             else:
                 models_url_path = "models"
 
-            async with self._async_session.get(models_url_path, cache_ttl=1800) as models_resp:
+            async with self._async_session.get(models_url_path, cache_ttl=cache_ttl) as models_resp:
                 assert isinstance(models_resp, httpx.Response)
                 models_resp.raise_for_status()
 
@@ -259,29 +320,12 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                 for model in models.models:
                     if "generateContent" not in model.supportedGenerationMethods:
                         continue
-
-                    if model_repo_prefixed == model.name or model_repo == model.name:
-                        self._is_thinking_model = model.thinking
-                        self._current_model = model.name.removeprefix("models/")
-                        break
-
-                    available_models.append(model.name.removeprefix("models/"))
+                    yield model
 
                 next_token = models.nextPageToken
 
                 if next_token is None:
                     break
-
-        if not self._current_model:
-            if available_models:
-                raise ValueError(f"model not found: {model_repo}; available models: {', '.join(available_models)}")
-
-            raise ValueError(f"model not found: {model_repo}; no models available")
-
-        _logger.info("Model set to %s.", self._current_model)
-
-        if self._is_thinking_model and self._reasoning:
-            _logger.warning("Warning: selected a model without reasoning capabilities, but reasoning is enabled.")
 
     @override
     def unload_model(self) -> None:

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from yadc.captioners.api.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from yadc.cmd.app import CACHE_PATH, CONFIG_PATH, STATE_PATH
 
 
@@ -56,6 +57,11 @@ class Configuration:
     http_timeout_read: float | None = None
     http_timeout_write: float = 30.0
     http_timeout_pool: float = 30.0
+
+    # Cache TTL for the `/api/envs/<name>/models` endpoint and the captioner's
+    # `/models` probes. Short enough to pick up newly added models, long
+    # enough to keep model pickers snappy.
+    api_models_cache_ttl: float = DEFAULT_MODELS_CACHE_TTL_SECONDS
 
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
