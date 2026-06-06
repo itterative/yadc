@@ -1,7 +1,8 @@
 from typing import Any
 
 import platformdirs
-import toml
+
+from yadc.utils.dict_utils import load_toml_file
 
 NAME = "yadc"
 
@@ -15,7 +16,7 @@ def load_config() -> dict[str, Any]:
 
     try:
         with open(config_path, "r") as f:
-            return toml.load(f)
+            return load_toml_file(f)
     except FileNotFoundError:
         return {}
     except PermissionError:

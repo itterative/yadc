@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import toml
+import tomlkit
 
 from yadc.api.configuration import Configuration
 from yadc.api.modules.dataset_watcher import DatasetWatcherService
@@ -15,6 +15,7 @@ from yadc.api.services.dataset_upload import DatasetUploadResult, DatasetUploadS
 from yadc.api.services.datasets import DatasetInfo, DatasetService
 from yadc.api.services.managed_datasets import ManagedDatasetsService
 from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
+from yadc.utils.dict_utils import load_toml_file
 
 # Path to the real test image shipped with the test suite.
 TEST_IMAGE_PATH = Path(__file__).parent / "test_data" / "valid_image.png"
@@ -185,7 +186,7 @@ def managed_dataset(tmp_path):
 
     # Create a config.toml (managed datasets use relative paths)
     config_path = base / "config.toml"
-    config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}]}))
+    config_path.write_text(tomlkit.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}]}))
 
     # Pre-populate with an existing image and its sidecar
     (images_dir / "existing.jpg").write_bytes(b"existing image data")
@@ -478,7 +479,7 @@ class TestFolderLayout:
                 [_file("train/a.jpg", _make_bytes()), _file("val/b.jpg", _make_bytes())],
             )
         )
-        config = toml.load(tmp_path / "state" / "datasets" / "ds" / "config.toml")
+        config = load_toml_file((tmp_path / "state" / "datasets" / "ds" / "config.toml").open())
         paths = [e["path"] for e in config["dataset"]]
         assert len(paths) == 2
         assert any("train" in p for p in paths)
@@ -492,7 +493,7 @@ class TestFolderLayout:
                 [_file("root.jpg", _make_bytes()), _file("train/a.jpg", _make_bytes())],
             )
         )
-        config = toml.load(tmp_path / "state" / "datasets" / "ds" / "config.toml")
+        config = load_toml_file((tmp_path / "state" / "datasets" / "ds" / "config.toml").open())
         paths = [e["path"] for e in config["dataset"]]
         assert len(paths) == 2  # images/ + folders/train
 
@@ -1124,7 +1125,7 @@ class TestDeleteItems:
         (train_dir / "img.txt").write_text("train caption")
 
         config_path = managed_dataset["config_path"]
-        config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]}))
+        config_path.write_text(tomlkit.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/train"}]}))
 
         deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/train"])
         assert f"{MANAGED_FOLDERS_PREFIX}/train" in deleted
@@ -1133,7 +1134,7 @@ class TestDeleteItems:
         assert not train_dir.exists()
 
         # Config should no longer reference the deleted folder
-        config = toml.load(config_path)
+        config = load_toml_file(config_path.open())
         paths = [e["path"] for e in config["dataset"]]
         assert f"{MANAGED_FOLDERS_PREFIX}/train" not in paths
         assert MANAGED_IMAGES_PREFIX in paths
@@ -1185,14 +1186,14 @@ class TestDeleteItems:
         (images_subdir / "sub.jpg").write_bytes(b"sub")
 
         config_path = managed_dataset["config_path"]
-        config_path.write_text(toml.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]}))
+        config_path.write_text(tomlkit.dumps({"dataset": [{"path": MANAGED_IMAGES_PREFIX}, {"path": f"{MANAGED_FOLDERS_PREFIX}/images"}]}))
 
         deleted, warnings = managed_datasets_service.delete_items("managed", [f"{MANAGED_FOLDERS_PREFIX}/images"])
         assert f"{MANAGED_FOLDERS_PREFIX}/images" in deleted
         assert len(warnings) == 0
         assert not images_subdir.exists()
 
-        config = toml.load(config_path)
+        config = load_toml_file(config_path.open())
         paths = [e["path"] for e in config["dataset"]]
         assert f"{MANAGED_FOLDERS_PREFIX}/images" not in paths
         assert MANAGED_IMAGES_PREFIX in paths

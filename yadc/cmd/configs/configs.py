@@ -1,10 +1,9 @@
 import copy
 from typing import Any
 
-import toml
-
 from yadc.cmd import app
 from yadc.utils import deep_merge
+from yadc.utils.dict_utils import load_toml
 
 CONFIG_PATH = app.STATE_PATH / "configs"
 
@@ -13,11 +12,11 @@ def merge_user_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
     config = copy.deepcopy(config)
 
     try:
-        user_config = toml.loads(load_user_config(name))
+        user_config = load_toml(load_user_config(name))
     except Exception as e:
         raise ValueError(f"failed to load user config: {name}") from e
 
-    return deep_merge(config, user_config, remove_none=True)  # type: ignore[arg-type]
+    return deep_merge(config, user_config, remove_none=True)
 
 
 def load_user_config(name: str):

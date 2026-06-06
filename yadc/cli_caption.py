@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-import toml
 
 from yadc.captioners.api import APITypes
 from yadc.captioners.api.utils.cache import HTTPResponseCache
@@ -39,6 +38,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import reapply_dataset_extras
 from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
 from yadc.core.prediction import PredictionContext
+from yadc.utils.dict_utils import load_toml, load_toml_file, toml_to_plain
 
 from . import cli_common
 from .core import utils
@@ -276,7 +276,7 @@ async def _caption(
                             break
 
                         try:
-                            dataset_image_toml = toml.loads(dataset_image_tmp_edited)
+                            dataset_image_toml = toml_to_plain(load_toml(dataset_image_tmp_edited))
                             dataset_image_current = DatasetImage(
                                 path=dataset_image_current.path,
                                 caption=dataset_image_current.caption,
@@ -456,7 +456,7 @@ def _resolve_config_defaults(dataset_path: Path, kwargs: dict[str, Any]) -> dict
     the user didn't pass on the command line, fall back to the
     config's top-level field.
     """
-    raw = toml.load(dataset_path)
+    raw = load_toml_file(dataset_path.open())
     return {
         "overwrite": kwargs["overwrite"] if kwargs.get("overwrite") is not None else raw.get("overwrite_captions", True),
         "rounds": kwargs["rounds"] if kwargs.get("rounds") is not None else raw.get("rounds", 1),

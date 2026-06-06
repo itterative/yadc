@@ -4,8 +4,10 @@ import os
 from typing import Any, ClassVar, Literal
 
 import pydantic
-import toml
+import tomlkit
 from pydantic import ConfigDict
+
+from yadc.utils.dict_utils import load_toml_file
 
 from .app import CONFIG_PATH
 
@@ -125,7 +127,7 @@ def _load_config() -> dict[str, Any]:
 
     try:
         with open(config_path, "r") as f:
-            return toml.load(f)
+            return load_toml_file(f)
     except FileNotFoundError:
         return {}
     except PermissionError:
@@ -200,7 +202,7 @@ def save_config(config: AppConfig) -> None:
     data = v1.model_dump(exclude_none=True)
     config_path = CONFIG_PATH / "config.toml"
     with open(config_path, "w") as f:
-        toml.dump(data, f)
+        tomlkit.dump(data, f)
     try:
         os.chmod(config_path, 0o600)
     except Exception:

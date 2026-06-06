@@ -2,16 +2,16 @@ import pathlib
 
 import pydantic
 import pytest
-import toml
 
 from yadc.core.config import Config, parse_config
+from yadc.utils.dict_utils import load_toml
 
 TEST_DATA = pathlib.Path(__file__).parent / "test_data"
 
 
 def _load(name: str) -> dict:
     with open(TEST_DATA / name) as f:
-        return toml.loads(f.read())
+        return load_toml(f.read())
 
 
 class TestParseConfigV2:

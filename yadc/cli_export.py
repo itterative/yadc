@@ -7,6 +7,7 @@ from typing import TextIO
 import click
 
 from yadc.cmd import status as cmd_status
+from yadc.utils.dict_utils import load_toml_file, toml_to_plain
 
 from . import cli_common
 from .core import logging
@@ -94,12 +95,10 @@ def export(
         source = "caption"
         drafts = with_drafts
 
-    import toml
-
-    dataset_toml_raw = toml.load(dataset)
+    dataset_toml_raw = load_toml_file(dataset)
 
     try:
-        dataset_toml = parse_config(dataset_toml_raw)
+        dataset_toml = parse_config(toml_to_plain(dataset_toml_raw))
     except Exception as e:
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)

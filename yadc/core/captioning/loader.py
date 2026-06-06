@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pydantic
-import toml
 
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import envs as cmd_envs
@@ -19,6 +18,7 @@ from yadc.cmd import templates as cmd_templates
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
+from yadc.utils.dict_utils import load_toml_file, toml_to_plain
 
 from .options import CaptionJobOptions
 
@@ -132,7 +132,7 @@ def load_dataset_config(
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     with open(config_path) as f:
-        raw = toml.load(f)
+        raw = load_toml_file(f)
 
     if user_config is not None:
         raw = cmd_configs.merge_user_config(user_config, raw)
@@ -140,7 +140,7 @@ def load_dataset_config(
     raw = apply_config_overrides(raw, options)
 
     try:
-        config = parse_config(raw)
+        config = parse_config(toml_to_plain(raw))
     except pydantic.ValidationError as e:
         raise ValueError(f"invalid configuration: {e}")
 
