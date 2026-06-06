@@ -3,11 +3,36 @@
 from __future__ import annotations
 
 import copy
+from typing import IO, Any, cast
 
-from tomlkit.toml_document import TOMLDocument
+import tomlkit
 
 type TomlValue = str | int | float | bool | None | list["TomlValue"] | dict[str, "TomlValue"]
 """Recursive type representing any value that can appear in a TOML document."""
+
+
+def load_toml(content: str | bytes) -> dict[str, TomlValue]:
+    """Typed wrapper around :func:`tomlkit.loads` that returns a plain ``dict``.
+
+    tomlkit's ``loads()`` returns a ``TOMLDocument`` whose ``.items()`` and
+    ``.get()`` are typed as ``Unknown``, which cascades into dozens of
+    ``reportUnknownVariableType`` / ``reportUnknownMemberType`` warnings at
+    every call site.  This wrapper widens the return type to
+    ``dict[str, TomlValue]`` so downstream code is fully typed.
+
+    The runtime value is still a ``TOMLDocument`` (a ``dict`` subclass), so
+    round-tripping through :func:`tomlkit.dumps` still preserves comments
+    and formatting.
+    """
+    return cast("dict[str, TomlValue]", tomlkit.loads(content))
+
+
+def load_toml_file(fp: IO[str] | IO[bytes]) -> dict[str, TomlValue]:
+    """Typed wrapper around :func:`tomlkit.load` that returns a plain ``dict``.
+
+    See :func:`load_toml` for why this wrapper exists.
+    """
+    return cast("dict[str, TomlValue]", tomlkit.load(fp))
 
 
 def deep_merge(
@@ -49,25 +74,26 @@ def deep_merge(
     return result
 
 
-def toml_merge(base: "TOMLDocument", override: dict) -> "TOMLDocument":
+def toml_merge(base: dict[str, TomlValue], override: dict[str, TomlValue]) -> dict[str, TomlValue]:
     """Recursively merge *override* into a tomlkit *base* document.
 
-    Returns a new ``TOMLDocument`` — neither input is mutated.  Comments,
-    whitespace, and formatting from *base* are preserved for untouched
-    keys.  Overridden scalar/list values replace the originals.
+    Returns a new dict — neither input is mutated.  When *base* is a
+    ``TOMLDocument``, comments, whitespace, and formatting are preserved
+    for untouched keys.  Overridden scalar/list values replace the
+    originals.
 
     Rules (same as :func:`deep_merge`):
         - Dict values are merged recursively.
         - All other types (including lists) are replaced by the override value.
-        - Keys in *base* but not *override* are kept unchanged.
+        - Keys in *base* but not in *override* are kept unchanged.
         - Keys in *override* but not in *base* are added.
     """
-    result = copy.deepcopy(base)
+    result: dict[str, TomlValue] = copy.deepcopy(base)
     _merge_into(result, override)
     return result
 
 
-def _merge_into(target: dict, override: dict) -> None:
+def _merge_into(target: Any, override: Any) -> None:
     """Merge *override* into *target* in place, preserving tomlkit containers."""
     for key, val in override.items():
         existing = target.get(key)
@@ -79,14 +105,14 @@ def _merge_into(target: dict, override: dict) -> None:
             target[key] = copy.deepcopy(val)
 
 
-def toml_to_plain(doc: dict) -> dict:
+def toml_to_plain(doc: dict[str, TomlValue]) -> dict[str, TomlValue]:
     """Recursively convert a tomlkit container to a plain Python dict.
 
     tomlkit wraps values in its own types (``Integer``, ``String``,
     ``Table``) which Pydantic's Rust-level validation rejects.  This
     helper strips the wrappers by converting scalars to builtins.
     """
-    result: dict = {}
+    result: dict[str, TomlValue] = {}
     for key, val in doc.items():
         if isinstance(val, dict):
             result[key] = toml_to_plain(val)
@@ -105,8 +131,8 @@ def toml_to_plain(doc: dict) -> dict:
     return result
 
 
-def _list_to_plain(items: list) -> list:
-    out: list = []
+def _list_to_plain(items: list[TomlValue]) -> list[TomlValue]:
+    out: list[TomlValue] = []
     for item in items:
         if isinstance(item, dict):
             out.append(toml_to_plain(item))

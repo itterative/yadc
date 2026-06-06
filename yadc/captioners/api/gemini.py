@@ -288,9 +288,7 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
         """
         return [model.name.removeprefix("models/") async for model in self._iter_generate_content_models(cache_ttl=cache_ttl)]
 
-    async def _iter_generate_content_models(
-        self, *, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS
-    ) -> AsyncIterator[GeminiModel]:
+    async def _iter_generate_content_models(self, *, cache_ttl: float | None = DEFAULT_MODELS_CACHE_TTL_SECONDS) -> AsyncIterator[GeminiModel]:
         """Yield ``GeminiModel`` objects that support ``generateContent``.
 
         Shared by :meth:`list_models` (which only needs the names) and

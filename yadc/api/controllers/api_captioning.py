@@ -1,6 +1,3 @@
-from typing import Any
-
-import pydantic
 from quart import jsonify, request
 
 from yadc.cmd import envs as cmd_envs
@@ -10,8 +7,7 @@ from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService, JobInfo
 from . import controller
 from .blueprints import ApiBlueprint
-from .models_errors import APIErrorDetail
-from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error
+from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error, validate_body
 
 
 @controller
@@ -25,15 +21,10 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         Optional JSON body fields (all override config / env defaults):
             api_url, api_token, api_model_name, env,
             prompt_template, prompt_name, max_tokens, image_quality,
-            overwrite, draft, reasoning, reasoning_effort, reasoning_exclude_output
+            overwrite, draft, reasoning, reasoning_effort, reasoning_exclude_output,
+            password
         """
-        raw: dict[str, Any] = await request.get_json(silent=True) or {}
-
-        try:
-            options = CaptionJobOptions.model_validate(raw)
-        except pydantic.ValidationError as e:
-            details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
-            return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
+        options = validate_body(CaptionJobOptions, await request.get_json(silent=True))
 
         try:
             # Pre-flight env load to catch password-required errors before starting a background job.
@@ -74,13 +65,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         Returns job status immediately (202 Accepted); listen to SSE events
         or poll GET /datasets/<name>/caption for completion.
         """
-        raw: dict[str, Any] = await request.get_json(silent=True) or {}
-
-        try:
-            options = CaptionJobOptions.model_validate(raw)
-        except pydantic.ValidationError as e:
-            details = [APIErrorDetail.from_pydantic_error(err) for err in e.errors()]
-            return jsonify_error("Validation failed", details=details, status=400, code=ErrorCode.VALIDATION_ERROR)
+        options = validate_body(CaptionJobOptions, await request.get_json(silent=True))
 
         try:
             cmd_envs.load_env(options.env, password=options.password)

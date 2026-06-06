@@ -22,7 +22,11 @@ from __future__ import annotations
 import shutil
 from logging import Logger
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+from tomlkit.toml_document import TOMLDocument
+
+from yadc.utils.dict_utils import load_toml
 
 from ..modules.dataset_watcher import SELF_JOB_ID, SIDECAR_EXTENSION_GLOBS, DatasetWatcherService
 from ..modules.logging_factory import LoggingFactory
@@ -257,14 +261,15 @@ class ManagedDatasetsService(Service):
             return
 
         with open(config_path) as f:
-            doc = tomlkit.parse(f.read())
+            doc: TOMLDocument = cast(TOMLDocument, load_toml(f.read()))
 
-        entries = doc.get("dataset")
-        if not isinstance(entries, list):
+        entries_raw: Any = cast("dict[str, Any]", doc).get("dataset")
+        if not isinstance(entries_raw, list):
             return
+        entries = cast(list[dict[str, Any]], entries_raw)
 
         targets = {f"{MANAGED_FOLDERS_PREFIX}/{fn}" for fn in folder_names}
-        new_entries = [e for e in entries if not (isinstance(e, dict) and e.get("path") in targets)]
+        new_entries = [e for e in entries if e.get("path") not in targets]
 
         if len(new_entries) != len(entries):
             doc["dataset"] = new_entries

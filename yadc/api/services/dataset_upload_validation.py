@@ -9,8 +9,9 @@ from logging import Logger
 from pathlib import Path
 from typing import BinaryIO
 
-import tomlkit
 from PIL import Image
+
+from yadc.utils.dict_utils import load_toml
 
 
 def validate_image_stream(stream: BinaryIO, filename: str, logger: Logger | None = None) -> bool:
@@ -27,7 +28,7 @@ def validate_image_stream(stream: BinaryIO, filename: str, logger: Logger | None
         stream.seek(0)
         try:
             with Image.open(stream) as img:
-                img.load()
+                img.load()  # pyright: ignore[reportUnknownMemberType]  — PIL stubs are incomplete for Image.load()
         except Exception as e:
             if logger is not None:
                 logger.debug("Image validation failed: %s — %s", filename, e)
@@ -40,7 +41,7 @@ def validate_toml_stream(stream: BinaryIO) -> bool:
     content = stream.read()
     stream.seek(0)
     try:
-        tomlkit.loads(content.decode("utf-8"))
+        load_toml(content.decode("utf-8"))
         return True
     except Exception:
         return False

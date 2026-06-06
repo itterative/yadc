@@ -1,10 +1,19 @@
 import hashlib
 import json
+import typing
 from io import BytesIO
 from pathlib import Path
+from typing import Any, BinaryIO, cast
 
+import pydantic
 from PIL import Image
-from quart import Response, jsonify, request, send_file
+from quart import (
+    Response,
+    jsonify,
+    request,
+    send_file,
+)
+from werkzeug.datastructures import FileStorage, MultiDict
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
@@ -15,7 +24,59 @@ from ..services.datasets import DatasetService
 from ..services.managed_datasets import ManagedDatasetsService
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import DataclassJSONEncoder, ErrorCode, jsonify_dataclass, jsonify_error
+from .utils_json import DataclassJSONEncoder, ErrorCode, jsonify_dataclass, jsonify_error, validate_body
+
+
+class AddDatasetBody(pydantic.BaseModel):
+    name: str
+    toml_path: str | None = None
+    image_paths: list[str] | None = None
+
+
+class CommitStagedUploadBody(pydantic.BaseModel):
+    staging_id: str
+    resolutions: dict[str, str] = {}
+
+
+class DeleteItemsBody(pydantic.BaseModel):
+    paths: list[str]
+
+
+class UpdateImageCaptionBody(pydantic.BaseModel):
+    caption: str
+
+
+class UpdateImageExtrasBody(pydantic.BaseModel):
+    extras_raw: str
+
+
+class PreviewPromptBody(pydantic.BaseModel):
+    template: str = ""
+    template_name: str = ""
+
+
+# --- Multipart form helpers ------------------------------------------------
+
+
+_ModelT = typing.TypeVar("_ModelT", bound=pydantic.BaseModel)
+
+
+def _read_uploaded_files(files: Any) -> list[tuple[str, BinaryIO]]:
+    """Read uploaded ``FileStorage`` files into ``(filename, BytesIO)`` tuples.
+
+    Quart closes the SpooledTemporaryFile handles after the multipart body is
+    consumed, so accessing .stream during the async generator would fail with
+    "seek of closed file". Reading into BytesIO buffers up front side-steps
+    that.
+
+    Entries with no ``filename`` (empty form fields) are skipped.
+
+    Returns the list typed as ``list[tuple[str, BinaryIO]]`` to match the
+    upload service signature. The runtime values are ``BytesIO`` instances,
+    which are ``BinaryIO`` subclasses.
+    """
+    uploaded: list[FileStorage] = cast(list[FileStorage], files.getlist("files"))
+    return [(f.filename, BytesIO(f.read())) for f in uploaded if f.filename]
 
 
 def _thumbnail_cache_path(cache_dir: Path, image_path: Path, size: int) -> Path:
@@ -71,20 +132,16 @@ def api_datasets(
             Import: {"name": "...", "toml_path": "..."}
             Create: {"name": "...", "image_paths": ["...", ...]}
         """
-        body = await request.get_json(silent=True)
-        if body is None or "name" not in body:
-            return jsonify_error("Request body must include 'name'", status=400)
-
-        name = body["name"]
+        body = validate_body(AddDatasetBody, await request.get_json(silent=True))
 
         try:
-            if "toml_path" in body:
-                result = datasets.import_dataset(name, body["toml_path"])
+            if body.toml_path is not None:
+                result = datasets.import_dataset(body.name, body.toml_path)
                 # Snapshot the initial config
-                _snapshot_initial(config_history, datasets, name)
-            elif "image_paths" in body:
-                result = datasets.create_dataset(name, body["image_paths"])
-                _snapshot_initial(config_history, datasets, name)
+                _snapshot_initial(config_history, datasets, body.name)
+            elif body.image_paths is not None:
+                result = datasets.create_dataset(body.name, body.image_paths)
+                _snapshot_initial(config_history, datasets, body.name)
             else:
                 return jsonify_error("Provide 'toml_path' to import or 'image_paths' to create", status=400)
 
@@ -102,15 +159,14 @@ def api_datasets(
         - {"phase": "complete", "dataset": {...}, "warnings": [...]}
         - {"phase": "error", "message": "..."}
         """
-        form = await request.form
+        form = cast("dict[str, str]", await request.form)
         name = form.get("name", "").strip()
 
         if not name:
             return jsonify_error("Dataset name is required", status=400, code=ErrorCode.BAD_REQUEST)
 
-        files = await request.files
-        uploaded = files.getlist("files")
-        if not uploaded:
+        files = cast("MultiDict[str, Any]", await request.files)
+        if not files.getlist("files"):
             return jsonify_error("At least one file is required", status=400, code=ErrorCode.BAD_REQUEST)
 
         if request.content_length and request.content_length > configuration.max_upload_size_bytes:
@@ -133,7 +189,7 @@ def api_datasets(
         # Quart closes the SpooledTemporaryFile handles after the multipart body is
         # consumed, so accessing .stream during the async generator would fail with
         # "seek of closed file".
-        file_tuples = [(f.filename, BytesIO(f.read())) for f in uploaded if f.filename]
+        file_tuples = _read_uploaded_files(files)
 
         async def _stream_upload():
             try:
@@ -166,9 +222,8 @@ def api_datasets(
         # See upload_dataset() for the rationale behind ``source``.
         source = request.args.get("source", "")
 
-        files = await request.files
-        uploaded = files.getlist("files")
-        if not uploaded:
+        files = cast("MultiDict[str, Any]", await request.files)
+        if not files.getlist("files"):
             return jsonify_error("At least one file is required", status=400, code=ErrorCode.BAD_REQUEST)
 
         if request.content_length and request.content_length > configuration.max_upload_size_bytes:
@@ -178,7 +233,7 @@ def api_datasets(
                 code=ErrorCode.PAYLOAD_TOO_LARGE,
             )
 
-        file_tuples = [(f.filename, BytesIO(f.read())) for f in uploaded if f.filename]
+        file_tuples = _read_uploaded_files(files)
 
         async def _stream_append():
             try:
@@ -208,17 +263,11 @@ def api_datasets(
 
         # See upload_dataset() for the rationale behind ``source``.
         source = request.args.get("source", "")
-
-        body = await request.get_json(silent=True) or {}
-        staging_id = body.get("staging_id", "")
-        resolutions = body.get("resolutions", {})
-
-        if not staging_id:
-            return jsonify_error("staging_id is required", status=400, code=ErrorCode.BAD_REQUEST)
+        body = validate_body(CommitStagedUploadBody, await request.get_json(silent=True))
 
         async def _stream_commit():
             try:
-                async for event in dataset_upload.commit_staged_upload(name, staging_id, resolutions, source=source):
+                async for event in dataset_upload.commit_staged_upload(name, body.staging_id, body.resolutions, source=source):
                     yield json.dumps(event, cls=DataclassJSONEncoder) + "\n"
             except Exception as e:
                 yield json.dumps({"phase": "error", "message": str(e)}, cls=DataclassJSONEncoder) + "\n"
@@ -243,13 +292,10 @@ def api_datasets(
         if captioning.is_captioning(name):
             return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
 
-        body = await request.get_json(silent=True) or {}
-        paths = body.get("paths", [])
-        if not paths:
-            return jsonify_error("Request body must include 'paths' array", status=400, code=ErrorCode.BAD_REQUEST)
+        body = validate_body(DeleteItemsBody, await request.get_json(silent=True))
 
         try:
-            deleted, warnings = managed_datasets.delete_items(name, paths, source=request.args.get("source", ""))
+            deleted, warnings = managed_datasets.delete_items(name, body.paths, source=request.args.get("source", ""))
             return jsonify({"deleted": deleted, "warnings": warnings})
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
@@ -363,11 +409,9 @@ def api_datasets(
     @app.put("/datasets/<name>/images/<int:image_id>/caption")
     async def update_image_caption(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the caption text for an image."""
-        body = await request.get_json(silent=True)
-        if body is None or "caption" not in body:
-            return jsonify_error("Request body must include 'caption'", status=400)
+        body = validate_body(UpdateImageCaptionBody, await request.get_json(silent=True))
 
-        ok = datasets.update_caption(name, image_id, body["caption"], source=request.args.get("source", ""))
+        ok = datasets.update_caption(name, image_id, body.caption, source=request.args.get("source", ""))
         if not ok:
             return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
@@ -407,12 +451,10 @@ def api_datasets(
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
     async def update_image_extras(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Update the TOML extras sidecar for an image."""
-        body = await request.get_json(silent=True)
-        if body is None or "extras_raw" not in body:
-            return jsonify_error("Request body must include 'extras_raw'", status=400)
+        body = validate_body(UpdateImageExtrasBody, await request.get_json(silent=True))
 
         try:
-            ok = datasets.update_extras(name, image_id, body["extras_raw"], source=request.args.get("source", ""))
+            ok = datasets.update_extras(name, image_id, body.extras_raw, source=request.args.get("source", ""))
         except ValueError as e:
             return jsonify_error(str(e), status=400)
 
@@ -430,10 +472,10 @@ def api_datasets(
             {}  — use the default template
         If both are provided, "template" takes priority.
         """
-        body = await request.get_json(silent=True) or {}
+        body = validate_body(PreviewPromptBody, await request.get_json(silent=True))
 
-        template = body.get("template", "")
-        template_name = body.get("template_name", "")
+        template = body.template
+        template_name = body.template_name
 
         # Resolve template name to content if needed
         if not template and template_name:

@@ -1,9 +1,10 @@
 import json
 from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
+import httpx
 import pydantic
 from typing_extensions import override
 
@@ -63,6 +64,9 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
     # infer based on models response initially
     try:
         async with session.get("models") as models_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            models_resp = cast(httpx.Response, models_resp)
             assert models_resp.status_code < 400, f"request failed with http {models_resp.status_code}"
 
             models_json = models_resp.json()
@@ -85,6 +89,9 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
     # fallback to specific api checks
     try:
         async with session.get("/health") as health_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            health_resp = cast(httpx.Response, health_resp)
             assert health_resp.status_code < 400
 
             server = health_resp.headers.get("server", "unknown").lower()
@@ -96,6 +103,9 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
 
     try:
         async with session.get("/.well-known/serviceinfo") as koboldcpp_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            koboldcpp_resp = cast(httpx.Response, koboldcpp_resp)
             assert koboldcpp_resp.status_code < 400
 
             koboldcpp_json = koboldcpp_resp.json()
@@ -115,6 +125,9 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
 
     try:
         async with session.request("HEAD", "/") as models_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            models_resp = cast(httpx.Response, models_resp)
             assert models_resp.status_code < 400
 
             ollama_resp_text = models_resp.text.lower()
@@ -126,6 +139,9 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
     # last fallback
     try:
         async with session.get("/api/version") as models_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            models_resp = cast(httpx.Response, models_resp)
             assert models_resp.status_code < 400
 
             ollama_json = models_resp.json()
@@ -140,12 +156,21 @@ async def _infer_api_type_async(session: AsyncSession, api_url: str) -> APITypes
 
     try:
         async with session.get("/ping") as vllm_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            vllm_resp = cast(httpx.Response, vllm_resp)
             assert vllm_resp.status_code < 400
 
         async with session.post("/ping") as vllm_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            vllm_resp = cast(httpx.Response, vllm_resp)
             assert vllm_resp.status_code < 400
 
         async with session.get("/version") as vllm_resp:
+            # Non-streamed: always httpx.Response, not _LoggedStreamResponse.
+            # Pyright can't narrow the union, so cast explicitly.
+            vllm_resp = cast(httpx.Response, vllm_resp)
             assert vllm_resp.status_code < 400
 
             vllm_json = vllm_resp.json()

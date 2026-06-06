@@ -1,19 +1,49 @@
 """Export endpoints — trigger caption exports to training-tool compatible formats."""
 
 import pathlib
-from typing import Any
+from typing import ClassVar, Literal
 
+import pydantic
 from quart import jsonify, request
 
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
 from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.exporters import get_backend, list_backends, run_export
+from yadc.utils.dict_utils import load_toml_file, toml_to_plain
 
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import ErrorCode, jsonify_error
+from .utils_json import ErrorCode, jsonify_error, validate_body
+
+
+class ExportBody(pydantic.BaseModel):
+    dataset: str
+    backend: str = "sd-scripts"
+    format: str | None = None
+    source: Literal["caption", "draft"] | None = None
+    draft: str | None = None
+    with_drafts: list[str] = pydantic.Field(default_factory=list)
+    output: str | None = None
+    append: bool = False
+    caption_extension: str = ".txt"
+
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
+
+    @pydantic.model_validator(mode="after")
+    def _resolve(self) -> "ExportBody":
+        if self.source is None:
+            self.source = "draft" if self.draft else "caption"
+        if self.source == "draft" and not self.draft:
+            raise ValueError("'draft' is required when source='draft'")
+        if self.format is None:
+            if self.output:
+                ext = pathlib.Path(self.output).suffix.lower()
+                self.format = {".json": "json", ".jsonl": "jsonl"}.get(ext, "txt")
+            else:
+                self.format = "jsonl"
+        return self
 
 
 @controller
@@ -40,72 +70,55 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         """Run an export for a dataset.
 
         JSON body:
-            dataset (str):      Dataset name to export.
-            backend (str):      Export backend name. Default: "sd-scripts".
-            format (str):       Output format (backend-specific). Default: inferred.
-            source (str):       "caption" or "draft". Default: "caption".
-            draft (str?):       Primary draft name (required if source=draft).
-            with_drafts (str[]?) Additional drafts to append.
-            output (str?):      Output file/dir path. Default: auto-detect.
-            append (bool):      Append to existing output. Default: false.
+            dataset (str):        Dataset name to export. Required.
+            backend (str):        Export backend name. Default: "sd-scripts".
+            format (str):         Output format (backend-specific). Default: inferred from
+                                  ``output`` extension, or "jsonl" if ``output`` is unset.
+            source (str):         "caption" or "draft". Default: derived from ``draft``
+                                  ("draft" if set, else "caption"). When "draft",
+                                  ``draft`` is required.
+            draft (str):          Primary draft name. Required when ``source="draft"``.
+            with_drafts (str[]):  Additional drafts to append.
+            output (str):         Output file/dir path. Default: auto-detect.
+            append (bool):        Append to existing output. Default: false.
             caption_extension (str): File extension for txt format. Default: ".txt".
         """
-        body: dict[str, Any] = await request.get_json(silent=True) or {}
+        body = validate_body(ExportBody, await request.get_json(silent=True))
+        # ExportBody._resolve guarantees these are always set after validation.
+        assert body.source is not None
+        assert body.format is not None
 
-        # --- Required fields ---
-        dataset_name = body.get("dataset")
-        if not dataset_name:
-            return jsonify_error("'dataset' is required", status=400, code=ErrorCode.BAD_REQUEST)
-
-        dataset_info = datasets.get_dataset(dataset_name)
+        dataset_info = datasets.get_dataset(body.dataset)
         if dataset_info is None or dataset_info.config_path is None:
-            return jsonify_error(f"Dataset '{dataset_name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+            return jsonify_error(f"Dataset '{body.dataset}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
-        # --- Resolve backend & format ---
-        backend_name = body.get("backend", "sd-scripts")
         try:
-            backend_desc = get_backend(backend_name)
+            backend_desc = get_backend(body.backend)
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
 
-        fmt = body.get("format")
-        if fmt is None:
-            output = body.get("output")
-            if output:
-                ext = pathlib.Path(output).suffix.lower()
-                fmt = {".json": "json", ".jsonl": "jsonl"}.get(ext, "txt")
-            else:
-                fmt = "jsonl"
-
-        if fmt not in backend_desc.formats:
+        if body.format not in backend_desc.formats:
             return jsonify_error(
-                f"Backend '{backend_name}' does not support format '{fmt}'. Available: {', '.join(backend_desc.formats)}",
+                f"Backend '{body.backend}' does not support format '{body.format}'. Available: {', '.join(backend_desc.formats)}",
                 status=400,
                 code=ErrorCode.BAD_REQUEST,
             )
 
-        # --- Source & drafts ---
-        draft_name = body.get("draft")
-        with_drafts: list[str] = body.get("with_drafts", [])
-
-        if draft_name is not None:
-            source = "draft"
-            drafts = tuple([draft_name, *with_drafts])
+        if body.source == "draft":
+            assert body.draft is not None  # guaranteed by ExportBody._resolve
+            drafts = (body.draft, *body.with_drafts)
         else:
-            source = "caption"
-            drafts = tuple(with_drafts)
+            drafts = tuple(body.with_drafts)
 
         # --- Resolve images from the dataset config ---
-        import toml as toml_lib
-
         config_path = pathlib.Path(dataset_info.config_path)
         if not config_path.exists():
             return jsonify_error(f"Config file not found: {config_path}", status=404, code=ErrorCode.NOT_FOUND)
 
         try:
             with open(config_path) as f:
-                raw = toml_lib.load(f)
-            config = parse_config(raw, strict=False)
+                raw = load_toml_file(f)
+            config = parse_config(toml_to_plain(raw), strict=False)
         except Exception as e:
             return jsonify_error(f"Invalid dataset config: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
@@ -114,12 +127,11 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             return jsonify_error("No images found in dataset", status=400, code=ErrorCode.BAD_REQUEST)
 
         # --- Output path ---
-        output_str: str | None = body.get("output")
         output_path: pathlib.Path | None = None
 
-        if output_str:
-            output_path = pathlib.Path(output_str)
-            if fmt == "txt":
+        if body.output:
+            output_path = pathlib.Path(body.output)
+            if body.format == "txt":
                 if not output_path.is_dir():
                     return jsonify_error("Output must be an existing directory for txt format", status=400, code=ErrorCode.BAD_REQUEST)
             else:
@@ -127,50 +139,47 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         else:
             # Default: place metadata alongside the first image directory
             first_dir = images[0].absolute_path.parent
-            if fmt == "json":
+            if body.format == "json":
                 output_path = first_dir / "metadata.json"
-            elif fmt == "jsonl":
+            elif body.format == "jsonl":
                 output_path = first_dir / "metadata.jsonl"
             # txt: output_path stays None → writes alongside images
-
-        append = body.get("append", False)
-        caption_extension = body.get("caption_extension", ".txt")
 
         # --- Run export ---
         try:
             count = run_export(
-                backend_name,
+                body.backend,
                 images,
-                fmt=fmt,
-                source=source,
+                fmt=body.format,
+                source=body.source,
                 drafts=drafts,
                 output=output_path,
-                append=append,
-                caption_extension=caption_extension,
+                append=body.append,
+                caption_extension=body.caption_extension,
             )
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
         except Exception as e:
-            _logger.exception("Export failed for dataset '%s': %s", dataset_name, e)
+            _logger.exception("Export failed for dataset '%s': %s", body.dataset, e)
             return jsonify_error(str(e), status=500, code=ErrorCode.INTERNAL_ERROR)
 
         _logger.info(
             "Exported %d images from '%s' (backend=%s, format=%s, source=%s)",
             count,
-            dataset_name,
-            backend_name,
-            fmt,
-            source,
+            body.dataset,
+            body.backend,
+            body.format,
+            body.source,
         )
 
         return jsonify(
             {
                 "status": "ok",
                 "count": count,
-                "dataset": dataset_name,
-                "backend": backend_name,
-                "format": fmt,
-                "source": source,
+                "dataset": body.dataset,
+                "backend": body.backend,
+                "format": body.format,
+                "source": body.source,
                 "output": str(output_path) if output_path else "per-image",
             }
         )

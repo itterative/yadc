@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import tomlkit
 from PIL import Image
@@ -42,7 +42,7 @@ from PIL import Image
 from yadc.cmd.app import STATE_PATH
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
-from yadc.utils.dict_utils import toml_to_plain
+from yadc.utils.dict_utils import load_toml, load_toml_file, toml_to_plain
 
 from ..configuration import Configuration
 from ..events import DatasetChangedEvent
@@ -278,7 +278,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras_raw = f.read()
                     f.seek(0)
-                    extras = toml_to_plain(tomlkit.loads(extras_raw))
+                    extras = toml_to_plain(load_toml(extras_raw))
             except Exception:
                 pass
 
@@ -312,7 +312,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = tomlkit.loads(f.read())
+                    extras = load_toml(f.read())
             except Exception:
                 pass
 
@@ -403,7 +403,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = tomlkit.loads(f.read())
+                    extras = load_toml(f.read())
                 if extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
             except Exception:
@@ -512,7 +512,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    extras = tomlkit.loads(f.read())
+                    extras = load_toml(f.read())
                 if extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
             except Exception:
@@ -540,7 +540,7 @@ class DatasetService(Service):
 
         # Validate TOML before writing
         try:
-            tomlkit.loads(extras_raw)
+            load_toml(extras_raw)
         except Exception as e:
             raise ValueError(f"Invalid TOML: {e}") from e
 
@@ -555,7 +555,7 @@ class DatasetService(Service):
         if dataset_image.toml_path.exists():
             try:
                 with open(dataset_image.toml_path) as f:
-                    current_extras = tomlkit.loads(f.read())
+                    current_extras = load_toml(f.read())
                 if current_extras:
                     dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(current_extras)})
             except Exception:
@@ -696,24 +696,26 @@ class DatasetService(Service):
     def _load_raw_config(self, config_path: Path) -> dict[str, Any]:
         """Load a TOML config as a raw dict."""
         with open(config_path) as f:
-            return tomlkit.load(f)
+            return load_toml_file(f)
 
     def _resolve_relative_paths(self, raw: dict[str, Any], base_dir: Path) -> dict[str, Any]:
         """Resolve relative dataset paths in a raw config dict to absolute paths."""
         # Handle v2 [[dataset]]
-        dataset_entries = raw.get("dataset")
+        dataset_entries: Any = raw.get("dataset")
         if isinstance(dataset_entries, list):
+            dataset_entries = cast(list[dict[str, Any]], dataset_entries)
             for entry in dataset_entries:
                 if isinstance(entry, dict) and "path" in entry:
-                    p = Path(entry["path"])
+                    p = Path(cast(str, entry["path"]))
                     if not p.is_absolute():
                         entry["path"] = str((base_dir / p).resolve())
 
         # Handle v1 [dataset] paths
-        dataset_v1 = raw.get("dataset")
+        dataset_v1: Any = raw.get("dataset")
         if isinstance(dataset_v1, dict) and "paths" in dataset_v1:
-            resolved = []
-            for p in dataset_v1["paths"]:
+            dataset_v1 = cast(dict[str, Any], dataset_v1)
+            resolved: list[str] = []
+            for p in cast(list[str], dataset_v1["paths"]):
                 pp = Path(p)
                 if not pp.is_absolute():
                     resolved.append(str((base_dir / pp).resolve()))
@@ -731,7 +733,7 @@ class DatasetService(Service):
         """
         try:
             with open(config_path) as f:
-                raw = tomlkit.load(f)
+                raw = load_toml_file(f)
             return parse_config(toml_to_plain(raw), strict=False)
         except Exception as e:
             self._logger.warning("Failed to parse config at %s: %s", config_path, e)

@@ -31,7 +31,7 @@ class PromptRenderer:
     """
 
     def __init__(self, prompt_template: str = ""):
-        self._prompt_template = prompt_template.strip()
+        self._prompt_template: str = prompt_template.strip()
         self._jinja: jinja2.Environment = jinja2.Environment(
             loader=jinja2.FunctionLoader(self._load_template),
             lstrip_blocks=True,

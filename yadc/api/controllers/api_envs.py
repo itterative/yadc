@@ -1,10 +1,11 @@
 """Environment CRUD endpoints — backed by the ``cmd.envs`` module."""
 
+from typing import ClassVar, Literal
+
 import httpx
+import pydantic
 from quart import jsonify, request
 
-# cmd.envs is a heavy import (keyring, cryptography) — keep it at module level
-# so it's loaded once, not on every request.
 from yadc.cmd import config as cmd_config
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd.envs.keystorage_password import PasswordRequiredError
@@ -14,10 +15,33 @@ from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
-from .utils_json import ErrorCode, jsonify_error
+from .utils_json import ErrorCode, jsonify_error, validate_body
 
 
-def _format_env(name: str, env_data) -> dict[str, object]:
+class RevealEnvValueBody(pydantic.BaseModel):
+    key: str
+    password: str | None = None
+
+
+class PutEnvBody(pydantic.BaseModel):
+    api_url: str | None = None
+    api_token: str | None = None
+    api_model_name: str | None = None
+
+    model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
+
+
+class ListModelsBody(pydantic.BaseModel):
+    password: str | None = None
+
+
+class PutKeyModeBody(pydantic.BaseModel):
+    mode: Literal["keyring", "password"]
+    password: str | None = None
+    old_password: str | None = None
+
+
+def _format_env(name: str, env_data: cmd_config.AppConfigEnv | None) -> dict[str, object]:
     """Format environment data for the API (token masked)."""
     api_url = env_data.api_url.value if env_data else None
     api_token = env_data.api_token if env_data else None
@@ -46,7 +70,7 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         return jsonify([_format_env(name, cmd_envs.get_env(name)) for name in names])
 
     @app.get("/envs/<name>")
-    def get_env(name: str):  # pyright: ignore[reportUnusedFunction]
+    def get_env(name: str):
         """Return environment settings (token masked)."""
         env_data = cmd_envs.get_env(name)
         return jsonify(_format_env(name, env_data))
@@ -59,18 +83,16 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
             key: str
             password: str | null  (required when the value is password-encrypted)
         """
-        body = await request.get_json(silent=True) or {}
-        key = body.get("key")
-        password: str | None = body.get("password")
+        body = validate_body(RevealEnvValueBody, await request.get_json(silent=True))
 
-        if not key or key not in cmd_config.AppConfigEnv.model_fields:
+        if body.key not in cmd_config.AppConfigEnv.model_fields:
             return jsonify_error("Invalid key", status=400, code=ErrorCode.BAD_REQUEST)
 
         env_data = cmd_envs.get_env(name)
         if env_data is None:
             return jsonify_error("Environment not found", status=404, code=ErrorCode.NOT_FOUND)
 
-        value_obj = getattr(env_data, key)
+        value_obj = getattr(env_data, body.key)
         if not isinstance(value_obj, cmd_config.AppConfigEnvValue):
             return jsonify_error("Invalid key", status=400, code=ErrorCode.BAD_REQUEST)
 
@@ -80,7 +102,7 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         if value_obj.is_encrypted:
             method = cmd_envs.EncryptionMethod(value_obj.method)
             try:
-                decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method, password=password)
+                decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method, password=body.password)
             except cmd_envs.PasswordRequiredError:
                 return jsonify_error(
                     "Password required to decrypt environment settings",
@@ -102,13 +124,11 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
             api_token: str
             api_model_name: str
         """
-        body = await request.get_json(silent=True) or {}
-
+        body = validate_body(PutEnvBody, await request.get_json(silent=True))
         config = cmd_config.load_config()
 
-        for key in cmd_config.AppConfigEnv.model_fields:
-            if key in body:
-                cmd_envs.update_env(key, body[key], env=name, config=config)
+        for key, value in body.model_dump(exclude_none=True).items():
+            cmd_envs.update_env(key, value, env=name, config=config)
 
         cmd_envs.save_env(config=config)
         _logger.info("Environment '%s' saved.", name)
@@ -166,9 +186,10 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
 
         # POST can carry an explicit password; GET can't.
         password: str | None = None
-        if request.method == "POST":
-            body = await request.get_json(silent=True) or {}
-            password = body.get("password")
+        raw_body = await request.get_json(silent=True)
+        if request.method == "POST" and raw_body is not None:
+            body = validate_body(ListModelsBody, raw_body)
+            password = body.password
 
         try:
             models = await cmd_envs.list_models(
@@ -216,23 +237,16 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
             password: str | null  (new password when mode="password")
             old_password: str | null  (current password when changing FROM password mode)
         """
-        body = await request.get_json(silent=True) or {}
-        mode = body.get("mode")
-
-        if mode not in ("keyring", "password"):
-            return jsonify_error("mode must be 'keyring' or 'password'", status=400, code=ErrorCode.BAD_REQUEST)
-
-        password: str | None = body.get("password")
-        old_password: str | None = body.get("old_password")
+        body = validate_body(PutKeyModeBody, await request.get_json(silent=True))
 
         try:
             config = cmd_config.load_config()
-            cmd_envs.set_key_mode(config, mode, password=password, old_password=old_password)
-            if config.key_storage.mode == mode and password is not None:
-                _logger.info("Password changed for key storage mode '%s'.", mode)
+            cmd_envs.set_key_mode(config, body.mode, password=body.password, old_password=body.old_password)
+            if config.key_storage.mode == body.mode and body.password is not None:
+                _logger.info("Password changed for key storage mode '%s'.", body.mode)
             else:
-                _logger.info("Key storage mode switched to '%s'.", mode)
-            return jsonify({"mode": mode})
+                _logger.info("Key storage mode switched to '%s'.", body.mode)
+            return jsonify({"mode": body.mode})
         except PasswordRequiredError as e:
             _logger.warning("Wrong password supplied for key mode change: %s", e)
             return jsonify_error(

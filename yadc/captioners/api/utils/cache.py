@@ -99,7 +99,7 @@ class HTTPResponseCache:
         if isinstance(response, requests.Response):
             content = response.content
         else:
-            content = response.content if response._content is not None else b""
+            content = response.content
 
         entry = _ResponseCacheEntry(
             key=key,

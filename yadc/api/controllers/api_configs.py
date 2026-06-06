@@ -1,7 +1,7 @@
 """Dataset config CRUD endpoints — view and edit the TOML configs stored in STATE_PATH."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import tomlkit
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from quart import jsonify, request
 from yadc.api.services.config_history import ConfigHistoryService
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
-from yadc.utils.dict_utils import toml_merge, toml_to_plain
+from yadc.utils.dict_utils import TomlValue, load_toml, toml_merge, toml_to_plain
 
 from ..modules.logging_factory import LoggingFactory
 from . import controller
@@ -24,7 +24,8 @@ def _extract_dataset_paths(doc: dict[str, Any]) -> set[str]:
     entries = doc.get("dataset")
     if not isinstance(entries, list):
         return set()
-    return {str(entry.get("path", "")) for entry in entries if isinstance(entry, dict)}
+    entries = cast("list[dict[str, Any]]", entries)
+    return {str(entry.get("path", "")) for entry in entries}
 
 
 @controller
@@ -59,7 +60,7 @@ def api_configs(
 
         # Parse to get structured fields alongside the raw text
         try:
-            parsed = tomlkit.loads(content)
+            parsed: dict[str, Any] = load_toml(content)
         except Exception:
             parsed = {}
 
@@ -97,7 +98,7 @@ def api_configs(
 
         # Validate it parses as TOML
         try:
-            new_doc = tomlkit.loads(content)
+            new_doc = load_toml(content)
         except Exception as e:
             return jsonify_error(f"Invalid TOML: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 
@@ -109,7 +110,7 @@ def api_configs(
         if info.source == "upload":
             try:
                 with open(info.config_path) as f:
-                    original_doc = tomlkit.loads(f.read())
+                    original_doc = load_toml(f.read())
             except Exception:
                 original_doc = {}
             original_paths = _extract_dataset_paths(toml_to_plain(original_doc))
@@ -155,6 +156,7 @@ def api_configs(
         body = await request.get_json(silent=True)
         if body is None or not isinstance(body, dict):
             return jsonify_error("Request body must be a JSON object", status=400, code=ErrorCode.BAD_REQUEST)
+        body = cast("dict[str, TomlValue]", body)
 
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
@@ -170,7 +172,7 @@ def api_configs(
             return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
 
         try:
-            parsed = tomlkit.loads(content)
+            parsed = load_toml(content)
         except Exception as e:
             return jsonify_error(f"Existing config is invalid TOML: {e}", status=500, code=ErrorCode.INTERNAL_ERROR)
 
@@ -196,15 +198,12 @@ def api_configs(
                     code=ErrorCode.BAD_REQUEST,
                 )
 
-        # Serialize and validate round-trip
-        try:
-            new_content = tomlkit.dumps(merged_doc)
-            tomlkit.loads(new_content)  # round-trip validation
-        except Exception as e:
-            return jsonify_error(f"Failed to serialize config: {e}", status=400, code=ErrorCode.BAD_REQUEST)
+        new_content = tomlkit.dumps(merged_doc)
 
         if dry_run:
-            return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
+            return jsonify(
+                {"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)}
+            )
 
         try:
             with open(info.config_path, "w") as f:
@@ -220,7 +219,9 @@ def api_configs(
         # Rescan so the index picks up any changes
         datasets.rescan_dataset(name)
 
-        return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
+        return jsonify(
+            {"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)}
+        )
 
     @app.get("/configs/<name>/history")
     def list_config_history(name: str):  # pyright: ignore[reportUnusedFunction]
@@ -288,7 +289,7 @@ def api_configs(
             content = f.read()
 
         try:
-            parsed = tomlkit.loads(content)
+            parsed = load_toml(content)
         except Exception:
             parsed = {}
 
@@ -303,15 +304,19 @@ def api_configs(
         warnings: list[str] = []
         try:
             entries = parsed.get("dataset")
+
             if isinstance(entries, list):
                 base_dir = Path(info.config_path).parent
+
+                entries = cast("list[dict[str, Any]]", entries)
                 for ds_entry in entries:
-                    if isinstance(ds_entry, dict):
-                        path_val = str(ds_entry.get("path", ""))
-                        if path_val.startswith("folders/"):
-                            folder_name = path_val[len("folders/") :]
-                            if not (base_dir / "folders" / folder_name).exists():
-                                warnings.append(f"Folder '{folder_name}' is referenced in config but no longer exists on disk.")
+                    path_val = str(ds_entry.get("path", ""))
+                    if not path_val.startswith("folders/"):
+                        continue
+
+                    folder_name = path_val[len("folders/") :]
+                    if not (base_dir / "folders" / folder_name).exists():
+                        warnings.append(f"Folder '{folder_name}' is referenced in config but no longer exists on disk.")
         except Exception:
             pass
 

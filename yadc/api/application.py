@@ -71,7 +71,7 @@ class Application(Module):
     def configure_controllers(self):
         """Auto-discover and invoke all @controller functions."""
         for ctrl in discover_controllers(controllers_pkg):
-            controller_deps = {arg: self.injector.get(klass) for arg, klass in get_bindings(ctrl).items()}  # pyright: ignore[reportUnknownVariableType]
+            controller_deps = {arg: self.injector.get(klass) for arg, klass in get_bindings(ctrl).items()}
             ctrl(**controller_deps)
 
     def configure_app(self):
@@ -87,7 +87,7 @@ class Application(Module):
         app.config["MAX_CONTENT_LENGTH"] = self.configuration.max_upload_size_bytes
 
         @app.before_serving
-        async def _capture_loop():
+        async def _capture_loop():  # pyright: ignore[reportUnusedFunction]
             event_dispatcher.set_loop(asyncio.get_running_loop())
 
         app.register_blueprint(self.injector.get(ApiBlueprint))

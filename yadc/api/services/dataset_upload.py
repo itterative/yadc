@@ -14,9 +14,10 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 
 import tomlkit
+from tomlkit.toml_document import TOMLDocument
 
 from yadc.api.configuration import Configuration
 from yadc.api.modules.dataset_watcher import SIDECAR_EXTENSIONS, DatasetWatcherService
@@ -37,6 +38,7 @@ from yadc.api.services.dataset_upload_validation import (
 )
 from yadc.api.services.datasets import DATASETS_DIR, IMAGE_EXTENSIONS, DatasetService, _dataset_config_path
 from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
+from yadc.utils.dict_utils import load_toml
 
 # Extensions allowed for uploaded files (images + sidecars).
 UPLOAD_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
@@ -97,7 +99,7 @@ class DatasetUploadService(Service):
         """Thin wrapper around :func:`validate_image_stream` for test patching."""
         return validate_image_stream(stream, filename, self._logger)
 
-    def _validate_toml(self, stream: BinaryIO, filename: str) -> bool:
+    def _validate_toml(self, stream: BinaryIO, _filename: str) -> bool:
         """Thin wrapper around :func:`validate_toml_stream` for test patching."""
         return validate_toml_stream(stream)
 
@@ -540,14 +542,14 @@ class DatasetUploadService(Service):
         config_path = Path(info.config_path)
         if new_folder_names or has_root_files:
             try:
-                doc = tomlkit.parse(config_path.read_text())
+                doc = cast(TOMLDocument, load_toml(config_path.read_text()))
             except Exception:
                 doc = tomlkit.document()
 
             if "dataset" not in doc or not isinstance(doc["dataset"], list):
                 doc["dataset"] = tomlkit.aot()
 
-            existing_paths = {entry.get("path", "") for entry in doc["dataset"] if isinstance(entry, dict)}
+            existing_paths = {entry.get("path", "") for entry in cast(list[dict[str, Any]], doc["dataset"])}
 
             root_rel = MANAGED_IMAGES_PREFIX
             root_abs = str(images_dir.resolve())

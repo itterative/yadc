@@ -75,6 +75,7 @@ reportUnsafeMultipleInheritance = "none"
 reportImplicitStringConcatenation = "none"
 reportMissingSuperCall = "none"
 reportMissingTypeArgument = "none"
+reportUnknownVariableType = "none"
 
 [tool.pytest.ini_options]
 timeout = 5

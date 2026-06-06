@@ -61,7 +61,7 @@ class ConfigApi(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def validate_(self, info: pydantic.ValidationInfo):
-        strict = (info.context or {}).get("strict", True)
+        strict = info.context.get("strict", True) if info.context else True
 
         if strict:
             if not self.url:
@@ -94,7 +94,7 @@ class ConfigPrompt(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def validate_(self, info: pydantic.ValidationInfo):
-        strict = (info.context or {}).get("strict", True)
+        strict = info.context.get("strict", True) if info.context else True
 
         if strict and not self.name and not self.template:
             raise ValueError("either prompt name or prompt template must be provided in the config")
