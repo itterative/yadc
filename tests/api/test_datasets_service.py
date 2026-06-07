@@ -6,74 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from yadc.api.events import DatasetChangedEvent
-from yadc.api.services.dataset_repository import DatasetRepository
-from yadc.api.services.datasets import DatasetService, ImageInfo
-
-
-class TestListImages:
-    """``list_images`` — opaque ``next`` cursor decoding."""
-
-    @pytest.fixture
-    def service(self):
-        mock_repo = MagicMock()
-        mock_repo.list_images.return_value = []
-        svc = DatasetService.__new__(DatasetService)
-        svc._repo = mock_repo
-        return svc, mock_repo
-
-    def test_first_page_passes_unbounded_cursor(self, service):
-        """No ``next`` token means "first page" — repo gets an
-        effectively-unbounded ``before_id`` (max int) so all rows
-        pass the ``id < ?`` filter."""
-        svc, mock_repo = service
-        page = svc.list_images("alpha", limit=10)
-
-        mock_repo.list_images.assert_called_once()
-        _, kwargs = mock_repo.list_images.call_args
-        # The repo receives the largest possible int (2**63 - 1) so
-        # ``id < before_id`` is true for every row.
-        assert kwargs["before_id"] == 2**63 - 1
-        assert kwargs["limit"] == 11  # limit + 1
-        assert page.next_token is None
-
-    def test_next_token_decoded_to_before_id(self, service):
-        """An opaque ``next`` token is decoded into the internal
-        ``before_id`` cursor; the client never sees the encoding."""
-        svc, mock_repo = service
-        mock_repo.list_images.return_value = []  # no more pages
-        svc.list_images("alpha", limit=10, next="42")
-
-        _, kwargs = mock_repo.list_images.call_args
-        assert kwargs["before_id"] == 42
-
-    def test_next_token_emitted_from_smallest_id(self, service):
-        """When there's a next page, the returned ``next_token`` is
-        the smallest id on the current page (the last image in DESC
-        order) so the client can use it as the next cursor."""
-        svc, mock_repo = service
-        # Simulate limit+1 rows returned (2 more than asked, so a
-        # next page exists). The repo returns the full list; the
-        # service trims to ``limit`` and emits a token.
-        rows = []
-        for i in [50, 49, 48]:  # ids descending
-            info = MagicMock(spec=ImageInfo)
-            info.id = i
-            rows.append(info)
-        mock_repo.list_images.return_value = rows
-
-        page = svc.list_images("alpha", limit=2, next="100")
-
-        # Trimmed to first 2; token = smallest id on the trimmed page.
-        assert len(page.images) == 2
-        assert page.next_token == "49"
-
-    def test_empty_token_means_first_page(self, service):
-        """An empty ``next`` string is treated as "first page"."""
-        svc, mock_repo = service
-        svc.list_images("alpha", limit=10, next="")
-
-        _, kwargs = mock_repo.list_images.call_args
-        assert kwargs["before_id"] == 2**63 - 1
+from yadc.api.services.dataset_repository import DatasetRepository, ImageInfo
+from yadc.api.services.datasets import DatasetService
 
 
 @pytest.fixture
@@ -95,7 +29,7 @@ def service(
         configuration=test_configuration,
         event_dispatcher=event_dispatcher,
         logging=logging_factory,
-        repo=repo,
+        repo=MagicMock(wraps=repo),
     )
     return svc
 
@@ -116,25 +50,78 @@ def image_with_caption(tmp_path):
     return img_path, caption_path
 
 
-def _setup_service_get_image(service: DatasetService, image_id: int, image_path: Path):
-    """Patch get_image to return an ImageInfo pointing to the given file."""
-    info = ImageInfo(
-        id=image_id,
-        file_name=image_path.name,
-        path=str(image_path),
-        has_caption=True,
-    )
-    service.get_image = MagicMock(return_value=info)
+class TestListImages:
+    """``list_images`` — opaque ``next`` cursor decoding."""
+
+    def test_first_page_passes_unbounded_cursor(self, service):
+        """No ``next`` token means "first page" — repo gets an
+        effectively-unbounded ``before_id`` (max int) so all rows
+        pass the ``id < ?`` filter."""
+        page = service.list_images("alpha", limit=10)
+
+        service._repo.list_images.assert_called_once()
+        _, kwargs = service._repo.list_images.call_args
+        # The repo receives the largest possible int (2**63 - 1) so
+        # ``id < before_id`` is true for every row.
+        assert kwargs["before_id"] == 2**63 - 1
+        assert kwargs["limit"] == 11  # limit + 1
+        assert page.next_token is None
+
+    def test_next_token_decoded_to_before_id(self, service):
+        """An opaque ``next`` token is decoded into the internal
+        ``before_id`` cursor; the client never sees the encoding."""
+        service._repo.list_images.return_value = []  # no more pages
+        service.list_images("alpha", limit=10, next="42")
+
+        _, kwargs = service._repo.list_images.call_args
+        assert kwargs["before_id"] == 42
+
+    def test_next_token_emitted_from_smallest_id(self, service):
+        """When there's a next page, the returned ``next_token`` is
+        the smallest id on the current page (the last image in DESC
+        order) so the client can use it as the next cursor."""
+        # Simulate limit+1 rows returned (2 more than asked, so a
+        # next page exists). The repo returns the full list; the
+        # service trims to ``limit`` and emits a token.
+        rows = []
+        for i in [50, 49, 48]:  # ids descending
+            info = MagicMock(spec=ImageInfo)
+            info.id = i
+            rows.append(info)
+        service._repo.list_images.return_value = rows
+
+        page = service.list_images("alpha", limit=2, next="100")
+
+        # Trimmed to first 2; token = smallest id on the trimmed page.
+        assert len(page.images) == 2
+        assert page.next_token == "49"
+
+    def test_empty_token_means_first_page(self, service):
+        """An empty ``next`` string is treated as "first page"."""
+        service.list_images("alpha", limit=10, next="")
+
+        _, kwargs = service._repo.list_images.call_args
+        assert kwargs["before_id"] == 2**63 - 1
 
 
 class TestPreviewPrompt:
     """DatasetService.preview_prompt — verify the template context is populated
     with caption, TOML extras, and drafts as expected."""
 
+    def _setup_service_get_image(self, service: DatasetService, image_id: int, image_path: Path):
+        """Patch get_image to return an ImageInfo pointing to the given file."""
+        info = ImageInfo(
+            id=image_id,
+            file_name=image_path.name,
+            path=str(image_path),
+            has_caption=True,
+        )
+        service.get_image = MagicMock(return_value=info)
+
     def test_includes_caption(self, service, image_with_caption):
         """The current caption should be available as {{ caption }} in the template context."""
         img_path, _ = image_with_caption
-        _setup_service_get_image(service, image_id=1, image_path=img_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
         result = service.preview_prompt("test_ds", 1, "")
         assert result is not None
@@ -144,7 +131,7 @@ class TestPreviewPrompt:
         """Without a .txt file, the caption should be empty string."""
         img_path, caption_path = image_with_caption
         caption_path.unlink()  # remove caption file
-        _setup_service_get_image(service, image_id=1, image_path=img_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
         result = service.preview_prompt("test_ds", 1, "")
         assert result is not None
@@ -158,7 +145,7 @@ class TestPreviewPrompt:
         toml_path = img_path.with_suffix(".toml")
         toml_path.write_text('custom_field = "hello"\nnumber = 42\n')
 
-        _setup_service_get_image(service, image_id=1, image_path=img_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
         result = service.preview_prompt("test_ds", 1, "")
         assert result is not None
@@ -174,7 +161,7 @@ class TestPreviewPrompt:
         draft_path = img_path.parent / (img_path.stem + ".gemma.draft~")
         draft_path.write_text("draft caption from gemma")
 
-        _setup_service_get_image(service, image_id=1, image_path=img_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
         result = service.preview_prompt("test_ds", 1, "")
         assert result is not None
@@ -184,7 +171,7 @@ class TestPreviewPrompt:
     def test_with_custom_template(self, service, image_with_caption):
         """A custom template can reference {{ caption }} and get the current caption."""
         img_path, _ = image_with_caption
-        _setup_service_get_image(service, image_id=1, image_path=img_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
         custom_template = """
 {% set system_prompt %}You are a caption refiner.{% endset %}

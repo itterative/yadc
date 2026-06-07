@@ -27,7 +27,7 @@ _PATCH_LOAD_DATASET_CONFIG = "yadc.api.services.captioning.load_dataset_config"
 
 
 @pytest.fixture
-def job(tmp_path):
+def job(tmp_path, test_configuration):
     """Create an AsyncCaptionJob with mocked dependencies."""
     mock_watcher = MagicMock()
     mock_ds = MagicMock()
@@ -47,7 +47,7 @@ def job(tmp_path):
         options=opts,
         on_done=lambda: None,
         job_id="abc123",
-        configuration=MagicMock(),
+        configuration=test_configuration,
     )
 
 

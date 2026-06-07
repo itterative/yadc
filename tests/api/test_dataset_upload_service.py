@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import tomlkit
 
-from yadc.api.configuration import Configuration
 from yadc.api.modules.dataset_watcher import DatasetWatcherService
 from yadc.api.services.dataset_upload import DatasetUploadResult, DatasetUploadService, UploadProgressEvent
 from yadc.api.services.datasets import DatasetInfo, DatasetService
@@ -112,31 +111,19 @@ def mock_datasets():
 
 
 @pytest.fixture
-def configuration(tmp_path):
-    cfg = MagicMock(spec=Configuration)
-    cfg.max_upload_size_bytes = 10 * 1024 * 1024  # 10 MB
-    return cfg
-
-
-@pytest.fixture
-def mock_logging():
-    lg = MagicMock()
-    lg.get_logger.return_value = MagicMock()
-    return lg
-
-
-@pytest.fixture
 def mock_watcher():
     return MagicMock(spec=DatasetWatcherService)
 
 
 @pytest.fixture
-def upload_service(mock_datasets, mock_watcher, configuration, mock_logging):
+def upload_service(mock_datasets, mock_watcher, test_configuration, logging_factory):
+    test_configuration.max_upload_size_bytes = 10 * 1024 * 1024  # 10 MB
+
     return DatasetUploadService(
         datasets=mock_datasets,
         watcher=mock_watcher,
-        configuration=configuration,
-        logging=mock_logging,
+        configuration=test_configuration,
+        logging=logging_factory,
     )
 
 
@@ -215,28 +202,35 @@ def mock_datasets_for_append(managed_dataset):
 
 
 @pytest.fixture
-def append_service(mock_datasets_for_append, mock_watcher, configuration, mock_logging):
+def append_service(mock_datasets_for_append, mock_watcher, test_configuration, logging_factory):
     return DatasetUploadService(
         datasets=mock_datasets_for_append,
         watcher=mock_watcher,
-        configuration=configuration,
-        logging=mock_logging,
+        configuration=test_configuration,
+        logging=logging_factory,
     )
 
 
 @pytest.fixture
-def dataset_service_for_delete(managed_dataset):
-    """Create a real DatasetService with mocked DB/watcher for delete tests."""
-    mock_db = MagicMock()
-    mock_watcher = MagicMock()
-    mock_logging = MagicMock()
-    mock_logging.get_logger.return_value = MagicMock()
+def dataset_service_for_delete(managed_dataset, test_configuration, logging_factory):
+    """Real DatasetService with mocked DB/watcher for delete tests.
 
-    svc = DatasetService.__new__(DatasetService)
-    svc._db = mock_db
-    svc._watcher = mock_watcher
-    svc._logger = mock_logging.get_logger()
-    svc._repo = MagicMock()
+    Uses the real constructor (the watcher / event_dispatcher are mocks,
+    so the real ``_watch_existing_datasets`` no-ops). The fixture also
+    wires ``get_dataset`` / ``rescan_dataset`` onto the resulting
+    service so the delete-flow tests can drive them.
+    """
+    from yadc.api.modules.dataset_watcher import DatasetWatcherService
+    from yadc.api.modules.event_dispatcher import EventDispatcher
+
+    svc = DatasetService(
+        db=MagicMock(),
+        watcher=MagicMock(spec=DatasetWatcherService),
+        configuration=test_configuration,
+        event_dispatcher=MagicMock(spec=EventDispatcher),
+        logging=logging_factory,
+        repo=MagicMock(),
+    )
 
     info = DatasetInfo(
         name="managed",
@@ -250,13 +244,13 @@ def dataset_service_for_delete(managed_dataset):
 
 
 @pytest.fixture
-def managed_datasets_service(dataset_service_for_delete, mock_logging):
-    """Create a real ManagedDatasetsService wired to the test's DatasetService."""
-    svc = ManagedDatasetsService.__new__(ManagedDatasetsService)
-    svc._datasets = dataset_service_for_delete
-    svc._watcher = dataset_service_for_delete._watcher
-    svc._logger = mock_logging.get_logger()
-    return svc
+def managed_datasets_service(dataset_service_for_delete, logging_factory):
+    """Real ManagedDatasetsService wired to the test's DatasetService."""
+    return ManagedDatasetsService(
+        datasets=dataset_service_for_delete,
+        watcher=dataset_service_for_delete._watcher,
+        logging=logging_factory,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -502,8 +496,8 @@ class TestSizeLimit:
     """``max_upload_size_bytes`` config — the upload is rejected if the
     total written size would exceed the configured limit."""
 
-    def test_size_limit_exceeded(self, upload_service, configuration):
-        configuration.max_upload_size_bytes = 10  # 10 bytes
+    def test_size_limit_exceeded(self, upload_service, test_configuration):
+        test_configuration.max_upload_size_bytes = 10  # 10 bytes
         # Include a valid image so .txt isn't treated as orphan.
         # The image is small but the .txt pushes past the limit during write.
         events = run(
@@ -517,8 +511,8 @@ class TestSizeLimit:
         assert error is not None
         assert "exceeds" in error
 
-    def test_size_limit_not_exceeded(self, upload_service, configuration):
-        configuration.max_upload_size_bytes = 1024 * 1024  # 1 MB
+    def test_size_limit_not_exceeded(self, upload_service, test_configuration):
+        test_configuration.max_upload_size_bytes = 1024 * 1024  # 1 MB
         events = run(_collect(upload_service, "ds", [_file("cat.jpg", _make_bytes())]))
         result = _result_from_events(events)
         assert result is not None
@@ -545,26 +539,33 @@ class TestRealValidationMethods:
     """Exercises the real ``_validate_image`` and ``_validate_toml``
     implementations (no mocking of these methods)."""
 
-    def test_validate_image_real_valid_image(self):
+    @pytest.fixture
+    def svc(self, test_configuration, logging_factory):
+        """DatasetUploadService with mocked deps — just enough to call the
+        real ``_validate_image`` / ``_validate_toml`` methods. The full
+        constructor is used so the service is in a real state; only the
+        collaborators those methods don't need are stubbed."""
+        return DatasetUploadService(
+            datasets=MagicMock(),
+            watcher=MagicMock(),
+            configuration=test_configuration,
+            logging=logging_factory,
+        )
+
+    def test_validate_image_real_valid_image(self, svc):
         """_validate_image returns True for the shipped test image."""
-        svc = DatasetUploadService.__new__(DatasetUploadService)
-        svc._logger = MagicMock()
         assert svc._validate_image(_read_test_image(), "img.png") is True
 
-    def test_validate_image_real_corrupt(self):
+    def test_validate_image_real_corrupt(self, svc):
         """_validate_image returns False for garbage bytes."""
-        svc = DatasetUploadService.__new__(DatasetUploadService)
-        svc._logger = MagicMock()
         assert svc._validate_image(BytesIO(b"\x00\x01\x02"), "bad.jpg") is False
 
-    def test_validate_toml_real_valid(self):
+    def test_validate_toml_real_valid(self, svc):
         """_validate_toml returns True for valid TOML."""
-        svc = DatasetUploadService.__new__(DatasetUploadService)
         assert svc._validate_toml(BytesIO(b"x = 1\n"), "test.toml") is True
 
-    def test_validate_toml_real_invalid(self):
+    def test_validate_toml_real_invalid(self, svc):
         """_validate_toml returns False for invalid TOML."""
-        svc = DatasetUploadService.__new__(DatasetUploadService)
         assert svc._validate_toml(BytesIO(b"key = [invalid"), "bad.toml") is False
 
 

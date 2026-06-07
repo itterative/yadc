@@ -51,6 +51,28 @@ To run: `uv run pytest -m "integration_test"` (may skip individual tests if requ
 - Dataset resolver tests cover extras merging, inline image overrides
 - CLI tests likely use Click's test runner (`CliRunner`)
 
+## Constructing services in tests
+
+**Always use the real service constructor with mocked collaborators** — never `Service.__new__(Service)` to bypass construction. The project deliberately designs every service so its constructor can be called from a fixture: the collaborators a test does not care about take cheap `MagicMock(spec=...)` values, and the test asserts against `service.<attr>` for the real ones.
+
+```python
+@pytest.fixture
+def service(self, test_configuration, logging_factory):
+    from yadc.api.modules.dataset_watcher import DatasetWatcherService
+    from yadc.api.modules.event_dispatcher import EventDispatcher
+
+    return DatasetService(
+        db=MagicMock(),
+        watcher=MagicMock(spec=DatasetWatcherService),
+        configuration=test_configuration,
+        event_dispatcher=MagicMock(spec=EventDispatcher),
+        logging=logging_factory,
+        repo=mock_repo,  # the real mock the test asserts against
+    )
+```
+
+If a service's constructor starts threads, creates sockets, or otherwise has side effects that prevent calling it from a test, **refactor the constructor** so the side effect moves to a lifecycle hook (e.g. a `@event_handler(StartupEvent)` method) or is injected. Do not work around it with `__new__`.
+
 ## Mocking with `patch()`
 
 For tests that patch module-level imports in the code under test (e.g. `cmd_config`, `cmd_envs` imported into a controller), follow a three-step pattern that keeps the test refactor-friendly. Reference: `tests/api/test_envs.py`.
