@@ -134,9 +134,11 @@ export async function refineCaption(
         errors: 0,
         job_id: '',
         error: null,
-        error_messages: []
+        error_messages: [],
+        elapsed: 0,
+        max_concurrent: 1
     });
-    setCurrentlyCaptioning({ dataset_name: datasetName, image_id: imageId });
+    addCurrentlyCaptioning(datasetName, imageId);
     const options = get(captionOptions);
     const info = await withPasswordRetry(() =>
         apiRefineCaption(
@@ -160,9 +162,11 @@ export async function refineCaption(
             error: info.error,
             error_messages: [],
             api_url: info.api_url,
-            api_model_name: info.api_model_name
+            api_model_name: info.api_model_name,
+            elapsed: info.elapsed,
+            max_concurrent: info.max_concurrent
         });
-        setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
+        addCurrentlyCaptioning(info.dataset_name, imageId);
     }
 
     lastStartedJobId.set(info.job_id);

@@ -103,7 +103,8 @@
 
         // Fallback: detect job completion without a refine result (error/cancellation).
         const captioningThisImage =
-            cc !== null && cc.dataset_name === datasetName && cc.image_id === item.id;
+            cc !== null &&
+            [...cc].some((t) => t.dataset_name === datasetName && t.image_id === item.id);
         if (wasCaptioning && !captioningThisImage) {
             isRefining = false;
         }

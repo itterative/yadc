@@ -526,11 +526,14 @@ function connect() {
     _eventSource.listen('image_refined', ImageRefinedEventZ, (data) => {
         _imageRefined.set(data);
         // Clear the "currently captioning" indicator for this image.
-        _currentlyCaptioning.update((cur) => {
-            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.image_id) {
-                return null;
+        const k = _key(data.dataset_name, data.image_id);
+        _currentlyCaptioningMap.update((map) => {
+            if (!map.has(k)) {
+                return map;
             }
-            return cur;
+            const next = new Map(map);
+            next.delete(k);
+            return next;
         });
     });
 
