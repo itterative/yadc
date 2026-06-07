@@ -59,6 +59,24 @@ class MyService(Service):
 
 **Note**: Use `from logging import Logger` (not `import logging` + `logging.Logger`) when the parameter is also named `logging` to avoid type expression errors in basedpyright.
 
+### ThreadFactory service for background threads
+
+`yadc/api/modules/thread_factory.py` provides a singleton `ThreadFactory` (`Service` subclass, auto-discovered) that creates and tracks daemon `Thread` objects. Watcher services and any other service that needs a long-running background thread inject it:
+
+```python
+class MyService(Service):
+    def __init__(self, ..., thread_factory: ThreadFactory):
+        self._thread_factory = thread_factory
+        self._thread: threading.Thread | None = None
+
+    @event_handler(StartupEvent)
+    def on_startup(self, event: StartupEvent) -> None:
+        self._thread = self._thread_factory.create(target=self._run, name="my-background-thread")
+        self._thread.start()
+```
+
+The thread is **created and started in `on_startup`**, not the constructor, so unit tests can construct the service without spinning up threads. Tests pass `MagicMock(spec=ThreadFactory)` to the constructor. The factory's `join_all(timeout=...)` can be used at shutdown to wait for tracked threads to exit (callers are responsible for unblocking them first).
+
 ## How to Add a New Controller
 
 1. Create a function in `yadc/api/controllers/`
@@ -99,6 +117,7 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `CORSMiddleware` | `modules/` | Origin-based CORS on ApiBlueprint |
 | `EventDispatcher` | `modules/` | Subscribe/dispatch events, `@event_handler` |
 | `JobScheduler` | `modules/` | Daemon threads for periodic jobs |
+| `ThreadFactory` | `modules/` | Singleton factory for daemon `Thread` objects used by watcher services. Tracks created threads so they can be joined at shutdown. |
 | `SSEEvents` | `modules/` | Condition-based SSE queue, auto-ping, monotonic event IDs, ring buffer history for `Last-Event-ID` resumption |
 | `DatasetWatcherService` | `modules/` | watchdog-based filesystem watcher for dataset dirs, debounced `DatasetChangedEvent` emission |
 | `EnvWatcherService` | `modules/` | watchdog-based watcher for `config.toml`, emits `EnvironmentsChangedEvent` with all env names |

@@ -11,6 +11,7 @@ from .logging_factory import LoggingFactory
 from .service import Service
 from .sse_events import SSEEvents
 from .template_watcher import TemplateWatcherService
+from .thread_factory import ThreadFactory
 
 __all__ = [
     "CORSMiddleware",
@@ -24,4 +25,5 @@ __all__ = [
     "DatasetWatcherService",
     "EnvWatcherService",
     "TemplateWatcherService",
+    "ThreadFactory",
 ]

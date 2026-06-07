@@ -62,6 +62,7 @@ class Configuration:
 
     # Server
     graceful_shutdown_timeout: int = 5
+    graceful_shutdown_threads_timeout: float = 1
 
     # Display
     banner_enable: bool = True
