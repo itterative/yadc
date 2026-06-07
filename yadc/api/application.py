@@ -121,11 +121,6 @@ class Application(Module):
 
     def run(self) -> None:
         """Configure everything and start the server via uvicorn."""
-        import uvicorn
-
-        self.configure_services()
-        self.configure_controllers()
-
         if self.configuration.banner_enable:
             banner_path = Path(__file__).parent / "banner.txt"
             try:
@@ -134,6 +129,11 @@ class Application(Module):
                 pass
 
         print(f"yadc web UI starting on http://{self.configuration.http_host}:{self.configuration.http_port}")
+
+        import uvicorn
+
+        self.configure_services()
+        self.configure_controllers()
 
         event_dispatcher = self.injector.get(EventDispatcher)
         event_dispatcher.dispatch(StartupEvent())
