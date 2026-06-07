@@ -420,6 +420,25 @@ export async function deleteDraft(
     }
 }
 
+export async function writeDraft(
+    datasetName: string,
+    imageId: number,
+    draftName: string,
+    content: string
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
+        {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+}
+
 export async function updateExtras(
     datasetName: string,
     imageId: number,
@@ -525,4 +544,61 @@ export async function captionSingleImage(
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
+}
+
+/** Refine a caption by sending feedback to the model.
+ *  Sends the current caption (or provided one) plus user feedback as
+ *  extra_messages to the model. Returns initial job info. */
+export async function refineCaption(
+    datasetName: string,
+    imageId: number,
+    feedback: string,
+    caption: string,
+    options: Record<string, unknown> = {}
+): Promise<CaptioningJobInfo> {
+    const password = sessionPassword.get();
+    const body = {
+        ...options,
+        feedback,
+        refine_caption: caption,
+        ...(password ? { password } : {})
+    };
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+/** Fetch the latest dry-run refine result for an image (if any). */
+export async function fetchRefineResult(
+    datasetName: string,
+    imageId: number,
+    source: 'caption' | 'draft' = 'caption',
+    draftName: string = ''
+): Promise<string | null> {
+    const params = new URLSearchParams();
+    if (source === 'draft' && draftName) {
+        params.set('source', source);
+        params.set('draft_name', draftName);
+    }
+    const qs = params.toString();
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine${qs ? '?' + qs : ''}`
+    );
+    if (res.status === 404) {
+        return null;
+    }
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    const data = await res.json();
+    return data.caption ?? null;
 }

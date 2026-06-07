@@ -18,6 +18,7 @@ yadc/webui/src/lib/components/dataset/
   detail/                       # Image detail (tab host + tabs)
     ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
     Caption.svelte              # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
+    RefineDialog.svelte         # Dialog for caption refinement — editable caption + feedback input, sends to model as conversation, shows result with Accept/Retry
     Preview.svelte              # Thin wrapper around PromptPreview
     Extras.svelte               # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
   config/                       # Dataset config editor (tab host + tabs + helpers)

@@ -26,6 +26,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Any, Literal
 
+from yadc.core.captioner import ReplyRound
 from yadc.core.captioning import (
     CaptionJobOptions,
     HTTPTTimeouts,
@@ -34,14 +35,34 @@ from yadc.core.captioning import (
 from yadc.core.captioning.runner import CaptioningRunner
 from yadc.core.config import Config
 from yadc.core.dataset import DatasetImage
+from yadc.utils import LRU
 
 from ..configuration import Configuration
-from ..events import CaptioningStatusEvent, ImageCaptionedEvent, ImageCaptionErrorEvent, ImageCaptionStartedEvent
+from ..events import (
+    CaptioningStatusEvent,
+    ImageCaptionedEvent,
+    ImageCaptionErrorEvent,
+    ImageCaptionStartedEvent,
+    ImageRefinedEvent,
+    ShutdownEvent,
+    StartupEvent,
+)
 from ..modules.dataset_watcher import DatasetWatcherService
-from ..modules.event_dispatcher import EventDispatcher
+from ..modules.event_dispatcher import EventDispatcher, event_handler
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 from .datasets import DatasetService
+
+
+@dataclass
+class RefineOptions:
+    """Parameters for a dry-run refine job (feedback-driven caption refinement).
+
+    Running with refine options active implies a dry run."""
+
+    extra_messages: list[ReplyRound] | None = None
+    refine_source: Literal["caption", "draft"] = "caption"
+    refine_draft_name: str = ""
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -97,6 +118,7 @@ class AsyncCaptionJob:
         options: CaptionJobOptions,
         on_done: Callable[[], Any],
         job_id: str = "",
+        refine: RefineOptions | None = None,
     ):
         self._dataset_name: str = dataset_name
         self._configuration: Configuration = configuration
@@ -107,6 +129,7 @@ class AsyncCaptionJob:
         self._opts: CaptionJobOptions = options
         self._on_done: Callable[[], Any] = on_done
         self._job_id: str = job_id
+        self._refine: RefineOptions | None = refine
 
         # State (guarded by _state_lock). An asyncio.Lock because the
         # CaptioningCallbacks methods are async and run on the event
@@ -132,12 +155,17 @@ class AsyncCaptionJob:
         self._started_at: float | None = None
 
         self._task: asyncio.Task[Any] | None = None
+        self._finished_at: float | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
     @property
     def alive(self) -> bool:
         return self._task is not None and not self._task.done()
+
+    @property
+    def finished_at(self) -> float | None:
+        return self._finished_at
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._arun())
@@ -230,6 +258,7 @@ class AsyncCaptionJob:
                 self._error_messages.append(str(exc))
             await self._emit_status()
         finally:
+            self._finished_at = time.monotonic()
             # Schedule cleanup as a background task so _arun returns
             # promptly and alive becomes False — this lets callers start
             # a new job immediately after cancellation.
@@ -316,11 +345,23 @@ class AsyncCaptionJob:
         )
 
         async with runner:
-            await runner.caption_images(
-                to_do,
-                self,
-                max_concurrent=self._opts.max_concurrent,
-            )
+            if self._refine is not None:
+                assert len(to_do) == 1, f"Refine jobs must have exactly one image, got {len(to_do)}"
+                img = to_do[0]
+
+                caption = await runner.caption_image_dry_run(img, self, extra_messages=self._refine.extra_messages)
+
+                async with self._state_lock:
+                    self._processed += 1
+
+                if caption:
+                    self._emit_image_refined(img, caption)
+            else:
+                await runner.caption_images(
+                    to_do,
+                    self,
+                    max_concurrent=self._opts.max_concurrent,
+                )
 
         if self._check_stop():
             await self._set_state(status="cancelled")
@@ -445,6 +486,23 @@ class AsyncCaptionJob:
             )
         )
 
+    def _emit_image_refined(self, dataset_image: DatasetImage, caption: str) -> None:
+        assert self._refine is not None, "emit image refined called without refine active"
+
+        info = self._dataset_service.get_image_by_path(self._dataset_name, dataset_image.path)
+        if info is None:
+            return
+        self._event_dispatcher.dispatch(
+            ImageRefinedEvent(
+                dataset_name=self._dataset_name,
+                job_id=self._job_id,
+                image_id=info.id,
+                caption=caption,
+                source=self._refine.refine_source,
+                draft_name=self._refine.refine_draft_name,
+            )
+        )
+
 
 # ---------------------------------------------------------------------------
 # Service
@@ -471,13 +529,53 @@ class CaptioningService(Service):
         self._async_lock: asyncio.Lock = asyncio.Lock()
         self._async_jobs: dict[str, AsyncCaptionJob] = {}
 
+        # Bounded LRU cache for dry-run refine results (key = "dataset/image_id/source_key").
+        self._refine_lock: asyncio.Lock = asyncio.Lock()
+        self._refine_results: LRU[str, str] = LRU(self._configuration.refine_result_buffer_size)
+
+        self._cleanup_task: asyncio.Task[Any] | None = None
+
+    # -- event handlers ------------------------------------------------------
+
+    @event_handler(StartupEvent)
+    async def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
+        if self._cleanup_task is not None and not self._cleanup_task.done():
+            self._logger.warning("Cleanup task already running, not starting another")
+            return
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+
+    @event_handler(ShutdownEvent)
+    async def on_shutdown(self, event: ShutdownEvent):  # pyright: ignore[reportUnusedParameter]
+        if self._cleanup_task is None or self._cleanup_task.done():
+            return
+        self._cleanup_task.cancel()
+        try:
+            await self._cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+    # FIXME: event is pushed to sse and to this
+    #        an issue might arise if the frontend tries to grab the status before this gets triggered
+    #        (in practice, unlikely to happen since this runs in memory, while the frontend is behind network)
+    @event_handler(ImageRefinedEvent)
+    async def on_image_refined(self, event: ImageRefinedEvent) -> None:
+        source_key = f"{event.source}/{event.draft_name}" if event.source == "draft" else "caption"
+        key = f"{event.dataset_name}/{event.image_id}/{source_key}"
+        async with self._refine_lock:
+            self._refine_results[key] = event.caption
+
     # -- public API ----------------------------------------------------------
 
     def _mark_expected_changes(self, dataset_name: str, job_id: str) -> None:
         """Tag the next watcher events for this dataset with the captioning job ID."""
         self._dataset_watcher.expect_changes(dataset_name, job_id)
 
-    async def start_job_async(self, dataset_name: str, options: CaptionJobOptions) -> JobInfo:
+    async def start_job_async(
+        self,
+        dataset_name: str,
+        options: CaptionJobOptions,
+        refine: RefineOptions | None = None,
+    ) -> JobInfo:
         """Start an async captioning job for *dataset_name*."""
         job_id = uuid.uuid4().hex[:12]
 
@@ -498,6 +596,7 @@ class CaptioningService(Service):
                 options=options,
                 on_done=_on_done,
                 job_id=job_id,
+                refine=refine,
             )
             self._async_jobs[dataset_name] = job
             # Synchronous preflight: compute total so the initial status is
@@ -507,6 +606,8 @@ class CaptioningService(Service):
             try:
                 to_do = job.preflight_images()
             except ValueError as exc:
+                # NOTE: drop possible zombie process
+                del self._async_jobs[dataset_name]
                 return JobInfo(
                     status="error",
                     dataset_name=dataset_name,
@@ -515,6 +616,8 @@ class CaptioningService(Service):
                 )
 
             if not to_do:
+                # NOTE: drop possible zombie process
+                del self._async_jobs[dataset_name]
                 return JobInfo(
                     status="done",
                     dataset_name=dataset_name,
@@ -525,7 +628,8 @@ class CaptioningService(Service):
                 )
 
             await job._set_state(total=len(to_do))
-            self._mark_expected_changes(dataset_name, job_id)
+            if refine is None:
+                self._mark_expected_changes(dataset_name, job_id)
             job.start()
 
         return await self.get_status_async(dataset_name)
@@ -561,20 +665,36 @@ class CaptioningService(Service):
                 return JobInfo(status="idle", dataset_name=dataset_name)
             return await job.snapshot()
 
+    async def get_refine_result(
+        self,
+        dataset_name: str,
+        image_id: int,
+        source: Literal["caption", "draft"] = "caption",
+        draft_name: str = "",
+    ) -> str | None:
+        """Return the latest dry-run refine result for an image, if any."""
+        source_key = f"{source}/{draft_name}" if source == "draft" else "caption"
+        key = f"{dataset_name}/{image_id}/{source_key}"
+        async with self._refine_lock:
+            return self._refine_results.get(key)
+
     # -- private helpers -----------------------------------------------------
 
-    async def _cleanup_async(self, dataset_name: str) -> None:
+    async def _cleanup_async(self, dataset_name: str, sleep_time: float = 5) -> None:
         """Remove finished async jobs after a short delay."""
         async with self._async_lock:
             job = self._async_jobs.get(dataset_name)
             job_id = (await job.snapshot()).job_id if job is not None else ""
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(sleep_time)
 
         async with self._async_lock:
             job = self._async_jobs.get(dataset_name)
-            if job is not None and not job.alive:
-                del self._async_jobs[dataset_name]
+
+            if job is None or job.alive:
+                return
+
+            del self._async_jobs[dataset_name]
         self._dataset_watcher.clear_expected_changes_for_job(dataset_name, job_id)
 
         # Final rescan to catch any edge cases (files added/removed by
@@ -582,3 +702,24 @@ class CaptioningService(Service):
         # calls already handled the captioning writes, so this is cheap
         # when there are no external changes.
         self._dataset_service.rescan_dataset(dataset_name)
+
+    async def _cleanup_loop(self) -> None:
+        """Periodic background task that removes dead jobs after a grace period."""
+        while True:
+            await asyncio.sleep(self._configuration.captioning_cleanup_interval_seconds)
+
+            now = time.monotonic()
+            dead: list[str] = []
+            grace = self._configuration.captioning_cleanup_grace_seconds
+
+            async with self._async_lock:
+                dataset_jobs = list(self._async_jobs.items())
+
+            for dataset_name, job in dataset_jobs:
+                if not job.alive:
+                    finished_at = job.finished_at
+                    if finished_at is not None and now - finished_at > grace:
+                        dead.append(dataset_name)
+
+            for dataset_name in dead:
+                await self._cleanup_async(dataset_name, sleep_time=0)

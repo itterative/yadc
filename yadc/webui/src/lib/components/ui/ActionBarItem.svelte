@@ -24,7 +24,7 @@
     };
 </script>
 
-<div class="flex flex-1 items-center justify-center">
+<div class="flex min-w-0 flex-1 items-center justify-center">
     <button
         class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 py-2 transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 {variantClasses[
             variant

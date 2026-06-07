@@ -103,6 +103,10 @@ The job's `expected_change_registrar` calls `DatasetWatcherService.expect_file_c
 
 `CaptioningService` (in `captioning.py`) wraps the job: starts/stops background `asyncio.Task` instances, dispatches `CaptioningStatusEvent` for job-level transitions (idle → running → done/cancelled/error), and runs a final `DatasetService.rescan_dataset()` after the job completes.
 
+### API Refine endpoint
+
+`POST /datasets/<name>/images/<int:image_id>/refine` accepts `{ feedback, caption? }` plus the standard `CaptionJobOptions` fields. It constructs `extra_messages` as `[ReplyRound(assistant, caption), ReplyRound(user, feedback)]` and passes them to `start_job_async`. The job runs as a single-image overwrite captioning job with the conversation context, producing a new caption that replaces the old one.
+
 ## 5. Model setup
 
 The runner's `__aenter__` builds the model:

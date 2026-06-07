@@ -63,6 +63,13 @@ class Configuration:
     # enough to keep model pickers snappy.
     api_models_cache_ttl: float = DEFAULT_MODELS_CACHE_TTL_SECONDS
 
+    # Captioning job cleanup
+    captioning_cleanup_interval_seconds: float = 10.0
+    captioning_cleanup_grace_seconds: float = 30.0
+
+    # Refine result cache
+    refine_result_buffer_size: int = 100
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))

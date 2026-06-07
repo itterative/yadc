@@ -47,4 +47,8 @@ class CaptionJobOptions(pydantic.BaseModel):
     # If set, only caption these specific image IDs (single-image mode)
     image_ids: list[int] | None = None
 
+    # Refine endpoint — feedback and caption to refine
+    feedback: str = ""
+    refine_caption: str = ""
+
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="ignore")

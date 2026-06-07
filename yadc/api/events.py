@@ -80,6 +80,17 @@ class ImageCaptionedEvent(Event):
 
 
 @dataclass
+class ImageRefinedEvent(Event):
+    TYPE: ClassVar[str] = "image_refined"
+    dataset_name: str
+    job_id: str
+    image_id: int
+    caption: str = ""
+    source: Literal["caption", "draft"] = "caption"
+    draft_name: str = ""
+
+
+@dataclass
 class EnvironmentsChangedEvent(Event):
     TYPE: ClassVar[str] = "environments_changed"
     envs: list[str] = dataclasses.field(default_factory=list)

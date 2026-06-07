@@ -15,12 +15,15 @@
     import ContextMenu from '$lib/components/ui/ContextMenu.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
     import { captionOptions } from '$lib/stores/caption';
+    import RefineDialog from './RefineDialog.svelte';
+    import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
     import { toast } from '$lib/stores/toasts';
 
     interface Props {
+        datasetName: string;
         item: ImageInfo;
         captionData: CaptionData | null;
         isLoadingCaption: boolean;
@@ -36,10 +39,12 @@
         onDeleteHistory: (hash: string) => Promise<void>;
         onDeleteDraft: (name: string) => Promise<void>;
         onPromoteDraft: (text: string) => Promise<void>;
+        onWriteDraft: (name: string, text: string) => Promise<void>;
         onCopy: (key: string, text: string) => void;
     }
 
     let {
+        datasetName,
         item,
         captionData,
         isLoadingCaption,
@@ -55,6 +60,7 @@
         onDeleteHistory,
         onDeleteDraft,
         onPromoteDraft,
+        onWriteDraft,
         onCopy
     }: Props = $props();
 
@@ -63,6 +69,11 @@
     let isSavingCaption = $state(false);
     let isCancelling = $state(false);
     let captioningError: string | null = $state(null);
+    let refineInitialCaption = $state<{
+        source: 'caption' | 'draft';
+        text: string;
+        draftName?: string;
+    } | null>(null);
 
     let activeDraftName = $derived($captionOptions?.draft?.trim() || '');
 
@@ -213,7 +224,10 @@
                 <!-- Copy button — anchored to the caption box, not the scrollable
                      text area, so it stays put while the user scrolls the text. -->
                 {#if captionData && captionData.caption && !isEditing && !isCaptioning}
-                    <ContextMenu class="absolute top-2 right-2 z-10" items={makeCopyItems(captionData.caption)}>
+                    <ContextMenu
+                        class="absolute top-2 right-2 z-10"
+                        items={makeCopyItems(captionData.caption)}
+                    >
                         <button
                             type="button"
                             class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-gray-700 hover:text-gray-200"
@@ -314,6 +328,21 @@
                         >
                             {activeDraftName ? `Draft (${activeDraftName})` : 'Caption'}
                         </ActionBarItem>
+                        {#if captionData.caption}
+                            <ActionBarItem
+                                onclick={() => {
+                                    refineInitialCaption = {
+                                        source: 'caption',
+                                        text: captionData?.caption || ''
+                                    };
+                                }}
+                                disabled={isCaptioning}
+                                icon={SvgRefresh}
+                                variant="secondary"
+                            >
+                                Refine
+                            </ActionBarItem>
+                        {/if}
                         <ActionBarItem onclick={handleStartEdit} icon={SvgEdit} variant="secondary">
                             Edit
                         </ActionBarItem>
@@ -367,6 +396,20 @@
                                 variant="primary"
                             >
                                 Promote
+                            </ActionBarItem>
+                            <ActionBarItem
+                                onclick={() => {
+                                    refineInitialCaption = {
+                                        source: 'draft',
+                                        text,
+                                        draftName: name
+                                    };
+                                }}
+                                disabled={isCaptioning}
+                                icon={SvgRefresh}
+                                variant="secondary"
+                            >
+                                Refine
                             </ActionBarItem>
                             <ActionBarItem
                                 onclick={() => handleDeleteDraftClick(name)}
@@ -436,4 +479,23 @@
             </div>
         </div>
     {/if}
+
+    <RefineDialog
+        open={refineInitialCaption !== null}
+        onclose={() => {
+            refineInitialCaption = null;
+        }}
+        {datasetName}
+        {item}
+        source={refineInitialCaption?.source || 'caption'}
+        draftName={refineInitialCaption?.draftName}
+        currentCaption={refineInitialCaption?.text || ''}
+        onaccept={async (text: string) => {
+            if (refineInitialCaption?.source === 'draft' && refineInitialCaption?.draftName) {
+                await onWriteDraft(refineInitialCaption.draftName, text);
+            } else {
+                await onSaveCaption(text);
+            }
+        }}
+    />
 </div>

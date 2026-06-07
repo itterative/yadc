@@ -15,6 +15,8 @@ from quart import (
 )
 from werkzeug.datastructures import FileStorage, MultiDict
 
+from yadc.api.modules.dataset_watcher import SELF_JOB_ID
+
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService
@@ -48,6 +50,10 @@ class UpdateImageCaptionBody(pydantic.BaseModel):
 
 class UpdateImageExtrasBody(pydantic.BaseModel):
     extras_raw: str
+
+
+class WriteDraftBody(pydantic.BaseModel):
+    content: str = ""
 
 
 class PreviewPromptBody(pydantic.BaseModel):
@@ -183,7 +189,7 @@ def api_datasets(
         # a frontend tab). It is propagated to the upload service so the
         # resulting DatasetChangedEvent can be suppressed by the originating
         # tab.
-        source = request.args.get("source", "")
+        source = request.args.get("source", SELF_JOB_ID)
 
         # Read all file contents into BytesIO buffers before streaming the response.
         # Quart closes the SpooledTemporaryFile handles after the multipart body is
@@ -220,7 +226,7 @@ def api_datasets(
             return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
 
         # See upload_dataset() for the rationale behind ``source``.
-        source = request.args.get("source", "")
+        source = request.args.get("source", SELF_JOB_ID)
 
         files = cast("MultiDict[str, Any]", await request.files)
         if not files.getlist("files"):
@@ -262,7 +268,7 @@ def api_datasets(
             return jsonify_error("Cannot modify dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
 
         # See upload_dataset() for the rationale behind ``source``.
-        source = request.args.get("source", "")
+        source = request.args.get("source", SELF_JOB_ID)
         body = validate_body(CommitStagedUploadBody, await request.get_json(silent=True))
 
         async def _stream_commit():
@@ -295,7 +301,7 @@ def api_datasets(
         body = validate_body(DeleteItemsBody, await request.get_json(silent=True))
 
         try:
-            deleted, warnings = managed_datasets.delete_items(name, body.paths, source=request.args.get("source", ""))
+            deleted, warnings = managed_datasets.delete_items(name, body.paths, source=request.args.get("source", SELF_JOB_ID))
             return jsonify({"deleted": deleted, "warnings": warnings})
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
@@ -332,7 +338,7 @@ def api_datasets(
     @app.post("/datasets/<name>/rescan")
     def rescan_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
         """Force a rescan of a dataset's images."""
-        source = request.args.get("source", "")
+        source = request.args.get("source", SELF_JOB_ID)
         found = datasets.rescan_dataset(name, source=source)
         if not found:
             return jsonify_error("Dataset not found", status=404)
@@ -354,7 +360,7 @@ def api_datasets(
     @app.delete("/datasets/<name>/drafts/<draft_name>")
     def delete_dataset_draft(name: str, draft_name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a named draft from all images in a dataset."""
-        deleted = datasets.delete_draft_all(name, draft_name, source=request.args.get("source", ""))
+        deleted = datasets.delete_draft_all(name, draft_name, source=request.args.get("source", SELF_JOB_ID))
         if deleted == 0:
             return jsonify_error("Draft not found", status=404)
         return jsonify({"status": "ok", "deleted": deleted})
@@ -414,7 +420,7 @@ def api_datasets(
         """Update the caption text for an image."""
         body = validate_body(UpdateImageCaptionBody, await request.get_json(silent=True))
 
-        ok = datasets.update_caption(name, image_id, body.caption, source=request.args.get("source", ""))
+        ok = datasets.update_caption(name, image_id, body.caption, source=request.args.get("source", SELF_JOB_ID))
         if not ok:
             return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
@@ -430,7 +436,7 @@ def api_datasets(
     @app.put("/datasets/<name>/images/<int:image_id>/history/<int:history_index>/restore")
     def restore_image_history(name: str, image_id: int, history_index: int):  # pyright: ignore[reportUnusedFunction]
         """Restore caption + extras from a history entry."""
-        ok = datasets.restore_history(name, image_id, history_index, source=request.args.get("source", ""))
+        ok = datasets.restore_history(name, image_id, history_index, source=request.args.get("source", SELF_JOB_ID))
         if not ok:
             return jsonify_error("Image or history entry not found", status=404)
         return jsonify({"status": "ok"})
@@ -438,7 +444,7 @@ def api_datasets(
     @app.delete("/datasets/<name>/images/<int:image_id>/history/<entry_hash>")
     def delete_image_history(name: str, image_id: int, entry_hash: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a single history entry for an image by content hash."""
-        ok = datasets.delete_history(name, image_id, entry_hash, source=request.args.get("source", ""))
+        ok = datasets.delete_history(name, image_id, entry_hash, source=request.args.get("source", SELF_JOB_ID))
         if not ok:
             return jsonify_error("Image or history entry not found", status=404)
         return jsonify({"status": "ok"})
@@ -446,9 +452,19 @@ def api_datasets(
     @app.delete("/datasets/<name>/images/<int:image_id>/drafts/<draft_name>")
     def delete_image_draft(name: str, image_id: int, draft_name: str):  # pyright: ignore[reportUnusedFunction]
         """Delete a named draft for an image."""
-        ok = datasets.delete_draft(name, image_id, draft_name, source=request.args.get("source", ""))
+        ok = datasets.delete_draft(name, image_id, draft_name, source=request.args.get("source", SELF_JOB_ID))
         if not ok:
             return jsonify_error("Image or draft not found", status=404)
+        return jsonify({"status": "ok"})
+
+    @app.put("/datasets/<name>/images/<int:image_id>/drafts/<draft_name>")
+    async def write_image_draft(name: str, image_id: int, draft_name: str):  # pyright: ignore[reportUnusedFunction]
+        """Write or overwrite a named draft for an image."""
+        body = validate_body(WriteDraftBody, await request.get_json(silent=True))
+
+        ok = datasets.write_draft(name, image_id, draft_name, body.content.strip(), source=request.args.get("source", SELF_JOB_ID))
+        if not ok:
+            return jsonify_error("Image not found", status=404)
         return jsonify({"status": "ok"})
 
     @app.put("/datasets/<name>/images/<int:image_id>/extras")
@@ -457,7 +473,7 @@ def api_datasets(
         body = validate_body(UpdateImageExtrasBody, await request.get_json(silent=True))
 
         try:
-            ok = datasets.update_extras(name, image_id, body.extras_raw, source=request.args.get("source", ""))
+            ok = datasets.update_extras(name, image_id, body.extras_raw, source=request.args.get("source", SELF_JOB_ID))
         except ValueError as e:
             return jsonify_error(str(e), status=400)
 

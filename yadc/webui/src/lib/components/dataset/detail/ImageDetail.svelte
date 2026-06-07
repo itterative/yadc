@@ -9,6 +9,7 @@
         restoreHistory,
         updateCaption,
         updateExtras,
+        writeDraft as writeDraftApi,
         type CaptionData,
         type HistoryEntry,
         type ImageInfo
@@ -233,6 +234,20 @@
         }
     }
 
+    async function handleWriteDraft(draftName: string, text: string) {
+        if (item === null) {
+            return;
+        }
+        try {
+            await writeDraftApi(datasetName, item.id, draftName, text);
+            const data = await fetchCaption(datasetName, item.id);
+            captionData = data;
+        } catch (e) {
+            captionError = friendlyErrorMessage(e, 'Failed to save draft');
+            throw e;
+        }
+    }
+
     async function handleSaveExtras(extrasRaw: string) {
         if (item === null) {
             return;
@@ -354,6 +369,7 @@
     <CompactPillTabs bind:value={activeTab} class="h-full pt-4">
         <Tab id="caption" label="Caption" icon={SvgSparkle} class="h-full">
             <Caption
+                {datasetName}
                 {item}
                 {captionData}
                 {isLoadingCaption}
@@ -369,6 +385,7 @@
                 onDeleteHistory={handleDeleteHistory}
                 onDeleteDraft={handleDeleteDraft}
                 onPromoteDraft={handleSaveCaption}
+                onWriteDraft={handleWriteDraft}
                 onCopy={handleCopy}
             />
         </Tab>

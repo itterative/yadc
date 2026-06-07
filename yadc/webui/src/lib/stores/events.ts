@@ -97,6 +97,15 @@ export const ImageCaptionStartedEventZ = z.object({
     file_name: z.string()
 });
 
+export const ImageRefinedEventZ = z.object({
+    dataset_name: z.string(),
+    job_id: z.string(),
+    image_id: z.number(),
+    caption: z.string().default(''),
+    source: z.enum(['caption', 'draft']).default('caption'),
+    draft_name: z.string().default('')
+});
+
 export const EnvironmentsChangedEventZ = z.object({
     envs: z.array(z.string())
 });
@@ -114,6 +123,7 @@ export type ImageCaptionErrorEvent = z.infer<typeof ImageCaptionErrorEventZ>;
 export type ImageCaptionStartedEvent = z.infer<typeof ImageCaptionStartedEventZ>;
 export type EnvironmentsChangedEvent = z.infer<typeof EnvironmentsChangedEventZ>;
 export type TemplatesChangedEvent = z.infer<typeof TemplatesChangedEventZ>;
+export type ImageRefinedEvent = z.infer<typeof ImageRefinedEventZ>;
 
 // --- Internal writable stores ---
 
@@ -166,6 +176,9 @@ const _currentlyCaptioningMap = writable<ReadonlyMap<string, CaptioningTarget>>(
 function _key(dataset_name: string, image_id: number): string {
     return `${dataset_name}#${image_id}`;
 }
+
+/** Latest refined caption result (null when no refine event has been received). */
+const _imageRefined = writable<ImageRefinedEvent | null>(null);
 
 /**
  * Captions received via SSE, keyed by image ID.
@@ -223,6 +236,9 @@ export const currentlyCaptioning: Readable<ReadonlySet<CaptioningTarget>> = deri
     ($map) => new Set($map.values())
 );
 
+/** Latest refined caption received via SSE. Consumed with `consumeImageRefined`. */
+export const imageRefined: Readable<ImageRefinedEvent | null> = readonly(_imageRefined);
+
 /** Captions received via SSE, keyed by image ID. */
 export const storedCaptions: Readable<Map<number, string>> = readonly(_storedCaptions);
 
@@ -255,6 +271,32 @@ export function clearStoredCaption(imageId: number): void {
         next.delete(imageId);
         return next;
     });
+}
+
+/** Return the latest refined caption for the given image + source and clear it.
+ *  Returns undefined if no matching refine event is pending.
+ *
+ *  FIXME: This uses a single writable store, so only one refine result can be
+ *  buffered at a time. In practice, refine is limited to one image per dataset
+ *  at a time (the captioning job is per-dataset), so concurrent refines for
+ *  different images in the same dataset are not possible. Cross-dataset concurrent
+ *  refines could overwrite each other's event — low severity but worth noting. */
+export function consumeImageRefined(
+    imageId: number,
+    source: 'caption' | 'draft' = 'caption',
+    draftName: string = ''
+): string | undefined {
+    const event = get(_imageRefined);
+    if (
+        event &&
+        event.image_id === imageId &&
+        event.source === source &&
+        (source !== 'draft' || event.draft_name === draftName)
+    ) {
+        _imageRefined.set(null);
+        return event.caption;
+    }
+    return undefined;
 }
 
 // --- Public actions ---
@@ -478,6 +520,17 @@ function connect() {
             const next = new Map(map);
             next.set(k, { dataset_name: data.dataset_name, image_id: data.image_id });
             return next;
+        });
+    });
+
+    _eventSource.listen('image_refined', ImageRefinedEventZ, (data) => {
+        _imageRefined.set(data);
+        // Clear the "currently captioning" indicator for this image.
+        _currentlyCaptioning.update((cur) => {
+            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.image_id) {
+                return null;
+            }
+            return cur;
         });
     });
 

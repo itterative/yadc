@@ -25,7 +25,7 @@ yadc/api/
     blueprints.py       # ApiBlueprint, AppBlueprint (@singleton injector classes)
     app_frontend.py     # @controller — serves SvelteKit build
     api_datasets.py     # @controller — dataset/image endpoints (wired to DatasetService)
-    api_captioning.py   # @controller — captioning start/stop/status + per-image caption (uses CaptioningService only — the SSE stream itself is in `api_events.py`)
+    api_captioning.py   # @controller — captioning start/stop/status + per-image caption + refine (uses CaptioningService only — the SSE stream itself is in `api_events.py`)
     api_configs.py      # @controller — dataset config TOML CRUD (view/edit/delete)
     api_envs.py         # @controller — environment CRUD + model list proxy
     api_export.py       # @controller — export backends listing + run export

@@ -504,10 +504,30 @@ class DatasetService(Service):
 
         return False
 
+    def write_draft(self, dataset_name: str, image_id: int, draft_name: str, content: str, *, source: str = SELF_JOB_ID) -> bool:
+        """Write or overwrite a named draft for an image.
+
+        Returns True on success, False if image not found.
+        """
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return False
+
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return False
+
+        dataset_image = DatasetImage(path=str(image_path))
+
+        self._watcher.expect_file_change(dataset_name, str(dataset_image.draft_path(draft_name)), source=source)
+
+        dataset_image.write_draft(draft_name, content)
+        return True
+
     def delete_draft(self, dataset_name: str, image_id: int, draft_name: str, *, source: str = SELF_JOB_ID) -> bool:
         """Delete a named draft for an image.
 
-        Returns True on success, False if image or draft not found.
+        Returns True on success, False if image not found.
         """
         info = self.get_image(dataset_name, image_id)
         if info is None:

@@ -426,21 +426,19 @@ class TestCaptioningServiceCleanupRescan:
     """Tests for CaptioningService._cleanup_async triggering a final rescan."""
 
     @pytest.fixture
-    def captioning_service(self):
+    def captioning_service(self, test_configuration, logging_factory):
         """Create a CaptioningService with mocked dependencies."""
         mock_ds = MagicMock()
         mock_dispatcher = MagicMock()
         mock_watcher = MagicMock()
-        mock_logging = MagicMock()
-        mock_logging.get_logger.return_value = MagicMock()
 
-        svc = CaptioningService.__new__(CaptioningService)
-        svc._dataset_service = mock_ds
-        svc._event_dispatcher = mock_dispatcher
-        svc._dataset_watcher = mock_watcher
-        svc._logger = mock_logging.get_logger()
-        svc._async_lock = asyncio.Lock()
-        svc._async_jobs = {}
+        svc = CaptioningService(
+            dataset_service=mock_ds,
+            event_dispatcher=mock_dispatcher,
+            dataset_watcher=mock_watcher,
+            logging=logging_factory,
+            configuration=test_configuration,
+        )
         return svc
 
     @pytest.mark.asyncio
@@ -479,7 +477,7 @@ class TestStartJobPreflight:
     """Tests for start_job_async preflight — accurate totals and early exits."""
 
     @pytest.fixture
-    def captioning_service(self, tmp_path):
+    def captioning_service(self, tmp_path, test_configuration, logging_factory):
         """Create a CaptioningService with a real config on disk."""
         config_path = tmp_path / "config.toml"
         config_path.write_text("""
@@ -496,17 +494,14 @@ template = "test"
 
         mock_dispatcher = MagicMock()
         mock_watcher = MagicMock()
-        mock_logging = MagicMock()
-        mock_logging.get_logger.return_value = MagicMock()
 
-        svc = CaptioningService.__new__(CaptioningService)
-        svc._dataset_service = mock_ds
-        svc._event_dispatcher = mock_dispatcher
-        svc._dataset_watcher = mock_watcher
-        svc._logger = mock_logging.get_logger()
-        svc._configuration = MagicMock()
-        svc._async_lock = asyncio.Lock()
-        svc._async_jobs = {}
+        svc = CaptioningService(
+            dataset_service=mock_ds,
+            event_dispatcher=mock_dispatcher,
+            dataset_watcher=mock_watcher,
+            logging=logging_factory,
+            configuration=test_configuration,
+        )
         return svc
 
     @pytest.mark.asyncio

@@ -111,7 +111,7 @@ async with CaptioningRunner(
     for image in to_do:
         if self._check_stop():
             break
-        await runner.caption_image(image, self)  # self implements CaptioningCallbacks
+        await runner.caption_image(image, self, extra_messages=self._extra_messages)  # self implements CaptioningCallbacks; extra_messages from refine endpoint
 ```
 
 The job's `on_token` is a no-op (no SSE token stream), `on_image_started` / `on_image_captioned` / `on_image_error` dispatch `ImageCaptionStartedEvent` / `ImageCaptionedEvent` / `ImageCaptionErrorEvent` and update job state.
@@ -124,7 +124,7 @@ The CLI supports multi-round captioning (`--rounds N`) and reply history (the "r
 - `extra_messages: list[ReplyRound] | None` — multi-turn conversation (the "reply" action's history)
 - `prediction_context: PredictionContext | None` — if provided, the caller can read the populated context (e.g. CLI's reply flow reads `reasoning` for the next assistant turn). If `None`, the runner creates a fresh one and discards it.
 
-The API doesn't use any of these today (single-shot jobs); the runner supports them so the API can opt in later.
+The API doesn't use `caption_rounds` or `prediction_context` today (single-shot jobs). The API uses `extra_messages` for the refine endpoint (`POST /datasets/<name>/images/<id>/refine`), which passes a `[ReplyRound(role=assistant, content=caption), ReplyRound(role=user, content=feedback)]` pair to give the model conversational context for caption refinement. The runner supports all three so each side can opt in independently.
 
 ## See also
 

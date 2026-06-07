@@ -2,6 +2,7 @@ import { writable, get, type Writable } from 'svelte/store';
 import {
     startCaptioning,
     captionSingleImage as apiCaptionSingleImage,
+    refineCaption as apiRefineCaption,
     stopCaptioning as apiStopCaptioning
 } from '../dataset/api';
 import { registerJobId, setCaptioningStatus, addCurrentlyCaptioning } from '../events';
@@ -109,6 +110,59 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
             max_concurrent: info.max_concurrent
         });
         addCurrentlyCaptioning(info.dataset_name, imageId);
+    }
+
+    lastStartedJobId.set(info.job_id);
+    return info.job_id;
+}
+
+/** Start a refine job for a single image. Sends the current caption
+ *  and user feedback as extra_messages to the model.
+ *  Handles password retry, registers the job, and seeds the SSE stores
+ *  for immediate spinner feedback. */
+export async function refineCaption(
+    datasetName: string,
+    imageId: number,
+    feedback: string,
+    caption: string
+): Promise<string> {
+    setCaptioningStatus({
+        status: 'starting',
+        dataset_name: datasetName,
+        processed: 0,
+        total: 1,
+        errors: 0,
+        job_id: '',
+        error: null,
+        error_messages: []
+    });
+    setCurrentlyCaptioning({ dataset_name: datasetName, image_id: imageId });
+    const options = get(captionOptions);
+    const info = await withPasswordRetry(() =>
+        apiRefineCaption(
+            datasetName,
+            imageId,
+            feedback,
+            caption,
+            options as Record<string, unknown>
+        )
+    );
+    registerJobId(info.job_id);
+
+    if (info.status === 'running' || info.status === 'stopping') {
+        setCaptioningStatus({
+            status: info.status,
+            dataset_name: info.dataset_name,
+            processed: info.processed,
+            total: info.total,
+            errors: info.errors,
+            job_id: info.job_id,
+            error: info.error,
+            error_messages: [],
+            api_url: info.api_url,
+            api_model_name: info.api_model_name
+        });
+        setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
     }
 
     lastStartedJobId.set(info.job_id);
