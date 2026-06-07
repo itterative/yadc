@@ -50,24 +50,31 @@
         }
     });
 
+    const COLUMN_TOLERANCE = 50;
+
     function argmin(array: number[]) {
         if (!array.length) {
             return 0;
         }
 
-        let argminIndex = 0;
-        let argminValue = array[0];
+        let minValue = array[0];
 
         for (let i = 1; i < array.length; i++) {
-            if (array[i] >= argminValue) {
-                continue;
+            if (array[i] < minValue) {
+                minValue = array[i];
             }
-
-            argminIndex = i;
-            argminValue = array[i];
         }
 
-        return argminIndex;
+        // Pick leftmost column within tolerance of the minimum height
+        const threshold = minValue + COLUMN_TOLERANCE;
+        for (let i = 0; i < array.length; i++) {
+            if (array[i] <= threshold) {
+                return i;
+            }
+        }
+
+        // Fallback (shouldn't happen since minValue <= threshold)
+        return 0;
     }
 
     const [columns, columnHeights] = $derived.by(() => {
