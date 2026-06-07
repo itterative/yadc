@@ -35,6 +35,7 @@ def _make_image(path: Path):
     img = Image.new("RGB", (1, 1), color="red")
     img.save(path)
 
+
 @pytest.fixture
 def cli_runner():
     return CliRunner()
@@ -83,6 +84,7 @@ def _fake_loaded_config() -> tuple[MagicMock, list[MagicMock]]:
     images[0].path = "/tmp/img001.png"
     images[0].caption = ""
     return config, images
+
 
 @pytest.fixture
 def patched_load_dataset_config():
@@ -342,6 +344,7 @@ class TestCLIPrintCallbacks:
 
 
 # ---- password handling ----
+
 
 class TestPasswordResolution:
     """``yadc caption`` resolves the env-decryption password in priority order:

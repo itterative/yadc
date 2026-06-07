@@ -368,9 +368,7 @@ class TestPutEnv:
         resp = await client.put("/api/envs/default", json={"max_concurrent": 4})
 
         assert resp.status_code == 200
-        patched_cmd_envs.update_env.assert_called_once_with(
-            "max_concurrent", 4, env="default", config=patched_cmd_config.load_config.return_value
-        )
+        patched_cmd_envs.update_env.assert_called_once_with("max_concurrent", 4, env="default", config=patched_cmd_config.load_config.return_value)
 
     @pytest.mark.asyncio
     async def test_max_concurrent_null_clears(self, client, patched_cmd_config, patched_cmd_envs):
@@ -381,9 +379,7 @@ class TestPutEnv:
         resp = await client.put("/api/envs/default", json={"max_concurrent": None})
 
         assert resp.status_code == 200
-        patched_cmd_envs.update_env.assert_called_once_with(
-            "max_concurrent", None, env="default", config=patched_cmd_config.load_config.return_value
-        )
+        patched_cmd_envs.update_env.assert_called_once_with("max_concurrent", None, env="default", config=patched_cmd_config.load_config.return_value)
 
     @pytest.mark.asyncio
     async def test_max_concurrent_zero_rejected(self, client, patched_cmd_config, patched_cmd_envs):

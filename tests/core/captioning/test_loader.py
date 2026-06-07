@@ -30,11 +30,7 @@ _PATCH_CMD_CONFIGS = "yadc.core.captioning.loader.cmd_configs"
 
 
 def _user_config(url: str = "", token: str = "", model_name: str = "", max_concurrent: int | None = None) -> UserConfig:
-    return UserConfig(
-        api=UserConfigApi(
-            url=url, token=token, model_name=model_name, max_concurrent=max_concurrent
-        )
-    )
+    return UserConfig(api=UserConfigApi(url=url, token=token, model_name=model_name, max_concurrent=max_concurrent))
 
 
 def _real_image(path: Path) -> Path:
