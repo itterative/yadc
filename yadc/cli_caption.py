@@ -19,6 +19,7 @@ from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import cache as cmd_cache
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import status as cmd_status
+from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core import logging
 from yadc.core.captioner import (
     ROLE_ASSISTANT,
@@ -36,7 +37,7 @@ from yadc.core.captioning import (
 from yadc.core.config import Config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import reapply_dataset_extras
-from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
+from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES, YADC_PASSWORD
 from yadc.core.prediction import PredictionContext
 from yadc.utils.dict_utils import load_toml, load_toml_file
 
@@ -108,6 +109,50 @@ class CLIPrintCallbacks:
 
 
 # --- Interactive prompts ---
+
+
+def _resolve_initial_password(explicit: str | None) -> str | None:
+    """Resolve the initial password for ``CaptionJobOptions``.
+
+    Order: explicit ``--password`` value, then ``YADC_PASSWORD`` env
+    var, then ``None`` (the loader will surface a ``PasswordRequiredError``
+    and the caller will prompt the user). The interactive prompt is
+    deferred until we know the env actually needs a password — that
+    way, non-password envs don't trigger an unnecessary prompt.
+    """
+    if explicit:
+        return explicit
+    return YADC_PASSWORD
+
+
+def _prompt_for_password(had_previous: bool) -> str | None:
+    """Prompt the user for a password if stdin is a TTY.
+
+    Returns ``None`` when stdin isn't a TTY (piped/redirected) — the
+    caller is expected to fail with a clear error in that case rather
+    than blocking on a prompt that nobody can answer. *had_previous*
+    controls the prompt text so the user knows whether their prior
+    password was wrong or they simply didn't supply one.
+    """
+    if not _is_tty():
+        return None
+    prompt = (
+        "Enter password to decrypt environment settings (previous password was incorrect): "
+        if had_previous
+        else "Enter password to decrypt environment settings: "
+    )
+    return click.prompt(prompt, hide_input=True, default="", show_default=False) or None
+
+
+def _is_tty() -> bool:
+    """Whether stdin is a TTY.
+
+    Extracted so tests can patch it via ``monkeypatch.setattr``. Click's
+    ``CliRunner`` does not call ``sys.stdin.isatty()`` through the same
+    object the test sees, so we use a thin module-level helper that's
+    trivial to swap.
+    """
+    return sys.stdin.isatty()
 
 
 def _prompt_for_yes(prompt: str, default: bool, interactive: bool) -> bool:
@@ -481,6 +526,13 @@ async def _caption(
     ),
 )
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
+@click.option(
+    "--password",
+    "password",
+    type=str,
+    default=None,
+    help=("Password for decrypting password-mode env settings. Defaults to the YADC_PASSWORD env var. Prompts interactively (TTY) if neither is set."),
+)
 @cli_common.log_level
 def caption(dataset: str, **kwargs: Any):
     return asyncio.run(_caption_async(dataset, **kwargs))
@@ -527,6 +579,9 @@ async def _caption_async(dataset: str, **kwargs: Any):
         # (if any) and finally to 1. See ``apply_config_overrides``.
         max_concurrent=kwargs.get("max_concurrent"),
         draft=kwargs.get("draft") or "",
+        # Explicit ``--password`` wins; fall back to ``YADC_PASSWORD``
+        # so scripts can set the env var without touching the CLI.
+        password=_resolve_initial_password(kwargs.get("password")),
     )
 
     try:
@@ -535,6 +590,32 @@ async def _caption_async(dataset: str, **kwargs: Any):
             options,
             user_config=user_config,
         )
+    except PasswordRequiredError:
+        # The env's token is password-encrypted. We either had no
+        # password at all, or the one we had was wrong. Try to prompt
+        # the user for a fresh password (TTY only) and retry once;
+        # outside a TTY we fail with a clear actionable error.
+        had_password = options.password is not None
+        password = _prompt_for_password(had_password)
+        if password is None:
+            if had_password:
+                _logger.error("Error: password is incorrect.")
+            else:
+                _logger.error(
+                    "Error: environment is password-encrypted but no password was provided. "
+                    "Set YADC_PASSWORD, pass --password, or run in a terminal for an interactive prompt."
+                )
+            sys.exit(cmd_status.STATUS_USER_ERROR)
+        options = options.model_copy(update={"password": password})
+        try:
+            config, dataset_to_do = load_dataset_config(
+                dataset_path,
+                options,
+                user_config=user_config,
+            )
+        except PasswordRequiredError:
+            _logger.error("Error: password is incorrect.")
+            sys.exit(cmd_status.STATUS_USER_ERROR)
     except FileNotFoundError as e:
         _logger.error("Error: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
