@@ -1,9 +1,9 @@
 ---
 name: batch-captioning-plan
 description: Concurrent / batch captioning — multiple in-flight `predict_stream` requests per `CaptioningRunner` job. Builds on the existing async runner; only the per-image loop changes.
-status: In Progress (Phases 1–2 done)
+status: Done (post-completion follow-ups: ETA fix, multi-active-images UI, id-DESC sort)
 category: meta
-last_history: 2
+last_history: 8
 ---
 
 # Batch Captioning Plan

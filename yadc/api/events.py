@@ -36,6 +36,14 @@ class CaptioningStatusEvent(Event):
     error_messages: list[str] = dataclasses.field(default_factory=list)
     api_url: str = ""
     api_model_name: str = ""
+    # Seconds since the job started. 0 before the job has actually
+    # started.  Used by the frontend for the "elapsed" display and as
+    # a sanity check on per-image timing under concurrency.
+    elapsed: float = 0.0
+    # Configured concurrency for the job. The frontend divides the
+    # per-image ETA by this so the estimate reflects actual wall-clock
+    # throughput (max_concurrent requests in flight).
+    max_concurrent: int = 1
 
 
 @dataclass

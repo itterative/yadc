@@ -171,10 +171,16 @@ class DatasetRepository(Service):
         self,
         dataset_name: str,
         *,
-        after_id: int,
+        before_id: int,
         limit: int,
     ) -> list[ImageInfo]:
-        """Return up to ``limit`` images for a dataset, paginated by id."""
+        """Return up to ``limit`` images for a dataset, paginated by id (newest first).
+
+        Cursor ``before_id`` returns images with ``id < before_id``,
+        ordered by id descending. The first page passes ``before_id``
+        larger than the largest existing id (or any value above
+        ``MAX(id)``) to get the newest images.
+        """
         with self._db.connection() as conn:
             rows = conn.execute(
                 """
@@ -183,11 +189,11 @@ class DatasetRepository(Service):
                        d.config_path
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
-                WHERE d.name = ? AND di.id > ?
-                ORDER BY di.id
+                WHERE d.name = ? AND di.id < ?
+                ORDER BY di.id DESC
                 LIMIT ?
                 """,
-                (dataset_name, after_id, limit),
+                (dataset_name, before_id, limit),
             ).fetchall()
         return [
             ImageInfo(
@@ -233,6 +239,27 @@ class DatasetRepository(Service):
             last_modified_t=row[8],
             delete_path=compute_delete_path(row[2], row[9]),
         )
+
+    def list_image_paths_desc(self, dataset_name: str) -> list[tuple[str, int]]:
+        """Return ``(path, id)`` for every image in a dataset, ordered by id DESC.
+
+        Used by the captioning service to reorder the loader's
+        filesystem-resolved image list so concurrent captioning
+        starts with the newest images first. Single SQL query, so
+        no N+1 round trips even for large datasets.
+        """
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT di.path, di.id
+                FROM dataset_images di
+                JOIN datasets d ON d.id = di.dataset_id
+                WHERE d.name = ?
+                ORDER BY di.id DESC
+                """,
+                (dataset_name,),
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
 
     def get_image_by_path(self, dataset_name: str, image_path: str) -> ImageInfo | None:
         """Return an image by its on-disk path, or None."""

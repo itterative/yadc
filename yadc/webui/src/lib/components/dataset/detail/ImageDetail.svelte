@@ -52,11 +52,17 @@
     let wasCaptioning = $state(false);
     let activeTab = $state('caption');
 
-    let isCaptioning = $derived(
-        item !== null &&
-            $currentlyCaptioning?.dataset_name === datasetName &&
-            $currentlyCaptioning?.image_id === item.id
-    );
+    let isCaptioning = $derived.by(() => {
+        if (item === null) {
+            return false;
+        }
+        for (const entry of $currentlyCaptioning) {
+            if (entry.dataset_name === datasetName && entry.image_id === item.id) {
+                return true;
+            }
+        }
+        return false;
+    });
 
     let imgSrc = $derived(item !== null ? mediaUrl(datasetName, item.id) : '');
 

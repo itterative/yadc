@@ -12,7 +12,9 @@
         isLoading: boolean;
         isLoadingMore: boolean;
         selectedId?: number | null;
-        captioningId?: number | null;
+        /** IDs of images currently being captioned (in this dataset).
+         *  Under ``max_concurrent > 1`` this can hold multiple IDs. */
+        captioningIds?: ReadonlySet<number>;
         onclick: (item: ImageInfo) => void;
         onendreached: () => void;
     }
@@ -24,7 +26,7 @@
         isLoading,
         isLoadingMore,
         selectedId = null,
-        captioningId = null,
+        captioningIds = new Set<number>(),
         onclick,
         onendreached
     }: Props = $props();
@@ -138,7 +140,7 @@
                         {datasetName}
                         {item}
                         selected={item.id === selectedId}
-                        captioning={item.id === captioningId}
+                        captioning={captioningIds.has(item.id)}
                         onclick={() => onclick(item)}
                     />
                 {/each}

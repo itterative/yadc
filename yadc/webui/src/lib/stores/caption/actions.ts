@@ -4,7 +4,7 @@ import {
     captionSingleImage as apiCaptionSingleImage,
     stopCaptioning as apiStopCaptioning
 } from '../dataset/api';
-import { registerJobId, setCaptioningStatus, setCurrentlyCaptioning } from '../events';
+import { registerJobId, setCaptioningStatus, addCurrentlyCaptioning } from '../events';
 import { withPasswordRetry } from '../passwordPrompt';
 import { toast } from '../toasts';
 import type { CaptionOptions } from './options';
@@ -33,7 +33,9 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
         errors: 0,
         job_id: '',
         error: null,
-        error_messages: []
+        error_messages: [],
+        elapsed: 0,
+        max_concurrent: 1
     });
     const options = get(captionOptions);
     const info = await withPasswordRetry(() =>
@@ -55,7 +57,9 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
             error: info.error,
             error_messages: [],
             api_url: info.api_url,
-            api_model_name: info.api_model_name
+            api_model_name: info.api_model_name,
+            elapsed: info.elapsed,
+            max_concurrent: info.max_concurrent
         });
     }
     return info.job_id;
@@ -73,9 +77,11 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
         errors: 0,
         job_id: '',
         error: null,
-        error_messages: []
+        error_messages: [],
+        elapsed: 0,
+        max_concurrent: 1
     });
-    setCurrentlyCaptioning({ dataset_name: datasetName, image_id: imageId });
+    addCurrentlyCaptioning(datasetName, imageId);
     const options = get(captionOptions);
     const info = await withPasswordRetry(() =>
         apiCaptionSingleImage(datasetName, imageId, options as Record<string, unknown>)
@@ -98,9 +104,11 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
             error: info.error,
             error_messages: [],
             api_url: info.api_url,
-            api_model_name: info.api_model_name
+            api_model_name: info.api_model_name,
+            elapsed: info.elapsed,
+            max_concurrent: info.max_concurrent
         });
-        setCurrentlyCaptioning({ dataset_name: info.dataset_name, image_id: imageId });
+        addCurrentlyCaptioning(info.dataset_name, imageId);
     }
 
     lastStartedJobId.set(info.job_id);

@@ -1,6 +1,7 @@
 """Tests for AsyncCaptionJob — Protocol implementation, expected_change_registrar, runner integration, and CaptioningService lifecycle."""
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -133,6 +134,48 @@ class TestCaptioningCallbacks:
         assert dispatched[0].duration_ms == 120
         assert isinstance(dispatched[1], CaptioningStatusEvent)
         assert dispatched[1].processed == 1
+        # The status event carries the configured max_concurrent
+        # (default 1 in the test fixture) so the frontend can compute
+        # wall-clock ETA under parallel runs.
+        assert dispatched[1].max_concurrent == 1
+
+    @pytest.mark.asyncio
+    async def test_on_image_captioned_includes_elapsed_when_started(self, job):
+        """Status event includes a non-zero ``elapsed`` once the job has started."""
+        # Simulate ``_arun`` having set the start timestamp.
+        job._started_at = time.monotonic() - 12.5
+
+        info = _image_info()
+        job._dataset_service.get_image_by_path.return_value = info
+        job._dataset_service.get_image.return_value = info
+
+        await job.on_image_captioned(MagicMock(path="/img.jpg", caption="hi"), duration_ms=100)
+
+        status_event = job._event_dispatcher.dispatch.call_args_list[-1][0][0]
+        assert isinstance(status_event, CaptioningStatusEvent)
+        # 12.5s elapsed at the start of the callback, then the callback
+        # itself runs for a few ms; we just check it's in the right
+        # ballpark.
+        assert 12.4 <= status_event.elapsed < 13.0
+
+    @pytest.mark.asyncio
+    async def test_status_event_elapsed_is_zero_before_start(self, job):
+        """A status event before ``_arun`` has run reports ``elapsed=0``."""
+        # _started_at is None until _arun runs.
+        assert job._started_at is None
+
+        info = _image_info()
+        job._dataset_service.get_image_by_path.return_value = info
+        job._dataset_service.get_image.return_value = info
+
+        # ``snapshot()`` (used by external callers) emits a status event
+        # through ``_emit_status``.
+        await job._emit_status()
+
+        status_event = job._event_dispatcher.dispatch.call_args_list[-1][0][0]
+        assert isinstance(status_event, CaptioningStatusEvent)
+        assert status_event.elapsed == 0.0
+        assert status_event.max_concurrent == 1
 
     @pytest.mark.asyncio
     async def test_on_image_captioned_refreshes_image_index(self, job):
@@ -274,6 +317,42 @@ class TestAdoRunWithRunner:
         await job._ado_run()
 
         assert mock_instance.caption_images.call_args.kwargs.get("max_concurrent") == 4
+
+    @pytest.mark.asyncio
+    async def test_caption_images_receives_desc_sorted_to_do(self, job, ado_run_env):
+        """``_ado_run`` passes the SQL id-DESC-sorted list to
+        ``caption_images`` so concurrent captioning starts with the
+        newest images first. Reorder is driven by a single SQL
+        query (``get_image_paths_in_desc_order``), not N+1 callbacks.
+        """
+        from yadc.core.dataset import DatasetImage
+
+        config_path, mock_instance, _, mock_load = ado_run_env
+        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+
+        # Real loader call returns images in filesystem order; the
+        # API service then reorders via the SQL DESC query.
+        img_a = DatasetImage(path=str(config_path.parent / "a.jpg"))
+        img_b = DatasetImage(path=str(config_path.parent / "b.jpg"))
+        img_c = DatasetImage(path=str(config_path.parent / "c.jpg"))
+
+        # Path list returned by the SQL query (newest first). IDs
+        # are intentionally non-monotonic with file names so we
+        # can prove the sort comes from SQL, not path.
+        job._dataset_service.get_image_paths_in_desc_order.return_value = [
+            str(img_b.path),
+            str(img_c.path),
+            str(img_a.path),
+        ]
+
+        mock_load.return_value = (MagicMock(), [img_a, img_b, img_c])
+        await job._ado_run()
+
+        mock_instance.caption_images.assert_awaited_once()
+        args, _ = mock_instance.caption_images.call_args
+        assert args[0] == [img_b, img_c, img_a]
+        # The reorder uses the SQL helper, not N+1 get_image_by_path calls.
+        job._dataset_service.get_image_paths_in_desc_order.assert_called_once_with("test_ds")
 
     @pytest.mark.asyncio
     async def test_done_status_on_no_images(self, job, ado_run_env):

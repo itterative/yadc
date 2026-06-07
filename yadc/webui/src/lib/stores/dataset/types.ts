@@ -98,4 +98,8 @@ export interface CaptioningJobInfo {
     error_messages: string[];
     api_url?: string;
     api_model_name?: string;
+    /** Seconds since the job started. 0 before it actually starts. */
+    elapsed: number;
+    /** Configured concurrency; used for ETA calculation. */
+    max_concurrent: number;
 }

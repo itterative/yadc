@@ -171,24 +171,46 @@ class DatasetService(Service):
 
     # --- Image listing (paginated) ---
 
-    def list_images(self, dataset_name: str, *, limit: int = 50, after_id: int = 0) -> ImagePage:
-        """List images for a dataset, paginated by auto-increment ID.
+    def list_images(self, dataset_name: str, *, limit: int = 50, before_id: int | None = None) -> ImagePage:
+        """List images for a dataset, paginated by auto-increment ID (newest first).
 
         Args:
             dataset_name: Name of the dataset.
             limit: Max images to return.
-            after_id: Cursor — return images with id > this value.
+            before_id: Cursor — return images with id < this value.
+                ``None`` (the default) means "no upper bound" — the
+                first page returns the newest images.
 
         Returns:
-            An ImagePage with images and optional next_token.
+            An ImagePage with images (newest first) and optional
+            ``next_token``. The token is the smallest id on the
+            current page; pass it as ``before_id`` to get the next
+            (older) page.
         """
+        # ``before_id=None`` means "no upper bound" — use a value
+        # larger than any real id so all rows pass the ``id < ?``
+        # filter. SQLite's INTEGER is 64-bit; ``2**63 - 1`` is the
+        # max signed value and won't be reached by AUTOINCREMENT for
+        # billions of years.
+        cursor = before_id if before_id is not None else 2**63 - 1
         # Fetch limit+1 to detect "is there a next page".
-        rows = self._repo.list_images(dataset_name, after_id=after_id, limit=limit + 1)
+        rows = self._repo.list_images(dataset_name, before_id=cursor, limit=limit + 1)
         images = rows[:limit]
         next_token = None
         if len(rows) > limit:
+            # Smallest id on the current page is the last image in
+            # DESC order. Use it as the next cursor.
             next_token = str(images[-1].id)
         return ImagePage(images=images, next_token=next_token)
+
+    def get_image_paths_in_desc_order(self, dataset_name: str) -> list[str]:
+        """Return every image path for a dataset, ordered by id DESC.
+
+        Single SQL query — used by the captioning service to
+        reorder the filesystem-resolved image list so the runner
+        starts with the newest images first.
+        """
+        return [path for path, _id in self._repo.list_image_paths_desc(dataset_name)]
 
     def get_image(self, dataset_name: str, image_id: int) -> ImageInfo | None:
         """Get a single image by ID within a dataset."""

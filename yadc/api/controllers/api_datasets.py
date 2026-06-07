@@ -361,12 +361,13 @@ def api_datasets(
 
     @app.get("/datasets/<name>/images")
     def list_images(name: str):  # pyright: ignore[reportUnusedFunction]
-        """List images with captions/drafts (paginated)."""
+        """List images with captions/drafts (paginated, newest first)."""
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 200))
-        after_id = request.args.get("after_id", 0, type=int)
+        before_id_raw = request.args.get("before_id")
+        before_id = int(before_id_raw) if before_id_raw is not None else None
 
-        page = datasets.list_images(name, limit=limit, after_id=after_id)
+        page = datasets.list_images(name, limit=limit, before_id=before_id)
         return jsonify_dataclass(page)
 
     @app.get("/datasets/<name>/images/<int:image_id>/media")

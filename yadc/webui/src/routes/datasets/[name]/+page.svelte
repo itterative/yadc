@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { onMount, untrack } from 'svelte';
+    import { SvelteSet } from 'svelte/reactivity';
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
@@ -62,10 +63,20 @@
                 $captioningStatus.status === 'stopping')
     );
 
-    // ID of the image currently being captioned (for pulsing animation)
-    let captioningImageId = $derived(
-        $currentlyCaptioning?.dataset_name === datasetName ? $currentlyCaptioning.image_id : null
-    );
+    // IDs of the images currently being captioned in this dataset
+    // (for pulsing animation).  Under ``max_concurrent > 1`` this can
+    // hold more than one entry.  Filtered to the current dataset so
+    // a different dataset's in-flight images don't bleed into the
+    // shimmer indicator.
+    let captioningImageIds = $derived.by(() => {
+        const ids = new SvelteSet<number>();
+        for (const entry of $currentlyCaptioning) {
+            if (entry.dataset_name === datasetName) {
+                ids.add(entry.image_id);
+            }
+        }
+        return ids;
+    });
 
     let isStopping = $derived(
         $captioningStatus?.dataset_name === datasetName && $captioningStatus.status === 'stopping'
@@ -234,7 +245,7 @@
         try {
             const page = await fetchImages(datasetName, {
                 limit: PAGE_SIZE,
-                afterId: parseInt(nextToken)
+                beforeId: parseInt(nextToken)
             });
             images = [...images, ...page.images];
             nextToken = page.next_token;
@@ -519,7 +530,7 @@
                     {isLoading}
                     {isLoadingMore}
                     selectedId={focusedItem?.id ?? null}
-                    captioningId={captioningImageId}
+                    captioningIds={captioningImageIds}
                     onclick={handleItemClick}
                     onendreached={loadMore}
                 />

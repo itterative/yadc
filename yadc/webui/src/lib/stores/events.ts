@@ -39,7 +39,14 @@ export const CaptioningStatusZ = z.object({
     error: z.string().nullable(),
     error_messages: z.array(z.string()).default([]),
     api_url: z.string().optional(),
-    api_model_name: z.string().optional()
+    api_model_name: z.string().optional(),
+    // Seconds since the job started. 0 before the job has actually
+    // started. Used for the "elapsed" display.
+    elapsed: z.number().default(0),
+    // Configured concurrency for the job. The frontend divides the
+    // per-image ETA by this so the estimate reflects actual wall-clock
+    // throughput (max_concurrent requests in flight).
+    max_concurrent: z.number().default(1)
 });
 
 export const PingEventZ = z.object({
@@ -118,7 +125,9 @@ const _captioningStatus = writable<CaptioningStatus>({
     errors: 0,
     job_id: '',
     error: null,
-    error_messages: []
+    error_messages: [],
+    elapsed: 0,
+    max_concurrent: 1
 });
 
 const _pendingDatasetChanges = writable<Set<string>>(new Set());
@@ -135,8 +144,28 @@ const _lastCaptionedImage = writable<ImageCaptionedEvent | null>(null);
 /** Latest per-image caption error event. */
 const _lastCaptionError = writable<ImageCaptionErrorEvent | null>(null);
 
-/** Image currently being captioned (null when idle or between images). */
-const _currentlyCaptioning = writable<{ dataset_name: string; image_id: number } | null>(null);
+/** Images currently being captioned, across all datasets. Empty when idle.
+ *
+ *  Holds at most ``max_concurrent`` entries per dataset — one per
+ *  in-flight parallel task. Entries are added on
+ *  ``image_caption_started`` and removed on ``image_caption_captioned``
+ *  or ``image_caption_error``. Entries for a dataset are also cleared
+ *  when the job for that dataset reaches a terminal state (done /
+ *  error / cancelled), which catches images whose per-image events
+ *  were never delivered (e.g. cancelled in-flight tasks).
+ *
+ *  Internally a ``Map`` keyed by ````${dataset_name}#${image_id}````
+ *  so the SSE ``image_captioned`` handler can reliably remove the
+ *  entry that ``image_caption_started`` added (plain ``Set`` would
+ *  fail because every fresh object literal has a different identity).
+ *  The public store exposes a ``Set`` of the same entries.
+ */
+type CaptioningTarget = { dataset_name: string; image_id: number };
+const _currentlyCaptioningMap = writable<ReadonlyMap<string, CaptioningTarget>>(new Map());
+
+function _key(dataset_name: string, image_id: number): string {
+    return `${dataset_name}#${image_id}`;
+}
 
 /**
  * Captions received via SSE, keyed by image ID.
@@ -187,9 +216,12 @@ export const lastCaptionedImage: Readable<ImageCaptionedEvent | null> =
 export const lastCaptionError: Readable<ImageCaptionErrorEvent | null> =
     readonly(_lastCaptionError);
 
-/** Image currently being captioned (null when idle or between images). */
-export const currentlyCaptioning: Readable<{ dataset_name: string; image_id: number } | null> =
-    readonly(_currentlyCaptioning);
+/** Images currently being captioned, across all datasets. Empty when idle.
+ *  Under ``max_concurrent > 1`` this holds multiple entries at once. */
+export const currentlyCaptioning: Readable<ReadonlySet<CaptioningTarget>> = derived(
+    _currentlyCaptioningMap,
+    ($map) => new Set($map.values())
+);
 
 /** Captions received via SSE, keyed by image ID. */
 export const storedCaptions: Readable<Map<number, string>> = readonly(_storedCaptions);
@@ -256,14 +288,37 @@ export function setCaptioningStatus(status: CaptioningStatus): void {
     _captioningStatus.set(status);
 }
 
-/** Explicitly set the currently-captioning image (e.g. to seed immediate UI feedback). */
-export function setCurrentlyCaptioning(
-    value: {
-        dataset_name: string;
-        image_id: number;
-    } | null
-): void {
-    _currentlyCaptioning.set(value);
+/** Add an image to the currently-captioning set (idempotent).
+ *  Used to seed immediate UI feedback before the SSE
+ *  ``image_caption_started`` event arrives. The SSE handler removes
+ *  the entry on completion. */
+export function addCurrentlyCaptioning(datasetName: string, imageId: number): void {
+    const k = _key(datasetName, imageId);
+    _currentlyCaptioningMap.update((map) => {
+        if (map.has(k)) {
+            return map;
+        }
+        const next = new Map(map);
+        next.set(k, { dataset_name: datasetName, image_id: imageId });
+        return next;
+    });
+}
+
+/** Remove all currently-captioning entries for a dataset. Called when
+ *  a job reaches a terminal state so cancelled in-flight tasks don't
+ *  leave stale entries behind. */
+export function clearCurrentlyCaptioning(datasetName: string): void {
+    _currentlyCaptioningMap.update((map) => {
+        let changed = false;
+        const next = new Map(map);
+        for (const k of map.keys()) {
+            if (k.startsWith(`${datasetName}#`)) {
+                next.delete(k);
+                changed = true;
+            }
+        }
+        return changed ? next : map;
+    });
 }
 
 // --- Self-connecting SSE lifecycle ---
@@ -296,18 +351,27 @@ function connect() {
 
     _eventSource.listen('captioning_status', CaptioningStatusZ, (data) => {
         _captioningStatus.set(data);
-        // Clear "currently captioning" when the job finishes or errors.
+        // Clear in-flight entries for the dataset when the job reaches
+        // a terminal state. Catches cancellation (in-flight tasks
+        // don't fire per-image completion events) and fresh starts on
+        // a still-warm set.
         if (
             data.status === 'done' ||
             data.status === 'error' ||
             data.status === 'cancelled' ||
             data.status === 'idle'
         ) {
-            _currentlyCaptioning.update((cur) => {
-                if (cur && cur.dataset_name === data.dataset_name) {
-                    return null;
+            _currentlyCaptioningMap.update((map) => {
+                let changed = false;
+                const next = new Map(map);
+                const prefix = `${data.dataset_name}#`;
+                for (const k of map.keys()) {
+                    if (k.startsWith(prefix)) {
+                        next.delete(k);
+                        changed = true;
+                    }
                 }
-                return cur;
+                return changed ? next : map;
             });
         }
     });
@@ -377,28 +441,44 @@ function connect() {
                 return { ...ring, timings: { ...ring.timings, [key]: arr } };
             });
         }
-        // Clear the "currently captioning" indicator for this image (it just finished).
-        _currentlyCaptioning.update((cur) => {
-            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.id) {
-                return null;
+        // Remove this image from the in-flight map.  No-op if absent
+        // (tolerates missed started events on reconnect).
+        const k = _key(data.dataset_name, data.id);
+        _currentlyCaptioningMap.update((map) => {
+            if (!map.has(k)) {
+                return map;
             }
-            return cur;
+            const next = new Map(map);
+            next.delete(k);
+            return next;
         });
     });
 
     _eventSource.listen('image_caption_error', ImageCaptionErrorEventZ, (data) => {
         _lastCaptionError.set(data);
-        // Clear the "currently captioning" indicator for this image (it failed).
-        _currentlyCaptioning.update((cur) => {
-            if (cur && cur.dataset_name === data.dataset_name && cur.image_id === data.image_id) {
-                return null;
+        // Remove this image from the in-flight map (same idempotence
+        // guarantee as for captioned).
+        const k = _key(data.dataset_name, data.image_id);
+        _currentlyCaptioningMap.update((map) => {
+            if (!map.has(k)) {
+                return map;
             }
-            return cur;
+            const next = new Map(map);
+            next.delete(k);
+            return next;
         });
     });
 
     _eventSource.listen('image_caption_started', ImageCaptionStartedEventZ, (data) => {
-        _currentlyCaptioning.set({ dataset_name: data.dataset_name, image_id: data.image_id });
+        const k = _key(data.dataset_name, data.image_id);
+        _currentlyCaptioningMap.update((map) => {
+            if (map.has(k)) {
+                return map;
+            }
+            const next = new Map(map);
+            next.set(k, { dataset_name: data.dataset_name, image_id: data.image_id });
+            return next;
+        });
     });
 
     _eventSource.listen('environments_changed', EnvironmentsChangedEventZ, () => {

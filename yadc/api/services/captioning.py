@@ -18,6 +18,7 @@ Usage from the API layer::
 
 import asyncio
 import inspect
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -63,6 +64,13 @@ class JobInfo:
     error_messages: list[str] = field(default_factory=list)
     api_url: str = ""
     api_model_name: str = ""
+    # Seconds since the job started. 0 before the job has actually
+    # started.  Returned to the frontend on the job-start / status
+    # endpoints for the "elapsed" display.
+    elapsed: float = 0.0
+    # Configured concurrency for the job.  Returned to the frontend so
+    # it can correctly factor the ETA under parallel runs.
+    max_concurrent: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +124,13 @@ class AsyncCaptionJob:
         self._api_model_name: str = ""
         self._config: Config | None = None  # set by preflight_images
 
+        # ``time.monotonic()`` at the moment the job actually starts
+        # running (set in ``_arun``).  Used to compute ``elapsed`` for
+        # the status event.  ``None`` until then so a status snapshot
+        # taken before the job runs (e.g. from ``snapshot()``) reports
+        # ``elapsed=0`` rather than a huge negative number.
+        self._started_at: float | None = None
+
         self._task: asyncio.Task[Any] | None = None
 
     # -- lifecycle -----------------------------------------------------------
@@ -148,6 +163,9 @@ class AsyncCaptionJob:
         return await self._snapshot_locked()
 
     async def _snapshot_locked(self) -> JobInfo:
+        elapsed = 0.0
+        if self._started_at is not None:
+            elapsed = time.monotonic() - self._started_at
         async with self._state_lock:
             return JobInfo(
                 status=self._status,
@@ -160,6 +178,8 @@ class AsyncCaptionJob:
                 error_messages=self._error_messages.copy(),
                 api_url=self._api_url,
                 api_model_name=self._api_model_name,
+                elapsed=elapsed,
+                max_concurrent=self._opts.max_concurrent,
             )
 
     # -- CaptioningCallbacks Protocol ----------------------------------------
@@ -190,6 +210,13 @@ class AsyncCaptionJob:
 
     async def _arun(self) -> None:
         """Entry point for the asyncio task."""
+        # Mark the start of the job *before* ``_ado_run`` so the first
+        # status emit (right after preflight) already has a meaningful
+        # ``elapsed`` value.  ``_arun`` is the natural place because
+        # it's the async entry point — ``_started_at`` reflects "when
+        # did the runner actually take over", not "when was the job
+        # scheduled".
+        self._started_at = time.monotonic()
         try:
             await self._ado_run()
         except asyncio.CancelledError:
@@ -215,9 +242,11 @@ class AsyncCaptionJob:
         """Synchronously resolve the dataset and filter images.
 
         Performs config loading, override application, and dataset
-        resolution via :func:`load_dataset_config`. Stores the parsed
-        :class:`Config` on ``self._config`` for use by
-        :meth:`_ado_run` (which builds the runner from it).
+        resolution via :func:`load_dataset_config`. The returned list
+        is reordered by database id descending via a single SQL
+        query so concurrent captioning starts with the newest images
+        first. Stores the parsed :class:`Config` on ``self._config``
+        for use by :meth:`_ado_run` (which builds the runner from it).
 
         Returns the list of images to be processed. Callers can use
         ``len(result)`` to know the total before the async task starts.
@@ -241,6 +270,16 @@ class AsyncCaptionJob:
         self._api_url = config.api.url
         self._api_model_name = config.api.model_name
         self._config = config
+
+        # Reorder the filesystem-resolved list by DB id DESC (newest
+        # first). Single SQL query — no N+1. Images not in the DB
+        # (e.g. inline extras in the config that haven't been
+        # scanned) sort to the end.
+        ordered_paths = self._dataset_service.get_image_paths_in_desc_order(self._dataset_name)
+        if ordered_paths:
+            position = {path: i for i, path in enumerate(ordered_paths)}
+            sentinel = len(ordered_paths)
+            images.sort(key=lambda img: position.get(img.path, sentinel))
 
         return images
 
@@ -331,6 +370,9 @@ class AsyncCaptionJob:
 
     async def _emit_status(self) -> None:
         snap = await self._snapshot_locked()
+        elapsed = 0.0
+        if self._started_at is not None:
+            elapsed = time.monotonic() - self._started_at
         event = CaptioningStatusEvent(
             status=snap.status,
             dataset_name=snap.dataset_name,
@@ -342,6 +384,8 @@ class AsyncCaptionJob:
             error_messages=snap.error_messages,
             api_url=snap.api_url,
             api_model_name=snap.api_model_name,
+            elapsed=elapsed,
+            max_concurrent=self._opts.max_concurrent,
         )
         self._event_dispatcher.dispatch(event)
 

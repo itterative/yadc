@@ -2,6 +2,7 @@
     import type { DatasetInfo } from '$lib/stores/dataset';
     import { captioningStatus, captionTimingRing } from '$lib/stores/events';
     import { formatEta } from '$lib/format';
+    import { computeEtaSeconds } from '$lib/eta';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
@@ -47,6 +48,16 @@
         onupload
     }: Props = $props();
 
+    function _ringForStatus(
+        status: import('$lib/stores/events').CaptioningStatus,
+        ring: Record<string, number[]>
+    ): number[] {
+        if (!status.api_url || !status.api_model_name) {
+            return [];
+        }
+        return ring[`${status.api_url}#${status.api_model_name}`] ?? [];
+    }
+
     function _estimateRemainingSeconds(
         status: import('$lib/stores/events').CaptioningStatus,
         ring: Record<string, number[]>
@@ -54,21 +65,23 @@
         if (status.status !== 'running' && status.status !== 'stopping') {
             return null;
         }
-        if (!status.api_url || !status.api_model_name || status.total <= status.processed) {
-            return null;
-        }
-        const key = `${status.api_url}#${status.api_model_name}`;
-        const samples = ring[key];
-        if (!samples || samples.length === 0) {
-            return null;
-        }
-        const avgMs = samples.reduce((a, b) => a + b, 0) / samples.length;
-        const remaining = status.total - status.processed;
-        return Math.round((remaining * avgMs) / 1000);
+        return computeEtaSeconds({
+            total: status.total,
+            processed: status.processed,
+            ring: _ringForStatus(status, ring),
+            maxConcurrent: status.max_concurrent
+        });
     }
 
     let estimatedRemainingSeconds = $derived(
         _estimateRemainingSeconds($captioningStatus, $captionTimingRing)
+    );
+
+    let showConcurrency = $derived(
+        isBatchCaptioning &&
+            !isStopping &&
+            $captioningStatus.status !== 'starting' &&
+            $captioningStatus.max_concurrent > 1
     );
 </script>
 
@@ -105,6 +118,12 @@
                 {:else}
                     <span class="text-sm text-gray-400">
                         Captioning… {captionProcessed}/{captionTotal} ({captionPct}%)
+                        {#if showConcurrency}
+                            · {$captioningStatus.max_concurrent} concurrent
+                        {/if}
+                        {#if $captioningStatus.elapsed > 0}
+                            · {formatEta(Math.round($captioningStatus.elapsed))} elapsed
+                        {/if}
                         {#if estimatedRemainingSeconds != null}
                             · ~{formatEta(estimatedRemainingSeconds)} remaining
                         {/if}

@@ -209,7 +209,8 @@ class TestUpsertImage:
 
 
 class TestListImages:
-    def test_paginates(self, repo):
+    def test_paginates_desc(self, repo):
+        """First page (large ``before_id``) returns the newest images first."""
         ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
         for i in range(5):
             repo.upsert_image(
@@ -223,10 +224,12 @@ class TestListImages:
                 draft_names="",
                 last_modified_t=None,
             )
-        result = repo.list_images("alpha", after_id=0, limit=2)
-        assert [r.file_name for r in result] == ["0.jpg", "1.jpg"]
+        # IDs 1..5; DESC with a very large ``before_id`` returns 5, 4, 3, ...
+        result = repo.list_images("alpha", before_id=10**9, limit=2)
+        assert [r.file_name for r in result] == ["4.jpg", "3.jpg"]
 
-    def test_after_id_cursor(self, repo):
+    def test_before_id_cursor(self, repo):
+        """Cursor ``before_id`` returns images with id < cursor, in DESC order."""
         ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
         for i in range(5):
             repo.upsert_image(
@@ -240,13 +243,41 @@ class TestListImages:
                 draft_names="",
                 last_modified_t=None,
             )
-        # IDs 1..5; after_id=2 returns id > 2 → ids 3, 4, 5
-        result = repo.list_images("alpha", after_id=2, limit=10)
-        assert [r.file_name for r in result] == ["2.jpg", "3.jpg", "4.jpg"]
+        # IDs 1..5; before_id=4 returns id < 4 → ids 1, 2, 3 in DESC order
+        result = repo.list_images("alpha", before_id=4, limit=10)
+        assert [r.file_name for r in result] == ["2.jpg", "1.jpg", "0.jpg"]
 
     def test_empty(self, repo):
         repo.upsert_dataset("alpha", "/cfg.toml", "import")
-        assert repo.list_images("alpha", after_id=0, limit=10) == []
+        assert repo.list_images("alpha", before_id=10**9, limit=10) == []
+
+
+class TestListImagePathsDesc:
+    """``list_image_paths_desc`` — single SQL query used by the
+    captioning service to reorder the filesystem-resolved image
+    list (newest first) without N+1 callbacks."""
+
+    def test_returns_paths_in_desc_order(self, repo):
+        ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        for i in range(4):
+            repo.upsert_image(
+                dataset_id=ds_id,
+                path=f"/img/{i}.jpg",
+                file_name=f"{i}.jpg",
+                has_caption=False,
+                has_toml=False,
+                width=0,
+                height=0,
+                draft_names="",
+                last_modified_t=None,
+            )
+        result = repo.list_image_paths_desc("alpha")
+        # ids 1..4 → paths in DESC id order
+        assert result == [("/img/3.jpg", 4), ("/img/2.jpg", 3), ("/img/1.jpg", 2), ("/img/0.jpg", 1)]
+
+    def test_empty(self, repo):
+        repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        assert repo.list_image_paths_desc("alpha") == []
 
 
 class TestGetImageByPath:

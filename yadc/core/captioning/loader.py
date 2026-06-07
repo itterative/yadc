@@ -120,6 +120,9 @@ def load_dataset_config(
     Returns:
         ``(config, images)`` where ``images`` is the resolved list
         filtered for ``image_ids`` (if any) and for overwrite/draft.
+        Order matches ``resolve_dataset`` (filesystem iteration) — the
+        caller is responsible for reordering if a specific order is
+        needed (e.g. id DESC for parallel captioning).
 
     Raises:
         FileNotFoundError: If ``config_path`` does not exist.
