@@ -29,8 +29,12 @@ _PATCH_CMD_TEMPLATES = "yadc.core.captioning.loader.cmd_templates"
 _PATCH_CMD_CONFIGS = "yadc.core.captioning.loader.cmd_configs"
 
 
-def _user_config(url: str = "", token: str = "", model_name: str = "") -> UserConfig:
-    return UserConfig(api=UserConfigApi(url=url, token=token, model_name=model_name))
+def _user_config(url: str = "", token: str = "", model_name: str = "", max_concurrent: int | None = None) -> UserConfig:
+    return UserConfig(
+        api=UserConfigApi(
+            url=url, token=token, model_name=model_name, max_concurrent=max_concurrent
+        )
+    )
 
 
 def _real_image(path: Path) -> Path:
@@ -137,6 +141,69 @@ class TestApplyConfigOverrides:
             apply_config_overrides(raw, CaptionJobOptions(reasoning=True, reasoning_effort="high"))
             assert raw["reasoning"]["enable"] is True
             assert raw["reasoning"]["thinking_effort"] == "high"
+
+
+class TestMaxConcurrentResolution:
+    """``apply_config_overrides`` resolves ``opts.max_concurrent`` from
+    ``None`` (sentinel) to a concrete int using the env as a fallback.
+
+    Contract: explicit opts value > env value > 1 (sequential). The
+    resolution happens in-place on ``opts`` so the runner always
+    receives a valid ``int >= 1`` regardless of what the caller set.
+    """
+
+    def test_none_resolves_to_env_value(self):
+        """``opts.max_concurrent=None`` + env has 4 → opts becomes 4."""
+        opts = CaptionJobOptions()  # default None
+        with patch(_PATCH_CMD_ENVS) as mock_env:
+            mock_env.load_env.return_value = _user_config(max_concurrent=4)
+            apply_config_overrides({"api": {"url": "x", "model_name": "m"}}, opts)
+        assert opts.max_concurrent == 4
+
+    def test_none_resolves_to_one_when_env_unset(self):
+        """``opts.max_concurrent=None`` + env has no value → opts becomes 1."""
+        opts = CaptionJobOptions()  # default None
+        with patch(_PATCH_CMD_ENVS) as mock_env:
+            mock_env.load_env.return_value = _user_config()  # max_concurrent=None
+            apply_config_overrides({"api": {"url": "x", "model_name": "m"}}, opts)
+        assert opts.max_concurrent == 1
+
+    def test_explicit_opts_value_wins_over_env(self):
+        """Caller-set ``max_concurrent=8`` overrides the env's 4."""
+        opts = CaptionJobOptions(max_concurrent=8)
+        with patch(_PATCH_CMD_ENVS) as mock_env:
+            mock_env.load_env.return_value = _user_config(max_concurrent=4)
+            apply_config_overrides({"api": {"url": "x", "model_name": "m"}}, opts)
+        assert opts.max_concurrent == 8
+
+    def test_explicit_one_keeps_one(self):
+        """Caller-set ``max_concurrent=1`` stays 1 even if env has a different value.
+
+        This is the one edge of the contract where the env cannot
+        override the caller — the caller explicitly opted into
+        sequential. Distinguishable from "not set" because
+        ``CaptionJobOptions`` defaults to ``None``.
+        """
+        opts = CaptionJobOptions(max_concurrent=1)
+        with patch(_PATCH_CMD_ENVS) as mock_env:
+            mock_env.load_env.return_value = _user_config(max_concurrent=4)
+            apply_config_overrides({"api": {"url": "x", "model_name": "m"}}, opts)
+        assert opts.max_concurrent == 1
+
+    def test_invalid_env_value_falls_back_to_one(self):
+        """Env's ``max_concurrent=0`` (or negative) is treated as unset.
+
+        The loader doesn't try to validate or coerce — it just falls
+        back to 1 to avoid passing an invalid value to the runner
+        (which would raise ``ValueError``). The PUT endpoint rejects
+        invalid values at the boundary with ``Field(ge=1)``.
+        """
+        for bad in (0, -1, -100):
+            opts = CaptionJobOptions()
+            with patch(_PATCH_CMD_ENVS) as mock_env:
+                mock_env.load_env.return_value = _user_config(max_concurrent=bad)
+                apply_config_overrides({"api": {"url": "x", "model_name": "m"}}, opts)
+            assert opts.max_concurrent == 1, f"env value {bad} should fall back to 1"
 
 
 class TestResolveTemplate:

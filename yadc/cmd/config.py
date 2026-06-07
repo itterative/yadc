@@ -24,7 +24,14 @@ class AppConfigEnvValue(pydantic.BaseModel):
 
 
 class AppConfigEnv(pydantic.BaseModel):
-    """Environment settings. Fields are always present; the value inside may be None."""
+    """Environment settings. Fields are always present; the value inside may be None.
+
+    String-valued fields (``api_url``, ``api_token``, ``api_model_name``)
+    are wrapped in :class:`AppConfigEnvValue` to track their encryption
+    state (plain, keyring-encrypted, or password-encrypted). Integer
+    fields (``max_concurrent``) are stored as plain ``int | None`` —
+    they are never encrypted.
+    """
 
     model_config: ClassVar[ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
@@ -33,6 +40,7 @@ class AppConfigEnv(pydantic.BaseModel):
     api_url: AppConfigEnvValue = pydantic.Field(default_factory=AppConfigEnvValue)
     api_token: AppConfigEnvValue = pydantic.Field(default_factory=AppConfigEnvValue)
     api_model_name: AppConfigEnvValue = pydantic.Field(default_factory=AppConfigEnvValue)
+    max_concurrent: int | None = None
 
 
 class AppConfigKeyStoragePassword(pydantic.BaseModel):
@@ -54,6 +62,7 @@ class _AppConfigV1Env(pydantic.BaseModel):
     api_url: str | None = None
     api_token: str | None = None
     api_model_name: str | None = None
+    max_concurrent: int | None = None
 
 
 class _AppConfigV1KeyStoragePassword(pydantic.BaseModel):
@@ -119,6 +128,7 @@ def _migrate_v0_env(raw: dict[str, Any]) -> AppConfigEnv:
         api_url=_parse_env_value("api_url", migrated.get("api_url")),
         api_token=_parse_env_value("api_token", migrated.get("api_token")),
         api_model_name=_parse_env_value("api_model_name", migrated.get("api_model_name")),
+        max_concurrent=migrated.get("max_concurrent"),
     )
 
 
@@ -166,6 +176,7 @@ def load_config() -> AppConfig:
                         api_url=_parse_env_value("api_url", e.api_url),
                         api_token=_parse_env_value("api_token", e.api_token),
                         api_model_name=_parse_env_value("api_model_name", e.api_model_name),
+                        max_concurrent=e.max_concurrent,
                     )
                     for k, e in _config.envs.items()
                 },
@@ -183,6 +194,7 @@ def save_config(config: AppConfig) -> None:
             api_url=_serialize_env_value(env.api_url),
             api_token=_serialize_env_value(env.api_token),
             api_model_name=_serialize_env_value(env.api_model_name),
+            max_concurrent=env.max_concurrent,
         )
 
     v1 = _AppConfigV1(

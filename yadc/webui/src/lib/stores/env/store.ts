@@ -8,6 +8,8 @@ export interface EnvInfo {
     api_url: string | null;
     api_token: string | null; // masked as [REDACTED]
     api_model_name: string | null;
+    /** Default concurrency for batch captioning. ``null`` = unset (sequential). */
+    max_concurrent: number | null;
     has_token: boolean;
     token_method: 'none' | 'keyring' | 'password';
 }

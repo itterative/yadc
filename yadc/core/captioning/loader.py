@@ -27,6 +27,12 @@ def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict
     """Merge env/config overrides from *opts* into the raw TOML dict.
 
     Precedence (highest to lowest): ``opts`` > env > existing TOML.
+
+    Also resolves ``opts.max_concurrent`` from ``None`` to a concrete
+    ``int`` (env value or 1) so the runner always sees a valid
+    concurrency. Mutates ``opts`` in place for that field; ``raw`` is
+    not modified for it (concurrency is job-level, not a dataset TOML
+    field).
     """
     env_name = opts.env or raw.get("env", "default")
     user_env = cmd_envs.load_env(env_name, password=opts.password)
@@ -65,6 +71,14 @@ def apply_config_overrides(raw: dict[str, Any], opts: CaptionJobOptions) -> dict
 
     if opts.rounds != 1:
         raw["rounds"] = opts.rounds
+
+    # Resolve max_concurrent: explicit opts value wins, else env value
+    # (if >= 1), else 1 (sequential). ``None`` from the caller means
+    # "I didn't set it" — distinct from ``1`` which the caller may pass
+    # explicitly to force sequential.
+    if opts.max_concurrent is None:
+        env_value = user_env.api.max_concurrent
+        opts.max_concurrent = env_value if isinstance(env_value, int) and env_value >= 1 else 1
 
     return raw
 

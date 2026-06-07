@@ -27,6 +27,7 @@ class PutEnvBody(pydantic.BaseModel):
     api_url: str | None = None
     api_token: str | None = None
     api_model_name: str | None = None
+    max_concurrent: int | None = pydantic.Field(default=None, ge=1)
 
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
@@ -46,6 +47,7 @@ def _format_env(name: str, env_data: cmd_config.AppConfigEnv | None) -> dict[str
     api_url = env_data.api_url.value if env_data else None
     api_token = env_data.api_token if env_data else None
     api_model_name = env_data.api_model_name.value if env_data else None
+    max_concurrent = env_data.max_concurrent if env_data else None
 
     has_token = api_token is not None and api_token.value is not None
 
@@ -54,6 +56,7 @@ def _format_env(name: str, env_data: cmd_config.AppConfigEnv | None) -> dict[str
         "api_url": api_url,
         "api_token": "[REDACTED]" if has_token else None,
         "api_model_name": api_model_name,
+        "max_concurrent": max_concurrent,
         "has_token": has_token,
         "token_method": api_token.method if api_token is not None else None,
     }
@@ -120,9 +123,10 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         """Create or update an environment.
 
         JSON body (all fields optional):
-            api_url: str | null       -- ``null`` clears the URL
-            api_token: str | null     -- ``null`` clears the token
-            api_model_name: str | null -- ``null`` clears the default model
+            api_url: str | null          -- ``null`` clears the URL
+            api_token: str | null        -- ``null`` clears the token
+            api_model_name: str | null   -- ``null`` clears the default model
+            max_concurrent: int | null   -- ``null`` clears the concurrency default
 
         Fields omitted from the body are left untouched; fields explicitly
         set to ``null`` are cleared (mirroring ``yadc envs delete <key>``).

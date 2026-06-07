@@ -31,10 +31,12 @@ class CaptionJobOptions(pydantic.BaseModel):
 
     # Concurrency
     # Number of in-flight `predict_stream` requests to allow at once.
-    # 1 = sequential (default; matches the original behavior). Values
-    # > 1 enable parallel captioning via the runner's semaphore-gated
+    # ``None`` = "not set by the caller" — the loader resolves it to
+    # the env's ``max_concurrent`` (if any) and finally to 1. Callers
+    # that want to force a value pass an ``int`` here. Values > 1
+    # enable parallel captioning via the runner's semaphore-gated
     # gather. Job-level only — not a per-dataset TOML field.
-    max_concurrent: int = 1
+    max_concurrent: int | None = None
 
     # Reasoning
     reasoning: bool = False

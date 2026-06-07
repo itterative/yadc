@@ -472,10 +472,13 @@ async def _caption(
 @click.option(
     "--max-concurrent",
     type=click.IntRange(min=1),
-    default=1,
-    show_default=True,
+    default=None,
+    show_default="from env or 1",
     required=False,
-    help="How many captioning requests can be in flight at once. 1 = sequential. Only valid with --non-interactive.",
+    help=(
+        "How many captioning requests can be in flight at once. Defaults to the selected env's "
+        "max_concurrent, or 1 if unset. Only valid with --non-interactive."
+    ),
 )
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
 @cli_common.log_level
@@ -520,7 +523,9 @@ async def _caption_async(dataset: str, **kwargs: Any):
         prompt_name=kwargs.get("user_template") or "",
         overwrite=defaults["overwrite"],
         rounds=defaults["rounds"],
-        max_concurrent=kwargs.get("max_concurrent") or 1,
+        # ``None`` lets the loader resolve to the env's max_concurrent
+        # (if any) and finally to 1. See ``apply_config_overrides``.
+        max_concurrent=kwargs.get("max_concurrent"),
         draft=kwargs.get("draft") or "",
     )
 
@@ -561,8 +566,10 @@ async def _caption_async(dataset: str, **kwargs: Any):
     # Interactive mode + parallel captioning is not supported — the
     # interactive flow reviews one caption at a time and there is no
     # natural way to interleave N parallel reviews. Users who want
-    # parallelism should use --non-interactive.
-    if interactive and options.max_concurrent > 1:
+    # parallelism should use --non-interactive. ``max_concurrent`` may
+    # be ``None`` here if the loader was mocked in tests; the
+    # truthy guard avoids a TypeError on ``None > 1``.
+    if interactive and options.max_concurrent and options.max_concurrent > 1:
         _logger.error("Error: --max-concurrent > 1 is not supported in interactive mode; use --non-interactive.")
         sys.exit(cmd_status.STATUS_ERROR)
 
@@ -592,17 +599,22 @@ async def _caption_async(dataset: str, **kwargs: Any):
             _logger.info("Saving captions as draft: %s", save_draft)
 
         with utils.Timer() as timer:
-            if not interactive and options.max_concurrent > 1:
+            # ``options.max_concurrent`` is ``None`` for the CLI default
+            # but the loader (``apply_config_overrides``) resolves it to
+            # an ``int`` before we get here. Use a local to help
+            # basedpyright narrow the type.
+            max_concurrent = options.max_concurrent or 1
+            if not interactive and max_concurrent > 1:
                 # Non-interactive parallel path: skip the action menu
                 # and let the runner stream + save all images
                 # concurrently. Per-token output is suppressed (would
                 # interleave across images); per-image completion and
                 # errors are logged via CLIPrintCallbacks.
-                _logger.info("Running with up to %d concurrent requests.", options.max_concurrent)
+                _logger.info("Running with up to %d concurrent requests.", max_concurrent)
                 await runner.caption_images(
                     dataset_to_do,
                     CLIPrintCallbacks(),
-                    max_concurrent=options.max_concurrent,
+                    max_concurrent=max_concurrent,
                 )
                 return_code = cmd_status.STATUS_OK
             else:

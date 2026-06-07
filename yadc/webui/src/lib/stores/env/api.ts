@@ -20,10 +20,15 @@ export async function saveEnv(
     /**
      * Fields to update on the env.
      * - omitted from the object: leave the existing value untouched
-     * - set to a string: store the new value
+     * - set to a string/number: store the new value
      * - set to `null`: clear the field (mirrors `yadc envs delete <key>`)
      */
-    data: { api_url?: string | null; api_token?: string | null; api_model_name?: string | null }
+    data: {
+        api_url?: string | null;
+        api_token?: string | null;
+        api_model_name?: string | null;
+        max_concurrent?: number | null;
+    }
 ): Promise<EnvInfo> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`, {
         method: 'PUT',

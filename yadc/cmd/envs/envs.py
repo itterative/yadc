@@ -58,12 +58,17 @@ def load_env(env: str = "default", password: str | None = None) -> UserConfig:
         api_url = _get_value(target_env.api_url, default_env.api_url, "api_url")
         api_token = _get_value(target_env.api_token, default_env.api_token, "api_token")
         api_model_name = _get_value(target_env.api_model_name, default_env.api_model_name, "api_model_name")
+        # ``max_concurrent`` falls back from the target env to the
+        # default env (same pattern as the other env fields). Plain
+        # int — no decryption.
+        max_concurrent = target_env.max_concurrent if target_env.max_concurrent is not None else default_env.max_concurrent
 
         return UserConfig(
             api=UserConfigApi(
                 url=api_url or "",
                 token=api_token or "",
                 model_name=api_model_name or "",
+                max_concurrent=max_concurrent,
             ),
         )
     except EnvDecryptionError:
@@ -104,20 +109,29 @@ def update_env(
         env_data = AppConfigEnv()
         config.envs[env] = env_data
 
-    value_obj = getattr(env_data, key)
-    if not isinstance(value_obj, AppConfigEnvValue):
-        raise ValueError(f"Invalid environment key: {key}")
+    current = getattr(env_data, key)
+    if isinstance(current, AppConfigEnvValue):
+        # String-valued field (api_url, api_token, api_model_name):
+        # route through the encryption layer. ``None`` clears the
+        # value and resets the encryption method to "none".
+        if value is None:
+            current.value = None
+            current.method = "none"
+        elif key in AppConfigEnv.ENCRYPTED_FIELDS:
+            method = _active_storage_method()
+            current.value = encrypt_setting(value, method=method)
+            current.method = method.value
+        else:
+            current.value = value
+            current.method = "none"
+        return
 
-    if value is None:
-        value_obj.value = None
-        value_obj.method = "none"
-    elif key in AppConfigEnv.ENCRYPTED_FIELDS:
-        method = _active_storage_method()
-        value_obj.value = encrypt_setting(value, method=method)
-        value_obj.method = method.value
-    else:
-        value_obj.value = value
-        value_obj.method = "none"
+    # Non-string field (e.g. ``max_concurrent: int | None``): plain
+    # assignment. No encryption, no validation beyond what the model
+    # performs on construction.
+    if key not in AppConfigEnv.model_fields:
+        raise ValueError(f"Invalid environment key: {key}")
+    setattr(env_data, key, value)
 
 
 def delete_env(env: str = "default", config: AppConfig | None = None) -> None:

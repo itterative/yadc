@@ -26,6 +26,7 @@ def make_app_config_env(
     api_url: str = "http://localhost:11434",
     api_token: str | None = "token",
     api_model_name: str | None = "gemma3",
+    max_concurrent: int | None = None,
     encryption_method: Literal["none", "keyring", "password"] = "none",
 ) -> AppConfigEnv:
     """Build an ``AppConfigEnv`` with sensible defaults.
@@ -40,6 +41,7 @@ def make_app_config_env(
         api_url=AppConfigEnvValue(value=api_url, method="none"),
         api_token=AppConfigEnvValue(value=api_token, method=encryption_method),
         api_model_name=AppConfigEnvValue(value=api_model_name, method="none"),
+        max_concurrent=max_concurrent,
     )
 
 
@@ -356,6 +358,100 @@ class TestPutEnv:
         assert data["name"] == "default"
         assert data["api_url"] == "https://new.example.com"
         assert data["api_model_name"] == "gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_set(self, client, patched_cmd_config, patched_cmd_envs):
+        """``max_concurrent: 4`` is forwarded to ``cmd_envs.update_env``."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"max_concurrent": 4})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_called_once_with(
+            "max_concurrent", 4, env="default", config=patched_cmd_config.load_config.return_value
+        )
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_null_clears(self, client, patched_cmd_config, patched_cmd_envs):
+        """``max_concurrent: null`` clears the env's concurrency default."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"max_concurrent": None})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_called_once_with(
+            "max_concurrent", None, env="default", config=patched_cmd_config.load_config.return_value
+        )
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_zero_rejected(self, client, patched_cmd_config, patched_cmd_envs):
+        """``max_concurrent: 0`` is rejected by Pydantic (``Field(ge=1)``).
+
+        0 is not a valid concurrency — it would deadlock the runner's
+        semaphore. The CLI's click option and the API both reject it
+        at the boundary rather than letting it reach the runner.
+        """
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"max_concurrent": 0})
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        patched_cmd_envs.update_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_negative_rejected(self, client, patched_cmd_config, patched_cmd_envs):
+        """Negative values are rejected by Pydantic (``Field(ge=1)``)."""
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"max_concurrent": -1})
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        patched_cmd_envs.update_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_non_integer_rejected(self, client, patched_cmd_config, patched_cmd_envs):
+        """Non-integer values (e.g. a string) are rejected by Pydantic."""
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"max_concurrent": "four"})
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        patched_cmd_envs.update_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_response_includes_max_concurrent(self, client, patched_cmd_envs):
+        """The GET /envs response exposes ``max_concurrent`` so the
+        WebUI can prefill the edit dialog."""
+        patched_cmd_envs.list_all_env.return_value = ["default"]
+        patched_cmd_envs.get_env.return_value = make_app_config_env(max_concurrent=4)
+
+        resp = await client.get("/api/envs")
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data[0]["max_concurrent"] == 4
+
+    @pytest.mark.asyncio
+    async def test_get_response_max_concurrent_null_when_unset(self, client, patched_cmd_envs):
+        """``max_concurrent`` is ``null`` in the response when unset
+        (matches the ``int | None`` contract — distinguish unset from
+        a configured value of 1)."""
+        patched_cmd_envs.list_all_env.return_value = ["default"]
+        patched_cmd_envs.get_env.return_value = make_app_config_env()  # max_concurrent=None
+
+        resp = await client.get("/api/envs")
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data[0]["max_concurrent"] is None
 
 
 class TestListModels:

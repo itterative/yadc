@@ -29,6 +29,8 @@
     let editUrl = $state('');
     let editToken = $state('');
     let editModelName = $state('');
+    /** String-typed so the input can be empty; converted to number|null on save. */
+    let editMaxConcurrent = $state('');
     let isSavingEnv = $state(false);
     let saveEnvError: string | null = $state(null);
 
@@ -58,6 +60,7 @@
         editUrl = '';
         editToken = '';
         editModelName = '';
+        editMaxConcurrent = '';
         saveEnvError = null;
         showToken = false;
         revealedToken = '';
@@ -73,6 +76,7 @@
         editUrl = env.api_url || '';
         editToken = '';
         editModelName = env.api_model_name || '';
+        editMaxConcurrent = env.max_concurrent != null ? String(env.max_concurrent) : '';
     }
 
     function cancelEditEnv() {
@@ -81,6 +85,7 @@
         saveEnvError = null;
         showToken = false;
         revealedToken = '';
+        editMaxConcurrent = '';
         cancelPassword();
     }
 
@@ -91,16 +96,35 @@
             return;
         }
 
+        // Parse max_concurrent: empty string = clear (null), invalid
+        // string = reject, non-integer = reject.
+        let maxConcurrentValue: number | null = null;
+        const trimmedMax = editMaxConcurrent.trim();
+        if (trimmedMax !== '') {
+            const parsed = Number(trimmedMax);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+                saveEnvError = 'Max Concurrent must be a positive integer';
+                return;
+            }
+            maxConcurrentValue = parsed;
+        }
+
         isSavingEnv = true;
         saveEnvError = null;
         try {
-            const data: { api_url: string; api_token?: string; api_model_name: string | null } = {
+            const data: {
+                api_url: string;
+                api_token?: string;
+                api_model_name: string | null;
+                max_concurrent: number | null;
+            } = {
                 api_url: editUrl.trim(),
                 // Always send the model name so an empty input clears the
                 // existing default. The backend distinguishes `null`
                 // (clear) from a missing key (leave alone), so an
                 // explicit `null` is required to wipe the field.
-                api_model_name: editModelName.trim() || null
+                api_model_name: editModelName.trim() || null,
+                max_concurrent: maxConcurrentValue
             };
             if (editToken) {
                 data.api_token = editToken;
@@ -172,8 +196,9 @@
 
 <div class="space-y-4 p-5">
     <p class="text-sm text-gray-500">
-        Environments store API connection settings (URL, token, and default model) so you can
-        quickly switch between different providers or local servers when captioning.
+        Environments store API connection settings (URL, token, default model, and batch
+        concurrency) so you can quickly switch between different providers or local servers when
+        captioning.
     </p>
 
     {#if envError}
@@ -202,6 +227,11 @@
                                 {/if}
                                 {#if env.api_model_name}
                                     <span class="badge-muted">Model</span>
+                                {/if}
+                                {#if env.max_concurrent != null}
+                                    <span class="badge-muted" title="Default batch concurrency">
+                                        ×{env.max_concurrent}
+                                    </span>
                                 {/if}
                             </div>
                         </div>
@@ -308,6 +338,26 @@
                     class="input"
                     placeholder="gpt-4o-mini"
                 />
+            </div>
+
+            <div>
+                <label class="label" for="env-max-concurrent">
+                    Max Concurrent
+                    <span class="ml-1 text-gray-500">(leave blank for sequential)</span>
+                </label>
+                <input
+                    id="env-max-concurrent"
+                    type="number"
+                    min={1}
+                    max={32}
+                    bind:value={editMaxConcurrent}
+                    class="input"
+                    placeholder="1"
+                />
+                <p class="help-text">
+                    Default concurrency for batch captioning. Used when no per-run override is
+                    given. Blank = sequential (1 in flight at a time).
+                </p>
             </div>
 
             <div class="btn-bar">

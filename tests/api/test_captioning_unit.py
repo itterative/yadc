@@ -33,7 +33,10 @@ def job(tmp_path):
     mock_ds = MagicMock()
     mock_dispatcher = MagicMock()
     mock_logger = MagicMock()
-    opts = CaptionJobOptions()
+    # ``max_concurrent=1`` explicitly — these tests cover the
+    # sequential path. The ``None`` default is tested in the loader
+    # tests (see ``tests/core/captioning/test_loader.py``).
+    opts = CaptionJobOptions(max_concurrent=1)
 
     return AsyncCaptionJob(
         dataset_name="test_ds",

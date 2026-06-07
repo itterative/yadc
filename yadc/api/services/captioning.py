@@ -208,7 +208,10 @@ class AsyncCaptionJob:
                 api_url=self._api_url,
                 api_model_name=self._api_model_name,
                 elapsed=elapsed,
-                max_concurrent=self._opts.max_concurrent,
+                # ``opts.max_concurrent`` is ``None`` for the API default
+                # but the loader resolves it to an ``int`` before
+                # ``_arun`` runs. Coalesce defensively for type-check.
+                max_concurrent=self._opts.max_concurrent or 1,
             )
 
     # -- CaptioningCallbacks Protocol ----------------------------------------
@@ -358,10 +361,14 @@ class AsyncCaptionJob:
                 if caption:
                     self._emit_image_refined(img, caption)
             else:
+                # Coalesce ``None`` (default) to 1 — the loader
+                # normally resolves this earlier, but the runner takes
+                # ``int`` and basedpyright doesn't know about the
+                # loader side-effect.
                 await runner.caption_images(
                     to_do,
                     self,
-                    max_concurrent=self._opts.max_concurrent,
+                    max_concurrent=self._opts.max_concurrent or 1,
                 )
 
         if self._check_stop():
@@ -427,7 +434,8 @@ class AsyncCaptionJob:
             api_url=snap.api_url,
             api_model_name=snap.api_model_name,
             elapsed=elapsed,
-            max_concurrent=self._opts.max_concurrent,
+            # Coalesce ``None`` (default) to 1 — see ``_snapshot_locked``.
+            max_concurrent=self._opts.max_concurrent or 1,
         )
         self._event_dispatcher.dispatch(event)
 

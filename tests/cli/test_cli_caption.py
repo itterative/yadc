@@ -90,8 +90,14 @@ def _fake_loaded_config() -> tuple[MagicMock, list[MagicMock]]:
 class TestMaxConcurrentArgument:
     """The ``--max-concurrent`` click option is parsed correctly."""
 
-    def test_default_is_one(self, cli_runner, dataset_toml):
-        """--max-concurrent defaults to 1 (sequential)."""
+    def test_default_is_none(self, cli_runner, dataset_toml):
+        """--max-concurrent defaults to ``None`` (sentinel) when the user doesn't pass it.
+
+        The CLI passes ``None`` through to ``CaptionJobOptions``; the
+        loader (``apply_config_overrides``) resolves ``None`` to the
+        env's ``max_concurrent`` or to ``1``. This test asserts the
+        CLI-side contract: the CLI does not force a value.
+        """
         with patch("yadc.cli_caption.load_dataset_config") as mock_load, patch("yadc.cli_caption.CaptioningRunner") as MockRunner:
             mock_load.return_value = _fake_loaded_config()
             mock_instance = MagicMock()
@@ -105,7 +111,7 @@ class TestMaxConcurrentArgument:
         # The runner is built with the CaptionJobOptions as the second arg
         MockRunner.assert_called_once()
         opts = MockRunner.call_args.args[1]
-        assert opts.max_concurrent == 1
+        assert opts.max_concurrent is None
 
     def test_explicit_value(self, cli_runner, dataset_toml):
         """--max-concurrent 4 sets options.max_concurrent=4."""
