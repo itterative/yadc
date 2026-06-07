@@ -28,6 +28,9 @@
     let loading = $state(false);
     let error: string | null = $state(null);
     let restoringId: number | null = $state(null);
+    /** Opaque cursor for the next (older) page. ``null`` when
+     *  there are no more pages or no page has been loaded yet. */
+    let nextToken: string | null = $state(null);
     let hasMore = $state(false);
 
     /** Track which entries show full snapshot instead of diff (key = entry id). */
@@ -39,17 +42,23 @@
         loading = true;
         error = null;
         try {
-            const beforeId =
-                append && entries.length > 0 ? entries[entries.length - 1].id : undefined;
-            const newEntries = await fetchConfigHistory(datasetName, {
+            // ``next`` is an opaque cursor returned by the server.
+            // The first page sends no cursor; subsequent pages pass
+            // back whatever the server emitted as ``next_token``.
+            const next = append ? nextToken : undefined;
+            const page = await fetchConfigHistory(datasetName, {
                 limit: PAGE_SIZE,
-                before_id: beforeId
+                next
             });
-            hasMore = newEntries.length === PAGE_SIZE;
+            // ``hasMore`` is authoritative: the server knows whether
+            // there are more pages, regardless of the returned
+            // count.
+            hasMore = page.next_token !== null;
+            nextToken = page.next_token;
             if (append) {
-                entries = [...entries, ...newEntries];
+                entries = [...entries, ...page.entries];
             } else {
-                entries = newEntries;
+                entries = page.entries;
                 showFullMap = {};
             }
         } catch (e) {

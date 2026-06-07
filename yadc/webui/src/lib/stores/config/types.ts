@@ -102,3 +102,12 @@ export interface ConfigHistoryEntry {
     content: string;
     created_t: number;
 }
+
+/** Paginated page of config history entries.
+ *  ``next`` is an opaque cursor to pass back for the next (older)
+ *  page; ``null`` means this is the last page. The encoding is an
+ *  implementation detail of the server. */
+export interface ConfigHistoryPage {
+    entries: ConfigHistoryEntry[];
+    next_token: string | null;
+}

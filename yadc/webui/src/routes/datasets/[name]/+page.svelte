@@ -245,7 +245,7 @@
         try {
             const page = await fetchImages(datasetName, {
                 limit: PAGE_SIZE,
-                beforeId: parseInt(nextToken)
+                next: nextToken
             });
             images = [...images, ...page.images];
             nextToken = page.next_token;

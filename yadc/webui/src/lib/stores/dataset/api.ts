@@ -311,14 +311,15 @@ export async function rescanDataset(name: string): Promise<DatasetInfo> {
 
 async function _fetchImages(
     datasetName: string,
-    options: { limit?: number; beforeId?: number } = {}
+    options: { limit?: number; next?: string } = {}
 ): Promise<ImagePage> {
     const params = new URLSearchParams();
     if (options.limit) {
         params.set('limit', String(options.limit));
     }
-    if (options.beforeId !== undefined) {
-        params.set('before_id', String(options.beforeId));
+    if (options.next) {
+        // ``next`` is an opaque cursor — pass it through as-is.
+        params.set('next', options.next);
     }
 
     const res = await fetch(

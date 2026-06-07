@@ -97,8 +97,8 @@ user gets a predictable "newest first" experience.
 - **Loader** (`yadc/core/captioning/loader.py`): no change to its
   public interface. Stays generic — returns the
   filesystem-iteration order, leaving the caller to reorder if it
-  cares. (An earlier draft added an `image_id_resolver` parameter
-  for a Python sort; this was removed in the SQL refactor.)
+- The original 4-phase plan entries (`001`–`007`) in this directory
+
 - **Repository** (`yadc/api/services/dataset_repository.py`): new
   `list_image_paths_desc(dataset_name) -> list[tuple[str, int]]`
   method. Single SQL query: `ORDER BY di.id DESC`. No N+1.
@@ -172,4 +172,84 @@ version is also cleaner.
 - `architecture-overview` — code structure
 - `docs/captioning-workflow` — shared runner + per-side concerns
 - `docs/captioning-runner` — runner interface (unchanged here)
-- The original 4-phase plan entries (`001`–`007`) in this directory
+## 4. Opaque `next` cursor for paginated endpoints (Backend + Frontend)
+
+**Symptom**: The images and config-history list endpoints took
+`before_id` as a query param. The frontend had to know the cursor
+was an auto-increment id (and `parseInt` it), tying the client
+to the server's encoding.
+
+**User intent**: rename the param to `next` and make the cursor
+opaque — the client treats it as a string token and passes it
+back unchanged. The server decodes internally.
+
+**Fix** (images endpoint first, then config-history for consistency):
+
+**Images endpoint** (`yadc/api/services/datasets.py` +
+`yadc/api/services/dataset_repository.py` +
+`yadc/api/controllers/api_datasets.py`):
+- `DatasetService.list_images` signature:
+  `next: str | None = None` (was `before_id: int | None = None`).
+- New private `_decode_next_token` static method: decodes the
+  opaque string to the repo's internal `before_id` (empty/None
+  means "first page", translates to `2**63 - 1` for the SQL
+  `id < ?` filter).
+- Controller reads `?next=...` from the query, passes through
+  unchanged. `DatasetService` does the decode; the repo's
+  `before_id: int` is now purely internal.
+- Frontend (`yadc/webui/src/lib/stores/dataset/api.ts` +
+`+page.svelte`): option renamed `beforeId: number` → `next: string`;
+the page passes `nextToken` directly (no `parseInt`).
+- Response shape unchanged (`ImagePage { images, next_token }`).
+
+**Config-history endpoint** (`yadc/api/services/config_history.py`
++ `yadc/api/services/config_history_repository.py` +
+`yadc/api/controllers/api_configs.py`):
+- New `ConfigHistoryPage` dataclass with
+  `entries: list[ConfigHistoryEntry]` and `next_token: str | None`.
+  Service returns this wrapper instead of a bare list, matching
+  the `ImagePage` pattern.
+- `ConfigHistoryService.list_history` signature:
+  `next: str | None = None` (was `before_id: int | None`).
+  Same `_decode_next_token` shape as the images endpoint.
+- Service uses `limit + 1` to detect "is there a next page" and
+  emits the `next_token` authoritatively (the old frontend
+  heuristic `newEntries.length === PAGE_SIZE` was unreliable on
+  exact-page-boundary datasets).
+- Controller: response shape changed from bare array to
+  `{entries: [...], next_token: "..." | null}` (breaking change,
+  but internal API). The controller now just `jsonify_dataclass`s
+  the page.
+- Frontend (`yadc/webui/src/lib/stores/config/api.ts` +
+  `types.ts`): `fetchConfigHistory` now returns
+  `ConfigHistoryPage`. New `ConfigHistoryPage` interface
+  re-exported from the barrel.
+- `ConfigHistory.svelte`: state holds `nextToken: string | null`;
+  the cursor is whatever the server returned. `hasMore` is
+  `page.next_token !== null` (authoritative, not the
+  count-heuristic). On the first page no cursor is sent; on
+  subsequent pages the server's `next_token` is sent back
+  unchanged.
+
+**Shared pattern**:
+- Server: defines cursor encoding; the encoding is a private
+  detail of the service.
+- Client: treats the cursor as a string token; passes it back
+  unchanged.
+- The cursor naming on the wire is `next` (request) /
+  `next_token` (response), consistent across endpoints.
+
+**Tests added**:
+- `tests/api/test_datasets_service.py::TestListImages` (4 tests):
+  first page passes unbounded cursor; `next="42"` decodes to
+  `before_id=42`; `next_token` is the smallest id on the
+  trimmed page; empty token means "first page".
+- `tests/api/test_config_history_service.py` (new, 6 tests):
+  same opaque-cursor coverage for the config-history service,
+  plus the limit+1 next-page detection.
+
+## See also
+
+- `architecture-overview` — code structure
+- `docs/captioning-workflow` — shared runner + per-side concerns
+- `docs/captioning-runner` — runner interface (unchanged here)

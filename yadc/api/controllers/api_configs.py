@@ -16,7 +16,7 @@ from ..modules.logging_factory import LoggingFactory
 from . import controller
 from .blueprints import ApiBlueprint
 from .models_errors import APIErrorDetail
-from .utils_json import ErrorCode, jsonify_error
+from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error
 
 
 def _extract_dataset_paths(doc: dict[str, Any]) -> set[str]:
@@ -225,26 +225,19 @@ def api_configs(
 
     @app.get("/configs/<name>/history")
     def list_config_history(name: str):  # pyright: ignore[reportUnusedFunction]
-        """List config revision history for a dataset."""
+        """List config revision history for a dataset (paginated, newest first)."""
         info = datasets.get_dataset(name)
         if info is None or info.config_path is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
 
         limit = request.args.get("limit", 50, type=int)
-        before_id = request.args.get("before_id", None, type=int)
+        # ``next`` is an opaque cursor returned by the previous page
+        # as ``next_token``. The client treats it as a string token;
+        # the server decodes it.
+        next_token = request.args.get("next")
 
-        entries = config_history.list_history(name, limit=limit, before_id=before_id)
-        return jsonify(
-            [
-                {
-                    "id": e.id,
-                    "dataset_name": e.dataset_name,
-                    "content": e.content,
-                    "created_t": e.created_t,
-                }
-                for e in entries
-            ]
-        )
+        page = config_history.list_history(name, limit=limit, next=next_token)
+        return jsonify_dataclass(page)
 
     @app.post("/configs/<name>/history/<int:entry_id>/restore")
     def restore_config_history(name: str, entry_id: int):  # pyright: ignore[reportUnusedFunction]

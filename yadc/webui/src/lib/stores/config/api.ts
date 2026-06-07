@@ -2,7 +2,7 @@ import { API_BASE, apiErrorMessage } from '$lib/api';
 import { debounce } from '$lib/async';
 import type {
     Config,
-    ConfigHistoryEntry,
+    ConfigHistoryPage,
     DatasetConfig,
     DatasetConfigDetail,
     ExportBackend,
@@ -73,14 +73,17 @@ export const fetchConfig = debounce(_fetchConfig);
 
 async function _fetchConfigHistory(
     name: string,
-    options?: { limit?: number; before_id?: number }
-): Promise<ConfigHistoryEntry[]> {
+    options?: { limit?: number; next?: string | null }
+): Promise<ConfigHistoryPage> {
     const params = new URLSearchParams();
     if (options?.limit) {
         params.set('limit', String(options.limit));
     }
-    if (options?.before_id) {
-        params.set('before_id', String(options.before_id));
+    if (options?.next) {
+        // ``next`` is an opaque cursor — pass it through as-is.
+        // Falsy values (``''``, ``null``, ``undefined``) mean
+        // "first page" and are omitted.
+        params.set('next', options.next);
     }
     const qs = params.toString();
     const res = await fetch(

@@ -364,10 +364,12 @@ def api_datasets(
         """List images with captions/drafts (paginated, newest first)."""
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 200))
-        before_id_raw = request.args.get("before_id")
-        before_id = int(before_id_raw) if before_id_raw is not None else None
+        # ``next`` is an opaque cursor returned by the previous page
+        # as ``next_token``. The client treats it as a string token;
+        # the server decodes it.
+        next_token = request.args.get("next")
 
-        page = datasets.list_images(name, limit=limit, before_id=before_id)
+        page = datasets.list_images(name, limit=limit, next=next_token)
         return jsonify_dataclass(page)
 
     @app.get("/datasets/<name>/images/<int:image_id>/media")

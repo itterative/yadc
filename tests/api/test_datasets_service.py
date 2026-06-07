@@ -10,6 +10,73 @@ from yadc.api.services.dataset_repository import DatasetRepository
 from yadc.api.services.datasets import DatasetService, ImageInfo
 
 
+class TestListImages:
+    """``list_images`` — opaque ``next`` cursor decoding."""
+
+    @pytest.fixture
+    def service(self):
+        mock_repo = MagicMock()
+        mock_repo.list_images.return_value = []
+        svc = DatasetService.__new__(DatasetService)
+        svc._repo = mock_repo
+        return svc, mock_repo
+
+    def test_first_page_passes_unbounded_cursor(self, service):
+        """No ``next`` token means "first page" — repo gets an
+        effectively-unbounded ``before_id`` (max int) so all rows
+        pass the ``id < ?`` filter."""
+        svc, mock_repo = service
+        page = svc.list_images("alpha", limit=10)
+
+        mock_repo.list_images.assert_called_once()
+        _, kwargs = mock_repo.list_images.call_args
+        # The repo receives the largest possible int (2**63 - 1) so
+        # ``id < before_id`` is true for every row.
+        assert kwargs["before_id"] == 2**63 - 1
+        assert kwargs["limit"] == 11  # limit + 1
+        assert page.next_token is None
+
+    def test_next_token_decoded_to_before_id(self, service):
+        """An opaque ``next`` token is decoded into the internal
+        ``before_id`` cursor; the client never sees the encoding."""
+        svc, mock_repo = service
+        mock_repo.list_images.return_value = []  # no more pages
+        svc.list_images("alpha", limit=10, next="42")
+
+        _, kwargs = mock_repo.list_images.call_args
+        assert kwargs["before_id"] == 42
+
+    def test_next_token_emitted_from_smallest_id(self, service):
+        """When there's a next page, the returned ``next_token`` is
+        the smallest id on the current page (the last image in DESC
+        order) so the client can use it as the next cursor."""
+        svc, mock_repo = service
+        # Simulate limit+1 rows returned (2 more than asked, so a
+        # next page exists). The repo returns the full list; the
+        # service trims to ``limit`` and emits a token.
+        rows = []
+        for i in [50, 49, 48]:  # ids descending
+            info = MagicMock(spec=ImageInfo)
+            info.id = i
+            rows.append(info)
+        mock_repo.list_images.return_value = rows
+
+        page = svc.list_images("alpha", limit=2, next="100")
+
+        # Trimmed to first 2; token = smallest id on the trimmed page.
+        assert len(page.images) == 2
+        assert page.next_token == "49"
+
+    def test_empty_token_means_first_page(self, service):
+        """An empty ``next`` string is treated as "first page"."""
+        svc, mock_repo = service
+        svc.list_images("alpha", limit=10, next="")
+
+        _, kwargs = mock_repo.list_images.call_args
+        assert kwargs["before_id"] == 2**63 - 1
+
+
+
 @pytest.fixture
 def service():
     """Create a DatasetService with mocked dependencies."""
