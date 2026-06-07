@@ -8,6 +8,7 @@ callbacks for output / event emission / cancellation.
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,114 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.prediction import PredictionContext
 
 from .options import CaptionJobOptions
+
+# ---------------------------------------------------------------------------
+# Batch error handling
+# ---------------------------------------------------------------------------
+
+
+class BatchAbortedError(Exception):
+    """Raised by :meth:`CaptioningRunner.caption_images` when the batch is aborted.
+
+    The runner aborts the batch when it sees ``_BATCH_API_ERROR_THRESHOLD``
+    consecutive API-attributable errors with the same signature (e.g. three
+    ``http 401`` errors in a row). The signature is included in the
+    exception message so callers can show a clear, actionable error to
+    the user.
+    """
+
+
+# Substrings in the normalised error message that indicate the API
+# itself is at fault (as opposed to a per-image issue). The runner
+# tracks consecutive errors matching these patterns and aborts the
+# batch once the threshold is reached.
+#
+# Note: we match by substring on the message returned from
+# ``ErrorNormalizationMixin._normalize_error`` (see
+# ``yadc/captioners/api/utils/error_normalization.py``). The strings
+# are deliberately conservative — anything not in this list is treated
+# as image-attributable and does NOT count toward the abort threshold.
+#
+# Each pattern is a (compiled regex, signature-format) pair. The
+# signature returned by ``_classify_error_message`` includes the
+# captured group (e.g. the HTTP status code) so that a 401 and a 404
+# are treated as distinct API problems and don't accumulate toward the
+# same abort threshold.
+_API_ERROR_SIGNATURE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^api returned an error \(http (\d+)\)"), "http {0}"),
+    (re.compile(r"^api returned an error \(generation (\d+)\)"), "generation {0}"),
+    (re.compile(r"^api returned an error \(moderation (\d+)\)"), "moderation {0}"),
+    (re.compile(r"^Connection closed unexpectedly"), "connection closed"),
+    (re.compile(r"^api unavailable"), "api unavailable"),
+)
+
+_BATCH_API_ERROR_THRESHOLD: int = 3
+
+
+def _classify_error_message(message: str) -> str | None:
+    """Return a stable signature for an API-attributable error, or ``None``.
+
+    Used to group consecutive API errors so the runner can detect
+    persistent backend issues (e.g. three 401s in a row) and abort the
+    batch. Image-attributable errors return ``None`` and do not affect
+    the consecutive-API-error counter.
+
+    Distinct signatures per error type — e.g. ``"http 401"`` and
+    ``"http 404"`` — so an interleaving of unrelated API errors does
+    not accumulate toward the abort threshold.
+    """
+    for pattern, signature_format in _API_ERROR_SIGNATURE_PATTERNS:
+        match = pattern.match(message)
+        if match is None:
+            continue
+        groups = match.groups()
+        if groups:
+            return signature_format.format(*groups)
+        return signature_format
+    return None
+
+
+@dataclass
+class _BatchErrorTracker:
+    """Counts consecutive API errors of the same signature.
+
+    A success or an image-attributable error resets the counter. When
+    the counter reaches ``_BATCH_API_ERROR_THRESHOLD`` identical
+    signatures, ``record_error`` raises :class:`BatchAbortedError` to
+    abort the batch.
+    """
+
+    _consecutive: int = 0
+    _last_signature: str | None = None
+
+    def record_success(self) -> None:
+        self._consecutive = 0
+        self._last_signature = None
+
+    def record_error(self, exc: BaseException) -> None:
+        """Record an error from a finished per-image task.
+
+        Image-attributable errors (no signature match) reset the
+        counter — they break the chain of identical API errors. A
+        new API signature (e.g. switching from 401 to 404) also
+        resets the counter to 1. The same API signature increments
+        the counter. Raises :class:`BatchAbortedError` once the
+        threshold is reached.
+        """
+        signature = _classify_error_message(str(exc))
+        if signature is None:
+            # Image-attributable: not a persistent API problem, reset
+            # the consecutive-API-error chain.
+            self._consecutive = 0
+            self._last_signature = None
+            return
+        if signature == self._last_signature:
+            self._consecutive += 1
+        else:
+            self._consecutive = 1
+            self._last_signature = signature
+        if self._consecutive >= _BATCH_API_ERROR_THRESHOLD:
+            raise BatchAbortedError(f"Aborting batch after {self._consecutive} consecutive API errors with signature '{signature}'. Last error: {exc}")
 
 
 @runtime_checkable
@@ -238,6 +347,83 @@ class CaptioningRunner:
             extra_messages=extra_messages,
             prediction_context=prediction_context,
         )
+
+    async def caption_images(
+        self,
+        images: list[DatasetImage],
+        callbacks: CaptioningCallbacks,
+        *,
+        max_concurrent: int = 1,
+        caption_rounds: list[CaptionerRound] | None = None,
+        extra_messages: list[ReplyRound] | None = None,
+    ) -> None:
+        """Caption all images, up to ``max_concurrent`` in flight at once.
+
+        Equivalent to iterating and calling :meth:`caption_image` for
+        each image, but with a semaphore gating how many requests are
+        in flight at once. ``max_concurrent == 1`` reproduces the
+        original sequential behaviour.
+
+        Per-image errors (already reported via
+        ``callbacks.on_image_error``) are caught and do not fail the
+        batch. Cancellation propagates: when the awaiting task is
+        cancelled, all in-flight siblings are cancelled and the
+        :class:`asyncio.CancelledError` is re-raised.
+
+        The batch is aborted with :class:`BatchAbortedError` when
+        ``_BATCH_API_ERROR_THRESHOLD`` consecutive API-attributable
+        errors share the same signature (e.g. three 401 responses in
+        a row). Image-attributable errors do not count toward this
+        threshold. Sibling tasks are cancelled and the abort error is
+        re-raised; in-flight HTTP requests receive
+        :class:`asyncio.CancelledError` and unwind via the underlying
+        ``httpx`` client.
+
+        Callbacks fire on each per-image task independently and may
+        be invoked out of submission order (callers should match
+        results by ``DatasetImage``, not position).
+        """
+        assert self._model is not None, "CaptioningRunner used outside 'async with'"
+        if max_concurrent < 1:
+            raise ValueError(f"max_concurrent must be >= 1, got {max_concurrent}")
+        if not images:
+            return
+
+        sem = asyncio.Semaphore(max_concurrent)
+        tracker = _BatchErrorTracker()
+
+        async def _caption_one(image: DatasetImage) -> None:
+            async with sem:
+                try:
+                    caption = await self.caption_image(
+                        image,
+                        callbacks,
+                        caption_rounds=caption_rounds,
+                        extra_messages=extra_messages,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # ``on_image_error`` was already fired by
+                    # ``caption_image``; record for the abort heuristic
+                    # and continue. May raise ``BatchAbortedError`` if
+                    # the API-error threshold is reached.
+                    tracker.record_error(exc)
+                    return
+                if caption:
+                    tracker.record_success()
+
+        tasks = [asyncio.create_task(_caption_one(img)) for img in images]
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            # Cancellation or abort: cancel in-flight siblings and
+            # drain their unwinds, then re-raise the original.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     # -- internals ----------------------------------------------------------
 

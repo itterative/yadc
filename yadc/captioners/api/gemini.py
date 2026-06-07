@@ -519,12 +519,13 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                     raise ValueError("api did not return a valid response")
 
                 if conversation_response.usageMetadata and conversation_response.responseId != "SKIPPED":
-                    self._api_usage[conversation_response.responseId] = APIUsage(
-                        response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
-                        prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
-                        total_tokens=conversation_response.usageMetadata.totalTokenCount,
-                        thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
-                    )
+                    async with self._api_usage_lock:
+                        self._api_usage[conversation_response.responseId] = APIUsage(
+                            response_tokens=conversation_response.usageMetadata.candidatesTokenCount,
+                            prompt_tokens=conversation_response.usageMetadata.promptTokenCount,
+                            total_tokens=conversation_response.usageMetadata.totalTokenCount,
+                            thoughts_tokens=conversation_response.usageMetadata.thoughtsTokenCount,
+                        )
 
                 thought_buffer = ""
 
@@ -626,12 +627,13 @@ class GeminiCaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                         line_response = GeminiContentResponse.model_validate(line_json)
 
                         if line_response.usageMetadata and line_response.responseId != "SKIPPED":
-                            self._api_usage[line_response.responseId] = APIUsage(
-                                response_tokens=line_response.usageMetadata.candidatesTokenCount,
-                                prompt_tokens=line_response.usageMetadata.promptTokenCount,
-                                total_tokens=line_response.usageMetadata.totalTokenCount,
-                                thoughts_tokens=line_response.usageMetadata.thoughtsTokenCount,
-                            )
+                            async with self._api_usage_lock:
+                                self._api_usage[line_response.responseId] = APIUsage(
+                                    response_tokens=line_response.usageMetadata.candidatesTokenCount,
+                                    prompt_tokens=line_response.usageMetadata.promptTokenCount,
+                                    total_tokens=line_response.usageMetadata.totalTokenCount,
+                                    thoughts_tokens=line_response.usageMetadata.thoughtsTokenCount,
+                                )
 
                         found_candidate = False
                         for candidate in line_response.candidates:

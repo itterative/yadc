@@ -8,7 +8,9 @@ catch any missing/extra invocations.
 """
 
 import asyncio
+from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -361,3 +363,309 @@ class TestUsedWithoutContextManager:
         image = _real_image(tmp_path / "img.jpg")
         with pytest.raises(AssertionError):
             await CaptioningRunner(_config(), CaptionJobOptions()).caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks))
+
+
+class _Gate:
+    """Test helper: per-call count + a shared event that controls when streams complete.
+
+    Each ``predict_stream`` call increments ``in_flight`` and awaits
+    ``release`` before yielding. Lets tests block N streams open at
+    once to assert the runner's concurrency bound, then release them
+    all in one go.
+    """
+
+    def __init__(self, release: asyncio.Event, tokens: tuple[str, ...] = ("ok",)):
+        self.in_flight = 0
+        self.max_in_flight = 0
+        self._release = release
+        self._tokens = tokens
+
+    async def stream(self, *args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await self._release.wait()
+            for token in self._tokens:
+                yield token
+        finally:
+            self.in_flight -= 1
+
+    def attach(self, model: MagicMock) -> None:
+        model.predict_stream = MagicMock(side_effect=self.stream)
+
+
+def _many_images(tmp_path: Path, n: int) -> list[DatasetImage]:
+    return [_real_image(tmp_path / f"img_{i:03d}.jpg") for i in range(n)]
+
+
+class TestCaptionImages:
+    """caption_images: parallel captioning with bounded concurrency."""
+
+    @pytest.mark.asyncio
+    async def test_empty_images_is_a_noop(self, patched_async_session, patched_model, tmp_path):
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            await runner.caption_images([], AsyncMock(spec=CaptioningCallbacks), max_concurrent=4)
+        patched_model.predict_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_must_be_at_least_one(self, patched_async_session, patched_model, tmp_path):
+        images = _many_images(tmp_path, 2)
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await runner.caption_images(images, AsyncMock(spec=CaptioningCallbacks), max_concurrent=0)
+            with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
+                await runner.caption_images(images, AsyncMock(spec=CaptioningCallbacks), max_concurrent=-1)
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_one_processes_serially(self, patched_async_session, patched_model, tmp_path):
+        """max_concurrent=1 is equivalent to a sequential loop."""
+        release = asyncio.Event()
+        gate = _Gate(release, tokens=("a",))
+        gate.attach(patched_model)
+        images = _many_images(tmp_path, 5)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=1))
+            # Give the runner a chance to start the first stream
+            await asyncio.sleep(0.01)
+            assert gate.in_flight == 1
+            release.set()
+            await task
+
+        assert gate.max_in_flight == 1
+        assert patched_model.predict_stream.call_count == 5
+        for image in images:
+            assert image.caption_path.read_text() == "a"
+        assert callbacks.on_image_captioned.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_max_concurrent_bounds_in_flight_count(self, patched_async_session, patched_model, tmp_path):
+        """With max_concurrent=N, at most N streams are in flight at once."""
+        release = asyncio.Event()
+        gate = _Gate(release, tokens=("ok",))
+        gate.attach(patched_model)
+        images = _many_images(tmp_path, 10)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=3))
+            # Wait for the gate to fill
+            for _ in range(100):
+                if gate.in_flight == 3:
+                    break
+                await asyncio.sleep(0.005)
+            assert gate.in_flight == 3
+            assert gate.max_in_flight == 3
+            release.set()
+            await task
+
+        assert gate.max_in_flight == 3
+        assert patched_model.predict_stream.call_count == 10
+        assert callbacks.on_image_captioned.call_count == 10
+
+    @pytest.mark.asyncio
+    async def test_per_image_error_does_not_fail_batch(self, patched_async_session, patched_model, tmp_path):
+        """A failing image does not abort siblings; only the failing image is reported."""
+        images = _many_images(tmp_path, 3)
+        # Image at index 1 raises a per-image error (not API-attributable)
+        call_count = {"n": 0}
+
+        def maybe_raise(*args: Any, **kwargs: Any) -> Any:
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+
+                async def _raise():
+                    raise ValueError("api did not return text")
+                    yield  # pragma: no cover
+
+                return _raise()
+            return _fake_stream("ok")
+
+        patched_model.predict_stream = MagicMock(side_effect=maybe_raise)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            await runner.caption_images(images, callbacks, max_concurrent=3)
+
+        # All three were attempted
+        assert call_count["n"] == 3
+        # The two succeeding images wrote captions
+        assert images[0].caption_path.read_text() == "ok"
+        assert images[2].caption_path.read_text() == "ok"
+        # The failing image was reported via on_image_error, NOT on_image_captioned
+        assert callbacks.on_image_error.call_count == 1
+        failing_call = callbacks.on_image_error.call_args
+        assert failing_call.args[0] is images[1]
+        assert "api did not return text" in failing_call.args[1]
+        # Two successful captions
+        assert callbacks.on_image_captioned.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_callbacks_fire_per_image_out_of_order_is_ok(self, patched_async_session, patched_model, tmp_path):
+        """Callbacks may fire in completion order, not submission order."""
+        release = asyncio.Event()
+        gate = _Gate(release, tokens=("x",))
+        gate.attach(patched_model)
+        images = _many_images(tmp_path, 4)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=4))
+            for _ in range(100):
+                if gate.in_flight == 4:
+                    break
+                await asyncio.sleep(0.005)
+            assert gate.in_flight == 4
+            release.set()
+            await task
+
+        # All four were started and completed
+        assert {id(c.args[0]) for c in callbacks.on_image_captioned.call_args_list} == {id(img) for img in images}
+
+    @pytest.mark.asyncio
+    async def test_cancellation_cancels_siblings_and_propagates(self, patched_async_session, patched_model, tmp_path):
+        """Cancelling the awaiting task cancels in-flight siblings and re-raises."""
+        release = asyncio.Event()
+        gate = _Gate(release, tokens=("x",))
+        gate.attach(patched_model)
+        images = _many_images(tmp_path, 5)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=3))
+            # Wait until the semaphore is full
+            for _ in range(100):
+                if gate.in_flight == 3:
+                    break
+                await asyncio.sleep(0.005)
+            assert gate.in_flight == 3
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        # All in-flight streams were released (gate drained)
+        assert gate.in_flight == 0
+        # The 2 queued images never started a stream
+        assert patched_model.predict_stream.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_api_error_threshold_aborts_batch(self, patched_async_session, patched_model, tmp_path):
+        """N consecutive identical API errors abort the batch."""
+        from yadc.core.captioning.runner import BatchAbortedError
+
+        images = _many_images(tmp_path, 5)
+        call_count = {"n": 0}
+
+        def raise_api_error(*args: Any, **kwargs: Any) -> Any:
+            call_count["n"] += 1
+
+            async def _raise():
+                raise ValueError("api returned an error (http 401): authentication failure")
+                yield  # pragma: no cover
+
+            return _raise()
+
+        patched_model.predict_stream = MagicMock(side_effect=raise_api_error)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            with pytest.raises(BatchAbortedError, match="3 consecutive API errors"):
+                await runner.caption_images(images, callbacks, max_concurrent=5)
+
+        # Threshold is 3: at most 3 in flight when the abort fires; the
+        # 4th and 5th never start. We don't assert the exact number
+        # because timing is scheduler-dependent, but at least 3 and at
+        # most 5 should have been attempted.
+        assert 3 <= call_count["n"] <= 5
+        # The errors were reported via on_image_error
+        assert callbacks.on_image_error.call_count >= 3
+
+    @pytest.mark.asyncio
+    async def test_mixed_errors_dont_trigger_abort(self, patched_async_session, patched_model, tmp_path):
+        """Image errors between API errors reset the consecutive counter.
+
+        Uses ``max_concurrent=1`` so the per-image error order is
+        deterministic; the abort heuristic is independent of
+        concurrency and the behaviour is easier to reason about when
+        sequenced.
+        """
+
+        images = _many_images(tmp_path, 6)
+        # Sequence: API, API, image, API, API, image -> no abort
+        sequence = [
+            "api returned an error (http 401): authentication failure",
+            "api returned an error (http 401): authentication failure",
+            "api did not return text",  # image-attributable; resets counter
+            "api returned an error (http 401): authentication failure",
+            "api returned an error (http 401): authentication failure",
+            "image not found",  # image-attributable
+        ]
+        call_count = {"n": 0}
+
+        def per_call(*args: Any, **kwargs: Any) -> Any:
+            call_count["n"] += 1
+            message = sequence[call_count["n"] - 1]
+
+            if "401" in message:
+
+                async def _raise_api():
+                    raise ValueError(message)
+                    yield  # pragma: no cover
+
+                return _raise_api()
+
+            async def _raise_image():
+                raise ValueError(message)
+                yield  # pragma: no cover
+
+            return _raise_image()
+
+        patched_model.predict_stream = MagicMock(side_effect=per_call)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            # Should NOT raise BatchAbortedError
+            await runner.caption_images(images, callbacks, max_concurrent=1)
+
+        assert call_count["n"] == 6
+        assert callbacks.on_image_error.call_count == 6
+        assert callbacks.on_image_captioned.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_changing_api_signature_resets_consecutive_counter(self, patched_async_session, patched_model, tmp_path):
+        """Different API error signatures don't accumulate toward the threshold.
+
+        ``max_concurrent=1`` keeps the per-image error order
+        deterministic; this test is about the signature counter, not
+        concurrency.
+        """
+
+        images = _many_images(tmp_path, 4)
+        # 2x 401, 2x 404 — neither pair reaches the threshold of 3
+        sequence = [
+            "api returned an error (http 401): authentication failure",
+            "api returned an error (http 401): authentication failure",
+            "api returned an error (http 404): model not found",
+            "api returned an error (http 404): model not found",
+        ]
+        call_count = {"n": 0}
+
+        def per_call(*args: Any, **kwargs: Any) -> Any:
+            call_count["n"] += 1
+            message = sequence[call_count["n"] - 1]
+
+            async def _raise():
+                raise ValueError(message)
+                yield  # pragma: no cover
+
+            return _raise()
+
+        patched_model.predict_stream = MagicMock(side_effect=per_call)
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+            await runner.caption_images(images, callbacks, max_concurrent=1)
+
+        assert call_count["n"] == 4
+        assert callbacks.on_image_error.call_count == 4

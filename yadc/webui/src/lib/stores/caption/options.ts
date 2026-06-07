@@ -15,6 +15,8 @@ export interface CaptionOptions {
     rounds?: number;
     draft?: string;
     overwrite?: boolean;
+    /** Number of in-flight `predict_stream` requests. Omitted when 1 (default). */
+    max_concurrent?: number;
     reasoning?: boolean;
     reasoning_effort?: 'low' | 'medium' | 'high';
     password?: string;

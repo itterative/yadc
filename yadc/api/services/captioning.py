@@ -277,16 +277,11 @@ class AsyncCaptionJob:
         )
 
         async with runner:
-            for img in to_do:
-                if self._check_stop():
-                    break
-                try:
-                    await runner.caption_image(img, self)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    # Error already recorded via on_image_error callback.
-                    continue
+            await runner.caption_images(
+                to_do,
+                self,
+                max_concurrent=self._opts.max_concurrent,
+            )
 
         if self._check_stop():
             await self._set_state(status="cancelled")

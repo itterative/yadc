@@ -1,4 +1,5 @@
 import abc
+import asyncio
 from typing import Any
 
 from yadc.core import Captioner, logging
@@ -57,6 +58,15 @@ class BaseAPICaptioner(Captioner, abc.ABC):
         assert async_session is None or isinstance(async_session, AsyncSession)
 
         self._async_session: AsyncSession | None = async_session
+
+        # Guards the per-model `_api_usage` dict. Subclasses (OpenAI,
+        # Gemini) write to it from inside `predict_stream` and from the
+        # non-streaming `_generate_prediction`; multiple concurrent
+        # predictions on the same model would otherwise race on dict
+        # mutation. Held for the duration of each individual write, so
+        # it doesn't serialise predictions — only the few dict
+        # mutations at the end of each streamed / non-streamed response.
+        self._api_usage_lock: asyncio.Lock = asyncio.Lock()
 
     @staticmethod
     def _before_predict(kwargs: dict[str, Any]):

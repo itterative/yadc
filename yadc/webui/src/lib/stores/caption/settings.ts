@@ -8,6 +8,8 @@ export interface CaptionSettings {
     draftName: string;
     overwrite: boolean;
     rounds: number;
+    /** Number of in-flight `predict_stream` requests to allow at once. 1 = sequential. */
+    batchSize: number;
     reasoningEnabled: boolean;
     reasoningEffort: 'low' | 'medium' | 'high';
     selectedTemplate: string;
@@ -18,13 +20,14 @@ export interface CaptionSettings {
 }
 
 export const captionSettings = storable<CaptionSettings>('yadc/captionSettings', {
-    $version: 1,
+    $version: 2,
     env: 'default',
     maxTokens: 512,
     imageQuality: 'auto',
     draftName: '',
     overwrite: false,
     rounds: 1,
+    batchSize: 1,
     reasoningEnabled: false,
     reasoningEffort: 'low',
     selectedTemplate: 'default',

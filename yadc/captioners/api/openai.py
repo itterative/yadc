@@ -445,14 +445,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                     raise ValueError("api did not return a valid response")
 
                 if conversation_response.usage and conversation_response.id != "SKIPPED":
-                    self._api_usage[conversation_response.id] = APIUsage(
-                        response_tokens=conversation_response.usage.completion_tokens,
-                        prompt_tokens=conversation_response.usage.prompt_tokens,
-                        total_tokens=conversation_response.usage.total_tokens,
-                        thoughts_tokens=0
-                        if not conversation_response.usage.completion_tokens_details
-                        else conversation_response.usage.completion_tokens_details.reasoning_tokens,
-                    )
+                    async with self._api_usage_lock:
+                        self._api_usage[conversation_response.id] = APIUsage(
+                            response_tokens=conversation_response.usage.completion_tokens,
+                            prompt_tokens=conversation_response.usage.prompt_tokens,
+                            total_tokens=conversation_response.usage.total_tokens,
+                            thoughts_tokens=0
+                            if not conversation_response.usage.completion_tokens_details
+                            else conversation_response.usage.completion_tokens_details.reasoning_tokens,
+                        )
 
                 thought_buffer = ""
 
@@ -557,14 +558,15 @@ class OpenAICaptioner(BaseAPICaptioner, ErrorNormalizationMixin, ThinkingMixin):
                             continue
 
                         if line_response.usage and line_response.id != "SKIPPED":
-                            self._api_usage[line_response.id] = APIUsage(
-                                response_tokens=line_response.usage.completion_tokens,
-                                prompt_tokens=line_response.usage.prompt_tokens,
-                                total_tokens=line_response.usage.total_tokens,
-                                thoughts_tokens=0
-                                if not line_response.usage.completion_tokens_details
-                                else line_response.usage.completion_tokens_details.reasoning_tokens,
-                            )
+                            async with self._api_usage_lock:
+                                self._api_usage[line_response.id] = APIUsage(
+                                    response_tokens=line_response.usage.completion_tokens,
+                                    prompt_tokens=line_response.usage.prompt_tokens,
+                                    total_tokens=line_response.usage.total_tokens,
+                                    thoughts_tokens=0
+                                    if not line_response.usage.completion_tokens_details
+                                    else line_response.usage.completion_tokens_details.reasoning_tokens,
+                                )
 
                         if line_response.error:
                             raise ValueError(self._normalize_error(line_response))

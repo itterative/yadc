@@ -61,6 +61,7 @@
     let draftName = $state('');
     let overwrite = $state(false);
     let rounds: number | null = $state(1);
+    let batchSize: number | null = $state(1);
 
     // --- State: Reasoning ---
 
@@ -165,6 +166,7 @@
             draftName = saved.draftName;
             overwrite = saved.overwrite;
             rounds = saved.rounds;
+            batchSize = saved.batchSize;
             reasoningEnabled = saved.reasoningEnabled;
             reasoningEffort = saved.reasoningEffort;
             selectedTemplate = saved.selectedTemplate;
@@ -297,6 +299,7 @@
         rounds: rounds && rounds > 1 ? rounds : undefined,
         draft: draftName.trim() || undefined,
         overwrite: overwrite || undefined,
+        max_concurrent: batchSize && batchSize > 1 ? batchSize : undefined,
         reasoning: reasoningEnabled || undefined,
         reasoning_effort: reasoningEnabled ? reasoningEffort : undefined
     });
@@ -309,13 +312,14 @@
 
     function _buildSettings(): import('$lib/stores/caption').CaptionSettings {
         return {
-            $version: 1,
+            $version: 2,
             env: selectedEnv,
             maxTokens: maxTokens ?? 512,
             imageQuality: imageQuality ?? 'auto',
             draftName,
             overwrite,
             rounds: rounds ?? 1,
+            batchSize: batchSize ?? 1,
             reasoningEnabled,
             reasoningEffort,
             selectedTemplate: effectiveTemplateName || selectedTemplate,
@@ -339,6 +343,7 @@
         void draftName;
         void overwrite;
         void rounds;
+        void batchSize;
         void reasoningEnabled;
         void reasoningEffort;
         void selectedTemplate;
@@ -401,6 +406,33 @@
                 diffDefaults: datasetDefaults
             }}
         />
+
+        <!-- ═══ Section: Concurrency (caption-flow only) ═══ -->
+        <section class="space-y-2">
+            <h3 class="section-heading">Concurrency</h3>
+            <div class="max-w-xs">
+                <label class="label mb-1 block" for="caption-batch-size">
+                    Concurrent requests
+                </label>
+                <input
+                    id="caption-batch-size"
+                    type="number"
+                    min={1}
+                    max={32}
+                    value={batchSize ?? ''}
+                    class="input"
+                    oninput={(e) => {
+                        const raw = (e.target as HTMLInputElement).value;
+                        batchSize = raw === '' ? 1 : Number(raw);
+                    }}
+                />
+                <p class="help-text">
+                    How many captioning requests can be in flight at once. 1 = sequential (default).
+                    Higher values trade rate-limit risk for throughput — start low and increase for
+                    local backends (vLLM, llama.cpp) that can handle parallel load.
+                </p>
+            </div>
+        </section>
 
         <!-- ═══ Section: Template ═══ -->
         <TemplateSection

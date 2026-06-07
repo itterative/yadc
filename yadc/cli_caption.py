@@ -80,6 +80,33 @@ class CLICallbacks:
         _logger.warning("Failed to caption %s: %s", image.path, error)
 
 
+class CLIPrintCallbacks:
+    """Minimal callbacks for the non-interactive parallel captioning path.
+
+    Used by ``_caption_async`` when ``--max-concurrent > 1`` is passed
+    with ``--non-interactive``. Per-token output is suppressed — it
+    would interleave across images and be unreadable. Per-image
+    completion (with duration) and per-image errors are logged; the
+    saved caption is on disk and can be reviewed there.
+    """
+
+    async def on_token(self, token: str) -> None:  # pyright: ignore[reportUnusedParameter]
+        # Suppressed: in parallel mode tokens from N images would
+        # interleave and produce unreadable output.
+        pass
+
+    async def on_image_started(self, image: DatasetImage) -> None:  # pyright: ignore[reportUnusedParameter]
+        # No per-image output in parallel mode; the per-image summary
+        # in on_image_captioned is enough.
+        pass
+
+    async def on_image_captioned(self, image: DatasetImage, duration_ms: int) -> None:
+        _logger.info("Captioned %s (%.1f sec)", image.path, duration_ms / 1000)
+
+    async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None:  # pyright: ignore[reportUnusedParameter]
+        _logger.warning("Failed to caption %s: %s", image.path, error)
+
+
 # --- Interactive prompts ---
 
 
@@ -442,6 +469,14 @@ async def _caption(
 @click.option("--overwrite/--no-overwrite", "overwrite", is_flag=True, default=None, help="Overwrite existing caption")
 @click.option("--cache/--no-cache", "cache", is_flag=True, default=True, help="Cache API requests")
 @click.option("--rounds", type=click.IntRange(min=1, max_open=True), default=None, required=False, help="How many captioning rounds to do")
+@click.option(
+    "--max-concurrent",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    required=False,
+    help="How many captioning requests can be in flight at once. 1 = sequential. Only valid with --non-interactive.",
+)
 @click.option("--draft", type=str, default=None, required=False, help="Save caption as a named draft instead of the final caption")
 @cli_common.log_level
 def caption(dataset: str, **kwargs: Any):
@@ -485,6 +520,7 @@ async def _caption_async(dataset: str, **kwargs: Any):
         prompt_name=kwargs.get("user_template") or "",
         overwrite=defaults["overwrite"],
         rounds=defaults["rounds"],
+        max_concurrent=kwargs.get("max_concurrent") or 1,
         draft=kwargs.get("draft") or "",
     )
 
@@ -522,6 +558,14 @@ async def _caption_async(dataset: str, **kwargs: Any):
         _logger.info("Nothing to do.")
         sys.exit(cmd_status.STATUS_OK)
 
+    # Interactive mode + parallel captioning is not supported — the
+    # interactive flow reviews one caption at a time and there is no
+    # natural way to interleave N parallel reviews. Users who want
+    # parallelism should use --non-interactive.
+    if interactive and options.max_concurrent > 1:
+        _logger.error("Error: --max-concurrent > 1 is not supported in interactive mode; use --non-interactive.")
+        sys.exit(cmd_status.STATUS_ERROR)
+
     cache: HTTPResponseCache | None = None
     if kwargs.get("cache", True):
         cache = HTTPResponseCache(cache_dir=cmd_cache.api_requests_cache_dir())
@@ -548,15 +592,29 @@ async def _caption_async(dataset: str, **kwargs: Any):
             _logger.info("Saving captions as draft: %s", save_draft)
 
         with utils.Timer() as timer:
-            return_code = await _caption(
-                runner=runner,
-                dataset=dataset_to_do,
-                config=config,
-                do_stream=do_stream,
-                interactive=interactive,
-                rounds=options.rounds,
-                save_draft=save_draft,
-            )
+            if not interactive and options.max_concurrent > 1:
+                # Non-interactive parallel path: skip the action menu
+                # and let the runner stream + save all images
+                # concurrently. Per-token output is suppressed (would
+                # interleave across images); per-image completion and
+                # errors are logged via CLIPrintCallbacks.
+                _logger.info("Running with up to %d concurrent requests.", options.max_concurrent)
+                await runner.caption_images(
+                    dataset_to_do,
+                    CLIPrintCallbacks(),
+                    max_concurrent=options.max_concurrent,
+                )
+                return_code = cmd_status.STATUS_OK
+            else:
+                return_code = await _caption(
+                    runner=runner,
+                    dataset=dataset_to_do,
+                    config=config,
+                    do_stream=do_stream,
+                    interactive=interactive,
+                    rounds=options.rounds,
+                    save_draft=save_draft,
+                )
 
     # Runner's __aexit__ already called model.log_usage() and aclose.
     _logger.info("Done. (%.1f sec)", timer.elapsed)

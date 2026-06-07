@@ -225,7 +225,7 @@ class TestAdoRunWithRunner:
             mock_instance = MagicMock()
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
             mock_instance.__aexit__ = AsyncMock(return_value=None)
-            mock_instance.caption_image = AsyncMock()
+            mock_instance.caption_images = AsyncMock()
             MockRunner.return_value = mock_instance
             yield config_path, mock_instance, MockRunner, mock_load
 
@@ -246,8 +246,8 @@ class TestAdoRunWithRunner:
         assert kwargs.get("expected_change_registrar") == job._expected_change_registrar
 
     @pytest.mark.asyncio
-    async def test_iterates_all_images(self, job, ado_run_env):
-        """_ado_run calls caption_image for every image in the to-do list."""
+    async def test_caption_images_called_with_all_images(self, job, ado_run_env):
+        """_ado_run calls caption_images with the to-do list and self as callbacks."""
         config_path, mock_instance, _, mock_load = ado_run_env
         job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
         images = [MagicMock(), MagicMock(), MagicMock()]
@@ -255,7 +255,25 @@ class TestAdoRunWithRunner:
 
         await job._ado_run()
 
-        assert mock_instance.caption_image.await_count == 3
+        mock_instance.caption_images.assert_awaited_once()
+        args, kwargs = mock_instance.caption_images.call_args
+        assert args[0] == images
+        assert args[1] is job
+        assert kwargs.get("max_concurrent") == 1  # default
+
+    @pytest.mark.asyncio
+    async def test_caption_images_passes_max_concurrent(self, job, ado_run_env):
+        """_ado_run forwards the CaptionJobOptions.max_concurrent to the runner."""
+        from yadc.core.captioning.options import CaptionJobOptions
+
+        config_path, mock_instance, _, mock_load = ado_run_env
+        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        job._opts = CaptionJobOptions(max_concurrent=4)
+        mock_load.return_value = (MagicMock(), [MagicMock()])
+
+        await job._ado_run()
+
+        assert mock_instance.caption_images.call_args.kwargs.get("max_concurrent") == 4
 
     @pytest.mark.asyncio
     async def test_done_status_on_no_images(self, job, ado_run_env):
@@ -296,28 +314,27 @@ class TestAdoRunWithRunner:
         assert snap.status == "cancelled"
 
     @pytest.mark.asyncio
-    async def test_continues_after_image_error(self, job, ado_run_env):
-        """_ado_run continues to the next image when caption_image raises."""
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
-        mock_instance.caption_image = AsyncMock(side_effect=[ValueError("boom"), None])
-        mock_load.return_value = (MagicMock(), [MagicMock(), MagicMock()])
-
-        await job._ado_run()
-
-        assert mock_instance.caption_image.await_count == 2
-        snap = await job.snapshot()
-        assert snap.status == "done"
-
-    @pytest.mark.asyncio
     async def test_cancellation_propagates(self, job, ado_run_env):
         """_ado_run re-raises CancelledError (does not catch it)."""
         config_path, mock_instance, _, mock_load = ado_run_env
         job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
-        mock_instance.caption_image = AsyncMock(side_effect=asyncio.CancelledError())
+        mock_instance.caption_images = AsyncMock(side_effect=asyncio.CancelledError())
         mock_load.return_value = (MagicMock(), [MagicMock()])
 
         with pytest.raises(asyncio.CancelledError):
+            await job._ado_run()
+
+    @pytest.mark.asyncio
+    async def test_batch_aborted_error_propagates(self, job, ado_run_env):
+        """_ado_run lets BatchAbortedError through; _arun turns it into status='error'."""
+        from yadc.core.captioning.runner import BatchAbortedError
+
+        config_path, mock_instance, _, mock_load = ado_run_env
+        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_instance.caption_images = AsyncMock(side_effect=BatchAbortedError("aborted"))
+        mock_load.return_value = (MagicMock(), [MagicMock()])
+
+        with pytest.raises(BatchAbortedError):
             await job._ado_run()
 
 
