@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { tick, type Snippet } from 'svelte';
+    import { type Snippet } from 'svelte';
 
     export interface MenuItem {
         label: string;

@@ -26,7 +26,6 @@ class ErrorCode(StrEnum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
-
 class DataclassJSONEncoder(json.JSONEncoder):
     """JSON encoder that serializes dataclass instances as dicts."""
 
@@ -35,6 +34,7 @@ class DataclassJSONEncoder(json.JSONEncoder):
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
             return dataclasses.asdict(o)  # type: ignore[call-overload]
         return super().default(o)
+
 
 def validate_body[T: pydantic.BaseModel](model: type[T], raw_body: Any) -> T:
     """Validate *raw_body* against *model*.
@@ -45,12 +45,15 @@ def validate_body[T: pydantic.BaseModel](model: type[T], raw_body: Any) -> T:
     try:
         return model.model_validate(raw_body)
     except pydantic.ValidationError as e:
-        raise HTTPException(response=jsonify_error(
-            "Invalid request body",
-            details=[APIErrorDetail.from_pydantic_error(err) for err in e.errors()],
-            status=400,
-            code=ErrorCode.BAD_REQUEST,
-        ))
+        raise HTTPException(
+            response=jsonify_error(
+                "Invalid request body",
+                details=[APIErrorDetail.from_pydantic_error(err) for err in e.errors()],
+                status=400,
+                code=ErrorCode.BAD_REQUEST,
+            )
+        )
+
 
 def jsonify_dataclass(obj: Any, status: int | None = 200) -> Response:
     """JSON-serialize a dataclass or list of dataclasses as a Quart Response."""

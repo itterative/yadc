@@ -36,6 +36,7 @@ class ConfigHistoryPage:
     entries: list[ConfigHistoryEntry]
     next_token: str | None = None
 
+
 # Default max history entries per dataset before pruning kicks in.
 DEFAULT_MAX_ENTRIES = 50
 

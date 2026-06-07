@@ -64,6 +64,7 @@ class RefineOptions:
     refine_source: Literal["caption", "draft"] = "caption"
     refine_draft_name: str = ""
 
+
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------

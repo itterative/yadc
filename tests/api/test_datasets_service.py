@@ -76,7 +76,6 @@ class TestListImages:
         assert kwargs["before_id"] == 2**63 - 1
 
 
-
 @pytest.fixture
 def service():
     """Create a DatasetService with mocked dependencies."""
