@@ -1,3 +1,24 @@
+"""``Application(Module)`` — DI container, auto-discovery, and uvicorn bootstrap.
+
+``configure()`` binds ``Configuration`` and ``Quart`` into the injector,
+registers the two ``Blueprint`` subclasses (``ApiBlueprint``,
+``AppBlueprint``), then scans ``yadc.api.modules`` and
+``yadc.api.services`` for ``Service`` subclasses and binds each one with
+``inject(...)`` and ``singleton`` scope. ``configure_services()`` then
+triggers instantiation, resolves all dependencies, and registers every
+service with the ``EventDispatcher``. ``configure_controllers()`` walks
+``yadc.api.controllers`` for functions marked with the ``@controller``
+decorator and invokes each one with its injector-resolved arguments.
+
+``run()`` ties the whole thing together: configures services and
+controllers, optionally prints the banner, dispatches
+``StartupEvent``, then registers the Quart blueprints and starts
+``uvicorn``. The uvicorn signal handler is monkey-patched so
+``ShutdownEvent`` is dispatched *before* uvicorn starts waiting for
+connections to close — this lets SSE generators see the shutdown flag
+and exit cleanly.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

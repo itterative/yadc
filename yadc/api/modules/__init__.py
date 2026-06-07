@@ -1,3 +1,5 @@
+"""Cross-cutting DI infrastructure primitives (Service marker, LoggingFactory, EventDispatcher, CORS, DB, SSE, scheduler, watchers)."""
+
 from .cors_middleware import CORSMiddleware
 from .dataset_watcher import DatasetWatcherService
 from .db_connection_factory import DBConnectionFactory

@@ -1,3 +1,5 @@
+"""Re-exports all services and repositories auto-discovered by the DI container."""
+
 from .captioning import CaptioningService
 from .config_history import ConfigHistoryService
 from .config_history_repository import ConfigHistoryRepository

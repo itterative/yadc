@@ -1,3 +1,5 @@
+"""``yadc configs`` — manage user-level yadc configs."""
+
 import sys
 
 import click

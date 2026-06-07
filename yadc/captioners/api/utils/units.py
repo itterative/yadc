@@ -1,3 +1,5 @@
+"""``size_units`` — pretty-print a byte count in B/KiB/MiB."""
+
 _units = ["B", "KiB", "MiB"]
 
 

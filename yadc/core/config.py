@@ -1,3 +1,20 @@
+"""Dataset config Pydantic models (v1/v2) and ``parse_config``.
+
+``Config`` is the top-level model used by both the CLI and the web UI
+to drive a captioning run. It groups API connection settings
+(``ConfigApi``), prompt / template settings (``ConfigPrompt``),
+runtime knobs like image quality and token limits (``ConfigSettings``),
+reasoning config (``ConfigReasoning``), and a list of dataset entries
+(``ConfigDatasetEntry``, each with a path, optional inline images, and
+extras). Top-level flags cover env selection, interactive mode, round
+count, caption suffix, and overwrite behaviour.
+
+``parse_config`` reads a TOML file and returns a validated
+``Config`` — the dataset resolver (``yadc.core.dataset_resolver``) and
+the captioning runner (``yadc.core.captioning``) consume it to
+enumerate images and run predictions.
+"""
+
 from typing import Any, ClassVar
 
 import pydantic

@@ -1,3 +1,5 @@
+"""Built-in Jinja2 prompt template loaders (``default_template``, ``load_builtin_template``)."""
+
 from importlib import resources
 
 

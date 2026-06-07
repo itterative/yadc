@@ -1,3 +1,5 @@
+"""``CORSMiddleware`` — origin-based CORS handler registered on the ApiBlueprint."""
+
 from logging import Logger
 
 from quart import Response, request

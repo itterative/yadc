@@ -1,3 +1,5 @@
+"""Shared click options (``--log-level``, ``--env``) reused across CLI commands."""
+
 from collections.abc import Callable
 from typing import Any
 

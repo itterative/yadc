@@ -1,6 +1,33 @@
+"""``ThinkingMixin`` — strips reasoning tokens from output and populates the PredictionContext.
+
+Configured by two constructor kwargs:
+``reasoning_start_token`` (default :data:`DEFAULT_THINKING_START`) and
+``reasoning_end_token`` (default :data:`DEFAULT_THINKING_END`); the
+defaults live in ``yadc.captioners.api.constants`` as base64-decoded
+strings (deliberately encoded at rest so that agents reading the
+codebase aren't handed the tokens verbatim and reproduce them
+unintentionally). The mixin recognises the same block on different
+backends by setting those tokens to the provider's own delimiters
+when constructing the captioner.
+
+``_handle_thinking(content)`` is the non-streaming path: it looks for a
+balanced start/end block, trims it from the visible output, writes the
+inner text to the ``PredictionContext.reasoning`` field, and
+(optionally, ``FLAG_STRIP_CAPTION=True``) returns the visible portion.
+Logging is via the yadc logger with a ``> `` prefix on each reasoning
+line.
+
+``_handle_thinking_streaming(stream)`` is the streaming path: yields
+content chunks while buffering partial reasoning blocks, emits each
+line as it completes the close token, and stops buffering once a
+non-reasoning character is seen. ``is_thinking``, ``did_think``, and
+the partial ``thinking_buffer`` are tracked across calls.
+"""
+
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
+from yadc.captioners.api.constants import DEFAULT_THINKING_END, DEFAULT_THINKING_START
 from yadc.core import logging
 from yadc.core.utils import Timer
 
@@ -11,8 +38,8 @@ FLAG_STRIP_CAPTION = True
 
 class ThinkingMixin:
     def __init__(self, **kwargs: Any):
-        self._reasoning_start_token: str = kwargs.pop("reasoning_start_token", "<think>")
-        self._reasoning_end_token: str = kwargs.pop("reasoning_end_token", "</think>")
+        self._reasoning_start_token: str = kwargs.pop("reasoning_start_token", DEFAULT_THINKING_START)
+        self._reasoning_end_token: str = kwargs.pop("reasoning_end_token", DEFAULT_THINKING_END)
 
     def _handle_thinking_streaming(self, stream: Generator[str, None, None]) -> Generator[str, None, None]:
         is_thinking = False

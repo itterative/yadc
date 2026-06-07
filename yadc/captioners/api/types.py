@@ -1,3 +1,30 @@
+"""Pydantic models for OpenAI, Gemini, OpenRouter, KoboldCpp, and llama.cpp API response types.
+
+The captioners use these to parse upstream responses in a uniform way
+rather than hand-rolling dict access. Most models are ``extra="allow"``
+so unknown fields don't fail parsing, and a handful expose ``usage``
+and ``usageMetadata`` as optional sub-models so token accounting is a
+no-op when the backend omits it.
+
+Grouped by backend:
+
+- **OpenAI** — ``OpenAIChatCompletionResponse`` (choices + usage),
+  ``OpenAIChatCompletionChunkResponse`` (streaming delta), the
+  ``OpenAIModelsResponse`` / ``OpenAIModel`` list-models pair, the
+  error shape (``OpenAIErrorResponse``), and the ``reasoning.details``
+  variants (``text`` / ``summary`` / ``encrypted``).
+- **Gemini** — ``GeminiContentResponse`` with ``candidates``,
+  ``parts`` (text + ``thought: true`` reasoning), and
+  ``usageMetadata``; ``GeminiModelsResponse`` / ``GeminiModel`` for
+  the paginated ``models.list``; ``GeminiErrorResponse``.
+- **OpenRouter** — ``OpenRouterModerationError`` and
+  ``OpenRouterCreditsResponse`` (used by ``OpenRouterCaptioner`` to log
+  remaining credits after a successful ``load_model``).
+- **KoboldCpp** — admin endpoints: ``KoboldAdminCurrentModelResponse``,
+  ``KoboldAdminReloadModelReponse``, ``KoboldAdminSettingsReponse``, and
+  ``KoboldServiceInfoResponse`` (used by ``APICaptioner._infer_api_type``).
+"""
+
 from typing import Any, ClassVar, Literal
 
 import pydantic

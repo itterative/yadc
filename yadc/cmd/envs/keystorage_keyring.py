@@ -1,3 +1,5 @@
+"""``KeyringKeyStorage`` — system keyring backend for the RSA private key."""
+
 import base64
 from typing import override
 

@@ -1,3 +1,25 @@
+"""Env CRUD using ``AppConfig`` (``list_all_env``, ``get_env``, ``load_env``, ``save_env``, ``update_env``, ``delete_env``, ``reset_envs``).
+
+Each env is a named entry in ``AppConfig.envs`` (``api_url``,
+``api_token``, ``api_model_name``, optional ``max_concurrent``). String
+fields are wrapped in ``AppConfigEnvValue`` so each one carries its own
+``method`` (none / keyring / password) and is encrypted / decrypted
+independently — that's what lets a user rotate one env's key without
+touching the others.
+
+``load_env`` returns a fully-decrypted ``UserConfig`` for the named
+env, falling back to the ``default`` env for any field that's missing
+on the target. ``save_env`` / ``update_env`` accept raw string values
+and encrypt them according to the current ``KeyStorage`` mode before
+writing. ``reset_envs`` wipes every env (and is the only path that
+doesn't ask for confirmation, used by ``yadc envs reset``).
+
+``PasswordRequiredError`` is raised when an env value is encrypted with
+the password mode but no password is available (neither in the
+``password`` kwarg nor in ``YADC_PASSWORD``). The CLI surfaces it as a
+prompt, the web UI as a 403 ``PASSWORD_REQUIRED`` error.
+"""
+
 import pydantic
 
 from yadc.cmd.config import AppConfig, AppConfigEnv, AppConfigEnvValue, load_config, save_config

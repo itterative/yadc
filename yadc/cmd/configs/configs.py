@@ -1,3 +1,5 @@
+"""User config CRUD and deep-merge helpers (``list_user_config``, ``load_user_config``, ``save_user_config``, ``delete_user_config``, ``merge_user_config``)."""
+
 import copy
 from typing import Any
 

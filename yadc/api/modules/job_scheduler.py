@@ -1,3 +1,5 @@
+"""``JobScheduler`` — daemon threads for running periodic background jobs."""
+
 from logging import Logger
 from threading import Lock, Thread
 from typing import Callable

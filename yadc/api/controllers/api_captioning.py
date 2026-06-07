@@ -1,3 +1,29 @@
+"""``/api/datasets/<name>/caption`` endpoints — start/stop/status, refine, per-image.
+
+This controller is a thin HTTP layer; all state lives in
+``CaptioningService``. Routes:
+
+- ``POST /datasets/<name>/caption`` — start a job. The optional JSON
+  body matches ``CaptionJobOptions`` and overrides config / env defaults
+  for ``api_url``, ``api_token``, ``api_model_name``, ``env``,
+  ``prompt_template``, ``prompt_name``, ``max_tokens``,
+  ``image_quality``, ``overwrite``, ``draft``, ``reasoning``,
+  ``reasoning_effort``, ``reasoning_exclude_output``, ``password``.
+  Pre-flights ``cmd_envs.load_env`` to surface ``PasswordRequiredError``
+  as a 403 ``PASSWORD_REQUIRED`` *before* spawning the background job.
+- ``POST /datasets/<name>/caption/stop`` — request a graceful stop.
+- ``GET /datasets/<name>/caption/jobs`` — list the in-memory job log.
+- ``GET /datasets/<name>/caption/status`` — current job state.
+- ``POST /datasets/<name>/images/<id>/caption`` — caption a single
+  image (used by the UI's "caption one" button).
+- ``POST /datasets/<name>/images/<id>/refine`` — refine the caption
+  via an interactive reply round (uses ``RefineOptions``); result
+  cached up to ``Configuration.refine_result_buffer_size`` entries.
+
+All errors funnel through ``utils_json.jsonify_error`` with the right
+``ErrorCode`` (``NOT_FOUND``, ``CONFLICT``, ``PASSWORD_REQUIRED``, ...).
+"""
+
 from quart import jsonify, request
 
 from yadc.cmd import envs as cmd_envs

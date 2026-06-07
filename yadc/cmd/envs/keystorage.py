@@ -1,3 +1,5 @@
+"""``KeyStorage`` ABC for loading/saving the RSA private key (implemented by keyring and password backends)."""
+
 import abc
 
 

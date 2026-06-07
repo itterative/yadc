@@ -1,3 +1,5 @@
+"""``OpenRouterCaptioner`` — OpenRouter backend (uses OpenRouter-specific ``reasoning`` config and logs remaining credits)."""
+
 from typing import Any
 
 import httpx

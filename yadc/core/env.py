@@ -1,3 +1,5 @@
+"""Env-var flag module (``YADC_PASSWORD``, ``YADC_DEBUG_CAPTION_RESPONSES``, ``YADC_DEBUG_CAPTION_REQUESTS_BODY``)."""
+
 import os
 
 YADC_PASSWORD: str | None = os.environ.get("YADC_PASSWORD") or None

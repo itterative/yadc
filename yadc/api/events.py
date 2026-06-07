@@ -1,3 +1,27 @@
+"""Event types and dataclasses dispatched on the :class:`EventDispatcher`.
+
+Each event is a ``@dataclass`` subclass of :class:`Event` with a
+``TYPE: ClassVar[str]`` carrying the wire name (e.g. ``"captioning_status"``).
+
+- ``StartupEvent`` / ``ShutdownEvent`` — application lifecycle, used to
+  bring services up/down.
+- ``PingEvent`` — periodic keepalive (every 5s); not stored in the SSE
+  history ring buffer.
+- ``CaptioningStatusEvent`` — per-job progress (status, processed, total,
+  errors, elapsed, max_concurrent) for the UI's progress bar.
+- ``DatasetChangedEvent`` — emitted by the dataset watcher and on manual
+  rescan; ``job_id`` carries the originating source id so the
+  originating UI tab can suppress its own reload.
+- ``ResumptionFailedEvent`` — returned to a single SSE client when its
+  ``Last-Event-ID`` is older than the oldest buffered event.
+- ``ImageCaptionedEvent`` / ``ImageRefinedEvent`` /
+  ``ImageCaptionStartedEvent`` / ``ImageCaptionErrorEvent`` — per-image
+  notifications, consumed by the UI to update the image grid.
+- ``EnvironmentsChangedEvent`` / ``TemplatesChangedEvent`` — emitted by
+  the env / template watchers so the UI can refresh the env/template
+  pickers.
+"""
+
 from __future__ import annotations
 
 import dataclasses

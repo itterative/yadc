@@ -1,3 +1,17 @@
+"""``GeminiCaptioner`` — Google Gemini ``generateContent`` backend.
+
+Builds Gemini-specific request payloads (``system_instruction``,
+``contents``, ``generationConfig``, ``safetySettings``,
+optional ``thinkingConfig``) and parses responses including
+``thought: true`` parts and ``usageMetadata`` for prompt/response/
+thought token counts. Reasoning is enabled by translating
+``reasoning_effort`` (``low``/``medium``/``high``) to a
+``thinkingBudget`` (512/1024/2048 tokens). Like the OpenAI backend,
+both ``predict`` and ``predict_stream`` catch
+``httpx.RemoteProtocolError`` / ``httpx.ReadError`` and surface a
+friendly error to the web UI.
+"""
+
 import copy
 import json
 from collections.abc import AsyncGenerator, AsyncIterator

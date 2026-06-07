@@ -1,3 +1,5 @@
+"""``LoggingFactory`` — creates and caches named loggers using the configured log level."""
+
 import logging
 
 from ..configuration import Configuration

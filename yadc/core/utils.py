@@ -1,3 +1,5 @@
+"""``Timer`` — context manager that records wall-clock time between ``__enter__`` and ``__exit__``."""
+
 from time import time
 from typing import Any
 

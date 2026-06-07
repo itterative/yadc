@@ -1,3 +1,5 @@
+"""``yadc templates`` — manage user prompt templates."""
+
 import sys
 
 import click

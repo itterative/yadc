@@ -1,3 +1,26 @@
+"""``APICaptioner`` — auto-detects the backend API type and delegates.
+
+Detection order in ``_infer_api_type()``:
+
+1. URL domain check — ``api.openai.com`` → ``OPENAI``,
+   ``openrouter.ai`` → ``OPENROUTER``,
+   ``generativelanguage.googleapis.com`` / ``*-aiplatform.googleapis.com``
+   → ``GEMINI``.
+2. ``/models`` endpoint — the ``owned_by`` field on each model
+   identifies ``llamacpp``, ``koboldcpp``, or ``vllm``.
+3. Health/service endpoints — ``/health`` header for llama.cpp,
+   ``/.well-known/serviceinfo`` for KoboldCpp, ``HEAD /`` and
+   ``/api/version`` for Ollama, ``/ping`` + ``/version`` for vLLM.
+4. Fallback — ``OPENAI``.
+
+Once detected, ``APICaptioner`` instantiates the matching inner
+captioner (``OpenAICaptioner``, ``GeminiCaptioner``,
+``KoboldcppCaptioner``, ``LlamacppCaptioner``, ``OllamaCaptioner``,
+``OpenRouterCaptioner``, ``VllmCaptioner``) and forwards every call to
+it, so callers only need to construct ``APICaptioner`` without knowing
+the actual backend type.
+"""
+
 import json
 from collections.abc import AsyncGenerator
 from enum import Enum

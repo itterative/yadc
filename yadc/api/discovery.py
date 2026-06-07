@@ -1,3 +1,21 @@
+"""Package scanning — ``discover_services`` and ``discover_controllers`` for injector DI auto-discovery.
+
+``_walk_package`` iterates direct sub-modules of a package using
+``pkgutil.iter_modules`` and ``importlib.import_module`` (sub-packages
+are walked recursively by the caller if needed). ``discover_services``
+collects every class defined in those modules that is a strict
+subclass of :class:`Service` *and* lives in the same module
+(``obj.__module__ == mod.__name__``) — the module check prevents
+importing a foreign class that happens to extend ``Service`` through
+``__all__`` re-exports. ``discover_controllers`` returns every function
+that has been flagged with the ``_is_controller`` attribute by the
+``@controller`` decorator (see ``yadc.api.controllers``).
+
+Used at startup by :class:`Application` to wire DI bindings and
+register HTTP routes without an explicit per-service or per-controller
+list.
+"""
+
 from __future__ import annotations
 
 import importlib

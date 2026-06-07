@@ -1,3 +1,5 @@
+"""Quart ``Blueprint`` subclasses (``ApiBlueprint``, ``AppBlueprint``) bound as injector singletons."""
+
 from injector import singleton
 from quart import Blueprint
 

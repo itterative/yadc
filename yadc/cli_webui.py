@@ -1,3 +1,5 @@
+"""``yadc webui`` — start the web UI server."""
+
 import click
 
 from yadc.api.application import Application

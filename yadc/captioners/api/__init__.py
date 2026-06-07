@@ -1,3 +1,5 @@
+"""Re-exports the auto-detection ``APICaptioner`` and the per-backend captioner classes."""
+
 from .api_captioner import APICaptioner, APITypes
 from .constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 from .gemini import GeminiCaptioner

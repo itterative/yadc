@@ -1,3 +1,5 @@
+"""``@controller`` decorator — marks a function as an auto-discoverable controller with injector DI."""
+
 from typing import Any, Callable
 
 from injector import inject as _inject

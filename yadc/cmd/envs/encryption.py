@@ -1,3 +1,27 @@
+"""Active ``KeyStorage`` management, RSA encrypt/decrypt of env values, and key-mode switching.
+
+Holds the live ``KeyStorage`` instance for the user config and provides
+the encrypt/decrypt primitives used by ``envs`` to round-trip
+``api_token`` (and any other encrypted ``AppConfigEnvValue``) on save
+and load.
+
+The encryption scheme is hybrid: an RSA-2048 keypair is generated on
+first use, the private key is handed off to the active ``KeyStorage``
+(keyring or password-derived AES), and the public key is stored in
+``AppConfig.key_storage.password.public_key``. To encrypt a value, a
+random AES-256 session key is generated, used to encrypt the value,
+then the session key is encrypted with the RSA public key. The
+resulting ``(encrypted_session_key, ciphertext)`` pair is base64-encoded
+and stored as the env value.
+
+``create_storage`` / ``get_storage`` choose the backend (``PasswordKeyStorage``
+when ``key_storage.mode == "password"``, ``KeyringKeyStorage`` otherwise)
+and respect ``YADC_PASSWORD`` when the password backend is active.
+``change_password`` decrypts the private key with the old password and
+re-encrypts it with the new one; ``set_key_mode`` migrates existing
+encrypted values when switching between keyring and password storage.
+"""
+
 import base64
 import shutil
 from typing import Literal

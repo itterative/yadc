@@ -1,3 +1,26 @@
+"""``AppConfig`` Pydantic model hierarchy with v0→v1 TOML migration and ``save_config``.
+
+The user config file is one TOML document rooted at ``AppConfig``:
+
+- ``key_storage`` (``AppConfigKeyStorage``) — ``mode`` is
+  ``"keyring"`` or ``"password"``; ``password`` carries the
+  RSA-2048 keypair (``public_key`` is plain, ``private_key`` is the
+  keyring-encrypted PEM).
+- ``envs`` — dict of ``AppConfigEnv`` keyed by env name. String fields
+  (``api_url`` / ``api_token`` / ``api_model_name``) are wrapped in
+  ``AppConfigEnvValue`` to track their per-field encryption state;
+  ``max_concurrent`` is a plain ``int | None``.
+
+``save_config`` writes ``AppConfig`` to the user config path with
+``tomlkit`` (preserves comments and formatting on round-trip).
+
+``load_config`` parses the TOML into a ``tomlkit.document`` and detects
+the version from the top-level keys. v0 (legacy ``UserConfig`` with
+``api.url``/``api.token``/``api.model_name``) is auto-migrated to v1
+on the first load; the migration is in-place and writes back to disk
+unless ``migrate=False`` is passed.
+"""
+
 from __future__ import annotations
 
 import os

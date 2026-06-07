@@ -1,3 +1,33 @@
+"""``Configuration`` dataclass — every web UI server knob in one place.
+
+Grouped by subsystem:
+
+- **HTTP server** — ``http_host`` / ``http_port``, ``graceful_shutdown_timeout``,
+  ``max_upload_size_bytes`` (also forwarded to Quart's
+  ``MAX_CONTENT_LENGTH`` so request bodies > 16 MB can be parsed).
+- **SvelteKit frontend** — ``app_frontend_build_path`` (where
+  ``app_frontend`` serves files from) and ``app_frontend_cache_control``
+  for ``/_app/...`` assets.
+- **CORS** (dev mode) — origin, methods, headers, credentials, any-origin.
+- **SSE** — ``sse_listeners_warning`` / ``sse_listeners_max`` (cap on
+  concurrent clients), ``sse_listener_max_events`` (per-client queue
+  size), ``sse_event_history_size`` (ring buffer for ``Last-Event-ID``
+  resumption).
+- **File watcher** — ``watcher_debounce_seconds`` and the
+  expected-file ring buffer (``watcher_expected_file_max`` /
+  ``watcher_expected_file_ttl``) used to suppress self-induced events.
+- **Dataset index** — ``dataset_refresh_interval_seconds`` fallback
+  scan for changes the inotify watcher can't see.
+- **Captioning job cleanup** — periodic GC of finished jobs
+  (``captioning_cleanup_interval_seconds`` + grace period).
+- **HTTP client timeouts** — connect/read/write/pool, threaded into
+  ``AsyncSession``.
+- **Caches** — ``api_models_cache_ttl`` for ``/api/envs/.../models``,
+  ``refine_result_buffer_size`` for the refine endpoint.
+- **Yadc paths** — ``config_path``, ``state_path``, ``cache_path``,
+  ``db_path`` (SQLite for the web UI's datasets/configs/settings tables).
+"""
+
 from dataclasses import dataclass, field
 
 from yadc.captioners.api.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS

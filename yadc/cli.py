@@ -1,3 +1,5 @@
+"""Click group registration and the ``version`` subcommand."""
+
 import click
 
 from . import cli_cache, cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_templates, cli_webui

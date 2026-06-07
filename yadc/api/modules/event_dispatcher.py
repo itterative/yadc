@@ -1,3 +1,5 @@
+"""``EventDispatcher`` — subscribe/dispatch and ``@event_handler`` decorator for in-process pub/sub."""
+
 import asyncio
 import inspect
 from inspect import signature

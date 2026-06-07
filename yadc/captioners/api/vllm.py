@@ -1,3 +1,5 @@
+"""``VllmCaptioner`` — vLLM backend (uses ``max_tokens`` instead of ``max_completion_tokens``)."""
+
 from typing import Any
 
 from typing_extensions import override

@@ -1,3 +1,25 @@
+"""``AsyncSession`` — async HTTP session with retries, caching, and debug capture.
+
+Wraps ``httpx.AsyncClient`` and exposes a public API that mirrors the
+sync ``Session`` so captioners can switch between the two paths with
+minimal duplication. The constructor accepts connect/read/write/pool
+timeouts (the last three default to ``Configuration.http_timeout_*``).
+
+Manual retry: ``httpx`` does not ship a built-in retry adapter like
+``requests``/``urllib3`` do, so on a retryable status code (default
+``429``, ``502``, ``503``, ``504``) or a transport exception
+(``ConnectError``, ``ReadError``, ``WriteError``, ``TimeoutException``)
+the request is re-issued with exponential backoff (``backoff_factor *
+2**attempt``), up to ``max_retries`` extra attempts.
+
+When wired with an ``HTTPResponseCache``, ``get(path, cache_ttl=...)``
+serves cached responses whose TTL has not expired; ``None`` disables
+caching. ``capture_response()`` pairs with ``ResponseLogger`` to record
+the request and response to a JSONL file (sanitised headers, request
+body, response body accumulated line-by-line for streams) — used by
+``YADC_DEBUG_CAPTION_RESPONSES=1``.
+"""
+
 import asyncio
 import functools
 import sys

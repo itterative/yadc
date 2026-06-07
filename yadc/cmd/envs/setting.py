@@ -1,3 +1,5 @@
+"""``Setting`` base class and ``EncryptionMethod`` enum (``none`` / ``keyring`` / ``password``)."""
+
 import enum
 
 from typing_extensions import override

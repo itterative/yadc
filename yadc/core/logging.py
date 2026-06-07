@@ -1,3 +1,5 @@
+"""Custom logger with a ``TRACE`` level, global level/handler management, and named logger caching."""
+
 import logging
 from typing import Any
 

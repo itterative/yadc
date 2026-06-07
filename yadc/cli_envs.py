@@ -1,3 +1,14 @@
+"""``yadc envs`` — manage API environments (URL, token, model).
+
+Environments are named entries in the user config TOML that bundle an
+API URL, token, and model name so a single dataset config can switch
+between backends without re-entering credentials. Tokens are
+encrypted-at-rest using the active ``KeyStorage`` backend (keyring or
+password-derived AES), so this command also surfaces the
+``encrypt`` / ``decrypt`` / ``change-password`` / ``reset-encryption``
+subcommands that flip between encryption modes and rotate the key.
+"""
+
 import sys
 from typing import Literal, cast
 

@@ -1,3 +1,5 @@
+"""``yadc cache`` — manage the on-disk API response cache directory."""
+
 import click
 
 from yadc.cmd import cache as cmd_cache

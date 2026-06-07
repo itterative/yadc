@@ -1,3 +1,27 @@
+"""``KoboldcppCaptioner`` — KoboldCpp backend.
+
+``list_models(cache_ttl=...)`` queries ``/api/admin/list_options`` (the
+admin endpoint that enumerates the on-disk ``.kcpps`` files) and
+returns the model filenames, filtering out ``unload_model``. The result
+is intentionally not cached: ``cache_ttl`` is accepted for API parity
+with the other backends but the admin endpoint is not cached at the
+``AsyncSession`` layer either.
+
+``_load_model(model_repo)`` is the bespoke model-loading path
+(``BaseAPICaptioner``'s default is a no-op for OpenAI-compatible
+servers). It first checks ``/api/v1/model`` for the currently loaded
+model (skip if it already matches ``model_repo`` or its
+``koboldcpp/``-prefixed alias), then enumerates ``list_models()`` to
+find a match (also accepting ``<repo>.kcpps`` filenames), and finally
+``POST``s to ``/api/admin/reload_config`` with the chosen filename
+and polls ``/api/v1/model`` every 500 ms until the new model is active
+or the ``timeout`` (default 60 s) elapses.
+
+``conversation()`` adds KoboldCpp's stop token (``<|im_end|>``) and
+renames ``max_completion_tokens`` to ``max_tokens`` to match the local
+server's request schema.
+"""
+
 import asyncio
 import time
 from typing import Any

@@ -1,3 +1,5 @@
+"""``UserConfig`` / ``UserConfigApi`` Pydantic models (legacy — replaced by ``AppConfig`` for envs and ``Config`` for dataset configs)."""
+
 import pydantic
 
 

@@ -1,3 +1,29 @@
+"""``DBConnectionFactory`` — SQLite WAL/foreign-key connections with auto-enrolling context managers.
+
+The factory is constructed once per app from ``Configuration.db_path``,
+``LoggingFactory``, and ``DBMigrations``; ``_init_db`` opens a
+throwaway connection and runs any pending migrations synchronously so
+the first request doesn't pay the migration cost.
+
+``_connection()`` opens a fresh ``sqlite3.Connection`` with
+``pragma journal_mode=wal``, ``pragma foreign_keys=on``,
+``pragma busy_timeout=5000``, and a custom ``uuid()`` SQL function
+implemented in Python (returns a hex ``uuid4``) for use as a default
+row id.
+
+The public ``connection()`` context manager auto-enrols in any active
+``transaction()`` in the current context (a ``ContextVar`` ensures
+async tasks and threads don't share state by accident). If no
+transaction is active, a new connection is opened, the body is run,
+the connection is committed on clean exit and closed on exception.
+The public ``transaction()`` wraps a connection in ``BEGIN``/``END``;
+nesting is supported via SQLite ``SAVEPOINT`` (each inner call opens a
+savepoint at the current depth and releases / rolls back on
+commit / exception). This is the pattern that lets repositories call
+``connection()`` without knowing whether the caller started a
+transaction.
+"""
+
 from __future__ import annotations
 
 import logging

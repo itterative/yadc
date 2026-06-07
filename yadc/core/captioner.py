@@ -1,3 +1,10 @@
+"""Abstract ``Captioner`` base class.
+
+Jinja2 prompt rendering, base64 image encoding (with auto-resize/quality
+degradation), and the ``predict`` / ``predict_stream`` API used by both
+the CLI and the web UI.
+"""
+
 import abc
 import base64
 import io

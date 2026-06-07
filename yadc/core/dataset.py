@@ -1,3 +1,17 @@
+"""``DatasetImage`` model — the per-image unit persisted alongside every dataset entry.
+
+Owns the image's file path, in-memory caption, draft set
+(``<stem>.<name>.draft~`` sidecar files, surfaced via
+``read_all_drafts()`` / ``write_draft()`` / ``delete_draft()``), and a
+TOML sidecar (``<stem>.toml``) that stores arbitrary extra metadata
+(configured via Pydantic ``extra="allow"``). Caption writes go through
+``update_caption()`` which (1) writes the caption file, (2) copies any
+existing TOML to ``<stem>.toml~`` as a backup, (3) writes the new TOML
+with any extra fields. ``save_history()`` and the ``<stem>.history~``
+file form an append-only log of caption snapshots separated by a
+``----------`` marker, used for the dataset history view.
+"""
+
 import pathlib
 from functools import cached_property
 from pathlib import Path

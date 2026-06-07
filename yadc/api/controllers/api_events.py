@@ -1,3 +1,5 @@
+"""SSE event stream endpoint with ``Last-Event-ID`` resumption support (replays from the ring buffer on reconnect)."""
+
 import asyncio
 import json
 

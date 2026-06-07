@@ -1,3 +1,22 @@
+"""``HTTPResponseCache`` — file-based JSON response cache keyed by SHA256 of the request.
+
+Each cache entry is a single JSON file under ``self.cache_dir`` (a
+sub-directory of the yadc cache) named after the SHA-256 of the request
+key. The entry contains the cache key (verified on read), the captured
+``status_code``, ``headers``, ``content`` (raw bytes), and an
+``expiry`` Unix timestamp (``0`` = never expires).
+
+``get(key)`` and ``get_httpx(key)`` read the entry, validate the key
+(stale or wrong-key entries are treated as misses) and the expiry, and
+materialise the payload into a ``requests.Response`` or
+``httpx.Response`` respectively. ``set(key, response, ttl=...)`` reads
+the response body, serialises the entry, and writes the file.
+
+Used today by ``AsyncSession.get(path, cache_ttl=...)`` to cache
+``/models`` lookups — callers pass ``None`` to disable caching for a
+specific call (e.g. when the env is configured to always refresh).
+"""
+
 import hashlib
 import pathlib
 import time

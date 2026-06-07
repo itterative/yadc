@@ -1,3 +1,27 @@
+"""``ErrorNormalizationMixin`` — turns errors into a stable, captioned string.
+
+``_normalize_error(error)`` is called by the captioners from inside
+``except`` blocks. It accepts ``httpx.HTTPError`` (uses ``.response`` +
+``.text``), the SDK's own exceptions, and a parsed Pydantic response
+object, and returns a ``_ParsedError(source, code, message)`` triple
+that the callers log + raise.
+
+Parsing order:
+
+1. Try to parse the error JSON as ``OpenAIErrorResponse.error``; if the
+   payload includes a ``metadata.moderation`` block, treat it as an
+   OpenRouter moderation error and join the ``reasons`` list.
+2. Fall back to ``GeminiErrorResponse`` (wraps the error code +
+   status in the message).
+3. Fall back to the raw HTTP status code (``httpx`` carries it on
+   ``response.status_code``).
+
+The mixin also exposes a ``GenerationError`` exception that captioners
+raise after normalising — the web UI catches it and shows the resulting
+string verbatim, so the error must be human-readable and not contain
+stack-trace noise.
+"""
+
 import json
 from typing import Any
 

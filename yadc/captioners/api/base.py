@@ -1,3 +1,26 @@
+"""``BaseAPICaptioner`` — shared session, cache, response logger, and per-predict hooks.
+
+All concrete API captioners (``OpenAICaptioner``, ``GeminiCaptioner``,
+``KoboldcppCaptioner``, etc.) extend this. The constructor takes
+``api_url`` (required) and ``api_token`` (optional, with a one-shot
+warning when missing on auth-bearing backends) and wires the optional
+``cache``, ``response_logger``, and ``async_session`` kwargs into
+attributes used by ``predict`` / ``predict_stream``.
+
+``_api_usage_lock`` is a per-instance ``asyncio.Lock`` that serialises
+the small dict-mutation windows at the end of each streamed or
+non-streamed response. Subclasses (OpenAI, Gemini) write to
+``_api_usage`` from inside their response handlers, and concurrent
+predictions on the same model would otherwise race on the dict. The
+lock is held only for those few mutations, so it does not serialise
+predictions — it just makes the write at the end atomic.
+
+``_before_predict()`` resets the ``PredictionContext.reasoning`` /
+``reasoning_summary`` / ``reasoning_encrypted`` fields so the caller
+sees a clean context for each new prediction. Subclasses must
+implement ``log_usage()`` and ``async list_models(cache_ttl=...)``.
+"""
+
 import abc
 import asyncio
 from typing import Any

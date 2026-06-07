@@ -1,3 +1,5 @@
+"""platformdirs paths (``CONFIG_PATH``, ``STATE_PATH``, ``CACHE_PATH``) and ``load_config`` for the user config TOML."""
+
 from typing import Any
 
 import platformdirs

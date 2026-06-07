@@ -1,3 +1,5 @@
+"""``PredictionContext`` — mutable container for reasoning and other prediction side-band data."""
+
 from typing import Any
 
 

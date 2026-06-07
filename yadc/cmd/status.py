@@ -1,3 +1,5 @@
+"""Process exit codes: ``STATUS_OK=0``, ``STATUS_ERROR=1``, ``STATUS_USER_ERROR=2``."""
+
 STATUS_OK = 0
 STATUS_ERROR = 1
 STATUS_USER_ERROR = 2

@@ -1,3 +1,5 @@
+"""Cache directory helpers and ``clean_cache`` for the yadc cache directory."""
+
 import shutil
 from datetime import datetime
 from pathlib import Path

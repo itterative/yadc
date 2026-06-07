@@ -1,3 +1,5 @@
+"""Serves the SvelteKit web UI build (index, static assets, favicon, robots.txt, manifest)."""
+
 from quart import Response, send_file, send_from_directory
 
 from ..configuration import Configuration

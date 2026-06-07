@@ -1,3 +1,5 @@
+"""User template CRUD in ``STATE_PATH/templates/`` (``list_user_template``, ``load_user_template``, ``save_user_template``, ``delete_user_template``)."""
+
 from yadc.cmd import app
 
 TEMPLATE_PATH = app.STATE_PATH / "templates"

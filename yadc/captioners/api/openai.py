@@ -1,3 +1,21 @@
+"""``OpenAICaptioner`` — OpenAI ``chat/completions`` backend.
+
+Also serves as the base class for the other OpenAI-compatible backends
+(``OpenRouterCaptioner``, ``VllmCaptioner``, ``LlamacppCaptioner``,
+``KoboldcppCaptioner``, ``OllamaCaptioner``) — those subclasses only
+override ``conversation()`` to swap ``max_completion_tokens`` for
+``max_tokens`` (or add backend-specific keys) and otherwise reuse the
+request building, streaming, image-encoding, error-normalization, and
+reasoning handling defined here.
+
+``APITypes`` carries per-backend image-size / encoded-size limits and is
+used by the captioner to decide when to auto-resize and re-encode
+uploaded images before sending them to the API. Both ``predict`` and
+``predict_stream`` catch ``httpx.RemoteProtocolError`` /
+``httpx.ReadError`` and surface a friendly "Connection closed
+unexpectedly" error to the web UI instead of an opaque traceback.
+"""
+
 import copy
 import json
 from collections.abc import AsyncGenerator

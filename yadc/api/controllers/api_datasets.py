@@ -1,3 +1,32 @@
+"""``/api/datasets/...`` endpoints — list, CRUD, image queries, captions, drafts, uploads.
+
+HTTP surface (all JSON unless noted):
+
+- ``GET /datasets`` / ``POST /datasets`` — list or create dataset configs
+  (filesystem listing of ``STATE_PATH/datasets``).
+- ``GET /datasets/<name>`` / ``DELETE /datasets/<name>`` — fetch or delete
+  a single dataset (config TOML + caption/.toml sidecars).
+- ``POST /datasets/<name>/rescan`` — trigger a manual rescan; dispatches
+  ``DatasetChangedEvent`` when rows change.
+- ``GET /datasets/<name>/images`` — paginated image query backed by the
+  SQLite index (``DatasetService.list_images``).
+- ``GET /datasets/<name>/images/<id>/image`` / ``.../caption`` /
+  ``.../toml`` — stream the image file, read the caption, or fetch the
+  TOML sidecar.
+- ``PUT /datasets/<name>/images/<id>/caption`` — write the caption and
+  dispatch ``ImageCaptionedEvent``.
+- ``GET/POST/DELETE /datasets/<name>/images/<id>/drafts[/<name>]`` —
+  draft CRUD (named ``<stem>.<name>.draft~`` files).
+- ``POST /datasets/<name>/upload`` / ``POST .../upload/append`` — create
+  or append to a dataset from a multipart upload (delegates to
+  ``DatasetUploadService``).
+- ``GET /datasets/<name>/managed/...`` — managed-dataset folder listing
+  and deletion (``ManagedDatasetsService``).
+
+Errors raised by services are translated to a stable JSON shape via
+``utils_json.jsonify_error`` (with the right ``ErrorCode``).
+"""
+
 import hashlib
 import json
 import typing

@@ -1,3 +1,5 @@
+"""``logging.Handler`` that routes log records through :func:`click.secho`."""
+
 import logging
 from typing import Any
 

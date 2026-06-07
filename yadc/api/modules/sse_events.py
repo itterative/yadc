@@ -1,3 +1,29 @@
+"""``SSEEvents`` — SSE fan-out with monotonic event IDs and ``Last-Event-ID`` replay.
+
+Subscribes to all of the API's event types via ``@event_handler`` (see
+``event_dispatcher``) and fans them out to one ``asyncio.Queue`` per
+SSE client. Each real event is assigned a monotonically increasing id
+(``itertools.count(1)``) and pushed onto a ring buffer
+(``Configuration.sse_event_history_size``); ``PingEvent`` uses id 0 and
+is not buffered.
+
+``receive(event_cls, last_event_id)`` is the per-client async generator
+called by ``api_events``:
+
+- If ``last_event_id`` is set, missed events are replayed from the
+  buffer (filtered to those > ``last_event_id`` and of the requested
+  class) *before* the live stream begins.
+- If ``last_event_id`` is older than the oldest buffered id, a single
+  ``ResumptionFailedEvent`` is yielded so the client can warn the user.
+- On disconnect (Quart cancels the generator), the per-client queue is
+  removed in the ``finally`` block and the listener count drops back.
+
+Listens to ``ShutdownEvent`` to stop accepting new events so clients
+get a clean close. ``JobScheduler`` sends a ``PingEvent`` every 5s.
+Listener-count thresholds (``sse_listeners_warning`` /
+``sse_listeners_max``) emit warnings or refuse new listeners.
+"""
+
 import asyncio
 import itertools
 from collections import deque

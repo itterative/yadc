@@ -1,3 +1,5 @@
+"""Re-exports the core captioner, config, dataset, and prediction models."""
+
 from .captioner import ROLE_ASSISTANT, ROLE_USER, Captioner, CaptionerRound, PromptRenderer, ReplyRound
 from .config import Config, ConfigApi, ConfigDatasetEntry, ConfigSettings, parse_config
 from .dataset import DatasetImage

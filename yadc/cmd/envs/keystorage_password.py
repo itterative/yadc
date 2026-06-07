@@ -1,3 +1,5 @@
+"""``PasswordKeyStorage`` — config-TOML private key encrypted with PBKDF2 + AES-256-GCM."""
+
 import base64
 import secrets
 from typing import override
