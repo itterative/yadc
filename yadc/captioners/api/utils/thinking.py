@@ -27,8 +27,8 @@ the partial ``thinking_buffer`` are tracked across calls.
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
-from yadc.captioners.api.constants import DEFAULT_THINKING_END, DEFAULT_THINKING_START
 from yadc.core import logging
+from yadc.core.constants import DEFAULT_THINKING_END, DEFAULT_THINKING_START
 from yadc.core.utils import Timer
 
 _logger = logging.get_logger(__name__)

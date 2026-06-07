@@ -19,6 +19,8 @@ from typing import Any, ClassVar
 
 import pydantic
 
+from yadc.core.constants import DEFAULT_THINKING_END, DEFAULT_THINKING_START
+
 from .dataset import DatasetImage
 
 
@@ -201,8 +203,8 @@ class ConfigReasoning(pydantic.BaseModel):
 
 
 class ConfigReasoningAdvanced(pydantic.BaseModel):
-    thinking_start: str = "沥水"
-    thinking_end: str = "(util"
+    thinking_start: str = DEFAULT_THINKING_START
+    thinking_end: str = DEFAULT_THINKING_END
 
 
 class ConfigDatasetEntry(pydantic.BaseModel):
