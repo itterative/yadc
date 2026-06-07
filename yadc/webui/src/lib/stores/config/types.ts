@@ -16,6 +16,17 @@ export interface ExportResult {
     output: string;
 }
 
+export interface ExportZipOptions {
+    dataset: string;
+    backend?: string;
+    format?: string;
+    source?: string;
+    draft?: string;
+    with_drafts?: string[];
+    caption_extension?: string;
+    include_images?: boolean;
+}
+
 export interface DatasetConfig {
     name: string;
     config_path: string;

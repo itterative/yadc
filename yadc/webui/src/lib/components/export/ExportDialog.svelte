@@ -7,6 +7,7 @@
         fetchExportBackends,
         fetchDatasetDrafts,
         runExport,
+        exportZip,
         type ExportBackend,
         type ExportResult
     } from '$lib/stores/config';
@@ -43,6 +44,8 @@
     let outputPath = $state('');
     let append = $state(false);
     let captionExtension = $state('.txt');
+    let asZip = $state(false);
+    let includeImages = $state(false);
 
     // --- Result ---
     let result: ExportResult | null = $state(null);
@@ -150,13 +153,37 @@
             if (chainedDrafts.length > 0) {
                 opts.with_drafts = chainedDrafts;
             }
-            if (outputPath.trim()) {
-                opts.output = outputPath.trim();
-            }
 
-            const res = await runExport(opts as Parameters<typeof runExport>[0]);
-            result = res;
-            onexported?.(res);
+            if (asZip) {
+                await exportZip({
+                    dataset: selectedDataset,
+                    backend: selectedBackend,
+                    format: selectedFormat,
+                    source,
+                    draft: source === 'draft' && draftName.trim() ? draftName.trim() : undefined,
+                    with_drafts: chainedDrafts.length > 0 ? chainedDrafts : undefined,
+                    caption_extension: captionExtension,
+                    include_images: includeImages
+                });
+                result = {
+                    status: 'ok',
+                    count: -1,
+                    dataset: selectedDataset,
+                    backend: selectedBackend,
+                    format: selectedFormat,
+                    source,
+                    output: 'zip'
+                };
+                onexported?.(result);
+            } else {
+                if (outputPath.trim()) {
+                    opts.output = outputPath.trim();
+                }
+
+                const res = await runExport(opts as Parameters<typeof runExport>[0]);
+                result = res;
+                onexported?.(res);
+            }
         } catch (e) {
             error = friendlyErrorMessage(e, 'Export failed');
         } finally {
@@ -182,11 +209,17 @@
         {#if result}
             <!-- Success state -->
             <div class="space-y-2 rounded-lg border border-green-700/30 bg-green-900/20 p-4">
-                <p class="text-sm font-medium text-green-300">Export complete</p>
+                <p class="text-sm font-medium text-green-300">
+                    {result.output === 'zip' ? 'Zip download started' : 'Export complete'}
+                </p>
                 <div class="space-y-1 text-sm text-gray-300">
-                    <p><span class="text-gray-500">Images exported:</span> {result.count}</p>
+                    {#if result.count >= 0}
+                        <p><span class="text-gray-500">Images exported:</span> {result.count}</p>
+                    {/if}
                     <p><span class="text-gray-500">Format:</span> {result.format}</p>
-                    <p><span class="text-gray-500">Output:</span> {result.output}</p>
+                    {#if result.output !== 'zip'}
+                        <p><span class="text-gray-500">Output:</span> {result.output}</p>
+                    {/if}
                 </div>
                 <button class="btn-secondary mt-2" onclick={() => (result = null)}>
                     Export Again
@@ -338,29 +371,33 @@
                 {/if}
             </div>
 
-            <!-- Output path -->
-            <div>
-                <label class="label" for="export-output">
-                    Output Path
-                    <span class="ml-1 text-gray-600">(optional — auto-detected if empty)</span>
-                </label>
-                <input
-                    id="export-output"
-                    type="text"
-                    bind:value={outputPath}
-                    class="input"
-                    placeholder="e.g. /data/training/metadata.jsonl"
-                />
-            </div>
+            <!-- Output path (hidden for zip export) -->
+            {#if !asZip}
+                <div>
+                    <label class="label" for="export-output">
+                        Output Path
+                        <span class="ml-1 text-gray-600">(optional — auto-detected if empty)</span>
+                    </label>
+                    <input
+                        id="export-output"
+                        type="text"
+                        bind:value={outputPath}
+                        class="input"
+                        placeholder="e.g. /data/training/metadata.jsonl"
+                    />
+                </div>
+            {/if}
 
             <!-- Options -->
             <div class="flex items-center gap-6">
-                <div class="flex items-center gap-2">
-                    <Checkbox id="export-append" bind:checked={append} />
-                    <label class="cursor-pointer text-sm text-gray-300" for="export-append"
-                        >Append</label
-                    >
-                </div>
+                {#if !asZip}
+                    <div class="flex items-center gap-2">
+                        <Checkbox id="export-append" bind:checked={append} />
+                        <label class="cursor-pointer text-sm text-gray-300" for="export-append"
+                            >Append</label
+                        >
+                    </div>
+                {/if}
                 <div class="flex items-center gap-2">
                     <label class="text-sm text-gray-400" for="export-ext">Extension</label>
                     <input
@@ -370,6 +407,25 @@
                         class="input-sm w-20 px-2 py-1"
                     />
                 </div>
+            </div>
+
+            <!-- Zip options -->
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2">
+                    <Checkbox id="export-zip" bind:checked={asZip} />
+                    <label class="cursor-pointer text-sm text-gray-300" for="export-zip"
+                        >Download as ZIP</label
+                    >
+                </div>
+                {#if asZip}
+                    <div class="flex items-center gap-2">
+                        <Checkbox id="export-include-images" bind:checked={includeImages} />
+                        <label
+                            class="cursor-pointer text-sm text-gray-300"
+                            for="export-include-images">Include images</label
+                        >
+                    </div>
+                {/if}
             </div>
 
             <!-- Footer -->

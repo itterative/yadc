@@ -4,12 +4,12 @@ import pathlib
 from typing import ClassVar, Literal
 
 import pydantic
-from quart import jsonify, request
+from quart import Response, jsonify, request
 
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
 from yadc.core.dataset_resolver import resolve_dataset
-from yadc.core.exporters import get_backend, list_backends, run_export
+from yadc.core.exporters import get_backend, list_backends, run_export, run_export_zip
 from yadc.utils.dict_utils import load_toml_file
 
 from ..modules.logging_factory import LoggingFactory
@@ -28,6 +28,8 @@ class ExportBody(pydantic.BaseModel):
     output: str | None = None
     append: bool = False
     caption_extension: str = ".txt"
+    zip: bool = False
+    include_images: bool = False
 
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
@@ -126,7 +128,45 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         if not images:
             return jsonify_error("No images found in dataset", status=400, code=ErrorCode.BAD_REQUEST)
 
-        # --- Output path ---
+        base_dir = config_path.parent
+
+        # --- Zip export (streaming response) ---
+        if body.zip:
+            try:
+                buf, count = run_export_zip(
+                    body.backend,
+                    images,
+                    fmt=body.format,
+                    source=body.source,
+                    drafts=drafts,
+                    caption_extension=body.caption_extension,
+                    include_images=body.include_images,
+                    base_dir=base_dir,
+                )
+            except ValueError as e:
+                return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+            except Exception as e:
+                _logger.exception("Zip export failed for dataset '%s': %s", body.dataset, e)
+                return jsonify_error(str(e), status=500, code=ErrorCode.INTERNAL_ERROR)
+
+            _logger.info(
+                "Zip exported %d images from '%s' (backend=%s, format=%s, source=%s, include_images=%s)",
+                count,
+                body.dataset,
+                body.backend,
+                body.format,
+                body.source,
+                body.include_images,
+            )
+
+            filename = f"{body.dataset}_{body.backend}_{body.format}.zip"
+            return Response(
+                buf.getvalue(),
+                mimetype="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        # --- Filesystem export ---
         output_path: pathlib.Path | None = None
 
         if body.output:
@@ -145,7 +185,6 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                 output_path = first_dir / "metadata.jsonl"
             # txt: output_path stays None → writes alongside images
 
-        # --- Run export ---
         try:
             count = run_export(
                 body.backend,

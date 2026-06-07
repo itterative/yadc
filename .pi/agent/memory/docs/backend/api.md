@@ -28,7 +28,7 @@ yadc/api/
     api_captioning.py   # @controller — captioning start/stop/status + per-image caption + refine (uses CaptioningService only — the SSE stream itself is in `api_events.py`)
     api_configs.py      # @controller — dataset config TOML CRUD (view/edit/delete)
     api_envs.py         # @controller — environment CRUD + model list proxy
-    api_export.py       # @controller — export backends listing + run export
+    api_export.py       # @controller — export backends listing + run export (filesystem or streaming zip)
     api_templates.py    # @controller — template CRUD + Jinja2 variable extraction
     api_events.py       # @controller — SSE event stream with Last-Event-ID resumption support (replays from ring buffer on reconnect)
 

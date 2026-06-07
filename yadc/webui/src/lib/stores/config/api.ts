@@ -6,7 +6,8 @@ import type {
     DatasetConfig,
     DatasetConfigDetail,
     ExportBackend,
-    ExportResult
+    ExportResult,
+    ExportZipOptions
 } from './types';
 
 // --- Export API helpers ---
@@ -39,6 +40,33 @@ export async function runExport(options: {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
+}
+
+export async function exportZip(options: ExportZipOptions): Promise<void> {
+    const body = { ...options, zip: true };
+    const res = await fetch(`${API_BASE}/api/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `${options.dataset}_export.zip`;
+
+    // Trigger browser download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // --- Dataset drafts API ---
