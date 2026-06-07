@@ -27,6 +27,8 @@ from typing import override
 
 from injector import Binder, Injector, Module, get_bindings, inject, singleton
 from quart import Quart
+from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from yadc.api.modules import EventDispatcher
 
@@ -72,6 +74,9 @@ class Application(Module):
                 import_name=__name__,
             ),
         )
+
+        # NOTE: need BaseObserver instead of Observer since that changes depending on the platform
+        binder.bind(BaseObserver, to=lambda: Observer())
 
         # Auto-discover services and bind them (inject + singleton scope)
         self._discovered_services = discover_services(modules_pkg) + discover_services(services_pkg)

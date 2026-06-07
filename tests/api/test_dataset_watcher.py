@@ -1,42 +1,35 @@
 """Tests for DatasetWatcherService — path-diff short-circuit and expected-sources preservation."""
 
-import threading
 import time
 from collections import deque
 from unittest.mock import MagicMock
 
 import pytest
 
-from yadc.api.configuration import Configuration
 from yadc.api.events import DatasetChangedEvent
 from yadc.api.modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService, ExpectedFileEntry, ExpectedPatternEntry
+from yadc.api.modules.thread_factory import ThreadFactory
 
 
 @pytest.fixture
-def watcher(tmp_path):
-    """Create a DatasetWatcherService with a mocked observer and real Configuration."""
-    mock_logging = MagicMock()
-    mock_logging.get_logger.return_value = MagicMock()
-    mock_dispatcher = MagicMock()
-    config = Configuration()
+def watcher(test_configuration, logging_factory):
+    """DatasetWatcherService with an injected mock observer and thread factory.
 
-    svc = DatasetWatcherService.__new__(DatasetWatcherService)
-    svc._logger = mock_logging.get_logger()
-    svc._event_dispatcher = mock_dispatcher
-    svc._configuration = config
-
-    # Mock the observer so we don't start a real watchdog thread
-    svc._observer = MagicMock()
-    svc._watches = {}
-    svc._timers = {}
-    svc._expected_sources = {}
-    svc._expected_files = {}
-    svc._expected_patterns = {}
-    svc._unexpected_changes = {}
-    svc._lock = threading.Lock()
-    svc._thread = threading.Thread(target=lambda: None, daemon=True)
-
-    return svc
+    The observer is the only dependency the tests want to control —
+    every test asserts on ``_observer.schedule`` / ``unschedule`` calls.
+    The constructor doesn't start the underlying watchdog thread (that
+    happens in ``on_startup``, which these tests never invoke), so the
+    other constructor params can be cheap stubs. ``ThreadFactory`` is
+    injected (not created internally) so the watcher doesn't create
+    threads just by being constructed.
+    """
+    return DatasetWatcherService(
+        event_dispatcher=MagicMock(),
+        logging=logging_factory,
+        configuration=test_configuration,
+        observer=MagicMock(),
+        thread_factory=MagicMock(spec=ThreadFactory),
+    )
 
 
 @pytest.fixture

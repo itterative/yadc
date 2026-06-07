@@ -13,15 +13,16 @@ from __future__ import annotations
 import threading
 from logging import Logger
 from pathlib import Path
-from typing import Any, Callable, override
+from typing import Callable, override
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
-from .events import Event, StartupEvent
+from .events import Event, ShutdownEvent, StartupEvent
 from .modules.event_dispatcher import EventDispatcher, event_handler
 from .modules.logging_factory import LoggingFactory
 from .modules.service import Service
+from .modules.thread_factory import ThreadFactory
 
 
 class _FilterEventHandler(FileSystemEventHandler):
@@ -73,6 +74,8 @@ class SinglePathWatcherService(Service):
         file_filter: Callable[[str], bool],
         debounce_seconds: float = 1.0,
         watch_label: str = "",
+        observer: BaseObserver,
+        thread_factory: ThreadFactory,
     ) -> None:
         self._logger: Logger = logging.get_logger(__name__)
         self._event_dispatcher: EventDispatcher = event_dispatcher
@@ -81,13 +84,12 @@ class SinglePathWatcherService(Service):
         self._file_filter: Callable[[str], bool] = file_filter
         self._watch_label: str = watch_label or type(self).__name__
 
-        self._observer: Any = Observer()
-        self._observer.daemon = True
+        self._observer: BaseObserver = observer
         self._timer: threading.Timer | None = None
         self._pending_files: set[str] = set()
         self._lock: threading.Lock = threading.Lock()
 
-        self._thread: threading.Thread = threading.Thread(target=self._run_observer, daemon=True)
+        self._init_observer_thread: threading.Thread = thread_factory.create(target=self._start_observer, name=self._watch_label)
 
     # ------------------------------------------------------------------
     # To be overridden by subclasses
@@ -109,10 +111,13 @@ class SinglePathWatcherService(Service):
 
     @event_handler(StartupEvent)
     def on_startup(self, event: StartupEvent) -> None:  # pyright: ignore[reportUnusedParameter]
-        self._thread.start()
+        self._init_observer_thread.start()
 
-    def _run_observer(self) -> None:
-        """Run the watchdog observer (blocks until ``stop()``)."""
+    @event_handler(ShutdownEvent)
+    def on_shutdown(self, event: ShutdownEvent):  # pyright: ignore[reportUnusedParameter]
+        self._observer.stop()
+
+    def _start_observer(self) -> None:
         handler = _FilterEventHandler(self._file_filter, self._on_change)
         path = Path(self._watch_path)
         if path.is_dir():
@@ -130,11 +135,6 @@ class SinglePathWatcherService(Service):
                 self._watch_path,
             )
         self._observer.start()
-        self._observer.join()
-
-    def stop(self) -> None:
-        """Stop the filesystem observer."""
-        self._observer.stop()
 
     # ------------------------------------------------------------------
     # Debounce

@@ -13,17 +13,17 @@ import time
 from collections import deque
 from logging import Logger
 from pathlib import Path
-from typing import Any, Callable, NamedTuple, override
+from typing import Callable, NamedTuple, override
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
-from watchdog.observers.api import ObservedWatch
+from watchdog.observers.api import BaseObserver, ObservedWatch
 
 from ..configuration import Configuration
-from ..events import DatasetChangedEvent, StartupEvent
+from ..events import DatasetChangedEvent, ShutdownEvent, StartupEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .logging_factory import LoggingFactory
 from .service import Service
+from .thread_factory import ThreadFactory
 
 # Sentinel job_id used when all changes in a debounce window were expected
 # but no client-specific source is available.
@@ -105,13 +105,13 @@ class DatasetWatcherService(Service):
         event_dispatcher: EventDispatcher,
         logging: LoggingFactory,
         configuration: Configuration,
+        observer: BaseObserver,
+        thread_factory: ThreadFactory,
     ):
         self._logger: Logger = logging.get_logger(__name__)
         self._event_dispatcher: EventDispatcher = event_dispatcher
         self._configuration: Configuration = configuration
-
-        self._observer: Any = Observer()
-        self._observer.daemon = True
+        self._observer: BaseObserver = observer
 
         # dataset_name -> list of (ObservedWatch, handler) for cleanup
         self._watches: dict[str, list[tuple[ObservedWatch, _DirEventHandler]]] = {}
@@ -127,21 +127,13 @@ class DatasetWatcherService(Service):
         self._unexpected_changes: dict[str, bool] = {}
         self._lock: threading.Lock = threading.Lock()
 
-        self._thread: threading.Thread = threading.Thread(target=self._run_observer, daemon=True)
-
     @event_handler(StartupEvent)
     def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
-        # Start the observer in a background thread
-        self._thread.start()
-
-    def _run_observer(self) -> None:
-        """Run the watchdog observer (blocks until stop())."""
         self._observer.start()
         self._logger.info("Dataset watcher started. [debounce=%.1fs]", self._configuration.watcher_debounce_seconds)
-        self._observer.join()
 
-    def stop(self) -> None:
-        """Stop the filesystem observer."""
+    @event_handler(ShutdownEvent)
+    def on_shutdown(self, event: ShutdownEvent):  # pyright: ignore[reportUnusedParameter]
         self._observer.stop()
 
     def watch_dataset(self, dataset_name: str, paths: list[str]) -> None:

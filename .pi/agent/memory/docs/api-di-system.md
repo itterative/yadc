@@ -59,6 +59,21 @@ class MyService(Service):
 
 **Note**: Use `from logging import Logger` (not `import logging` + `logging.Logger`) when the parameter is also named `logging` to avoid type expression errors in basedpyright.
 
+### Type annotations for runtime-bound dependencies
+
+`watchdog.observers.Observer` is a module-level variable (assigned at import time to the platform-specific implementation), not a class definition — basedpyright reports `reportInvalidTypeForm` when it appears in a type annotation. Annotate with `watchdog.observers.api.BaseObserver` (a real class) at the use sites and only reference `Observer` at the DI binding site in `Application.configure()`.
+
+## Non-Service Injectable Dependencies
+
+Most service dependencies are auto-discovered as `Service` subclasses and bound as singletons. For **third-party objects** that a service needs to receive (e.g. `watchdog.observers.Observer` for the watcher services), bind them explicitly in `Application.configure()`. Use a **no-arg lambda** so each request from the injector returns a fresh instance — this avoids the "always bind to that instance" behavior of `to=instance`:
+
+```python
+# yadc/api/application.py
+binder.bind(BaseObserver, to=lambda: Observer())
+```
+
+`to=Observer` does **not** work because `Observer` is a module-level variable, not a class definition. The lambda is the cleanest way to give each watcher service its own observer.
+
 ### ThreadFactory service for background threads
 
 `yadc/api/modules/thread_factory.py` provides a singleton `ThreadFactory` (`Service` subclass, auto-discovered) that creates and tracks daemon `Thread` objects. Watcher services and any other service that needs a long-running background thread inject it:

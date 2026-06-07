@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import override
 
+from watchdog.observers.api import BaseObserver
+
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd.app import CONFIG_PATH
 
@@ -16,6 +18,7 @@ from ..events import EnvironmentsChangedEvent, Event
 from ..watcher_base import SinglePathWatcherService
 from .event_dispatcher import EventDispatcher
 from .logging_factory import LoggingFactory
+from .thread_factory import ThreadFactory
 
 _CONFIG_FILE = "config.toml"
 
@@ -27,13 +30,21 @@ def _is_config_toml(path: str) -> bool:
 class EnvWatcherService(SinglePathWatcherService):
     """Watches ``config.toml`` for changes and emits SSE events."""
 
-    def __init__(self, event_dispatcher: EventDispatcher, logging: LoggingFactory) -> None:
+    def __init__(
+        self,
+        event_dispatcher: EventDispatcher,
+        logging: LoggingFactory,
+        observer: BaseObserver,
+        thread_factory: ThreadFactory,
+    ) -> None:
         super().__init__(
             event_dispatcher,
             logging,
             watch_path=str(CONFIG_PATH),
             file_filter=_is_config_toml,
             watch_label="Env config",
+            observer=observer,
+            thread_factory=thread_factory,
         )
 
     @override
