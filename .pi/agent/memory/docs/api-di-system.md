@@ -127,6 +127,7 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | Service | Package | Purpose |
 |---------|---------|--------|
 | `LoggingFactory` | `modules/` | Per-module named loggers |
+| `UvicornLoggingConfig` | `modules/` | Mutates `uvicorn.config.LOGGING_CONFIG` in `SetupAppEvent` so uvicorn's loggers use the yadc format (`Configuration.logging_log_format`) and respect `LoggingFactory.log_level` (the main `uvicorn` logger's level is set in `LOGGING_CONFIG`; the other uvicorn loggers get their level from `uvicorn.Config(log_level=...)` which `Application.run()` sources from `LoggingFactory.log_level`). |
 | `DBMigrations` | `modules/` | Step-based SQLite migration runner |
 | `DBConnectionFactory` | `modules/` | SQLite WAL connections, background init |
 | `CORSMiddleware` | `modules/` | Origin-based CORS on ApiBlueprint |

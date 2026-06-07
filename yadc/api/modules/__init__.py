@@ -12,6 +12,7 @@ from .service import Service
 from .sse_events import SSEEvents
 from .template_watcher import TemplateWatcherService
 from .thread_factory import ThreadFactory
+from .uvicorn_logging_config import UvicornLoggingConfig
 
 __all__ = [
     "CORSMiddleware",
@@ -26,4 +27,5 @@ __all__ = [
     "EnvWatcherService",
     "TemplateWatcherService",
     "ThreadFactory",
+    "UvicornLoggingConfig",
 ]

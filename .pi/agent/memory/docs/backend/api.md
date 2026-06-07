@@ -37,6 +37,7 @@ yadc/api/
     service.py            # base Service class (marker for DI auto-discovery)
     cors_middleware.py    # CORSMiddleware — origin-based CORS, registered on ApiBlueprint
     logging_factory.py    # LoggingFactory — get_logger()
+    uvicorn_logging_config.py  # UvicornLoggingConfig — mutates uvicorn.config.LOGGING_CONFIG during SetupAppEvent to apply the yadc format (from Configuration.logging_log_format) and the level for the main `uvicorn` logger (other uvicorn loggers get their level from Config.log_level, which Application.run() sources from LoggingFactory.log_level)
     event_dispatcher.py   # EventDispatcher — subscribe/dispatch + @event_handler decorator
     job_scheduler.py      # JobScheduler — daemon threads for periodic jobs
     sse_events.py         # SSEEvents — Condition-based SSE queue with ping, monotonic event IDs, ring buffer history for Last-Event-ID resumption

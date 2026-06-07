@@ -53,6 +53,7 @@ class Configuration:
 
     # Logging
     logging_default_level: int = 20  # logging.INFO
+    logging_log_format: str = "%(asctime)s - %(levelname)s - %(message)s"
 
     # SSE
     sse_listeners_warning: int = 25

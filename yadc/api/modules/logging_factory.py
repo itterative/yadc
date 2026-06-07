@@ -11,7 +11,7 @@ class LoggingFactory(Service):
         self.log_level: int = configuration.logging_default_level
         self._loggers: dict[str, logging.Logger] = {}
 
-        logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
+        logging.basicConfig(level=logging.ERROR, format=configuration.logging_log_format)
 
     def set_level(self, level: int):
         self.log_level = level
