@@ -120,15 +120,20 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         """Create or update an environment.
 
         JSON body (all fields optional):
-            api_url: str
-            api_token: str
-            api_model_name: str
+            api_url: str | null       -- ``null`` clears the URL
+            api_token: str | null     -- ``null`` clears the token
+            api_model_name: str | null -- ``null`` clears the default model
+
+        Fields omitted from the body are left untouched; fields explicitly
+        set to ``null`` are cleared (mirroring ``yadc envs delete <key>``).
+        Fields set to a string are stored as-is (token is re-encrypted
+        transparently by ``cmd_envs.update_env``).
         """
         body = validate_body(PutEnvBody, await request.get_json(silent=True))
         config = cmd_config.load_config()
 
-        for key, value in body.model_dump(exclude_none=True).items():
-            cmd_envs.update_env(key, value, env=name, config=config)
+        for key in body.model_fields_set:
+            cmd_envs.update_env(key, getattr(body, key), env=name, config=config)
 
         cmd_envs.save_env(config=config)
         _logger.info("Environment '%s' saved.", name)

@@ -179,6 +179,185 @@ class TestPutKeyMode:
         assert data["code"] == "BAD_REQUEST"
 
 
+class TestPutEnv:
+    """PUT /api/envs/<name> — create or update an environment.
+
+    The endpoint distinguishes between three states per field:
+
+    - **omitted from body**: leave the existing value untouched
+    - **string value**: store the new value (token is re-encrypted)
+    - **explicit null**: clear the field (mirrors ``yadc envs delete <key>``)
+
+    Pydantic's ``model_fields_set`` is the source of truth for "what the
+    client actually sent" — we must not use ``model_dump(exclude_none=True)``
+    because that conflates "absent" with "null" and breaks clearing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sets_all_three_fields(self, client, patched_cmd_config, patched_cmd_envs):
+        """Happy path — all three fields in the body are forwarded to
+        ``cmd_envs.update_env`` with the right env name."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put(
+            "/api/envs/default",
+            json={"api_url": "https://api.example.com", "api_token": "sk-abc", "api_model_name": "gpt-4o"},
+        )
+
+        assert resp.status_code == 200
+        # update_env is called once per field that was in the body
+        calls = patched_cmd_envs.update_env.call_args_list
+        assert len(calls) == 3
+        by_key = {c.args[0]: c.args[1] for c in calls}
+        assert by_key == {
+            "api_url": "https://api.example.com",
+            "api_token": "sk-abc",
+            "api_model_name": "gpt-4o",
+        }
+        for c in calls:
+            assert c.kwargs == {"env": "default", "config": patched_cmd_config.load_config.return_value}
+        patched_cmd_envs.save_env.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_partial_body_only_updates_provided_fields(self, client, patched_cmd_config, patched_cmd_envs):
+        """A field omitted from the body must not be touched. This is the
+        contract that lets the frontend update one field at a time without
+        clobbering the others (e.g. editing the URL shouldn't blank the
+        token)."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_url": "https://api.example.com"})
+
+        assert resp.status_code == 200
+        calls = patched_cmd_envs.update_env.call_args_list
+        assert len(calls) == 1
+        assert calls[0].args == ("api_url", "https://api.example.com")
+        assert calls[0].kwargs["env"] == "default"
+
+    @pytest.mark.asyncio
+    async def test_empty_body_is_a_no_op_save(self, client, patched_cmd_config, patched_cmd_envs):
+        """An empty body still triggers a ``save_env`` (a no-op write) but
+        must not call ``update_env`` for any field. This is the contract
+        that prevents accidentally wiping fields when the client sends
+        `{}` by mistake."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_not_called()
+        patched_cmd_envs.save_env.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_null_api_model_name_clears_the_model(self, client, patched_cmd_config, patched_cmd_envs):
+        """Regression: ``api_model_name: null`` must reach
+        ``cmd_envs.update_env`` as ``None`` so the existing default model
+        is cleared. Previously the endpoint used
+        ``body.model_dump(exclude_none=True)`` which silently dropped
+        ``None`` values, making it impossible to clear a model name from
+        the WebUI."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_model_name": None})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_called_once()
+        _args, kwargs = patched_cmd_envs.update_env.call_args
+        assert _args == ("api_model_name", None)
+        assert kwargs["env"] == "default"
+
+    @pytest.mark.asyncio
+    async def test_null_api_url_clears_the_url(self, client, patched_cmd_config, patched_cmd_envs):
+        """Same null-clears semantics for ``api_url``."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_url": None})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_called_once_with("api_url", None, env="default", config=patched_cmd_config.load_config.return_value)
+
+    @pytest.mark.asyncio
+    async def test_null_api_token_clears_the_token(self, client, patched_cmd_config, patched_cmd_envs):
+        """Same null-clears semantics for ``api_token`` (the encrypted
+        field). Confirms clearing works uniformly across plain and
+        encrypted fields."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_token": None})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.update_env.assert_called_once_with("api_token", None, env="default", config=patched_cmd_config.load_config.return_value)
+
+    @pytest.mark.asyncio
+    async def test_mixed_set_and_null_in_one_request(self, client, patched_cmd_config, patched_cmd_envs):
+        """Setting one field and clearing another in the same request
+        must work — the two cases go through the same loop body."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put(
+            "/api/envs/default",
+            json={"api_url": "https://new.example.com", "api_model_name": None},
+        )
+
+        assert resp.status_code == 200
+        calls = {c.args[0]: c.args[1] for c in patched_cmd_envs.update_env.call_args_list}
+        assert calls == {"api_url": "https://new.example.com", "api_model_name": None}
+
+    @pytest.mark.asyncio
+    async def test_extra_field_returns_400(self, client, patched_cmd_config, patched_cmd_envs):
+        """Unknown fields are rejected (the body model uses
+        ``extra="forbid"``) so typos don't silently no-op."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_url": "x", "unknown_field": "y"})
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        patched_cmd_envs.update_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_type_returns_400(self, client, patched_cmd_config, patched_cmd_envs):
+        """Non-string values (e.g. a number for ``api_url``) are rejected
+        by Pydantic before any ``update_env`` call."""
+        patched_cmd_envs.get_env.return_value = make_app_config_env()
+        patched_cmd_envs.update_env = MagicMock()
+
+        resp = await client.put("/api/envs/default", json={"api_url": 123})
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        patched_cmd_envs.update_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_response_reflects_saved_state(self, client, patched_cmd_config, patched_cmd_envs):
+        """After a successful PUT, the response body is the formatted env
+        (same shape as ``GET /envs/<name>``) so the frontend can refresh
+        its local state without a second round-trip."""
+        saved_env = make_app_config_env(api_url="https://new.example.com", api_model_name="gpt-4o")
+        patched_cmd_envs.get_env.return_value = saved_env
+
+        resp = await client.put(
+            "/api/envs/default",
+            json={"api_url": "https://new.example.com", "api_model_name": "gpt-4o"},
+        )
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data["name"] == "default"
+        assert data["api_url"] == "https://new.example.com"
+        assert data["api_model_name"] == "gpt-4o"
+
+
 class TestListModels:
     """POST (or GET) /api/envs/<name>/models — returns the env's available model list.
 

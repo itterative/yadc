@@ -17,7 +17,13 @@ export const fetchEnvs = debounce(_fetchEnvs);
 
 export async function saveEnv(
     name: string,
-    data: { api_url?: string; api_token?: string; api_model_name?: string }
+    /**
+     * Fields to update on the env.
+     * - omitted from the object: leave the existing value untouched
+     * - set to a string: store the new value
+     * - set to `null`: clear the field (mirrors `yadc envs delete <key>`)
+     */
+    data: { api_url?: string | null; api_token?: string | null; api_model_name?: string | null }
 ): Promise<EnvInfo> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`, {
         method: 'PUT',

@@ -94,12 +94,16 @@
         isSavingEnv = true;
         saveEnvError = null;
         try {
-            const data: Record<string, string> = { api_url: editUrl.trim() };
+            const data: { api_url: string; api_token?: string; api_model_name: string | null } = {
+                api_url: editUrl.trim(),
+                // Always send the model name so an empty input clears the
+                // existing default. The backend distinguishes `null`
+                // (clear) from a missing key (leave alone), so an
+                // explicit `null` is required to wipe the field.
+                api_model_name: editModelName.trim() || null
+            };
             if (editToken) {
                 data.api_token = editToken;
-            }
-            if (editModelName.trim()) {
-                data.api_model_name = editModelName.trim();
             }
 
             await saveEnv(name, data);
