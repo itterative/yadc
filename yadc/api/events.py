@@ -3,8 +3,17 @@
 Each event is a ``@dataclass`` subclass of :class:`Event` with a
 ``TYPE: ClassVar[str]`` carrying the wire name (e.g. ``"captioning_status"``).
 
+- ``SetupAppEvent`` — fired during ``Application.configure_app()``,
+  *before* blueprints are registered on the Quart app. Carries the
+  ``Quart`` instance so services can register request/response hooks
+  (e.g. CORS attaches ``after_request`` to the ``ApiBlueprint``).
+  Fired synchronously, while the blueprints are still unwired — at
+  this point there is no running event loop, so handlers should be
+  sync.
 - ``StartupEvent`` / ``ShutdownEvent`` — application lifecycle, used to
-  bring services up/down.
+  bring services up/down. ``StartupEvent`` is dispatched from Quart's
+  ``before_serving`` callback, after the event loop is running, so
+  async handlers can use ``asyncio.create_task()`` directly.
 - ``PingEvent`` — periodic keepalive (every 5s); not stored in the SSE
   history ring buffer.
 - ``CaptioningStatusEvent`` — per-job progress (status, processed, total,
@@ -28,9 +37,17 @@ import dataclasses
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
+from quart import Quart
+
 
 class Event:
     TYPE: ClassVar[str]
+
+
+@dataclass
+class SetupAppEvent(Event):
+    TYPE: ClassVar[str] = "setup_app"
+    app: Quart
 
 
 class StartupEvent(Event):

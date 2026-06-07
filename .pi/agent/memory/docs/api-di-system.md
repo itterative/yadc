@@ -141,17 +141,20 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
 | `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher` |
 
-## Startup Event
+## App Lifecycle Events
 
-A `StartupEvent` is dispatched after controllers are configured but before `configure_app()` registers blueprints on the Quart app. The `run()` order is: `configure_services()` → `configure_controllers()` → print banner → `dispatch(StartupEvent())` → `configure_app()` → signal handler → `uvicorn.serve()`. The StartupEvent fires first so CORS middleware can register its `after_request` handler on the blueprint before the blueprint is registered on the Quart app. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread) do so via `@event_handler(StartupEvent)`.
+Two events bracket the Quart app's lifecycle, each suited to a different concern:
+
+- **`SetupAppEvent`** — fired from `Application.configure_app()` *before* the blueprints are registered on the Quart app. Carries the `Quart` instance. Services that need to attach request/response hooks to the app or its blueprints (e.g. CORS attaches `after_request` to the `ApiBlueprint`) subscribe via `@event_handler(SetupAppEvent)`. There is no running event loop at this point, so handlers should be sync.
+- **`StartupEvent`** — fired from `app.before_serving` (also set up in `Application.configure_app()`), after the running event loop has been captured via `EventDispatcher.set_loop()`. The `run()` order is: `configure_services()` → `configure_controllers()` → `configure_app()` (which sets the `before_serving` callback, fires `SetupAppEvent`, and registers blueprints) → `uvicorn.serve()` (which fires `before_serving` → `set_loop` → `dispatch(StartupEvent())`). Dispatching here — instead of in `run()` — lets async handlers use `asyncio.create_task()` directly. Services that need to start background work (e.g. `DatasetWatcherService` starts its observer thread, `CaptioningService` starts its periodic cleanup task) do so via `@event_handler(StartupEvent)`.
 
 ## CORS
 
-CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Service`, not a controller. It registers an `after_request` handler on `ApiBlueprint` on `StartupEvent`. Configuration is via `Configuration.api_cors_*` fields.
+CORS is handled by `CORSMiddleware` (`modules/cors_middleware.py`) — a `Service`, not a controller. It subscribes to `SetupAppEvent` and attaches an `after_request` handler to `ApiBlueprint` *before* the blueprint is registered on the Quart app, so the handler is wired up first. Configuration is via `Configuration.api_cors_*` fields.
 
 ## Events System
 
-- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `StartupEvent`, `ShutdownEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`, `ResumptionFailedEvent`, `EnvironmentsChangedEvent` (with `envs: list[str]`), `TemplatesChangedEvent` (with `templates: list[str]`), `ImageCaptionedEvent` (with `caption: str`)
+- `events.py` — `Event` base class (has `TYPE: ClassVar[str]`), `SetupAppEvent` (with `app: Quart`), `StartupEvent`, `ShutdownEvent`, `PingEvent`, `CaptioningStatusEvent`, `DatasetChangedEvent`, `ResumptionFailedEvent`, `EnvironmentsChangedEvent` (with `envs: list[str]`), `TemplatesChangedEvent` (with `templates: list[str]`), `ImageCaptionedEvent` (with `caption: str`)
 - `EventDispatcher` — `subscribe(event_cls, handler)`, `dispatch(event)`, `register_service(service)` (auto-scans for `@event_handler` methods), `@event_handler` decorator
 - `@event_handler` uses `typing.get_type_hints()` to resolve annotations — needed because `from __future__ import annotations` stringifies them, causing `issubclass()` to fail on plain `inspect.signature()` annotations
 - `SSEEvents` — Condition-based queue, `push(event)` / `receive(event_cls, last_event_id=None)` generator yielding `(event_id, event)` tuples, auto-ping via `JobScheduler`. Assigns monotonic IDs to non-ping events, maintains a configurable ring buffer (`sse_event_history_size`, default 128) for `Last-Event-ID` resumption. On reconnect, replays missed events from history; if the requested ID is too old, yields a `ResumptionFailedEvent`. Handles `CaptioningStatusEvent`, `DatasetChangedEvent`, `EnvironmentsChangedEvent`, `TemplatesChangedEvent`, `ImageCaptionedEvent`, `ImageCaptionErrorEvent`, `ImageCaptionStartedEvent`.

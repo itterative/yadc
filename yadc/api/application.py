@@ -11,12 +11,14 @@ service with the ``EventDispatcher``. ``configure_controllers()`` walks
 decorator and invokes each one with its injector-resolved arguments.
 
 ``run()`` ties the whole thing together: configures services and
-controllers, optionally prints the banner, dispatches
-``StartupEvent``, then registers the Quart blueprints and starts
-``uvicorn``. The uvicorn signal handler is monkey-patched so
-``ShutdownEvent`` is dispatched *before* uvicorn starts waiting for
-connections to close — this lets SSE generators see the shutdown flag
-and exit cleanly.
+controllers, then ``configure_app()`` wires up the Quart app
+(``SetupAppEvent`` is dispatched so services can attach
+request/response hooks, blueprints are registered, and a
+``before_serving`` callback is set up to capture the event loop and
+dispatch ``StartupEvent``), then starts ``uvicorn``. The uvicorn
+signal handler is monkey-patched so ``ShutdownEvent`` is dispatched
+*before* uvicorn starts waiting for connections to close — this lets
+SSE generators see the shutdown flag and exit cleanly.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from . import services as services_pkg
 from .configuration import Configuration
 from .controllers.blueprints import ApiBlueprint, AppBlueprint
 from .discovery import discover_controllers, discover_services
-from .events import ShutdownEvent, StartupEvent
+from .events import SetupAppEvent, ShutdownEvent, StartupEvent
 from .modules.service import Service
 
 
@@ -113,8 +115,21 @@ class Application(Module):
         app.config["MAX_CONTENT_LENGTH"] = self.configuration.max_upload_size_bytes
 
         @app.before_serving
-        async def _capture_loop():  # pyright: ignore[reportUnusedFunction]
+        async def _capture_loop_and_startup():  # pyright: ignore[reportUnusedFunction]
             event_dispatcher.set_loop(asyncio.get_running_loop())
+            # Dispatch StartupEvent here, after the loop is running, so async
+            # handlers (e.g. CaptioningService.on_startup) can use
+            # asyncio.create_task() directly. Earlier this fired in run() before
+            # uvicorn started, which produced a "Event loop not available for
+            # async handler" warning and silently skipped the handler.
+            event_dispatcher.dispatch(StartupEvent())
+
+        # Fire SetupAppEvent *before* the blueprints are registered on the Quart
+        # app, so services can attach request/response hooks (e.g. CORS attaches
+        # ``after_request`` to the ``ApiBlueprint``) while the blueprint is
+        # still standalone. There is no running event loop at this point, so
+        # handlers should be sync.
+        event_dispatcher.dispatch(SetupAppEvent(app=app))
 
         app.register_blueprint(self.injector.get(ApiBlueprint))
         app.register_blueprint(self.injector.get(AppBlueprint))
@@ -135,11 +150,11 @@ class Application(Module):
         self.configure_services()
         self.configure_controllers()
 
-        event_dispatcher = self.injector.get(EventDispatcher)
-        event_dispatcher.dispatch(StartupEvent())
-
-        # NOTE: the app must be configured before the cors middleware is set up (on startup event)
+        # NOTE: StartupEvent is dispatched from configure_app()'s before_serving
+        # callback, not here, so that async handlers have a running event loop.
         self.configure_app()
+
+        event_dispatcher = self.injector.get(EventDispatcher)
 
         config = uvicorn.Config(
             self.app,

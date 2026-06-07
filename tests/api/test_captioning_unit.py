@@ -11,7 +11,9 @@ from yadc.api.events import (
     ImageCaptionedEvent,
     ImageCaptionErrorEvent,
     ImageCaptionStartedEvent,
+    StartupEvent,
 )
+from yadc.api.modules.event_dispatcher import EventDispatcher
 from yadc.api.services.captioning import AsyncCaptionJob, CaptioningService
 from yadc.core.captioning import CaptioningCallbacks, CaptionJobOptions
 
@@ -474,6 +476,49 @@ class TestCaptioningServiceCleanupRescan:
             await captioning_service._cleanup_async("test_ds")
 
         assert call_order == [("clear", "abc123"), ("rescan", "test_ds")]
+
+
+class TestCaptioningServiceStartup:
+    """Tests for CaptioningService's @event_handler(StartupEvent) starting the cleanup task.
+
+    Regression for the order-of-operations bug where StartupEvent was
+    dispatched in Application.run() *before* uvicorn started, so async
+    handlers got a "Event loop not available" warning and were silently
+    skipped — leaving the cleanup task never started.
+    """
+
+    @pytest.mark.asyncio
+    async def test_startup_starts_cleanup_task(self, test_configuration, logging_factory):
+        """Dispatching StartupEvent with a running loop should start the periodic cleanup task."""
+        event_dispatcher = EventDispatcher(logging_factory)
+        event_dispatcher.set_loop(asyncio.get_running_loop())
+
+        mock_ds = MagicMock()
+        mock_watcher = MagicMock()
+        svc = CaptioningService(
+            dataset_service=mock_ds,
+            event_dispatcher=event_dispatcher,
+            dataset_watcher=mock_watcher,
+            logging=logging_factory,
+            configuration=test_configuration,
+        )
+        assert svc._cleanup_task is None
+
+        event_dispatcher.register_service(svc)
+        event_dispatcher.dispatch(StartupEvent())
+
+        # Yield once so the dispatched coroutine can run.
+        await asyncio.sleep(0)
+
+        assert svc._cleanup_task is not None
+        assert not svc._cleanup_task.done()
+
+        # Clean up: cancel the background task so the test doesn't hang.
+        svc._cleanup_task.cancel()
+        try:
+            await svc._cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 
 class TestStartJobPreflight:

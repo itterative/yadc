@@ -3,11 +3,12 @@
 import asyncio
 from threading import Event as ThreadEvent
 from threading import Thread
+from unittest.mock import MagicMock
 
 import pytest
 
 from yadc.api.configuration import Configuration
-from yadc.api.events import CaptioningStatusEvent, ShutdownEvent
+from yadc.api.events import CaptioningStatusEvent, SetupAppEvent, ShutdownEvent
 from yadc.api.modules.event_dispatcher import EventDispatcher, event_handler
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
@@ -210,3 +211,29 @@ class TestEventDispatcherBridge:
 
         assert handler_called.is_set()
         assert received_status == ["done"]
+
+
+class TestSetupAppEvent:
+    """``SetupAppEvent`` carries the Quart app so services can attach request/
+    response hooks (e.g. CORS) before blueprints are registered. Verify
+    handlers receive the app passed to ``dispatch()``."""
+
+    def test_handler_receives_app_from_event(self):
+        config = Configuration()
+        logging_factory = LoggingFactory(config)
+        ed = EventDispatcher(logging_factory)
+
+        received_app: list[object] = []
+
+        class FakeService:
+            @event_handler(SetupAppEvent)
+            def on_setup_app(self, event: SetupAppEvent) -> None:
+                received_app.append(event.app)
+
+        svc = FakeService()
+        ed.register_service(svc)
+
+        mock_app = MagicMock()
+        ed.dispatch(SetupAppEvent(app=mock_app))
+
+        assert received_app == [mock_app], "SetupAppEvent handler did not receive the Quart app"

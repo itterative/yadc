@@ -5,7 +5,7 @@ from logging import Logger
 from quart import Response, request
 
 from yadc.api.controllers.blueprints import ApiBlueprint
-from yadc.api.events import StartupEvent
+from yadc.api.events import SetupAppEvent
 from yadc.api.modules.event_dispatcher import event_handler
 
 from ..configuration import Configuration
@@ -19,10 +19,8 @@ class CORSMiddleware(Service):
         self._configuration: Configuration = configuration
         self._blueprint: ApiBlueprint = blueprint
 
-    @event_handler(StartupEvent)
-    def on_startup(self, event: StartupEvent):  # pyright: ignore[reportUnusedParameter]
-        """Register CORS after_request handler on a Quart blueprint."""
-
+    @event_handler(SetupAppEvent)
+    def on_setup_app(self, event: SetupAppEvent):  # pyright: ignore[reportUnusedParameter]
         @self._blueprint.after_request
         def after_request(response: Response):  # pyright: ignore[reportUnusedFunction]
             if not self._configuration.api_cors_enable:
