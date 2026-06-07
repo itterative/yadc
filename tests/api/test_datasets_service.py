@@ -77,17 +77,26 @@ class TestListImages:
 
 
 @pytest.fixture
-def service():
-    """Create a DatasetService with mocked dependencies."""
-    mock_event_dispatcher = MagicMock()
-    mock_dataset_watcher = MagicMock()
-    mock_logging = MagicMock()
-    mock_logging.get_logger.return_value = MagicMock()
+def service(
+    db_connection_factory,
+    test_configuration,
+    logging_factory,
+):
+    """A real DatasetService with a real repo, factory, and stubbed watcher / event dispatcher."""
+    from yadc.api.modules.dataset_watcher import DatasetWatcherService
+    from yadc.api.modules.event_dispatcher import EventDispatcher
 
-    svc = DatasetService.__new__(DatasetService)
-    svc._event_dispatcher = mock_event_dispatcher
-    svc._dataset_watcher = mock_dataset_watcher
-    svc._logger = mock_logging.get_logger()
+    repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
+    watcher = MagicMock(spec=DatasetWatcherService)
+    event_dispatcher = MagicMock(spec=EventDispatcher)
+    svc = DatasetService(
+        db=db_connection_factory,
+        watcher=watcher,
+        configuration=test_configuration,
+        event_dispatcher=event_dispatcher,
+        logging=logging_factory,
+        repo=repo,
+    )
     return svc
 
 
@@ -251,30 +260,6 @@ class TestApplyDiskScanOrchestration:
     ``with self._db.transaction():`` boundary. These tests exercise
     the orchestration end-to-end with a real factory and real repo.
     """
-
-    @pytest.fixture
-    def service(
-        self,
-        db_connection_factory,
-        test_configuration,
-        logging_factory,
-    ):
-        """A real DatasetService with a real repo, factory, and stubbed watcher / event dispatcher."""
-        from yadc.api.modules.dataset_watcher import DatasetWatcherService
-        from yadc.api.modules.event_dispatcher import EventDispatcher
-
-        repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
-        watcher = MagicMock(spec=DatasetWatcherService)
-        event_dispatcher = MagicMock(spec=EventDispatcher)
-        svc = DatasetService(
-            db=db_connection_factory,
-            watcher=watcher,
-            configuration=test_configuration,
-            event_dispatcher=event_dispatcher,
-            logging=logging_factory,
-            repo=repo,
-        )
-        return svc
 
     def _make_image_dir(self, tmp_path: Path) -> Path:
         img_dir = tmp_path / "images"
