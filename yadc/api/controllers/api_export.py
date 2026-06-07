@@ -10,7 +10,7 @@ from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
 from yadc.core.dataset_resolver import resolve_dataset
 from yadc.core.exporters import get_backend, list_backends, run_export
-from yadc.utils.dict_utils import load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml_file
 
 from ..modules.logging_factory import LoggingFactory
 from . import controller
@@ -118,7 +118,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         try:
             with open(config_path) as f:
                 raw = load_toml_file(f)
-            config = parse_config(toml_to_plain(raw), strict=False)
+            config = parse_config(raw, strict=False)
         except Exception as e:
             return jsonify_error(f"Invalid dataset config: {e}", status=400, code=ErrorCode.BAD_REQUEST)
 

@@ -10,7 +10,7 @@ from yadc.core import logging
 from yadc.core.config import parse_config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
-from yadc.utils.dict_utils import load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml_file
 
 from . import cli_common
 
@@ -22,7 +22,7 @@ def _load_images(dataset_stream: TextIO):
     dataset_toml_raw = load_toml_file(dataset_stream)
 
     try:
-        dataset_toml = parse_config(toml_to_plain(dataset_toml_raw))
+        dataset_toml = parse_config(dataset_toml_raw)
     except Exception as e:
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)

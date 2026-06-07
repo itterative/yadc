@@ -18,7 +18,7 @@ from yadc.cmd import templates as cmd_templates
 from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import resolve_dataset
-from yadc.utils.dict_utils import load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml_file
 
 from .options import CaptionJobOptions
 
@@ -143,7 +143,7 @@ def load_dataset_config(
     raw = apply_config_overrides(raw, options)
 
     try:
-        config = parse_config(toml_to_plain(raw))
+        config = parse_config(raw)
     except pydantic.ValidationError as e:
         raise ValueError(f"invalid configuration: {e}")
 

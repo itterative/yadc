@@ -261,7 +261,7 @@ class ManagedDatasetsService(Service):
             return
 
         with open(config_path) as f:
-            doc: TOMLDocument = cast(TOMLDocument, load_toml(f.read()))
+            doc: TOMLDocument = cast(TOMLDocument, load_toml(f.read(), plain=False))
 
         entries_raw: Any = cast("dict[str, Any]", doc).get("dataset")
         if not isinstance(entries_raw, list):

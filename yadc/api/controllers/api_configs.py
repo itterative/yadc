@@ -67,7 +67,7 @@ def api_configs(
         validation_error = None
         if parsed:
             try:
-                parse_config(toml_to_plain(parsed), strict=False)
+                parse_config(parsed, strict=False)
             except ValidationError as e:
                 validation_error = [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()]
 
@@ -113,8 +113,8 @@ def api_configs(
                     original_doc = load_toml(f.read())
             except Exception:
                 original_doc = {}
-            original_paths = _extract_dataset_paths(toml_to_plain(original_doc))
-            new_paths = _extract_dataset_paths(toml_to_plain(new_doc))
+            original_paths = _extract_dataset_paths(original_doc)
+            new_paths = _extract_dataset_paths(new_doc)
             if original_paths != new_paths:
                 return jsonify_error(
                     "Managed dataset paths cannot be changed. Use the upload panel to add or remove images.",
@@ -172,7 +172,7 @@ def api_configs(
             return jsonify_error("Permission denied", status=403, code=ErrorCode.PERMISSION_DENIED)
 
         try:
-            parsed = load_toml(content)
+            parsed = load_toml(content, plain=False)
         except Exception as e:
             return jsonify_error(f"Existing config is invalid TOML: {e}", status=500, code=ErrorCode.INTERNAL_ERROR)
 
@@ -201,9 +201,7 @@ def api_configs(
         new_content = tomlkit.dumps(merged_doc)
 
         if dry_run:
-            return jsonify(
-                {"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)}
-            )
+            return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
 
         try:
             with open(info.config_path, "w") as f:
@@ -219,9 +217,7 @@ def api_configs(
         # Rescan so the index picks up any changes
         datasets.rescan_dataset(name)
 
-        return jsonify(
-            {"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)}
-        )
+        return jsonify({"name": name, "config_path": info.config_path, "content": new_content, "parsed": toml_to_plain(merged_doc)})
 
     @app.get("/configs/<name>/history")
     def list_config_history(name: str):  # pyright: ignore[reportUnusedFunction]
@@ -289,7 +285,7 @@ def api_configs(
         validation_error = None
         if parsed:
             try:
-                parse_config(toml_to_plain(parsed), strict=False)
+                parse_config(parsed, strict=False)
             except ValidationError as e:
                 validation_error = [{"loc": err["loc"], "msg": err["msg"], "type": err["type"]} for err in e.errors()]
 

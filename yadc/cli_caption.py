@@ -38,7 +38,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import reapply_dataset_extras
 from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES
 from yadc.core.prediction import PredictionContext
-from yadc.utils.dict_utils import load_toml, load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml, load_toml_file
 
 from . import cli_common
 from .core import utils
@@ -303,7 +303,7 @@ async def _caption(
                             break
 
                         try:
-                            dataset_image_toml = toml_to_plain(load_toml(dataset_image_tmp_edited))
+                            dataset_image_toml = load_toml(dataset_image_tmp_edited)
                             dataset_image_current = DatasetImage(
                                 path=dataset_image_current.path,
                                 caption=dataset_image_current.caption,

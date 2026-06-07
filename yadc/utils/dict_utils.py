@@ -11,7 +11,7 @@ type TomlValue = str | int | float | bool | None | list["TomlValue"] | dict[str,
 """Recursive type representing any value that can appear in a TOML document."""
 
 
-def load_toml(content: str | bytes) -> dict[str, TomlValue]:
+def load_toml(content: str | bytes, *, plain: bool = True) -> dict[str, TomlValue]:
     """Typed wrapper around :func:`tomlkit.loads` that returns a plain ``dict``.
 
     tomlkit's ``loads()`` returns a ``TOMLDocument`` whose ``.items()`` and
@@ -20,19 +20,23 @@ def load_toml(content: str | bytes) -> dict[str, TomlValue]:
     every call site.  This wrapper widens the return type to
     ``dict[str, TomlValue]`` so downstream code is fully typed.
 
-    The runtime value is still a ``TOMLDocument`` (a ``dict`` subclass), so
-    round-tripping through :func:`tomlkit.dumps` still preserves comments
-    and formatting.
+    When *plain* is ``True`` (the default), the result is converted to plain
+    Python types via :func:`toml_to_plain` so that Pydantic's Rust-level
+    validation can process it.  Pass ``plain=False`` when you need the raw
+    ``TOMLDocument`` for round-tripping through :func:`tomlkit.dumps` or
+    :func:`toml_merge`.
     """
-    return cast("dict[str, TomlValue]", tomlkit.loads(content))
+    doc = cast("dict[str, TomlValue]", tomlkit.loads(content))
+    return toml_to_plain(doc) if plain else doc
 
 
-def load_toml_file(fp: IO[str] | IO[bytes]) -> dict[str, TomlValue]:
+def load_toml_file(fp: IO[str] | IO[bytes], *, plain: bool = True) -> dict[str, TomlValue]:
     """Typed wrapper around :func:`tomlkit.load` that returns a plain ``dict``.
 
-    See :func:`load_toml` for why this wrapper exists.
+    See :func:`load_toml` for why this wrapper exists and what *plain* does.
     """
-    return cast("dict[str, TomlValue]", tomlkit.load(fp))
+    doc = cast("dict[str, TomlValue]", tomlkit.load(fp))
+    return toml_to_plain(doc) if plain else doc
 
 
 def deep_merge(

@@ -542,7 +542,7 @@ class DatasetUploadService(Service):
         config_path = Path(info.config_path)
         if new_folder_names or has_root_files:
             try:
-                doc = cast(TOMLDocument, load_toml(config_path.read_text()))
+                doc = cast(TOMLDocument, load_toml(config_path.read_text(), plain=False))
             except Exception:
                 doc = tomlkit.document()
 

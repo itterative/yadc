@@ -3,7 +3,7 @@
 import pathlib
 from typing import Callable
 
-from yadc.utils.dict_utils import load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml_file
 
 from .config import ConfigDatasetEntry
 from .dataset import DatasetImage
@@ -37,7 +37,7 @@ def read_image_from_disk(file_path: str, caption_suffix: str) -> DatasetImage | 
     else:
         try:
             with open(dataset_image.toml_path, "r") as f:
-                dataset_image_toml = toml_to_plain(load_toml_file(f))
+                dataset_image_toml = load_toml_file(f)
         except Exception:
             return None
 

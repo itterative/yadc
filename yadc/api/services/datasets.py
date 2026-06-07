@@ -315,7 +315,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras_raw = f.read()
                     f.seek(0)
-                    extras = toml_to_plain(load_toml(extras_raw))
+                    extras = load_toml(extras_raw)
             except Exception:
                 pass
 
@@ -355,7 +355,7 @@ class DatasetService(Service):
 
         # Apply extras as additional fields on the DatasetImage
         if extras:
-            dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
+            dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
 
         # Read current caption from .txt file
         dataset_image.caption = dataset_image.read_caption()
@@ -442,7 +442,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras = load_toml(f.read())
                 if extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
             except Exception:
                 pass
 
@@ -571,7 +571,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     extras = load_toml(f.read())
                 if extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(extras)})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **extras})
             except Exception:
                 pass
         dataset_image.caption = dataset_image.read_caption()
@@ -614,7 +614,7 @@ class DatasetService(Service):
                 with open(dataset_image.toml_path) as f:
                     current_extras = load_toml(f.read())
                 if current_extras:
-                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **toml_to_plain(current_extras)})
+                    dataset_image = DatasetImage.model_validate({"path": str(image_path), **current_extras})
             except Exception:
                 pass
         dataset_image.caption = dataset_image.read_caption()
@@ -753,7 +753,7 @@ class DatasetService(Service):
     def _load_raw_config(self, config_path: Path) -> dict[str, Any]:
         """Load a TOML config as a raw dict."""
         with open(config_path) as f:
-            return load_toml_file(f)
+            return load_toml_file(f, plain=False)
 
     def _resolve_relative_paths(self, raw: dict[str, Any], base_dir: Path) -> dict[str, Any]:
         """Resolve relative dataset paths in a raw config dict to absolute paths."""
@@ -791,7 +791,7 @@ class DatasetService(Service):
         try:
             with open(config_path) as f:
                 raw = load_toml_file(f)
-            return parse_config(toml_to_plain(raw), strict=False)
+            return parse_config(raw, strict=False)
         except Exception as e:
             self._logger.warning("Failed to parse config at %s: %s", config_path, e)
             return None
