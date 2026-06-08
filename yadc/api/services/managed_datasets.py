@@ -28,7 +28,8 @@ from tomlkit.toml_document import TOMLDocument
 
 from yadc.utils.dict_utils import load_toml
 
-from ..modules.dataset_watcher import SELF_JOB_ID, SIDECAR_EXTENSION_GLOBS, DatasetWatcherService
+from ..constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSION_GLOBS
+from ..modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 from .datasets import DatasetService
@@ -81,8 +82,6 @@ class ManagedDatasetsService(Service):
 
         images_dir = managed_images_dir(info.config_path)
         folders_dir = managed_folders_dir(info.config_path)
-
-        from .datasets import IMAGE_EXTENSIONS  # local import to avoid circular at module load
 
         result: list[dict[str, Any]] = []
 

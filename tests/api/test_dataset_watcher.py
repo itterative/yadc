@@ -391,3 +391,81 @@ class TestUnwatchPatterns:
         watcher.unwatch_dataset("ds")
 
         assert "ds" not in watcher._expected_patterns
+
+
+class TestChangedPathsTracking:
+    """``_changed_paths`` — accumulator shipped on ``DatasetChangedEvent``.
+
+    The watcher records every filesystem change in a per-dataset set
+    during the debounce window, then ships that set on the dispatched
+    ``DatasetChangedEvent.changed_paths`` so the dataset service can
+    do a targeted index update.
+    """
+
+    def test_on_fs_change_records_path(self, watcher):
+        """Each filesystem change adds its path to the per-dataset set."""
+        watcher._on_fs_change("ds", "/img/a.jpg")
+
+        assert "/img/a.jpg" in watcher._changed_paths.get("ds", set())
+
+    def test_on_fs_change_deduplicates(self, watcher):
+        """Multiple events for the same path collapse to one set entry."""
+        watcher._on_fs_change("ds", "/img/a.jpg")
+        watcher._on_fs_change("ds", "/img/a.jpg")
+        watcher._on_fs_change("ds", "/img/a.jpg")
+
+        assert watcher._changed_paths["ds"] == {"/img/a.jpg"}
+
+    def test_records_both_expected_and_unexpected(self, watcher):
+        """Changed paths are tracked regardless of expected/unexpected status.
+
+        The service is the authority on whether to act on a self-originated
+        change (it checks ``job_id``), so the watcher records every
+        path it sees and lets the consumer decide.
+        """
+        watcher.expect_file_change("ds", "/img/a.txt", source="ui:abc")
+        watcher._on_fs_change("ds", "/img/a.txt")  # expected
+        watcher._on_fs_change("ds", "/img/b.jpg")  # unexpected
+
+        assert watcher._changed_paths["ds"] == {"/img/a.txt", "/img/b.jpg"}
+
+    def test_dispatch_passes_paths_to_event(self, watcher):
+        """``_dispatch_change`` populates the event's ``changed_paths`` field."""
+        # Bypass the debounce timer: directly populate state and dispatch.
+        watcher._changed_paths["ds"] = {"/img/a.jpg", "/img/b.png"}
+        watcher._unexpected_changes["ds"] = True
+
+        watcher._dispatch_change("ds", None)
+
+        event = watcher._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, DatasetChangedEvent)
+        assert sorted(event.changed_paths) == ["/img/a.jpg", "/img/b.png"]
+
+    def test_dispatch_clears_changed_paths(self, watcher):
+        """``_dispatch_change`` pops the per-dataset set after shipping it."""
+        watcher._changed_paths["ds"] = {"/img/a.jpg"}
+        watcher._unexpected_changes["ds"] = True
+
+        watcher._dispatch_change("ds", None)
+
+        assert "ds" not in watcher._changed_paths
+
+    def test_dispatch_with_no_paths_dispatches_empty(self, watcher):
+        """A debounce window with no tracked paths (e.g. timer fired after clear) still works."""
+        watcher._unexpected_changes["ds"] = True
+        # _changed_paths is empty
+
+        watcher._dispatch_change("ds", None)
+
+        event = watcher._event_dispatcher.dispatch.call_args[0][0]
+        assert event.changed_paths == []
+
+    def test_unwatch_clears_changed_paths(self, watcher, dirs):
+        """``unwatch_dataset`` drops the per-dataset changed-paths set."""
+        watcher._observer.schedule.return_value = MagicMock(path=dirs[0])
+        watcher.watch_dataset("ds", dirs)
+        watcher._changed_paths["ds"] = {"/img/a.jpg"}
+
+        watcher.unwatch_dataset("ds")
+
+        assert "ds" not in watcher._changed_paths

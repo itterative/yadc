@@ -1,4 +1,9 @@
-"""Tests for DatasetService.preview_prompt — verifying caption and extras are loaded."""
+"""Tests for DatasetService — ``list_images`` cursor decoding, ``preview_prompt`` context, and dispatch logic for ``DatasetChangedEvent``.
+
+Tests for ``update_extras`` / ``update_caption`` / ``get_history`` live in
+:class:`TestUpdateExtrasHistoryRoundTrip` and use a real ``DatasetService``
+with a real database to exercise the on-disk history sidecar round-trip.
+"""
 
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -6,32 +11,24 @@ from unittest.mock import MagicMock
 import pytest
 
 from yadc.api.events import DatasetChangedEvent
+from yadc.api.modules import DatasetWatcherService, DBConnectionFactory, EventDispatcher
+from yadc.api.services import DatasetLoader, DatasetScanner
 from yadc.api.services.dataset_repository import DatasetRepository, ImageInfo
 from yadc.api.services.datasets import DatasetService
 
 
 @pytest.fixture
-def service(
-    db_connection_factory,
-    test_configuration,
-    logging_factory,
-):
-    """A real DatasetService with a real repo, factory, and stubbed watcher / event dispatcher."""
-    from yadc.api.modules.dataset_watcher import DatasetWatcherService
-    from yadc.api.modules.event_dispatcher import EventDispatcher
-
-    repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
-    watcher = MagicMock(spec=DatasetWatcherService)
-    event_dispatcher = MagicMock(spec=EventDispatcher)
-    svc = DatasetService(
-        db=db_connection_factory,
-        watcher=watcher,
+def service(test_configuration, logging_factory):
+    return DatasetService(
+        db=MagicMock(spec=DBConnectionFactory),
+        watcher=MagicMock(spec=DatasetWatcherService),
         configuration=test_configuration,
-        event_dispatcher=event_dispatcher,
+        event_dispatcher=MagicMock(spec=EventDispatcher),
         logging=logging_factory,
-        repo=MagicMock(wraps=repo),
+        repo=MagicMock(spec=DatasetRepository),
+        scanner=MagicMock(spec=DatasetScanner),
+        loader=MagicMock(spec=DatasetLoader),
     )
-    return svc
 
 
 @pytest.fixture
@@ -200,177 +197,87 @@ Please improve it.{% endset %}
 
 
 class TestOnDatasetChangedSkipsSelfOriginated:
-    """Tests for _on_dataset_changed skipping rescan for self-originated changes."""
+    """Tests for _on_dataset_changed dispatching to scanner vs skipping.
+
+    The service no longer does the disk walk itself — it delegates to
+    :class:`DatasetScanner`. These tests verify the service's branch
+    logic (which event types route to which scanner method) by
+    mocking the scanner and the repo's ``get_dataset_row``.
+    """
 
     def test_skips_rescan_when_job_id_is_real(self, service):
         """Events with a real job_id (captioning) should not trigger rescan."""
-        service.rescan_dataset = MagicMock(return_value=True)
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
         event = DatasetChangedEvent(dataset_name="test_ds", job_id="abc123")
 
         service._on_dataset_changed(event)
 
-        service.rescan_dataset.assert_not_called()
+        service._scanner.scan_disk.assert_not_called()
+        service._scanner.scan_targeted.assert_not_called()
 
     def test_skips_rescan_when_job_id_is_self(self, service):
         """Events tagged as SELF_JOB_ID (webui edits) should not trigger rescan."""
-        service.rescan_dataset = MagicMock(return_value=True)
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
         event = DatasetChangedEvent(dataset_name="test_ds", job_id="self")
 
         service._on_dataset_changed(event)
 
-        service.rescan_dataset.assert_not_called()
+        service._scanner.scan_disk.assert_not_called()
+        service._scanner.scan_targeted.assert_not_called()
 
-    def test_rescans_when_job_id_is_none(self, service):
-        """Events with no job_id (external change) should trigger rescan."""
-        service.rescan_dataset = MagicMock(return_value=True)
+    def test_full_scan_when_job_id_is_none(self, service):
+        """Events with no job_id and no changed_paths fall back to a full disk scan."""
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
+        service._repo.get_dataset_row = MagicMock(return_value=(1, "/tmp/cfg.toml"))
         event = DatasetChangedEvent(dataset_name="test_ds", job_id=None)
 
         service._on_dataset_changed(event)
 
-        service.rescan_dataset.assert_called_once_with("test_ds")
+        service._scanner.scan_disk.assert_called_once_with(1, "/tmp/cfg.toml")
+        service._scanner.scan_targeted.assert_not_called()
 
-    def test_rescans_when_job_id_is_empty(self, service):
-        """Events with empty string job_id should trigger rescan."""
-        service.rescan_dataset = MagicMock(return_value=True)
+    def test_full_scan_when_job_id_is_empty(self, service):
+        """Events with empty string job_id fall back to a full disk scan."""
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
+        service._repo.get_dataset_row = MagicMock(return_value=(1, "/tmp/cfg.toml"))
         event = DatasetChangedEvent(dataset_name="test_ds", job_id="")
 
         service._on_dataset_changed(event)
 
-        service.rescan_dataset.assert_called_once_with("test_ds")
+        service._scanner.scan_disk.assert_called_once_with(1, "/tmp/cfg.toml")
+        service._scanner.scan_targeted.assert_not_called()
 
+    def test_targeted_update_when_changed_paths_present(self, service):
+        """Events with changed_paths use the targeted update path, not the full scan."""
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
+        service._repo.get_dataset_row = MagicMock(return_value=(1, "/tmp/cfg.toml"))
+        event = DatasetChangedEvent(
+            dataset_name="test_ds",
+            job_id=None,
+            changed_paths=["/data/images/photo.jpg"],
+        )
 
-class TestApplyDiskScanOrchestration:
-    """Verify the service composes repo calls inside a single transaction.
+        service._on_dataset_changed(event)
 
-    The repo's public methods each use ``self._db.connection()`` which
-    auto-enrolls in the active transaction. The service owns the
-    ``with self._db.transaction():`` boundary. These tests exercise
-    the orchestration end-to-end with a real factory and real repo.
-    """
+        service._scanner.scan_targeted.assert_called_once_with(1, ["/data/images/photo.jpg"])
+        service._scanner.scan_disk.assert_not_called()
 
-    def _make_image_dir(self, tmp_path: Path) -> Path:
-        img_dir = tmp_path / "images"
-        img_dir.mkdir()
-        # Two real images so the scan has something to find.
-        from PIL import Image
+    def test_skips_when_dataset_not_found(self, service):
+        """Unknown dataset name should be a no-op (no crash, no scan)."""
+        service._scanner.scan_disk = MagicMock(return_value=False)
+        service._scanner.scan_targeted = MagicMock(return_value=False)
+        service._repo.get_dataset_row = MagicMock(return_value=None)
+        event = DatasetChangedEvent(dataset_name="missing", job_id=None, changed_paths=["/data/x.jpg"])
 
-        for name in ("a.jpg", "b.png"):
-            Image.new("RGB", (1, 1), color="red").save(img_dir / name)
-        return img_dir
+        service._on_dataset_changed(event)
 
-    def _write_config(self, tmp_path: Path, img_dir: Path) -> Path:
-        config = tmp_path / "config.toml"
-        config.write_text(f'[[dataset]]\npath = "{img_dir}"\n')
-        return config
-
-    def test_register_inserts_images(self, service, tmp_path):
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-
-        result = service.register("alpha", str(config_path), source="import")
-
-        assert result.name == "alpha"
-        assert result.source == "import"
-        # Both images were indexed.
-        assert result.image_count == 2
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "b.png")) is not None
-
-    def test_rescan_drops_removed_images(self, service, tmp_path):
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-
-        service.register("alpha", str(config_path), source="import")
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
-
-        # Remove one image from disk and re-scan.
-        (img_dir / "a.jpg").unlink()
-        assert service.rescan_dataset("alpha") is True
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is None
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "b.png")) is not None
-        assert service._repo.get_dataset("alpha").image_count == 1
-
-    def test_rescan_picks_up_new_images(self, service, tmp_path):
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-        service.register("alpha", str(config_path), source="import")
-
-        # Add a new image to disk and re-scan.
-        from PIL import Image
-
-        Image.new("RGB", (1, 1), color="blue").save(img_dir / "c.jpg")
-        assert service.rescan_dataset("alpha") is True
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "c.jpg")) is not None
-        assert service._repo.get_dataset("alpha").image_count == 3
-
-    def test_rescan_skips_unchanged_images(self, service, tmp_path):
-        """Re-scanning a dataset whose disk state matches the index should not issue per-image SQL writes.
-
-        Verifies the staleness filter: ``_apply_disk_scan`` should
-        detect that every row's stored metadata matches the freshly
-        walked disk and skip the upsert loop entirely. The test
-        patches the repo's ``upsert_image`` to count invocations; on
-        a no-op rescan, it should be called zero times.
-        """
-        from unittest.mock import patch
-
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-        service.register("alpha", str(config_path), source="import")
-
-        with patch.object(service._repo, "upsert_image") as mock_upsert:
-            assert service.rescan_dataset("alpha") is True
-            assert mock_upsert.call_count == 0
-
-    def test_rescan_only_upserts_changed_images(self, service, tmp_path):
-        """Re-scanning a dataset with one new sidecar should only upsert the changed image, not all of them."""
-        from unittest.mock import patch
-
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-        service.register("alpha", str(config_path), source="import")
-
-        # Add a sidecar to one image; that image's has_caption flips to True.
-        (img_dir / "a.jpg").with_suffix(".txt").write_text("a red square")
-
-        with patch.object(service._repo, "upsert_image") as mock_upsert:
-            assert service.rescan_dataset("alpha") is True
-            assert mock_upsert.call_count == 1
-            upserted_path = mock_upsert.call_args.kwargs["path"]
-            assert upserted_path == str(img_dir / "a.jpg")
-            assert mock_upsert.call_args.kwargs["has_caption"] is True
-
-    def test_atomicity_on_failure(self, service, tmp_path, db_connection_factory):
-        """If a write inside the scan transaction fails, no partial state is applied.
-
-        Verifies that the ``with self._db.transaction():`` boundary in
-        the service correctly rolls back the repo's writes when one of
-        them fails. The test drops the ``datasets`` table mid-scan to
-        force the second repo call to fail; the pre-populated image
-        must still be there after the rollback.
-        """
-        import sqlite3
-
-        img_dir = self._make_image_dir(tmp_path)
-        config_path = self._write_config(tmp_path, img_dir)
-
-        # Register normally first.
-        service.register("alpha", str(config_path), source="import")
-        assert service._repo.get_image_by_path("alpha", str(img_dir / "a.jpg")) is not None
-
-        # Drop the dataset_images table to force the next scan's
-        # ``list_image_paths`` read to fail mid-transaction. Anything
-        # the transaction wrote (nothing in this case, since the
-        # read fails first) should be rolled back.
-        with db_connection_factory.connection() as conn:
-            conn.execute("DROP TABLE dataset_images")
-            conn.commit()
-
-        with pytest.raises(sqlite3.OperationalError):
-            service._apply_disk_scan(
-                dataset_id=service._repo.get_dataset_row("alpha")[0],
-                config_path=str(config_path),
-            )
+        service._scanner.scan_disk.assert_not_called()
+        service._scanner.scan_targeted.assert_not_called()
 
 
 class TestUpdateExtrasHistoryRoundTrip:
@@ -395,10 +302,15 @@ class TestUpdateExtrasHistoryRoundTrip:
         test_configuration,
         logging_factory,
     ):
-        from yadc.api.modules.dataset_watcher import DatasetWatcherService
-        from yadc.api.modules.event_dispatcher import EventDispatcher
-
         repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
+        loader = DatasetLoader(logging=logging_factory)
+        scanner = DatasetScanner(
+            db=db_connection_factory,
+            repo=repo,
+            loader=loader,
+            logging=logging_factory,
+            configuration=test_configuration,
+        )
         watcher = MagicMock(spec=DatasetWatcherService)
         event_dispatcher = MagicMock(spec=EventDispatcher)
         return DatasetService(
@@ -408,6 +320,8 @@ class TestUpdateExtrasHistoryRoundTrip:
             event_dispatcher=event_dispatcher,
             logging=logging_factory,
             repo=repo,
+            scanner=scanner,
+            loader=loader,
         )
 
     def _setup_dataset(self, service: DatasetService, tmp_path: Path) -> tuple[Path, str]:

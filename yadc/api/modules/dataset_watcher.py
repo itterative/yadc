@@ -19,6 +19,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers.api import BaseObserver, ObservedWatch
 
 from ..configuration import Configuration
+from ..constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSIONS
 from ..events import DatasetChangedEvent, ShutdownEvent, StartupEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .logging_factory import LoggingFactory
@@ -45,13 +46,7 @@ class ExpectedPatternEntry(NamedTuple):
     source: str
 
 
-# Extensions we care about — both images and sidecars.
-_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
-SIDECAR_EXTENSIONS: frozenset[str] = frozenset({".txt", ".toml", ".history~", ".draft~"})
-# Glob suffixes for sidecars when attached to a stem (used in expect_pattern_change).
-# .txt / .toml / .history~ are exact-match patterns; .*.draft~ matches named drafts.
-SIDECAR_EXTENSION_GLOBS: tuple[str, ...] = (".txt", ".toml", ".history~", ".*.draft~")
-_WATCHED_EXTENSIONS = _IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
+_WATCHED_EXTENSIONS = IMAGE_EXTENSIONS | SIDECAR_EXTENSIONS
 
 
 def _is_watched(path: str) -> bool:
@@ -88,8 +83,12 @@ class _DirEventHandler(FileSystemEventHandler):
     @override
     def on_moved(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            if _is_watched(str(event.src_path)) or _is_watched(str(event.dest_path)):
-                self._on_change(self._dataset_name, str(event.src_path))
+            src = str(event.src_path)
+            dest = str(event.dest_path)
+            if _is_watched(src):
+                self._on_change(self._dataset_name, src)
+            if _is_watched(dest):
+                self._on_change(self._dataset_name, dest)
 
 
 class DatasetWatcherService(Service):
@@ -125,6 +124,12 @@ class DatasetWatcherService(Service):
         self._expected_patterns: dict[str, deque[ExpectedPatternEntry]] = {}
         # dataset_name -> True if any unexpected file changed during debounce window
         self._unexpected_changes: dict[str, bool] = {}
+        # dataset_name -> set of filesystem paths observed during the
+        # current debounce window. Popped and shipped in the
+        # ``DatasetChangedEvent.changed_paths`` field so the dataset
+        # service can do targeted upserts/deletes without walking
+        # every configured image directory.
+        self._changed_paths: dict[str, set[str]] = {}
         self._lock: threading.Lock = threading.Lock()
 
     @event_handler(StartupEvent)
@@ -270,6 +275,7 @@ class DatasetWatcherService(Service):
         self._expected_files.pop(dataset_name, None)
         self._expected_patterns.pop(dataset_name, None)
         self._unexpected_changes.pop(dataset_name, None)
+        self._changed_paths.pop(dataset_name, None)
 
         watches = self._watches.pop(dataset_name, [])
         for watch, _handler in watches:
@@ -322,6 +328,12 @@ class DatasetWatcherService(Service):
                     was_unexpected,
                 )
 
+            # Record the affected path so the dataset service can do a
+            # targeted update. We track both expected and unexpected
+            # paths — the service is the authority on whether to act
+            # (it skips self-originated events via the job_id).
+            self._changed_paths.setdefault(dataset_name, set()).add(file_path)
+
             # Cancel existing timer (debounce restart)
             old_timer = self._timers.pop(dataset_name, None)
             is_rebatch = old_timer is not None
@@ -354,6 +366,8 @@ class DatasetWatcherService(Service):
             unexpected = self._unexpected_changes.pop(dataset_name, False)
             expected_entries = self._expected_files.pop(dataset_name, deque())
             expected_patterns = self._expected_patterns.pop(dataset_name, deque())
+            changed_paths_set = self._changed_paths.pop(dataset_name, set())
+        changed_paths = sorted(changed_paths_set)
 
         # If all changes in this debounce window were expected (no unexpected
         # changes) and no captioning job_id, derive a source from the expected
@@ -367,12 +381,13 @@ class DatasetWatcherService(Service):
             suppressed = True
 
         self._logger.debug(
-            "Dispatching dataset_changed. [dataset=%s, job_id=%s, unexpected=%s, expected=%d, patterns=%d, suppressed=%s]",
+            "Dispatching dataset_changed. [dataset=%s, job_id=%s, unexpected=%s, expected=%d, patterns=%d, changed_paths=%d, suppressed=%s]",
             dataset_name,
             job_id,
             unexpected,
             len(expected_entries),
             len(expected_patterns),
+            len(changed_paths),
             suppressed,
         )
-        self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name, job_id=job_id))
+        self._event_dispatcher.dispatch(DatasetChangedEvent(dataset_name=dataset_name, job_id=job_id, changed_paths=changed_paths))

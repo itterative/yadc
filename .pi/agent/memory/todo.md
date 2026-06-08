@@ -111,10 +111,15 @@ The first pass of history browsing/restoring is implemented (backend API + front
 
 ## Incremental filesystem index updates
 
-~~Currently, `DatasetChangedEvent` triggers a full `rescan_dataset()` which re-scans every file in every directory of the dataset. This is wasteful when only one file was added or removed.~~ **PARTIAL** — Diff scans are in: `DatasetService._apply_disk_scan` now compares the freshly-walked disk state against the current index (via `DatasetRepository.list_image_infos`) and only writes SQL for changed rows (`to_upsert` + `to_delete`). The function returns `bool` so callers (`_refresh_stale_datasets` background job and `rescan_dataset` API endpoint) only dispatch `DatasetChangedEvent` when the scan found real changes. The `_refresh_stale_datasets` interval is now `dataset_refresh_interval_seconds` (default 300s) and runs in a background thread via `JobScheduler` (with `_refresh_lock` to serialize against manual rescans).
+**DONE** — Watcher-level change detection now plumbs affected paths through to the dataset service for targeted index updates.
 
-**Still pending**:
-- Pass the affected file path(s) in the event (or a new granular event type like `DatasetFileAddedEvent` / `DatasetFileRemovedEvent`) so `DatasetService` can do targeted SQLite upserts/deletes for the affected files **without** walking the whole dataset. Currently every external change still triggers a full disk walk.
+- `DatasetChangedEvent` carries a new optional `changed_paths: list[str]` field (empty for legacy/manual callers).
+- `DatasetWatcherService` accumulates the per-dataset set of changed paths in `_changed_paths` during the debounce window and ships it on the dispatched event. `on_moved` records both `src_path` and `dest_path` so renames don't drop the new file.
+- `DatasetService._on_dataset_changed` dispatches to `DatasetScanner.scan_targeted` when the event has `changed_paths` populated, falling back to `DatasetScanner.scan_disk` (full walk) for legacy/empty cases. Self-originated events (`job_id` set) are still skipped — the API endpoints keep the index in sync.
+- `DatasetScanner.scan_targeted` maps each changed path to its image row(s) via `resolve_affected_image_paths` (strips `.txt`/`.toml`/`.history~` to get the image stem; expands drafts to `<stem>.<ext>` candidates and filters to rows in the index), stats each candidate, and does targeted `upsert_image` / `delete_image` for the affected rows only. `update_dataset_stats` is updated with the new count (computed locally: `len(existing) + new_rows - len(to_delete)`).
+- **Refactor (post-completion)**: disk-scanning code was extracted out of `DatasetService` into `DatasetScanner` (`scan_disk`, `scan_targeted`, `read_disk`, `resolve_affected_image_paths`, `scan_image_meta`, `_image_meta_differs`, `IMAGE_EXTENSIONS`). Config-loading helpers (`load_config`, `load_raw_config`, `resolve_relative_paths`, `get_dataset_paths`) went to a new `DatasetLoader` service. `DatasetService` shrank from 1300+ to 891 lines and now orchestrates both. Tests split into `test_dataset_scanner.py` and `test_dataset_loader.py`; `test_datasets_service.py` kept the lifecycle/CRUD coverage.
+- `_scan_disk` and the new `_scan_image_meta` helper share the per-image metadata extraction logic.
+- Tests added: 11 in `test_datasets_service.py` (resolver + targeted update) and 7 in `test_dataset_watcher.py` (changed-paths tracking).
 
 ## Unify DatasetImage resolution for webui preview and captioning
 

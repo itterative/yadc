@@ -1,4 +1,4 @@
-"""Dataset service — filesystem scanning, indexing orchestration, image queries.
+"""Dataset service — orchestration, image queries, caption/draft/history operations.
 
 A "dataset" is a named yadc config TOML stored in the XDG state directory
 (``STATE_PATH/datasets/<name>/config.toml``). The TOML is the
@@ -16,10 +16,9 @@ Both end up as ``STATE_PATH/datasets/<name>/config.toml``.
 This service owns:
 
 - The watcher integration (auto-rescan on external changes)
-- The file-system side of every operation (TOML parsing, caption
-  read/write, draft files, history files)
-- The disk-walking side of the dataset scan (the SQL side lives in
-  :class:`DatasetRepository.apply_scan_diff`)
+- The file-system side of caption / extras / history / draft operations
+- Lifecycle orchestration: delegates disk walking to
+  :class:`DatasetScanner` and config reading to :class:`DatasetLoader`.
 
 The :class:`DatasetRepository` owns the SQL, the data model
 (``DatasetInfo``, ``ImageInfo``), and connection / transaction
@@ -34,15 +33,13 @@ import time
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import tomlkit
-from PIL import Image
 
 from yadc.cmd.app import STATE_PATH
-from yadc.core.config import Config, parse_config
 from yadc.core.dataset import DatasetImage
-from yadc.utils.dict_utils import load_toml, load_toml_file, toml_to_plain
+from yadc.utils.dict_utils import load_toml, toml_to_plain
 
 from ..configuration import Configuration
 from ..events import DatasetChangedEvent
@@ -52,9 +49,8 @@ from ..modules.event_dispatcher import EventDispatcher, event_handler
 from ..modules.job_scheduler import JobScheduler
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
-
-# Image extensions we recognize (matching what PIL can open).
-IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico"})
+from .dataset_loader import DatasetLoader
+from .dataset_scanner import DatasetScanner
 
 # Base directory for all dataset state directories.
 DATASETS_DIR: Path = STATE_PATH / "datasets"
@@ -119,12 +115,16 @@ class DatasetService(Service):
         event_dispatcher: EventDispatcher,
         logging: LoggingFactory,
         repo: DatasetRepository,
+        scanner: DatasetScanner,
+        loader: DatasetLoader,
         job_scheduler: JobScheduler | None = None,
     ):
         self._db: DBConnectionFactory = db
         self._watcher: DatasetWatcherService = watcher
         self._configuration: Configuration = configuration
         self._repo: DatasetRepository = repo
+        self._scanner: DatasetScanner = scanner
+        self._loader: DatasetLoader = loader
         self._logger: Logger = logging.get_logger(__name__)
         self._event_dispatcher: EventDispatcher = event_dispatcher
         # Serialize the stale-refresh pass so the background thread and a
@@ -640,8 +640,8 @@ class DatasetService(Service):
             raise ValueError(f"Not a file: {source}")
 
         # Load and resolve relative paths
-        raw = self._load_raw_config(source)
-        raw = self._resolve_relative_paths(raw, source.parent)
+        raw = self._loader.load_raw_config(source)
+        raw = self._loader.resolve_relative_paths(raw, source.parent)
 
         # Write resolved paths back to the original file
         with open(source, "w") as f:
@@ -684,13 +684,13 @@ class DatasetService(Service):
         if row is None:
             return False
         dataset_id, config_path = row
-        changed = self._apply_disk_scan(dataset_id, config_path)
+        changed = self._scanner.scan_disk(dataset_id, config_path)
 
         # Re-register filesystem watcher with current paths (picks up path changes)
         if config_path:
             config_path_obj = Path(config_path)
-            config = self._load_config(config_path_obj)
-            paths = self._get_dataset_paths(config, config_path_obj)
+            config = self._loader.load_config(config_path_obj)
+            paths = self._loader.get_dataset_paths(config, config_path_obj)
             self._watcher.watch_dataset(name, paths)
 
         if changed:
@@ -713,11 +713,11 @@ class DatasetService(Service):
 
     def register(self, name: str, config_path: str, *, source: str = "import") -> DatasetInfo:
         """Upsert a dataset record and scan its images."""
-        config = self._load_config(Path(config_path))
+        config = self._loader.load_config(Path(config_path))
 
         # Walk the disk outside the transaction: file I/O is unrelated to
         # the DB and shouldn't hold a transaction open.
-        disk_images = self._scan_disk(config_path, config=config)
+        disk_images = self._scanner.read_disk(config_path, config=config)
 
         with self._db.transaction():
             dataset_id = self._repo.upsert_dataset(name, config_path, source)
@@ -740,7 +740,7 @@ class DatasetService(Service):
             self._repo.update_dataset_stats(dataset_id, len(disk_images))
 
         # Start watching the dataset's directories
-        paths = self._get_dataset_paths(config, Path(config_path))
+        paths = self._loader.get_dataset_paths(config, Path(config_path))
         if paths:
             self._watcher.watch_dataset(name, paths)
 
@@ -748,261 +748,17 @@ class DatasetService(Service):
         assert result is not None
         return result
 
-    # --- Private helpers ---
-
-    def _load_raw_config(self, config_path: Path) -> dict[str, Any]:
-        """Load a TOML config as a raw dict."""
-        with open(config_path) as f:
-            return load_toml_file(f, plain=False)
-
-    def _resolve_relative_paths(self, raw: dict[str, Any], base_dir: Path) -> dict[str, Any]:
-        """Resolve relative dataset paths in a raw config dict to absolute paths."""
-        # Handle v2 [[dataset]]
-        dataset_entries: Any = raw.get("dataset")
-        if isinstance(dataset_entries, list):
-            dataset_entries = cast(list[dict[str, Any]], dataset_entries)
-            for entry in dataset_entries:
-                if isinstance(entry, dict) and "path" in entry:
-                    p = Path(cast(str, entry["path"]))
-                    if not p.is_absolute():
-                        entry["path"] = str((base_dir / p).resolve())
-
-        # Handle v1 [dataset] paths
-        dataset_v1: Any = raw.get("dataset")
-        if isinstance(dataset_v1, dict) and "paths" in dataset_v1:
-            dataset_v1 = cast(dict[str, Any], dataset_v1)
-            resolved: list[str] = []
-            for p in cast(list[str], dataset_v1["paths"]):
-                pp = Path(p)
-                if not pp.is_absolute():
-                    resolved.append(str((base_dir / pp).resolve()))
-                else:
-                    resolved.append(p)
-            dataset_v1["paths"] = resolved
-
-        return raw
-
-    def _load_config(self, config_path: Path) -> Config | None:
-        """Load and parse a dataset config file with relaxed validation.
-
-        Uses ``strict=False`` so webui TOMLs (missing api_url/model/template)
-        parse cleanly. Those fields are validated when creating the captioner.
-        """
-        try:
-            with open(config_path) as f:
-                raw = load_toml_file(f)
-            return parse_config(raw, strict=False)
-        except Exception as e:
-            self._logger.warning("Failed to parse config at %s: %s", config_path, e)
-            return None
-
-    def _scan_disk(self, config_path: str | None, config: Config | None = None) -> dict[str, dict[str, Any]]:
-        """Walk the image directories for a dataset and return scanned metadata.
-
-        Returns a dict mapping each on-disk image path to its metadata.
-        Empty dict if the config is missing or has no image directories.
-        """
-        if not config_path:
-            return {}
-
-        config_file = Path(config_path)
-        if not config_file.exists():
-            return {}
-
-        if config is None:
-            config = self._load_config(config_file)
-        if config is None:
-            return {}
-
-        image_dirs: list[Path] = []
-        for entry in config.dataset:
-            if entry.path:
-                p = Path(entry.path)
-                if not p.is_absolute():
-                    p = config_file.parent / p
-                if p.is_dir():
-                    image_dirs.append(p.resolve())
-
-        if not image_dirs:
-            return {}
-
-        disk_images: dict[str, dict[str, Any]] = {}
-        for img_dir in image_dirs:
-            for child in sorted(img_dir.iterdir()):
-                if not child.is_file():
-                    continue
-                if child.suffix.lower() not in IMAGE_EXTENSIONS:
-                    continue
-
-                caption_path = child.with_suffix(".txt")
-                toml_path = child.with_suffix(".toml")
-
-                # Find drafts
-                draft_names: list[str] = []
-                stem = child.stem
-                for f in child.parent.iterdir():
-                    if f.name.startswith(stem + ".") and f.name.endswith(".draft~"):
-                        draft_name = f.name[len(stem) + 1 : -len(".draft~")]
-                        if draft_name:
-                            draft_names.append(draft_name)
-
-                try:
-                    mod_time = child.stat().st_mtime
-                except OSError:
-                    mod_time = None
-
-                # Read image dimensions
-                img_width = 0
-                img_height = 0
-                try:
-                    with Image.open(child) as img:
-                        img_width, img_height = img.size
-                except Exception:
-                    pass
-
-                disk_images[str(child)] = {
-                    "file_name": child.name,
-                    "has_caption": caption_path.exists(),
-                    "has_toml": toml_path.exists(),
-                    "width": img_width,
-                    "height": img_height,
-                    "draft_names": ",".join(sorted(draft_names)),
-                    "last_modified_t": mod_time,
-                }
-        return disk_images
-
-    def _apply_disk_scan(
-        self,
-        dataset_id: int,
-        config_path: str | None,
-        config: Config | None = None,
-    ) -> bool:
-        """Walk the disk for a dataset and reconcile the index in one transaction.
-
-        The disk walk happens outside the transaction (it's file I/O, not
-        SQL). The DB reconciliation runs inside a single transaction so
-        the index never reflects a half-applied scan.
-
-        Only writes SQL for rows that actually changed. The watcher
-        keeps the index in sync in the common case, so most passes
-        (including the periodic background refresh) find no diff and
-        skip every per-image ``upsert_image`` / ``delete_image`` call.
-        ``update_dataset_stats`` still runs to bump ``last_scanned_t``,
-        so the next pass can skip a recently-checked dataset.
-
-        Returns ``True`` if any rows were upserted or deleted (i.e. the
-        index changed).
-        """
-        disk_images = self._scan_disk(config_path, config=config)
-        self._logger.debug(
-            "Disk scan started. [dataset_id=%d, config_path=%s, disk_images=%d]",
-            dataset_id,
-            config_path,
-            len(disk_images),
-        )
-        with self._db.transaction():
-            existing = self._repo.list_image_infos(dataset_id)
-            to_upsert: dict[str, dict[str, Any]] = {}
-            for path, meta in disk_images.items():
-                current = existing.get(path)
-                if current is None or self._image_meta_differs(current, meta):
-                    to_upsert[path] = meta
-            to_delete: list[int] = [img.id for path, img in existing.items() if path not in disk_images]
-            if to_upsert or to_delete:
-                self._logger.debug(
-                    "Disk scan diff. [dataset_id=%d, existing=%d, disk=%d, to_upsert=%d, to_delete=%d]",
-                    dataset_id,
-                    len(existing),
-                    len(disk_images),
-                    len(to_upsert),
-                    len(to_delete),
-                )
-            else:
-                self._logger.debug(
-                    "Disk scan in sync (no diff). [dataset_id=%d, images=%d]",
-                    dataset_id,
-                    len(existing),
-                )
-            for path, meta in to_upsert.items():
-                self._repo.upsert_image(
-                    dataset_id=dataset_id,
-                    path=path,
-                    file_name=meta["file_name"],
-                    has_caption=meta["has_caption"],
-                    has_toml=meta["has_toml"],
-                    width=meta["width"],
-                    height=meta["height"],
-                    draft_names=meta["draft_names"],
-                    last_modified_t=meta["last_modified_t"],
-                )
-            for image_id in to_delete:
-                self._repo.delete_image(image_id)
-            self._repo.update_dataset_stats(dataset_id, len(disk_images))
-
-        return bool(to_upsert or to_delete)
-
-    @staticmethod
-    def _image_meta_differs(info: ImageInfo, meta: dict[str, Any]) -> bool:
-        """Return True if the disk-read ``meta`` for an image differs from the stored :class:`ImageInfo`.
-
-        Used by :meth:`_apply_disk_scan` to filter out images that
-        haven't actually changed since the last index pass. The
-        comparison covers every field the upsert would write: caption
-        / toml / draft presence, image dimensions, and the file's
-        ``last_modified_t``. ``id``, ``file_name``, ``path``, and the
-        derived ``delete_path`` are excluded — they're either
-        identifiers or computed from the path.
-        """
-        if info.has_caption != meta["has_caption"]:
-            return True
-        if info.has_toml != meta["has_toml"]:
-            return True
-        if info.width != meta["width"]:
-            return True
-        if info.height != meta["height"]:
-            return True
-        if info.last_modified_t != meta["last_modified_t"]:
-            return True
-        # ``draft_names`` is stored as a sorted CSV; the in-memory
-        # ImageInfo parses it into a list. Sort-compare the lists so the
-        # two representations are equivalent.
-        disk_drafts: list[str] = meta["draft_names"].split(",") if meta["draft_names"] else []
-        if sorted(info.draft_names) != sorted(disk_drafts):
-            return True
-        return False
-
-    def _update_image_index(self, image_id: int, *, has_caption: bool | None = None, has_toml: bool | None = None) -> None:
-        """Update specific fields on an indexed image."""
-        self._repo.update_image_flags(image_id, has_caption=has_caption, has_toml=has_toml)
-
-    def refresh_image_index(self, dataset_name: str, image_id: int) -> None:
-        """Re-read a single image's disk state and update its index row."""
-        info = self.get_image(dataset_name, image_id)
-        if info is None:
-            return
-
-        image_path = Path(info.path)
-        if not image_path.exists():
-            return
-
-        caption_path = image_path.with_suffix(".txt")
-        toml_path = image_path.with_suffix(".toml")
-
-        # Collect draft names
-        draft_names: list[str] = []
-        stem = image_path.stem
-        for f in image_path.parent.iterdir():
-            if f.name.startswith(stem + ".") and f.name.endswith(".draft~"):
-                draft_name = f.name[len(stem) + 1 : -len(".draft~")]
-                if draft_name:
-                    draft_names.append(draft_name)
-
-        self._repo.refresh_image_disk_state(
-            image_id,
-            has_caption=caption_path.exists(),
-            has_toml=toml_path.exists(),
-            draft_names=",".join(sorted(draft_names)),
-        )
+    def _watch_existing_datasets(self) -> None:
+        """Watch all existing datasets' directories. Called during startup."""
+        for name, config_path in self._repo.list_all_for_watcher():
+            if not config_path:
+                continue
+            config_path_obj = Path(config_path)
+            config = self._loader.load_config(config_path_obj)
+            paths = self._loader.get_dataset_paths(config, config_path_obj)
+            if paths:
+                self._watcher.watch_dataset(name, paths)
+                self._logger.debug("Watching existing dataset. [dataset=%s, paths=%d]", name, len(paths))
 
     def _refresh_stale_datasets(self, max_age_seconds: float | None = None) -> None:
         """Rescan datasets that haven't been scanned recently.
@@ -1024,7 +780,7 @@ class DatasetService(Service):
 
             for dataset_id, name, config_path in stale:
                 try:
-                    changed = self._apply_disk_scan(dataset_id, config_path)
+                    changed = self._scanner.scan_disk(dataset_id, config_path)
                 except Exception as e:
                     self._logger.warning("Failed to refresh dataset id=%d: %s", dataset_id, e)
                     continue
@@ -1037,57 +793,99 @@ class DatasetService(Service):
                 if not config_path:
                     continue
                 config_path_obj = Path(config_path)
-                config = self._load_config(config_path_obj)
-                paths = self._get_dataset_paths(config, config_path_obj)
+                config = self._loader.load_config(config_path_obj)
+                paths = self._loader.get_dataset_paths(config, config_path_obj)
                 if paths:
                     self._watcher.watch_dataset(name, paths)
 
-    def _get_dataset_paths(self, config: Config | None, config_path: Path | None = None) -> list[str]:
-        """Extract image directory paths from a parsed config.
+    def _update_image_index(self, image_id: int, *, has_caption: bool | None = None, has_toml: bool | None = None) -> None:
+        """Update specific fields on an indexed image."""
+        self._repo.update_image_flags(image_id, has_caption=has_caption, has_toml=has_toml)
 
-        Relative paths are resolved against ``config_path.parent`` if provided.
+    def refresh_image_index(self, dataset_name: str, image_id: int) -> None:
+        """Re-read a single image's disk state and update its index row.
+
+        Used by the API endpoints (caption/extras/draft/history
+        mutations) to keep the index in sync without triggering a
+        watcher-driven full scan. The watcher event for the
+        originating change will be tagged with the job_id of the
+        caller so the SSE listener suppresses it.
         """
-        if config is None:
-            return []
-        paths: list[str] = []
-        for entry in config.dataset:
-            if entry.path:
-                p = Path(entry.path)
-                if not p.is_absolute() and config_path is not None:
-                    p = config_path.parent / p
-                p = p.resolve()
-                if p.is_dir():
-                    paths.append(str(p))
-        return paths
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return
 
-    def _watch_existing_datasets(self) -> None:
-        """Watch all existing datasets' directories. Called during startup."""
-        for name, config_path in self._repo.list_all_for_watcher():
-            if not config_path:
-                continue
-            config_path_obj = Path(config_path)
-            config = self._load_config(config_path_obj)
-            paths = self._get_dataset_paths(config, config_path_obj)
-            if paths:
-                self._watcher.watch_dataset(name, paths)
-                self._logger.debug("Watching existing dataset. [dataset=%s, paths=%d]", name, len(paths))
+        image_path = Path(info.path)
+        if not image_path.exists():
+            return
+
+        # Reuse the scanner's per-image meta extraction. We only care
+        # about has_caption / has_toml / draft_names — the rest is
+        # already in the index and doesn't change here.
+        meta = self._scanner.scan_image_meta(image_path)
+        if meta is None:
+            return
+
+        self._repo.refresh_image_disk_state(
+            image_id,
+            has_caption=meta["has_caption"],
+            has_toml=meta["has_toml"],
+            draft_names=meta["draft_names"],
+        )
 
     @event_handler(DatasetChangedEvent)
     def _on_dataset_changed(self, event: DatasetChangedEvent) -> None:
-        """Auto-rescan when the watcher detects filesystem changes.
+        """Auto-update the index when the watcher detects filesystem changes.
 
-        Skips the rescan when the change was self-originated (webui edit or
-        captioning job) — the API endpoints and per-image ``refresh_image_index``
-        calls already keep the DB up to date for those.  Only truly external
-        changes (new files, deletions by other processes) trigger a full rescan.
+        Three branches:
+
+        - **Self-originated** (``event.job_id`` set): the API endpoint or
+          captioning job that triggered the change is already keeping the
+          index in sync via ``refresh_image_index`` / direct row writes,
+          so we skip the update entirely. Frontend suppression is handled
+          by the SSE listener on the client side.
+        - **Watcher event with paths**: do a targeted update via
+          :meth:`DatasetScanner.scan_targeted` — only the rows for the
+          affected images are touched, so a single-file external change
+          is a constant-time update regardless of dataset size.
+        - **Watcher event without paths** (legacy/manual): fall back to
+          a full :meth:`DatasetScanner.scan_disk` for backward
+          compatibility.
         """
         if event.job_id:
             self._logger.debug(
-                "Skipping auto-rescan for self-originated change. [dataset=%s, job_id=%s]",
+                "Skipping auto-update for self-originated change. [dataset=%s, job_id=%s]",
                 event.dataset_name,
                 event.job_id,
             )
             return
 
-        self._logger.debug("Auto-rescanning dataset due to filesystem change. [dataset=%s]", event.dataset_name)
-        self.rescan_dataset(event.dataset_name)
+        row = self._repo.get_dataset_row(event.dataset_name)
+        if row is None:
+            self._logger.debug("Dataset not found, skipping auto-update. [dataset=%s]", event.dataset_name)
+            return
+        dataset_id, config_path = row
+
+        if event.changed_paths:
+            self._logger.debug(
+                "Targeted auto-update from watcher. [dataset=%s, changed_paths=%d]",
+                event.dataset_name,
+                len(event.changed_paths),
+            )
+            changed = self._scanner.scan_targeted(dataset_id, event.changed_paths)
+        else:
+            self._logger.debug(
+                "Full auto-rescan from watcher (no changed_paths). [dataset=%s]",
+                event.dataset_name,
+            )
+            changed = self._scanner.scan_disk(dataset_id, config_path)
+
+        if not changed:
+            return
+
+        # Re-register filesystem watcher with current paths (picks up path changes)
+        if config_path:
+            config_path_obj = Path(config_path)
+            config = self._loader.load_config(config_path_obj)
+            paths = self._loader.get_dataset_paths(config, config_path_obj)
+            self._watcher.watch_dataset(event.dataset_name, paths)

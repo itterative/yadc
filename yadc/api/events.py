@@ -20,7 +20,12 @@ Each event is a ``@dataclass`` subclass of :class:`Event` with a
   errors, elapsed, max_concurrent) for the UI's progress bar.
 - ``DatasetChangedEvent`` — emitted by the dataset watcher and on manual
   rescan; ``job_id`` carries the originating source id so the
-  originating UI tab can suppress its own reload.
+  originating UI tab can suppress its own reload. ``changed_paths`` is
+  populated by the watcher with the filesystem paths observed during
+  the debounce window so the dataset service can do targeted
+  upsert/delete for just the affected image rows instead of walking
+  the whole dataset. Empty for events not driven by a watcher burst
+  (manual rescan, periodic refresh, dataset upload).
 - ``ResumptionFailedEvent`` — returned to a single SSE client when its
   ``Last-Event-ID`` is older than the oldest buffered event.
 - ``ImageCaptionedEvent`` / ``ImageRefinedEvent`` /
@@ -92,6 +97,12 @@ class DatasetChangedEvent(Event):
     TYPE: ClassVar[str] = "dataset_changed"
     dataset_name: str
     job_id: str | None = None
+    # Filesystem paths that changed during the watcher's debounce
+    # window. Used by the dataset service to scope its index update
+    # to just the affected images. Empty when the event isn't from
+    # the watcher (manual rescan, background refresh, dataset upload)
+    # — consumers should fall back to a full scan in that case.
+    changed_paths: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclass

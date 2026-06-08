@@ -81,18 +81,24 @@ watcher.expect_file_change(name, str(dest_path), source=source)
 
 The final `rescan_dataset(...)` is also called with `source=source`. The result is that the originating tab's `DatasetChangedEvent` carries its own `clientId`, and the SSE listener in `events.ts` suppresses it. Without this, a drop-and-upload would show a spurious "files have changed" refresh banner to the user who just initiated the upload. See `dataset-watcher` for the suppression pattern.
 
-## Dataset Rescan (Diff Scan)
+## Dataset Rescan (Diff Scan) and Targeted Updates
 
-`DatasetService._apply_disk_scan` does a **diff scan** — compares the freshly-walked disk state against the current index and only writes SQL for changed rows (`to_upsert` + `to_delete`). Returns `bool` (whether anything changed).
+Index updates are split across two services so `DatasetService` stays focused on lifecycle/CRUD:
 
-Callers:
+- **`DatasetLoader`** (read-only, no DB) — parses a dataset's TOML config, resolves relative paths, and extracts declared image directories. Used by both the scanner (to walk image dirs) and the service (to re-register filesystem watches).
+- **`DatasetScanner`** — owns the disk-walking and index-reconciliation logic. Two update paths:
+  - **`scan_disk(dataset_id, config_path, config=None)`** — full walk, diff against the current index (`DatasetRepository.list_image_infos`), only writes SQL for changed rows. Returns `bool`. Used by:
+    - `DatasetService.rescan_dataset(source=...)` — public API for manual rescan.
+    - `DatasetService._refresh_stale_datasets` — background job (see below).
+    - `DatasetService._on_dataset_changed` — fallback when the event has no `changed_paths`.
+  - **`scan_targeted(dataset_id, changed_paths)`** — targeted update. Maps each filesystem path to its image row(s) via `resolve_affected_image_paths` (strips `.txt`/`.toml`/`.history~` to get the image stem; expands drafts to `<stem>.<ext>` candidates filtered against the index), stats each candidate, and does targeted `upsert_image` / `delete_image`. Used by `_on_dataset_changed` when the watcher dispatches an event with `changed_paths` populated — O(|changed|) instead of O(|dataset|).
+  - **`read_disk(config_path, config=None)`** — pure walk returning the on-disk meta dict, no DB writes. Used by `DatasetService.register` for the initial bulk insert.
 
-- `_refresh_stale_datasets` — background job (see below)
-- `rescan_dataset(source=...)` — public API for manual rescan, dispatches `DatasetChangedEvent(job_id=source)` only when the scan found real changes
+`DatasetChangedEvent` carries the affected paths in a `changed_paths: list[str]` field. The watcher (`DatasetWatcherService`) populates this from a per-dataset accumulator (`_changed_paths`) that records every change during the debounce window. Renames fire `on_moved`, which records both `src_path` and `dest_path` so the new file isn't dropped.
 
 ## Background Dataset Refresh
 
-`DatasetService` runs a periodic `JobScheduler` job that calls `_apply_disk_scan` on all datasets, with interval from `Configuration.dataset_refresh_interval_seconds` (default 300s). Serialized with manual rescans via `DatasetService._refresh_lock` to prevent SQLite write-lock contention.
+`DatasetService` runs a periodic `JobScheduler` job that calls `DatasetScanner.scan_disk` on all datasets, with interval from `Configuration.dataset_refresh_interval_seconds` (default 300s). Serialized with manual rescans via `DatasetService._refresh_lock` to prevent SQLite write-lock contention.
 
 The `JobScheduler` is optional so tests can construct the service without it.
 

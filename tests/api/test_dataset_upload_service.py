@@ -222,6 +222,11 @@ def dataset_service_for_delete(managed_dataset, test_configuration, logging_fact
     """
     from yadc.api.modules.dataset_watcher import DatasetWatcherService
     from yadc.api.modules.event_dispatcher import EventDispatcher
+    from yadc.api.services.dataset_loader import DatasetLoader
+    from yadc.api.services.dataset_scanner import DatasetScanner
+
+    scanner = MagicMock(spec=DatasetScanner)
+    loader = DatasetLoader(logging=logging_factory)
 
     svc = DatasetService(
         db=MagicMock(),
@@ -230,6 +235,8 @@ def dataset_service_for_delete(managed_dataset, test_configuration, logging_fact
         event_dispatcher=MagicMock(spec=EventDispatcher),
         logging=logging_factory,
         repo=MagicMock(),
+        scanner=scanner,
+        loader=loader,
     )
 
     info = DatasetInfo(

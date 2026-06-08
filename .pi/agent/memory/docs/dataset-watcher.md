@@ -34,14 +34,18 @@ Filesystem change
       → Check _expected_files (exact path match?)
       → Check _expected_patterns (fnmatch glob match?)
       → Update _unexpected_changes flag
+      → Add file_path to _changed_paths (for targeted index update)
       → Debounce: cancel old timer, start new one (capture job_id from _expected_sources)
         → _dispatch_change(dataset_name, job_id)
-          → DatasetChangedEvent(dataset_name, job_id)
+          → DatasetChangedEvent(dataset_name, job_id, changed_paths)
             → DatasetService._on_dataset_changed
-              → If job_id (self-originated): skip rescan (DB already updated per-image)
-              → If no job_id (external): rescan_dataset
+              → If job_id (self-originated): skip (DB already updated per-image)
+              → If no job_id, no changed_paths: full rescan (_apply_disk_scan)
+              → If no job_id, with changed_paths: targeted update (_apply_targeted_changes)
             → Frontend SSE: events.ts listener
 ```
+
+`_changed_paths` is a per-dataset set of filesystem paths accumulated during the debounce window. It gets popped and shipped on the dispatched event so the service can do targeted upserts/deletes for just the affected image rows. `on_moved` records both `src_path` and `dest_path` so renames don't drop the new file.
 
 ## Change Registration
 
@@ -117,14 +121,18 @@ Each `_on_fs_change` call cancels the previous debounce timer and starts a new o
 
 A final `rescan_dataset` runs in `CaptioningService._cleanup_async()` (5s after job ends) to catch any external changes that occurred during captioning.
 
-### Cycle: External Change → Rescan → Rewatch
+### Cycle: External Change → Targeted Update → Rewatch
 
 ```
-FS change (external) → _on_fs_change → debounce → _dispatch_change → DatasetChangedEvent(job_id=None)
-  → DatasetService._on_dataset_changed → rescan_dataset → watch_dataset
+FS change (external) → _on_fs_change → debounce → _dispatch_change → DatasetChangedEvent(job_id=None, changed_paths=[...])
+  → DatasetService._on_dataset_changed
+      → _apply_targeted_changes(dataset_id, changed_paths)  # O(|changed|), no disk walk
+      → watch_dataset  # re-register watches (path-diff short-circuits)
 ```
 
-Self-originated changes (job_id set) short-circuit at `_on_dataset_changed`. The path-diff in `watch_dataset` prevents redundant unwatch→rewatch when paths haven't changed.
+Self-originated changes (job_id set) short-circuit at `_on_dataset_changed` because the API endpoints and captioning jobs keep the DB up to date via per-image `refresh_image_index` calls. The path-diff in `watch_dataset` prevents redundant unwatch→rewatch when paths haven't changed.
+
+When the event has no `changed_paths` (legacy callers, or an empty debounce window), `_on_dataset_changed` falls back to `_apply_disk_scan` (full walk).
 
 ### Manual Refresh and Event Dispatch
 

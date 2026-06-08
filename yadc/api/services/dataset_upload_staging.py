@@ -20,7 +20,7 @@ from logging import Logger
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
-from yadc.api.services.datasets import IMAGE_EXTENSIONS
+from yadc.api.constants import IMAGE_EXTENSIONS
 from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
 
 # Name of the staging directory under each dataset's base dir.
