@@ -16,8 +16,7 @@ yadc/webui/src/routes/
   AddDatasetDialog.svelte   # Co-located: dataset creation dialog shell. Two tabs: Upload (via UploadDatasetTab) and Create/Import (via CreateDatasetTab)
   EditDatasetDialog.svelte  # Co-located: edit dataset dialog (Config / Manage / Upload tabs)
   templates/
-    +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing
-    EditTemplateDialog.svelte # Co-located: create/edit template dialog (JinjaEditor)
+    +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing. Create/edit dialog lives at `$lib/components/templates/EditTemplateDialog.svelte` (reused by the caption tab sidebar).
   datasets/[name]/
     +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line + topbar upload icon)
     SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.

@@ -42,7 +42,7 @@ yadc/webui/src/lib/components/dataset/
   caption/                        # Caption domain
     CaptionSettingsPanel.svelte   # The batch-captioning side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides. Auto-saves overrides to `captionSettings` localStorage via `deferred()` on any field change; flushes pending save before starting captioning.
     OverridesSection.svelte       # Sub-section of the captioning panel: per-field reset/override UI for the localStorage-saved overrides
-    TemplateSection.svelte        # Sub-section of the captioning panel: prompt template selection + variable editor
+    TemplateSection.svelte        # Sub-section of the captioning panel: template dropdown + readonly `JinjaEditor` card with Edit/Delete action bar. Edit and `+` button open `EditTemplateDialog` (reused from `lib/components/templates/`); Delete uses `confirmDialog.danger(...)`. The "create new template" flow is dialog-based — no in-place editing of template content.
 ```
 
 ## env/
@@ -51,6 +51,14 @@ yadc/webui/src/lib/components/dataset/
   env/                            # Env domain
     EnvironmentSettings.svelte    # Environment CRUD tab (env list, inline edit, token reveal)
     EnvSelector.svelte            # Environment form (env dropdown + URL/token/model, bindable props). "Manage…" link opens SettingsDialog at the Environments tab.
+```
+
+## templates/
+
+```
+  templates/                      # Templates domain
+    EditTemplateDialog.svelte     # Reusable create/edit template dialog. `templateName=null` for new; otherwise edits the named template. Used by both the `/templates` route and `caption/TemplateSection.svelte`.
+    index.ts                      # Barrel re-export (`$lib/components/templates`)
 ```
 
 ## export/

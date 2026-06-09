@@ -51,6 +51,7 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 - `lib/components/env/` — `EnvironmentSettings` (CRUD list), `EnvSelector` (caption-flow picker).
 - `lib/components/export/` — `ExportDialog`.
 - `lib/components/settings/` — `SettingsDialog` (host) + tabs (`GeneralSettings`/`SecuritySettings`) + `CaptionOptionsFields` widget. `TemplateManager.svelte` is **marked LEGACY** — superseded by `/templates` route.
+- `lib/components/templates/` — `EditTemplateDialog` (used by both the `/templates` route and the caption tab sidebar).
 - `lib/components/dialogs/` — only `PasswordPromptDialog` (global utility).
 - `lib/icons/` — `Svg*` SVG components (`viewBox="0 -960 960 960"`, sized/colored via Tailwind)
 

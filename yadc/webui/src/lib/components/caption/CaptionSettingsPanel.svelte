@@ -49,10 +49,6 @@
     // --- State: Template (managed by TemplateSection via bindings) ---
 
     let selectedTemplate = $state('');
-    let templateContent = $state('');
-    let templateDirty = $state(false);
-    let isNewTemplate = $state(false);
-    let newTemplateName = $state('');
 
     // --- State: Options ---
 
@@ -90,7 +86,7 @@
     // --- Computed ---
 
     let effectiveModelName = $derived(envModelName.trim());
-    let effectiveTemplateName = $derived(isNewTemplate ? newTemplateName.trim() : selectedTemplate);
+    let effectiveTemplateName = $derived(selectedTemplate);
 
     let templateOverridden = $derived(selectedTemplate !== datasetDefaults.selectedTemplate);
 
@@ -292,8 +288,7 @@
         api_url: envUrl.trim() || undefined,
         api_token: envToken || undefined,
         api_model_name: effectiveModelName || undefined,
-        prompt_template: templateDirty ? templateContent : undefined,
-        prompt_name: templateDirty ? undefined : effectiveTemplateName || undefined,
+        prompt_name: effectiveTemplateName || undefined,
         max_tokens: maxTokens ?? undefined,
         image_quality: imageQuality ?? undefined,
         rounds: rounds && rounds > 1 ? rounds : undefined,
@@ -348,10 +343,6 @@
         void reasoningEffort;
         void selectedTemplate;
         void effectiveTemplateName;
-        void isNewTemplate;
-        void newTemplateName;
-        void templateDirty;
-        void templateContent;
         void envUrl;
         void envModelName;
 
@@ -437,10 +428,6 @@
         <!-- ═══ Section: Template ═══ -->
         <TemplateSection
             bind:selectedTemplate
-            bind:templateContent
-            bind:templateDirty
-            bind:isNewTemplate
-            bind:newTemplateName
             datasetDefaultTemplate={datasetDefaults.selectedTemplate}
         />
 

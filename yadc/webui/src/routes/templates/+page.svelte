@@ -7,7 +7,7 @@
         deleteTemplate,
         type TemplateListItem
     } from '$lib/stores/templates';
-    import EditTemplateDialog from './EditTemplateDialog.svelte';
+    import { EditTemplateDialog } from '$lib/components/templates';
     import { confirmDialog } from '$lib/stores/confirm';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
