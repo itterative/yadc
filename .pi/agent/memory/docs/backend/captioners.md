@@ -8,6 +8,12 @@ category: architecture
 
 The actual captioner implementations. For the hierarchy, mixin pattern, streaming, and per-backend behavior, see `captioner-architecture`.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `captioner-architecture` — APICaptioner hierarchy, mixin pattern, streaming, per-backend image limits
+- `paths-and-storage` — HTTP response cache (file-based JSON keyed by SHA256)
+- `debug-api-logging` — Debug logging (`YADC_DEBUG_CAPTION_RESPONSES`)
+
 ```
 yadc/captioners/
   api/
@@ -25,8 +31,3 @@ yadc/captioners/
     types.py          # Pydantic models for all API response types
     utils/            # shared mixins and utilities (cache, error normalization, response logger, thinking, units)
 ```
-
-**Cross-references:**
-- APICaptioner auto-detection, mixin pattern, streaming, per-backend image limits: `captioner-architecture`
-- HTTP response cache (file-based JSON keyed by SHA256): `paths-and-storage` (CACHE_PATH section)
-- Debug logging (`YADC_DEBUG_CAPTION_RESPONSES`): `debug-api-logging`

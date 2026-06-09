@@ -8,6 +8,14 @@ category: architecture
 
 The `yadc/api/` Quart web UI backend. Uses injector DI with auto-discovery (see `api-di-system`) and the service/repo pattern (see `repository-pattern`).
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `api-di-system` — DI auto-discovery (services, controllers, injector binding)
+- `repository-pattern` — Service/repo split for SQL
+- `dataset-system` — Dataset subsystem (model, creation, upload, persistence)
+- `dataset-watcher` — Inotify watcher + expected-change tracking
+- `captioners` — Per-backend API captioners (in `backend/`)
+
 ```
 yadc/api/
   __init__.py
@@ -67,9 +75,3 @@ yadc/api/
     settings.py           # SettingsService — KV store over SQLite settings table (JSON encode/decode + business policy); delegates SQL to `SettingsRepository`
     settings_repository.py # SettingsRepository — owns all SQL for the `settings` table (get, upsert, delete, list_all). Values are stored as raw JSON strings.
 ```
-
-**Cross-references:**
-- For DI auto-discovery: `api-di-system`
-- For service/repo split: `repository-pattern`
-- For dataset subsystem details: `dataset-system` and `dataset-watcher`
-- For captioner backend: see `captioners.md`

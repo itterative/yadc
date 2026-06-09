@@ -12,9 +12,10 @@ keep_updated: true
 
 **Backend reference**: See `architecture-overview` for the Quart API backend.
 
-**File-by-file structure**: See `frontend/` folder (one file per area, each with one-line summaries per file).
+## See also (in `.pi/agent/memory/docs/`)
 
-**Patterns**: See `frontend-patterns` (Tabs, Z-index, Topbar, Browser notifications, Drop-to-upload, SSE).
+- `frontend/` — file-by-file structure (one file per area, each with one-line summaries per file)
+- `frontend-patterns` — frontend patterns (Tabs, Z-index, Topbar, Browser notifications, Drop-to-upload, SSE)
 
 ## Component Organization (in `yadc/webui/src/`)
 

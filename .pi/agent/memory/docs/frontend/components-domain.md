@@ -8,6 +8,11 @@ category: architecture
 
 Domain components. Per the "scope rule" (in `frontend-architecture`), these are components used in ≥2 places OR used by a `lib/` component. Each domain follows the "feature-folder rule" for sub-folders with ≥3 related files (host + tabs/sections).
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `frontend-patterns` — Drop-to-upload (DropUploadZone + AddFilesDialog)
+- `dataset-system` — Upload pipeline, Dataset creation flows, DatasetImage persistence
+
 ## dataset/
 
 ```
@@ -94,9 +99,3 @@ The icons live at `yadc/webui/src/lib/icons/` (sibling of `lib/components/`, not
 ```
   icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
 ```
-
-**Cross-references:**
-- Drop-to-upload (DropUploadZone + AddFilesDialog): `frontend-patterns` → Drop-to-Upload
-- Upload pipeline (backend side): `dataset-system` → Upload Pipeline
-- Dataset creation flows: `dataset-system` → Three Creation Flows
-- DatasetImage persistence (history, drafts): `dataset-system` → DatasetImage Persistence

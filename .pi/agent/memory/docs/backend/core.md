@@ -8,6 +8,16 @@ category: architecture
 
 The model layer and core business logic. The API backend (`yadc/api/`) wraps these with HTTP endpoints and DI.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `yadc-config-v2` — Config models and v1/v2 format
+- `captioner-architecture` — Captioner base + per-backend details
+- `captioning-runner` — Shared captioning runner (CLI + API)
+- `captioning-workflow` — End-to-end captioning flow
+- `paths-and-storage` — DatasetImage file conventions
+- `dataset-system` — DatasetImage endpoints
+- `export-system` — Exporters
+
 ```
 yadc/core/
   captioner.py        # Abstract Captioner base class (Jinja2 prompts, image encoding)
@@ -27,12 +37,3 @@ yadc/core/
   user_config.py      # UserConfig / UserConfigApi models
   utils.py            # Timer context manager
 ```
-
-**Cross-references:**
-- Config models and v1/v2 format: `yadc-config-v2`
-- Captioner base + per-backend details: `captioner-architecture`
-- Shared captioning runner (CLI + API): `captioning-runner`
-- End-to-end captioning flow: `captioning-workflow`
-- DatasetImage persistence: `paths-and-storage` (file conventions) and `dataset-system` (endpoints)
-- Exporters: `export-system`
-- Logging conventions: `logging-format`

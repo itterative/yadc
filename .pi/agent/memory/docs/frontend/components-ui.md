@@ -8,6 +8,11 @@ category: architecture
 
 Atomic, reusable UI primitives. No domain concepts, no API calls. The "scope rule" for component placement is in `frontend-architecture`.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `frontend-patterns` — Tab system (context, registration, variants), Topbar pattern, Z-index layers (toasts above dialogs)
+- `codemirror-quirks` — CodeMirror sizing pitfalls
+
 ```
 yadc/webui/src/lib/components/ui/
   Dialog.svelte                # Modal dialog (HTML <dialog>)
@@ -37,9 +42,3 @@ yadc/webui/src/lib/components/ui/
   ActionBar.svelte             # Footer flex container (`flex gap-2 bg-black/15`) for card action buttons. Items distribute evenly via `flex-1`.
   ActionBarItem.svelte         # Standardized action button inside ActionBar — accepts icon, variant (`primary`/`secondary`/`danger`).
 ```
-
-**Cross-references:**
-- Tab system (context, registration, variants): `frontend-patterns` → Tabs System
-- CodeMirror sizing pitfalls: `codemirror-quirks`
-- Topbar pattern: `frontend-patterns`
-- Z-index layers (toasts above dialogs): `frontend-patterns` → Z-Index Layers

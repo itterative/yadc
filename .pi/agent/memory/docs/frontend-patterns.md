@@ -9,6 +9,12 @@ keep_updated: true
 
 Patterns specific to the yadc webui frontend. For SvelteKit/Tailwind v4 setup see `webui-frontend`. For the component organization rules (placement, feature-folder rule) and store organization rules, see `frontend-architecture`. For CodeMirror sizing pitfalls, see `codemirror-quirks`. For the inotify event payload and suppression, see `dataset-watcher`.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `webui-frontend` — SvelteKit/Tailwind v4 setup
+- `codemirror-quirks` — CodeMirror sizing pitfalls
+- `dataset-watcher` — Backend ring buffer + suppression pattern (SSE)
+
 ## Tabs System
 
 `ui/tabs/` uses Svelte context for parent-child coordination.

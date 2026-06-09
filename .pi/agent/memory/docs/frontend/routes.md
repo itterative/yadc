@@ -8,6 +8,12 @@ category: architecture
 
 Route components, co-located next to the route that uses them. Per the "scope rule" (in `frontend-architecture`), these are components used by exactly one route AND not by anything in `lib/`. **Promote to `lib/` on the second consumer.**
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `frontend-patterns` — Drop-to-upload pattern, Topbar pattern
+- `webui-frontend` — Hash routing (`#/` prefix)
+- `dataset-system` — Upload pipeline
+
 ```
 yadc/webui/src/routes/
   layout.css        # Tailwind v4 imports + @theme block + typography plugin
@@ -24,9 +30,3 @@ yadc/webui/src/routes/
     DatasetTopbar.svelte      # Co-located: page-level topbar (title, dataset status, action buttons). Uses `SetTopbar` pattern.
     DropUploadZone.svelte     # Co-located: drop-target wrapper with a slot. Owns drag/drop state + `webkitGetAsEntry` file collection. Renders a full-area overlay (accent for allowed drops, warning for blocked). Emits `ondrop(files)` / `onblockeddrop(reason)`. Reused only here today — co-locate until a second consumer appears.
 ```
-
-**Cross-references:**
-- Drop-to-upload pattern: `frontend-patterns` → Drop-to-Upload
-- Hash routing (`#/` prefix): `webui-frontend`
-- Topbar pattern: `frontend-patterns`
-- Upload pipeline: `dataset-system` → Upload Pipeline

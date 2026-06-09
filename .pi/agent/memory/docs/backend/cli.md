@@ -8,6 +8,10 @@ category: architecture
 
 The `yadc/` root and click-based CLI commands.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `cli-cmd-structure` — Click CLI vs `cmd/` pure-logic split
+
 ```
 yadc/
   __init__.py         # version
@@ -26,4 +30,4 @@ yadc/
   cli_webui.py        # web UI CLI (yadc webui serve)
 ```
 
-CLI commands import pure logic from `yadc/cmd/` (see `cmd.md`). The Click/Pythonic split is documented in `cli-cmd-structure`.
+CLI commands import pure logic from `yadc/cmd/` (see `cmd.md`).

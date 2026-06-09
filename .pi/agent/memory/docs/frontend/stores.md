@@ -8,6 +8,11 @@ category: architecture
 
 5 domain sub-folders (each with a re-exporting `index.ts` so callers import from `$lib/stores/<domain>`) + 7 top-level singletons. The organization rules (when to introduce a sub-folder) are in `frontend-architecture`.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `frontend-patterns` — SSE self-connecting module, Topbar pattern, Notifications
+- `dataset-watcher` — Backend SSE event payload + suppression (referenced from SSE)
+
 ## Domain Sub-Folders
 
 ```
@@ -48,9 +53,3 @@ yadc/webui/src/lib/stores/
   settings.ts                    # UI settings (storable) + `settingsDialog` open-state
   topbar.svelte.ts               # Topbar `Snippet` shared via $state
 ```
-
-**Cross-references:**
-- Store organization rules: `frontend-architecture` → Store Organization
-- SSE self-connecting module: `frontend-patterns` and `dataset-watcher`
-- Topbar pattern: `frontend-patterns`
-- Notifications: `frontend-patterns`

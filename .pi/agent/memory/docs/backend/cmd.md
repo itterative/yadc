@@ -8,6 +8,10 @@ category: architecture
 
 Pure logic modules — no click imports. CLI commands (`cli_*.py` files in `yadc/` root) import from here. The split is documented in `cli-cmd-structure`.
 
+## See also (in `.pi/agent/memory/docs/`)
+
+- `cli-cmd-structure` — How CLI commands and `cmd/` modules are structured
+
 ```
 yadc/cmd/
   app.py            # paths (CONFIG_PATH, STATE_PATH, CACHE_PATH via platformdirs), load_config()
