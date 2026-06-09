@@ -6,6 +6,7 @@
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import { templates } from '$lib/stores/templates';
     import { configState } from './state.svelte';
+    import ConfigApiSection from './ConfigApiSection.svelte';
 
     interface Props {
         /** Dataset source — managed (upload) vs external (import/create). */
@@ -143,46 +144,7 @@
     </section>
 
     <!-- ═══ Section: API ═══ -->
-    <section class="space-y-3">
-        <h3 class="section-heading">API</h3>
-
-        <div class="grid grid-cols-2 gap-3">
-            <div class="col-span-2">
-                <label class="label" for="config-api-url">API URL</label>
-                <input
-                    id="config-api-url"
-                    type="text"
-                    bind:value={configState.apiUrl}
-                    class="input"
-                    placeholder="http://localhost:11434"
-                />
-                <p class="help-text">Hostname and port only — no additional path segments.</p>
-            </div>
-
-            <div>
-                <label class="label" for="config-model">Model Name</label>
-                <input
-                    id="config-model"
-                    type="text"
-                    bind:value={configState.apiModelName}
-                    class="input"
-                    placeholder="gemma3"
-                />
-            </div>
-
-            <div>
-                <label class="label" for="config-env">Environment</label>
-                <input
-                    id="config-env"
-                    type="text"
-                    bind:value={configState.envName}
-                    class="input"
-                    placeholder="default"
-                />
-                <p class="help-text">Set this to configure API settings outside the TOML file.</p>
-            </div>
-        </div>
-    </section>
+    <ConfigApiSection />
 
     <!-- ═══ Section: Prompt ═══ -->
     <section class="space-y-3">

@@ -36,9 +36,19 @@ export function buildPatch(): Partial<Config> {
 
     const patch: Record<string, unknown> = {};
 
-    // API — only include if at least one field is non-empty
+    // API — only include if at least one field is non-empty, and only
+    // include each field if it is non-empty. This keeps the TOML clean:
+    // leaving the URL or model empty in the form means "use the env's
+    // default at runtime", so it should not appear as `url = ""` in TOML.
     if (apiUrl || apiModelName) {
-        patch.api = { url: apiUrl, model_name: apiModelName };
+        const api: Record<string, string> = {};
+        if (apiUrl) {
+            api.url = apiUrl;
+        }
+        if (apiModelName) {
+            api.model_name = apiModelName;
+        }
+        patch.api = api;
     }
 
     // Prompt — only include if a template is selected
