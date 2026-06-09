@@ -1,8 +1,5 @@
 """Tests for yadc.cli_draft — draft CLI commands."""
 
-import struct
-import zlib
-
 import pytest
 from click.testing import CliRunner
 
@@ -13,16 +10,14 @@ from yadc.cli_draft import draft
 
 def _make_png() -> bytes:
     """Create a minimal valid 1×1 PNG."""
-    header = b"\x89PNG\r\n\x1a\n"
-    ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
-    ihdr_crc = zlib.crc32(b"IHDR" + ihdr_data) & 0xFFFFFFFF
-    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + struct.pack(">I", ihdr_crc)
-    raw = zlib.compress(b"\x00\x00\x00\x00")
-    idat_crc = zlib.crc32(b"IDAT" + raw) & 0xFFFFFFFF
-    idat = struct.pack(">I", len(raw)) + b"IDAT" + raw + struct.pack(">I", idat_crc)
-    iend_crc = zlib.crc32(b"IEND") & 0xFFFFFFFF
-    iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", iend_crc)
-    return header + ihdr + idat + iend
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (1, 1), color="red").save(buf, format="png")
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def _make_dataset_toml(path: str) -> str:
