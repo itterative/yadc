@@ -14,7 +14,7 @@ import inspect
 import time
 from typing import Any, Callable
 
-from yadc.core import DatasetImage
+from yadc.core import Config, DatasetImage
 from yadc.core.captioning import CaptionJobOptions
 
 from .job_runner import AsyncCaptionJobRunner
@@ -64,6 +64,15 @@ class AsyncCaptionJob:
         self._api_model_name: str = ""
         self._config: Any | None = None  # set by preflight via runner
 
+        # Cached preflight result. ``CaptioningService.start_job_async``
+        # does a synchronous preflight to fail-fast on config errors
+        # and to return an accurate initial ``JobInfo``; the result is
+        # stashed here so ``_ado_run`` doesn't re-parse the config and
+        # re-query the database. ``None`` when the job was created
+        # outside the service (e.g. in tests) — ``_ado_run`` falls
+        # back to ``self._runner.preflight(...)`` in that case.
+        self._preflighted: tuple[Config, list[DatasetImage]] | None = None
+
         # ``time.monotonic()`` at the moment the job actually starts
         # running (set in ``_arun``).  Used to compute ``elapsed`` for
         # the status event.  ``None`` until then so a status snapshot
@@ -91,6 +100,19 @@ class AsyncCaptionJob:
         self._stop_event.set()
         if self._task is not None and not self._task.done():
             self._task.cancel()
+
+    def set_preflight(self, config: Config, to_do: list[DatasetImage]) -> None:
+        """Cache the preflight result so ``_ado_run`` can reuse it.
+
+        Must be called before :meth:`start`. Populates the snapshot
+        fields (``api_url``, ``api_model_name``, ``total``)
+        synchronously so the response from ``start_job_async`` is
+        accurate without waiting for the background task to run.
+        """
+        self._preflighted = (config, to_do)
+        self._api_url = config.api.url
+        self._api_model_name = config.api.model_name
+        self._total = len(to_do)
 
     async def wait(self, timeout: float | None = None) -> None:
         """Wait for the underlying task to finish."""
@@ -188,7 +210,12 @@ class AsyncCaptionJob:
                 self._on_done()
 
     async def _ado_run(self) -> None:
-        config, to_do = self._runner.preflight(self._dataset_name, self._opts)
+        if self._preflighted is not None:
+            config, to_do = self._preflighted
+        else:
+            # Direct callers (tests) bypass the service's synchronous
+            # preflight, so resolve here.
+            config, to_do = self._runner.preflight(self._dataset_name, self._opts)
 
         self._api_url = config.api.url
         self._api_model_name = config.api.model_name

@@ -322,6 +322,67 @@ class TestAdoRunWithRunner:
         with pytest.raises(BatchAbortedError):
             await job._ado_run()
 
+    @pytest.mark.asyncio
+    async def test_set_preflight_skips_runner_preflight(self, ado_run_env):
+        """Regression: when ``set_preflight`` is used, ``_ado_run`` reuses
+        the cached result and does not call ``runner.preflight`` again.
+
+        This locks in the optimization that the synchronous preflight
+        in ``CaptioningService.start_job_async`` is the only one
+        (avoiding re-parsing the config and re-querying the DB on the
+        background task).
+        """
+        mock_instance, _, _, runner, _ = ado_run_env
+
+        # pre-built config + image list as if CaptioningService had
+        # done the synchronous preflight.
+        prebuilt_config = MagicMock()
+        prebuilt_config.api.url = "http://prebuilt"
+        prebuilt_config.api.model_name = "prebuilt-model"
+        prebuilt_images = [MagicMock(), MagicMock()]
+
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
+        job.set_preflight(prebuilt_config, prebuilt_images)
+
+        # Patch runner.preflight so we can assert it isn't called.
+        # If the optimization is broken, this mock would be called
+        # (and would fail because the dataset mock isn't wired up).
+        with patch.object(runner, "preflight") as mock_runner_preflight:
+            await job._ado_run()
+
+        # runner.preflight must NOT have been called — the cached
+        # preflight is the source of truth.
+        mock_runner_preflight.assert_not_called()
+        # And the image list passed to caption_images is the cached one.
+        assert mock_instance.caption_images.call_args.args[0] is prebuilt_images
+
+    @pytest.mark.asyncio
+    async def test_set_preflight_seeds_snapshot_synchronously(self, ado_run_env):
+        """``set_preflight`` populates ``api_url``/``api_model_name``/``total``
+        so the response from ``start_job_async`` is accurate before the
+        background task runs."""
+        mock_instance, _, mock_load, runner, _ = ado_run_env
+        mock_load.return_value = (MagicMock(), [MagicMock(), MagicMock(), MagicMock()])
+
+        prebuilt_config = MagicMock()
+        prebuilt_config.api.url = "http://prebuilt"
+        prebuilt_config.api.model_name = "prebuilt-model"
+        prebuilt_images = [MagicMock(), MagicMock(), MagicMock()]
+
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
+        job.set_preflight(prebuilt_config, prebuilt_images)
+
+        snap = await job.snapshot()
+        assert snap.api_url == "http://prebuilt"
+        assert snap.api_model_name == "prebuilt-model"
+        assert snap.total == 3
+
+        # Don't bother running _ado_run — clean up the task to avoid
+        # a dangling asyncio warning.
+        del mock_instance  # silence unused warning
+
 
 # ---------------------------------------------------------------------------
 # AsyncCaptionJobRunner: expect_file_changes

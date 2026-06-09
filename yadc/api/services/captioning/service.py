@@ -161,12 +161,11 @@ class CaptioningService(Service):
                     errors=0,
                 )
 
-            # Store preflight results on the job so _ado_run doesn't
-            # re-run preflight.
-            job._api_url = config.api.url
-            job._api_model_name = config.api.model_name
-            job._config = config
-            await job._set_state(total=len(to_do))
+            # Hand the preflight result to the job so the background
+            # task doesn't re-parse the config and re-query the DB.
+            # ``set_preflight`` also seeds ``api_url``/``api_model_name``/
+            # ``total`` synchronously for the response below.
+            job.set_preflight(config, to_do)
             if refine is None:
                 self._mark_expected_changes(dataset_name, job_id)
             job.start()
