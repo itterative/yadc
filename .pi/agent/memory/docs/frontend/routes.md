@@ -22,7 +22,8 @@ yadc/webui/src/routes/
   AddDatasetDialog.svelte   # Co-located: dataset creation dialog shell. Two tabs: Upload (via UploadDatasetTab) and Create/Import (via CreateDatasetTab)
   EditDatasetDialog.svelte  # Co-located: edit dataset dialog (Config / Manage / Upload tabs)
   templates/
-    +page.svelte              # Template listing (grid cards with edit/delete, add-template dashed card) — mirrors dataset listing. Create/edit dialog lives at `$lib/components/templates/EditTemplateDialog.svelte` (reused by the caption tab sidebar).
+    +page.svelte              # Template listing (grid cards with edit/duplicate/delete, add-template dashed card) — mirrors dataset listing. Create/edit dialog lives at `$lib/components/templates/EditTemplateDialog.svelte` (reused by the caption tab sidebar). Duplicate flow is a thin frontend wrapper that GETs the source content + PUTs it under the new name — no backend endpoint, since templates are a single file.
+    DuplicateTemplateDialog.svelte   # Co-located: prompt for a new template name when duplicating. Warns on name collision (PUT would overwrite).
   datasets/[name]/
     +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line + topbar upload icon)
     SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.

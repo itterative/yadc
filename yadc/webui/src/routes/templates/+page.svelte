@@ -9,6 +9,7 @@
     } from '$lib/stores/templates';
     import { EditTemplateDialog } from '$lib/components/templates';
     import { confirmDialog } from '$lib/stores/confirm';
+    import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgFile from '$lib/icons/SvgFile.svelte';
@@ -16,6 +17,7 @@
     import { friendlyErrorMessage } from '$lib/api';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
+    import DuplicateTemplateDialog from './DuplicateTemplateDialog.svelte';
 
     let loading = $state(true);
     let error = $state('');
@@ -23,6 +25,9 @@
 
     // Edit state
     let editingTemplate: TemplateListItem | null = $state(null);
+
+    // Duplicate state
+    let duplicatingTemplate: TemplateListItem | null = $state(null);
 
     onMount(() => {
         if (!browser) {
@@ -65,6 +70,18 @@
         loadTemplates();
         showAddTemplate = false;
         // Open the new template for editing
+        editingTemplate = { name, source: 'user' };
+    }
+
+    function handleTemplateDuplicated(name: string) {
+        // Defensive refresh — the watcher should emit
+        // `templates_changed` and the SSE listener will refresh
+        // the store, but call loadTemplates explicitly so the new
+        // entry shows up even if the event was missed (e.g. during
+        // a fast back-to-back duplicate + delete).
+        loadTemplates();
+        // Open the duplicate for editing, matching the
+        // "create new" flow.
         editingTemplate = { name, source: 'user' };
     }
 </script>
@@ -132,6 +149,17 @@
                 >
                     <button
                         class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 hover:bg-black/80 hover:text-white"
+                        title="Duplicate template"
+                        onclick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            duplicatingTemplate = template;
+                        }}
+                    >
+                        <SvgCopy class="h-4 w-4" />
+                    </button>
+                    <button
+                        class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 hover:bg-black/80 hover:text-white"
                         title="Edit template"
                         onclick={(e) => {
                             e.preventDefault();
@@ -177,6 +205,17 @@
         templateName={editingTemplate.name}
         onclose={() => (editingTemplate = null)}
         onsaved={handleTemplateSaved}
+    />
+{/if}
+
+<!-- Duplicate dialog -->
+{#if duplicatingTemplate}
+    <DuplicateTemplateDialog
+        open={true}
+        sourceTemplateName={duplicatingTemplate.name}
+        existingNames={$templates.items.map((t) => t.name)}
+        onclose={() => (duplicatingTemplate = null)}
+        onduplicated={(t: TemplateListItem) => handleTemplateDuplicated(t.name)}
     />
 {/if}
 

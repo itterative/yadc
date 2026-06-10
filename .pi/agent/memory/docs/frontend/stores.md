@@ -37,7 +37,7 @@ yadc/webui/src/lib/stores/
   templates/                     # Templates domain — store + API + pure helper
     index.ts                     # Re-exports for `$lib/stores/templates`
     store.ts                     # `templates` writable + `refreshTemplates` action + types
-    api.ts                       # Template CRUD. `fetchTemplates`/`fetchTemplate` debounced.
+    api.ts                       # Template CRUD. `fetchTemplates`/`fetchTemplate` debounced. `duplicateTemplate` is a frontend-only helper (GET source + PUT new name) — no backend endpoint.
     jinja.ts                     # Pure `extractVariables()` (Jinja2 regex helpers)
 ```
 

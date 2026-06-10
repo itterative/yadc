@@ -36,6 +36,22 @@ export async function saveTemplate(name: string, content: string): Promise<Templ
     return res.json();
 }
 
+/** Duplicate a template to a new name.
+ *
+ *  Loads the source template's content and saves it under ``newName``
+ *  via the existing ``PUT /templates/<name>`` endpoint — no new API
+ *  surface needed. The watcher picks up the new file and emits
+ *  ``templates_changed`` via SSE, so the templates list auto-refreshes.
+ *
+ *  If ``newName`` already exists, the existing template is overwritten
+ *  (matches ``PUT`` semantics). Callers that want to warn on collision
+ *  should check ``existingNames`` up front.
+ */
+export async function duplicateTemplate(srcName: string, newName: string): Promise<TemplateInfo> {
+    const source = await fetchTemplate(srcName);
+    return saveTemplate(newName, source.content);
+}
+
 export async function deleteTemplate(name: string): Promise<void> {
     const res = await fetch(`${API_BASE}/api/templates/${encodeURIComponent(name)}`, {
         method: 'DELETE'
