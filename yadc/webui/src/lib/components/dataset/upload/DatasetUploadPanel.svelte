@@ -243,9 +243,9 @@
             {/snippet}
         </Alert>
 
-        <div class="max-h-48 overflow-y-auto rounded-md border border-gray-700">
+        <div class="max-h-48 overflow-y-auto rounded-md border border-gray-700 text-gray-400">
             <table class="w-full text-left text-sm">
-                <thead class="sticky top-0 bg-gray-800 text-xs text-gray-400 uppercase">
+                <thead class="sticky top-0 bg-gray-800 text-xs uppercase">
                     <tr>
                         <th class="px-3 py-2">File</th>
                         <th class="px-3 py-2 text-right">Existing</th>
@@ -257,10 +257,10 @@
                     {#each conflicts as c (c.file)}
                         <tr>
                             <td class="px-3 py-2 font-mono text-xs">{c.file}</td>
-                            <td class="px-3 py-2 text-right text-gray-400"
+                            <td class="px-3 py-2 text-right"
                                 >{formatBytes(c.existing_size)}</td
                             >
-                            <td class="px-3 py-2 text-right text-gray-400"
+                            <td class="px-3 py-2 text-right"
                                 >{formatBytes(c.new_size)}</td
                             >
                             <td class="px-3 py-2">
