@@ -145,6 +145,23 @@ The `min-h-32` floor ensures the editor is always at least 8rem tall. Consumers 
 
 **Background is intentionally not set on `.cm-editor` / `.cm-gutters` in the base theme.** Consumers set the background on the wrapper (e.g. `bg-surface` for the standard dark editors, `bg-gray-800` for the image-detail Extras tab to match the caption box), and the editor paints transparently over it. The gutter's `borderRight` is the only visual separator between line numbers and text.
 
+## Vite SSR tree-shaking warning
+
+`vite build` emits a warning for any CodeMirror import used only inside `$effect` bodies:
+
+> `"EditorView" is imported from external module "codemirror" but never used in "src/lib/components/ui/CodeMirror.svelte".`
+
+The `$effect` body is stripped during the SSR pass, so Vite's static analyser can't see the runtime uses. A type-only import (`import { type EditorView, ... }`) would silence the warning but breaks runtime — `EditorView` is also used as a constructor (`new EditorView(...)`) and for static members (`EditorView.theme(...)`, `EditorView.editable.of(...)`), so the value import must stay.
+
+The fix in `CodeMirror.svelte` is a `void` reference next to the import, matching the existing `void StateEffect.reconfigure;` pattern:
+
+```ts
+void StateEffect.reconfigure;
+void EditorView;
+```
+
+If you add a new CodeMirror symbol that's only used inside an `$effect` and only ever as a value (not as a type), add a `void Symbol;` line to keep the import live.
+
 ## autoHeight mode
 
 In `autoHeight: true` mode the editor grows with content. The absolute positioning is wrong for that case (would make the editor 0×0), so the autoHeight theme overrides:

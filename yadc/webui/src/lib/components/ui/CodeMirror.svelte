@@ -15,13 +15,14 @@
 
 <script lang="ts">
     import { EditorView, minimalSetup } from 'codemirror';
-    import { StateEffect, Transaction, type Extension } from '@codemirror/state';
+    import { StateEffect, type Transaction, type Extension } from '@codemirror/state';
     import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
     import { tags } from '@lezer/highlight';
 
-    // Prevent Vite's SSR tree-shaking from flagging StateEffect as unused.
-    // It's used inside $effect bodies that get stripped during SSR compilation.
+    // Prevent Vite's SSR tree-shaking from flagging these as unused. They are
+    // used inside $effect bodies that get stripped during SSR compilation.
     void StateEffect.reconfigure;
+    void EditorView;
 
     interface Props {
         /** Document text. Setting this after mount overwrites the editor content. */
