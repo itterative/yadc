@@ -29,7 +29,6 @@ from yadc.core.captioner import (
     ReplyRound,
 )
 from yadc.core.captioning import (
-    CaptioningCallbacks,
     CaptioningRunner,
     CaptionJobOptions,
     load_dataset_config,
@@ -80,6 +79,9 @@ class CLICallbacks:
     async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None:  # pyright: ignore[reportUnusedParameter]
         _logger.warning("Failed to caption %s: %s", image.path, error)
 
+    async def on_before_save(self, paths: list[str]) -> None:  # pyright: ignore[reportUnusedParameter]
+        pass
+
 
 class CLIPrintCallbacks:
     """Minimal callbacks for the non-interactive parallel captioning path.
@@ -106,6 +108,9 @@ class CLIPrintCallbacks:
 
     async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None:  # pyright: ignore[reportUnusedParameter]
         _logger.warning("Failed to caption %s: %s", image.path, error)
+
+    async def on_before_save(self, paths: list[str]) -> None:  # pyright: ignore[reportUnusedParameter]
+        pass
 
 
 # --- Interactive prompts ---
@@ -205,7 +210,6 @@ def _print_dataset_image_meta(dataset_image: DatasetImage):
 async def _stream_one_round(
     runner: CaptioningRunner,
     image: DatasetImage,
-    callbacks: CaptioningCallbacks,
     *,
     caption_rounds: list[CaptionerRound] | None = None,
     extra_messages: list[ReplyRound] | None = None,
@@ -219,7 +223,6 @@ async def _stream_one_round(
     with utils.Timer() as timer:
         caption = await runner.caption_image_dry_run(
             image,
-            callbacks,
             caption_rounds=caption_rounds,
             extra_messages=extra_messages,
             prediction_context=prediction_context,
@@ -232,7 +235,6 @@ async def _caption(
     runner: CaptioningRunner,
     dataset: list[DatasetImage],
     config: Config,
-    do_stream: bool,
     interactive: bool,
     rounds: int,
     save_draft: str = "",
@@ -244,7 +246,6 @@ async def _caption(
     if config.settings.advanced.assistant_prefill and runner.model.api_type in (APITypes.GEMINI, APITypes.OPENAI, APITypes.OPENROUTER):
         _logger.warning("Warning: assistant prefill is set, but the API might not support it")
 
-    callbacks = CLICallbacks(do_stream=do_stream)
     # The "prompts" action renders the same Jinja2 template the model
     # would render, so we don't need to invoke the model for it.
     renderer = PromptRenderer(prompt_template=config.prompt.template)
@@ -403,7 +404,6 @@ async def _caption(
                     caption, elapsed = await _stream_one_round(
                         runner,
                         dataset_image_current,
-                        callbacks,
                         extra_messages=extra_messages,
                         prediction_context=prediction_context,
                     )
@@ -424,7 +424,6 @@ async def _caption(
                             new_caption, elapsed = await _stream_one_round(
                                 runner,
                                 dataset_image_current,
-                                callbacks,
                                 caption_rounds=None,
                                 prediction_context=PredictionContext(),
                             )
@@ -445,7 +444,6 @@ async def _caption(
                     caption, elapsed = await _stream_one_round(
                         runner,
                         dataset_image_current,
-                        callbacks,
                         caption_rounds=caption_rounds,
                         prediction_context=PredictionContext(),
                     )
@@ -479,7 +477,7 @@ async def _caption(
         # edits made via the "edit" action are preserved in the
         # re-serialized sidecar.
         try:
-            runner.save_caption(dataset_image_current, caption)
+            await runner.save_caption(dataset_image_current, caption)
         except Exception as e:
             _logger.warning("Failed to save caption for %s: %s", dataset_image.path, e)
             continue
@@ -666,9 +664,18 @@ async def _caption_async(dataset: str, **kwargs: Any):
 
     _logger.info("Loading model...")
 
+    # Callbacks differ between interactive and non-interactive parallel
+    # mode. Choose early so the runner constructor gets the right one.
+    max_concurrent = options.max_concurrent or 1
+    if not interactive and max_concurrent > 1:
+        callbacks = CLIPrintCallbacks()
+    else:
+        callbacks = CLICallbacks(do_stream=do_stream)
+
     async with CaptioningRunner(
         config,
         options,
+        callbacks,
         cache=cache,
         response_logger=response_logger,
     ) as runner:
@@ -682,9 +689,7 @@ async def _caption_async(dataset: str, **kwargs: Any):
         with utils.Timer() as timer:
             # ``options.max_concurrent`` is ``None`` for the CLI default
             # but the loader (``apply_config_overrides``) resolves it to
-            # an ``int`` before we get here. Use a local to help
-            # basedpyright narrow the type.
-            max_concurrent = options.max_concurrent or 1
+            # an ``int`` before we get here.
             if not interactive and max_concurrent > 1:
                 # Non-interactive parallel path: skip the action menu
                 # and let the runner stream + save all images
@@ -694,7 +699,6 @@ async def _caption_async(dataset: str, **kwargs: Any):
                 _logger.info("Running with up to %d concurrent requests.", max_concurrent)
                 await runner.caption_images(
                     dataset_to_do,
-                    CLIPrintCallbacks(),
                     max_concurrent=max_concurrent,
                 )
                 return_code = cmd_status.STATUS_OK
@@ -703,7 +707,6 @@ async def _caption_async(dataset: str, **kwargs: Any):
                     runner=runner,
                     dataset=dataset_to_do,
                     config=config,
-                    do_stream=do_stream,
                     interactive=interactive,
                     rounds=options.rounds,
                     save_draft=save_draft,

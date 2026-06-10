@@ -1,7 +1,8 @@
-"""Tests for AsyncCaptionJob — Protocol implementation, expected_change_registrar, runner integration, and CaptioningService lifecycle."""
+"""Tests for AsyncCaptionJob — Protocol implementation, runner integration, and CaptioningService lifecycle."""
 
 import asyncio
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,16 +12,17 @@ from yadc.api.events import (
     ImageCaptionedEvent,
     ImageCaptionErrorEvent,
     ImageCaptionStartedEvent,
+    ImageRefinedEvent,
     StartupEvent,
 )
 from yadc.api.modules.event_dispatcher import EventDispatcher
-from yadc.api.services.captioning import AsyncCaptionJob, CaptioningService
+from yadc.api.services.captioning import AsyncCaptionJob, AsyncCaptionJobRunner, CaptioningService
 from yadc.core.captioning import CaptioningCallbacks, CaptionJobOptions
 
-# Patch target paths for the API service module. Centralized so renames
-# only need to be updated in one place.
-_PATCH_CAPTIONING_RUNNER = "yadc.api.services.captioning.CaptioningRunner"
-_PATCH_LOAD_DATASET_CONFIG = "yadc.api.services.captioning.load_dataset_config"
+# Patch target paths. Centralized so renames only need to be updated
+# in one place.
+_PATCH_CAPTIONING_RUNNER = "yadc.api.services.captioning.job_runner.CaptioningRunner"
+_PATCH_LOAD_DATASET_CONFIG = "yadc.api.services.captioning.job_runner.load_dataset_config"
 
 
 # ---------------------------------------------------------------------------
@@ -29,43 +31,41 @@ _PATCH_LOAD_DATASET_CONFIG = "yadc.api.services.captioning.load_dataset_config"
 
 
 @pytest.fixture
-def job(tmp_path, test_configuration):
-    """Create an AsyncCaptionJob with mocked dependencies."""
-    mock_watcher = MagicMock()
-    mock_ds = MagicMock()
-    mock_dispatcher = MagicMock()
-    mock_logger = MagicMock()
-    # ``max_concurrent=1`` explicitly — these tests cover the
-    # sequential path. The ``None`` default is tested in the loader
-    # tests (see ``tests/core/captioning/test_loader.py``).
+def mock_runner():
+    """Create an AsyncCaptionJobRunner with mocked dependencies."""
+    return MagicMock(spec=AsyncCaptionJobRunner)
+
+
+@pytest.fixture
+def runner(test_configuration):
+    """Create a real AsyncCaptionJobRunner with mocked DI dependencies.
+
+    Use this when the test needs to exercise the runner's own methods
+    (preflight, emit_image_*, expect_file_changes, build_runner). For
+    tests that just want to verify the job delegates to the runner,
+    use ``mock_runner`` (a MagicMock spec) instead.
+    """
+    return AsyncCaptionJobRunner(
+        configuration=test_configuration,
+        dataset_service=MagicMock(),
+        dataset_watcher=MagicMock(),
+        event_dispatcher=MagicMock(),
+        logger=MagicMock(),
+    )
+
+
+@pytest.fixture
+def job(mock_runner):
+    """Create an AsyncCaptionJob with a mocked runner."""
     opts = CaptionJobOptions(max_concurrent=1)
 
     return AsyncCaptionJob(
         dataset_name="test_ds",
-        dataset_service=mock_ds,
-        dataset_watcher=mock_watcher,
-        event_dispatcher=mock_dispatcher,
-        logger=mock_logger,
         options=opts,
-        on_done=lambda: None,
         job_id="abc123",
-        configuration=test_configuration,
+        on_done=lambda: None,
+        runner=mock_runner,
     )
-
-
-def _image_info(id_: int = 42, file_name: str = "img.jpg", path: str = "/img.jpg") -> MagicMock:
-    """Build a MagicMock that quacks like DatasetService.get_image return value."""
-    info = MagicMock()
-    info.id = id_
-    info.file_name = file_name
-    info.path = path
-    info.has_caption = True
-    info.has_toml = False
-    info.width = 100
-    info.height = 100
-    info.draft_names = []
-    info.last_modified_t = 1.0
-    return info
 
 
 # ---------------------------------------------------------------------------
@@ -83,118 +83,35 @@ class TestCaptioningCallbacks:
     @pytest.mark.asyncio
     async def test_on_token_is_noop(self, job):
         """on_token does not raise (no observable side effect)."""
-        # The API doesn't stream tokens to clients — verify the method
-        # is callable and doesn't error.
         await job.on_token("hello")
         await job.on_token(" world")
 
     @pytest.mark.asyncio
-    async def test_on_image_started_dispatches_event(self, job):
-        """on_image_started dispatches ImageCaptionStartedEvent with the right fields."""
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
+    async def test_on_image_started_delegates_to_runner(self, job, mock_runner):
+        """on_image_started delegates to runner.emit_image_started."""
+        image = MagicMock(path="/img.jpg")
+        await job.on_image_started(image)
 
-        await job.on_image_started(MagicMock(path="/img.jpg"))
-
-        job._event_dispatcher.dispatch.assert_called_once()
-        event = job._event_dispatcher.dispatch.call_args[0][0]
-        assert isinstance(event, ImageCaptionStartedEvent)
-        assert event.dataset_name == "test_ds"
-        assert event.job_id == "abc123"
-        assert event.image_id == 42
-        assert event.file_name == "img.jpg"
+        mock_runner.emit_image_started.assert_called_once_with("test_ds", "abc123", image)
 
     @pytest.mark.asyncio
-    async def test_on_image_started_skips_unknown_path(self, job):
-        """If the image isn't in the dataset, no event is dispatched."""
-        job._dataset_service.get_image_by_path.return_value = None
-        await job.on_image_started(MagicMock(path="/unknown.jpg"))
-        job._event_dispatcher.dispatch.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_on_image_captioned_increments_processed(self, job):
+    async def test_on_image_captioned_increments_processed(self, job, mock_runner):
         """on_image_captioned increments the processed counter."""
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
-        job._dataset_service.get_image.return_value = info
-
         await job.on_image_captioned(MagicMock(path="/img.jpg", caption="hi"), duration_ms=100)
 
         assert job._processed == 1
 
     @pytest.mark.asyncio
-    async def test_on_image_captioned_dispatches_captioned_and_status(self, job):
-        """on_image_captioned dispatches ImageCaptionedEvent then CaptioningStatusEvent."""
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
-        job._dataset_service.get_image.return_value = info
-
+    async def test_on_image_captioned_delegates_to_runner(self, job, mock_runner):
+        """on_image_captioned calls runner.emit_image_captioned and runner.emit_status."""
         image = MagicMock(path="/img.jpg", caption="hello")
         await job.on_image_captioned(image, duration_ms=120)
 
-        dispatched = [c[0][0] for c in job._event_dispatcher.dispatch.call_args_list]
-        assert len(dispatched) == 2
-        assert isinstance(dispatched[0], ImageCaptionedEvent)
-        assert dispatched[0].caption == "hello"
-        assert dispatched[0].duration_ms == 120
-        assert isinstance(dispatched[1], CaptioningStatusEvent)
-        assert dispatched[1].processed == 1
-        # The status event carries the configured max_concurrent
-        # (default 1 in the test fixture) so the frontend can compute
-        # wall-clock ETA under parallel runs.
-        assert dispatched[1].max_concurrent == 1
+        mock_runner.emit_image_captioned.assert_called_once_with("test_ds", "abc123", image, "", "", 120)
+        mock_runner.emit_status.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_on_image_captioned_includes_elapsed_when_started(self, job):
-        """Status event includes a non-zero ``elapsed`` once the job has started."""
-        # Simulate ``_arun`` having set the start timestamp.
-        job._started_at = time.monotonic() - 12.5
-
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
-        job._dataset_service.get_image.return_value = info
-
-        await job.on_image_captioned(MagicMock(path="/img.jpg", caption="hi"), duration_ms=100)
-
-        status_event = job._event_dispatcher.dispatch.call_args_list[-1][0][0]
-        assert isinstance(status_event, CaptioningStatusEvent)
-        # 12.5s elapsed at the start of the callback, then the callback
-        # itself runs for a few ms; we just check it's in the right
-        # ballpark.
-        assert 12.4 <= status_event.elapsed < 13.0
-
-    @pytest.mark.asyncio
-    async def test_status_event_elapsed_is_zero_before_start(self, job):
-        """A status event before ``_arun`` has run reports ``elapsed=0``."""
-        # _started_at is None until _arun runs.
-        assert job._started_at is None
-
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
-        job._dataset_service.get_image.return_value = info
-
-        # ``snapshot()`` (used by external callers) emits a status event
-        # through ``_emit_status``.
-        await job._emit_status()
-
-        status_event = job._event_dispatcher.dispatch.call_args_list[-1][0][0]
-        assert isinstance(status_event, CaptioningStatusEvent)
-        assert status_event.elapsed == 0.0
-        assert status_event.max_concurrent == 1
-
-    @pytest.mark.asyncio
-    async def test_on_image_captioned_refreshes_image_index(self, job):
-        """on_image_captioned refreshes the image index after saving."""
-        info = _image_info()
-        job._dataset_service.get_image_by_path.return_value = info
-        job._dataset_service.get_image.return_value = info
-
-        await job.on_image_captioned(MagicMock(path="/img.jpg"), duration_ms=100)
-
-        job._dataset_service.refresh_image_index.assert_called_once_with("test_ds", 42)
-
-    @pytest.mark.asyncio
-    async def test_on_image_error_increments_and_records(self, job):
+    async def test_on_image_error_increments_and_records(self, job, mock_runner):
         """on_image_error increments errors and records the message."""
         await job.on_image_error(MagicMock(path="/img.jpg"), "boom", duration_ms=50)
 
@@ -202,51 +119,13 @@ class TestCaptioningCallbacks:
         assert job._error_messages == ["boom"]
 
     @pytest.mark.asyncio
-    async def test_on_image_error_dispatches_error_and_status(self, job):
-        """on_image_error dispatches ImageCaptionErrorEvent then CaptioningStatusEvent."""
-        job._dataset_service.get_image_by_path.return_value = None
-        await job.on_image_error(MagicMock(path="/unknown.jpg"), "boom", duration_ms=50)
+    async def test_on_image_error_delegates_to_runner(self, job, mock_runner):
+        """on_image_error calls runner.emit_image_error and runner.emit_status."""
+        image = MagicMock(path="/unknown.jpg")
+        await job.on_image_error(image, "boom", duration_ms=50)
 
-        dispatched = [c[0][0] for c in job._event_dispatcher.dispatch.call_args_list]
-        assert len(dispatched) == 2
-        assert isinstance(dispatched[0], ImageCaptionErrorEvent)
-        assert dispatched[0].error == "boom"
-        assert dispatched[0].duration_ms == 50
-        assert dispatched[0].image_id == -1
-        assert isinstance(dispatched[1], CaptioningStatusEvent)
-        assert dispatched[1].errors == 1
-
-    @pytest.mark.asyncio
-    async def test_on_image_error_logs_warning(self, job):
-        """on_image_error logs a warning with the image path and error."""
-        await job.on_image_error(MagicMock(path="/img.jpg"), "boom", duration_ms=50)
-        job._logger.warning.assert_called_once()
-        # log message is positional %-formatted — check the format string
-        # and the positional args separately (see logging-format memory).
-        fmt, path_arg, _ = job._logger.warning.call_args[0]
-        assert path_arg == "/img.jpg"
-        assert "boom" in (fmt % (path_arg, "boom"))
-
-
-# ---------------------------------------------------------------------------
-# expected_change_registrar
-# ---------------------------------------------------------------------------
-
-
-class TestExpectedChangeRegistrar:
-    """_expected_change_registrar — calls dataset_watcher.expect_file_change per path."""
-
-    def test_registers_each_path(self, job):
-        paths = ["/a.txt", "/b.toml", "/c.history~"]
-        job._expected_change_registrar(paths)
-
-        assert job._dataset_watcher.expect_file_change.call_count == 3
-        for path in paths:
-            job._dataset_watcher.expect_file_change.assert_any_call("test_ds", path)
-
-    def test_empty_paths(self, job):
-        job._expected_change_registrar([])
-        job._dataset_watcher.expect_file_change.assert_not_called()
+        mock_runner.emit_image_error.assert_called_once_with("test_ds", "abc123", "", "", image, "boom", 50)
+        mock_runner.emit_status.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -255,19 +134,33 @@ class TestExpectedChangeRegistrar:
 
 
 class TestAdoRunWithRunner:
-    """_ado_run — uses CaptioningRunner + processes images + dispatches status events."""
+    """_ado_run — uses runner.preflight + CaptioningRunner + processes images."""
 
     @pytest.fixture
-    def ado_run_env(self, tmp_path):
+    def ado_run_env(self, tmp_path, test_configuration):
         """Set up the environment for _ado_run tests.
 
-        Yields ``(config_path, mock_instance, MockRunner, mock_load)`` where
-        ``config_path`` is a real file the dataset_service mock can return
-        (so the real ``preflight_images`` passes its path check), and the
-        other two are the patched CaptioningRunner and load_dataset_config.
+        Yields ``(mock_instance, MockRunner, mock_load, mock_ds)`` where
+        the patches target the job_runner module.
         """
         config_path = tmp_path / "config.toml"
         config_path.write_text('[api]\nurl = "x"\nmodel_name = "m"\n[prompt]\ntemplate = "t"\n')
+
+        mock_ds = MagicMock()
+        mock_ds.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_ds.get_image_paths_in_desc_order.return_value = []
+
+        mock_watcher = MagicMock()
+        mock_dispatcher = MagicMock()
+        mock_logger = MagicMock()
+
+        runner = AsyncCaptionJobRunner(
+            configuration=test_configuration,
+            dataset_service=mock_ds,
+            dataset_watcher=mock_watcher,
+            event_dispatcher=mock_dispatcher,
+            logger=mock_logger,
+        )
 
         with patch(_PATCH_CAPTIONING_RUNNER) as MockRunner, patch(_PATCH_LOAD_DATASET_CONFIG) as mock_load:
             mock_instance = MagicMock()
@@ -275,56 +168,56 @@ class TestAdoRunWithRunner:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             mock_instance.caption_images = AsyncMock()
             MockRunner.return_value = mock_instance
-            yield config_path, mock_instance, MockRunner, mock_load
+            yield mock_instance, MockRunner, mock_load, runner, mock_ds
 
     @pytest.mark.asyncio
-    async def test_uses_captioning_runner(self, job, ado_run_env):
-        """_ado_run builds a CaptioningRunner with the parsed config and self as callbacks."""
-        config_path, mock_instance, MockRunner, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+    async def test_uses_captioning_runner(self, ado_run_env):
+        """_ado_run builds a CaptioningRunner with the parsed config."""
+        mock_instance, MockRunner, mock_load, runner, mock_ds = ado_run_env
         mock_config = MagicMock()
         mock_load.return_value = (mock_config, [MagicMock()])
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         MockRunner.assert_called_once()
         args, kwargs = MockRunner.call_args
         assert args[0] is mock_config
-        assert args[1] is job._opts
-        assert kwargs.get("expected_change_registrar") == job._expected_change_registrar
+        assert args[1] is opts
 
     @pytest.mark.asyncio
-    async def test_caption_images_called_with_all_images(self, job, ado_run_env):
+    async def test_caption_images_called_with_all_images(self, ado_run_env):
         """_ado_run calls caption_images with the to-do list and self as callbacks."""
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_instance, _, mock_load, runner, _ = ado_run_env
         images = [MagicMock(), MagicMock(), MagicMock()]
         mock_load.return_value = (MagicMock(), images)
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         mock_instance.caption_images.assert_awaited_once()
         args, kwargs = mock_instance.caption_images.call_args
         assert args[0] == images
-        assert args[1] is job
         assert kwargs.get("max_concurrent") == 1  # default
 
     @pytest.mark.asyncio
-    async def test_caption_images_passes_max_concurrent(self, job, ado_run_env):
+    async def test_caption_images_passes_max_concurrent(self, ado_run_env):
         """_ado_run forwards the CaptionJobOptions.max_concurrent to the runner."""
         from yadc.core.captioning.options import CaptionJobOptions
 
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
-        job._opts = CaptionJobOptions(max_concurrent=4)
+        mock_instance, _, mock_load, runner, _ = ado_run_env
         mock_load.return_value = (MagicMock(), [MagicMock()])
 
+        opts = CaptionJobOptions(max_concurrent=4)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         assert mock_instance.caption_images.call_args.kwargs.get("max_concurrent") == 4
 
     @pytest.mark.asyncio
-    async def test_caption_images_receives_desc_sorted_to_do(self, job, ado_run_env):
+    async def test_caption_images_receives_desc_sorted_to_do(self, ado_run_env):
         """``_ado_run`` passes the SQL id-DESC-sorted list to
         ``caption_images`` so concurrent captioning starts with the
         newest images first. Reorder is driven by a single SQL
@@ -332,11 +225,11 @@ class TestAdoRunWithRunner:
         """
         from yadc.core.dataset import DatasetImage
 
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_instance, _, mock_load, runner, mock_ds = ado_run_env
+        config_path = Path(mock_ds.get_dataset.return_value.config_path)
 
         # Real loader call returns images in filesystem order; the
-        # API service then reorders via the SQL DESC query.
+        # API runner then reorders via the SQL DESC query.
         img_a = DatasetImage(path=str(config_path.parent / "a.jpg"))
         img_b = DatasetImage(path=str(config_path.parent / "b.jpg"))
         img_c = DatasetImage(path=str(config_path.parent / "c.jpg"))
@@ -344,28 +237,32 @@ class TestAdoRunWithRunner:
         # Path list returned by the SQL query (newest first). IDs
         # are intentionally non-monotonic with file names so we
         # can prove the sort comes from SQL, not path.
-        job._dataset_service.get_image_paths_in_desc_order.return_value = [
+        mock_ds.get_image_paths_in_desc_order.return_value = [
             str(img_b.path),
             str(img_c.path),
             str(img_a.path),
         ]
 
         mock_load.return_value = (MagicMock(), [img_a, img_b, img_c])
+
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         mock_instance.caption_images.assert_awaited_once()
         args, _ = mock_instance.caption_images.call_args
         assert args[0] == [img_b, img_c, img_a]
         # The reorder uses the SQL helper, not N+1 get_image_by_path calls.
-        job._dataset_service.get_image_paths_in_desc_order.assert_called_once_with("test_ds")
+        mock_ds.get_image_paths_in_desc_order.assert_called_once_with("test_ds")
 
     @pytest.mark.asyncio
-    async def test_done_status_on_no_images(self, job, ado_run_env):
+    async def test_done_status_on_no_images(self, ado_run_env):
         """_ado_run early-exits with done status when there are no images."""
-        config_path, _, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        _, _, mock_load, runner, _ = ado_run_env
         mock_load.return_value = (MagicMock(), [])
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         snap = await job.snapshot()
@@ -373,53 +270,380 @@ class TestAdoRunWithRunner:
         assert snap.total == 0
 
     @pytest.mark.asyncio
-    async def test_done_status_after_processing(self, job, ado_run_env):
+    async def test_done_status_after_processing(self, ado_run_env):
         """_ado_run sets done status after processing all images without stop."""
-        config_path, _, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        _, _, mock_load, runner, _ = ado_run_env
         mock_load.return_value = (MagicMock(), [MagicMock(), MagicMock()])
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         await job._ado_run()
 
         snap = await job.snapshot()
         assert snap.status == "done"
 
     @pytest.mark.asyncio
-    async def test_cancelled_status_when_stop_event_set(self, job, ado_run_env):
+    async def test_cancelled_status_when_stop_event_set(self, ado_run_env):
         """_ado_run sets cancelled status when the stop event is set."""
-        config_path, _, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        _, _, mock_load, runner, _ = ado_run_env
         mock_load.return_value = (MagicMock(), [MagicMock()])
-        job._stop_event.set()
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
+        job._stop_event.set()
         await job._ado_run()
 
         snap = await job.snapshot()
         assert snap.status == "cancelled"
 
     @pytest.mark.asyncio
-    async def test_cancellation_propagates(self, job, ado_run_env):
+    async def test_cancellation_propagates(self, ado_run_env):
         """_ado_run re-raises CancelledError (does not catch it)."""
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_instance, _, mock_load, runner, _ = ado_run_env
         mock_instance.caption_images = AsyncMock(side_effect=asyncio.CancelledError())
         mock_load.return_value = (MagicMock(), [MagicMock()])
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         with pytest.raises(asyncio.CancelledError):
             await job._ado_run()
 
     @pytest.mark.asyncio
-    async def test_batch_aborted_error_propagates(self, job, ado_run_env):
+    async def test_batch_aborted_error_propagates(self, ado_run_env):
         """_ado_run lets BatchAbortedError through; _arun turns it into status='error'."""
         from yadc.core.captioning.runner import BatchAbortedError
 
-        config_path, mock_instance, _, mock_load = ado_run_env
-        job._dataset_service.get_dataset.return_value = MagicMock(config_path=str(config_path))
+        mock_instance, _, mock_load, runner, _ = ado_run_env
         mock_instance.caption_images = AsyncMock(side_effect=BatchAbortedError("aborted"))
         mock_load.return_value = (MagicMock(), [MagicMock()])
 
+        opts = CaptionJobOptions(max_concurrent=1)
+        job = AsyncCaptionJob(dataset_name="test_ds", options=opts, job_id="abc123", on_done=lambda: None, runner=runner)
         with pytest.raises(BatchAbortedError):
             await job._ado_run()
+
+
+# ---------------------------------------------------------------------------
+# AsyncCaptionJobRunner: expect_file_changes
+# ---------------------------------------------------------------------------
+
+
+class TestExpectFileChanges:
+    """Runner's expect_file_changes — calls dataset_watcher.expect_file_change per path."""
+
+    def test_registers_each_path(self, test_configuration):
+        mock_watcher = MagicMock()
+        runner = AsyncCaptionJobRunner(
+            configuration=test_configuration,
+            dataset_service=MagicMock(),
+            dataset_watcher=mock_watcher,
+            event_dispatcher=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        paths = ["/a.txt", "/b.toml", "/c.history~"]
+        runner.expect_file_changes("test_ds", paths)
+
+        assert mock_watcher.expect_file_change.call_count == 3
+        for path in paths:
+            mock_watcher.expect_file_change.assert_any_call("test_ds", path)
+
+    def test_empty_paths(self, test_configuration):
+        mock_watcher = MagicMock()
+        runner = AsyncCaptionJobRunner(
+            configuration=test_configuration,
+            dataset_service=MagicMock(),
+            dataset_watcher=mock_watcher,
+            event_dispatcher=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        runner.expect_file_changes("test_ds", [])
+
+        mock_watcher.expect_file_change.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# AsyncCaptionJobRunner: emit_status
+# ---------------------------------------------------------------------------
+
+
+class TestRunnerEmitStatus:
+    """Tests for AsyncCaptionJobRunner.emit_status."""
+
+    @pytest.mark.asyncio
+    async def test_emits_status_event_with_snapshot_data(self, test_configuration):
+        mock_dispatcher = MagicMock()
+        runner = AsyncCaptionJobRunner(
+            configuration=test_configuration,
+            dataset_service=MagicMock(),
+            dataset_watcher=MagicMock(),
+            event_dispatcher=mock_dispatcher,
+            logger=MagicMock(),
+        )
+
+        from yadc.api.services.captioning.models import JobInfo
+
+        snapshot = JobInfo(
+            status="running",
+            dataset_name="test_ds",
+            job_id="abc123",
+            processed=5,
+            total=10,
+            errors=1,
+            api_url="http://test",
+            api_model_name="model-v1",
+            error_messages=["oops"],
+            max_concurrent=2,
+        )
+        started_at = time.monotonic() - 5.0
+        await runner.emit_status("test_ds", "abc123", snapshot, started_at)
+
+        mock_dispatcher.dispatch.assert_called_once()
+        event = mock_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, CaptioningStatusEvent)
+        assert event.dataset_name == "test_ds"
+        assert event.job_id == "abc123"
+        assert event.processed == 5
+        assert event.max_concurrent == 2
+        assert 4.9 <= event.elapsed < 6.0
+
+    @pytest.mark.asyncio
+    async def test_elapsed_zero_when_started_at_none(self, test_configuration):
+        mock_dispatcher = MagicMock()
+        runner = AsyncCaptionJobRunner(
+            configuration=test_configuration,
+            dataset_service=MagicMock(),
+            dataset_watcher=MagicMock(),
+            event_dispatcher=mock_dispatcher,
+            logger=MagicMock(),
+        )
+
+        from yadc.api.services.captioning.models import JobInfo
+
+        snapshot = JobInfo(status="running", dataset_name="test_ds")
+        await runner.emit_status("test_ds", "abc123", snapshot, None)
+
+        event = mock_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, CaptioningStatusEvent)
+        assert event.elapsed == 0.0
+
+
+# ---------------------------------------------------------------------------
+# AsyncCaptionJobRunner: emit_image_*
+# ---------------------------------------------------------------------------
+
+
+def _image_info(
+    id_: int = 42,
+    file_name: str = "img.jpg",
+    path: str = "/img.jpg",
+    has_caption: bool = True,
+    has_toml: bool = False,
+) -> MagicMock:
+    """Build a MagicMock that quacks like DatasetService.get_image return value."""
+    info = MagicMock()
+    info.id = id_
+    info.file_name = file_name
+    info.path = path
+    info.has_caption = has_caption
+    info.has_toml = has_toml
+    info.width = 100
+    info.height = 100
+    info.draft_names = []
+    info.last_modified_t = 1.0
+    return info
+
+
+class TestRunnerEmitImageStarted:
+    """emit_image_started — looks up the image in the DB and dispatches ImageCaptionStartedEvent."""
+
+    def test_dispatches_event_with_db_fields(self, runner):
+        """Dispatches ImageCaptionStartedEvent with the DB image's id and file_name."""
+        info = _image_info()
+        runner._dataset_service.get_image_by_path.return_value = info
+
+        image = MagicMock(path="/img.jpg")
+        runner.emit_image_started("test_ds", "abc123", image)
+
+        runner._dataset_service.get_image_by_path.assert_called_once_with("test_ds", "/img.jpg")
+        runner._event_dispatcher.dispatch.assert_called_once()
+        event = runner._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, ImageCaptionStartedEvent)
+        assert event.dataset_name == "test_ds"
+        assert event.job_id == "abc123"
+        assert event.image_id == 42
+        assert event.file_name == "img.jpg"
+
+    def test_skips_dispatch_when_image_not_in_db(self, runner):
+        """If the image isn't in the DB, no event is dispatched."""
+        runner._dataset_service.get_image_by_path.return_value = None
+
+        runner.emit_image_started("test_ds", "abc123", MagicMock(path="/unknown.jpg"))
+
+        runner._event_dispatcher.dispatch.assert_not_called()
+
+
+class TestRunnerEmitImageCaptioned:
+    """emit_image_captioned — refreshes the image index, re-fetches, then dispatches ImageCaptionedEvent."""
+
+    def test_refreshes_index_then_dispatches(self, runner):
+        """After a successful caption, refresh_image_index is called and the event
+        uses the fresh image data (including has_caption/has_toml)."""
+        before = _image_info(has_caption=False, has_toml=False)
+        # get_image_by_path returns the pre-refresh row.
+        runner._dataset_service.get_image_by_path.return_value = before
+        # get_image (after refresh) returns the post-refresh row.
+        after = _image_info(has_caption=True, has_toml=True)
+        runner._dataset_service.get_image.return_value = after
+
+        image = MagicMock(path="/img.jpg", caption="a fluffy cat")
+        runner.emit_image_captioned(
+            "test_ds",
+            "abc123",
+            image,
+            api_url="http://api",
+            api_model_name="m-v1",
+            duration_ms=250,
+        )
+
+        runner._dataset_service.refresh_image_index.assert_called_once_with("test_ds", 42)
+        runner._dataset_service.get_image.assert_called_once_with("test_ds", 42)
+        runner._event_dispatcher.dispatch.assert_called_once()
+        event = runner._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, ImageCaptionedEvent)
+        assert event.dataset_name == "test_ds"
+        assert event.job_id == "abc123"
+        assert event.id == 42
+        assert event.caption == "a fluffy cat"
+        assert event.duration_ms == 250
+        assert event.api_url == "http://api"
+        assert event.api_model_name == "m-v1"
+        # Fresh post-refresh fields make it onto the event.
+        assert event.has_caption is True
+        assert event.has_toml is True
+
+    def test_skips_dispatch_when_image_not_in_db(self, runner):
+        """If the image isn't in the DB, no event is dispatched and no refresh happens."""
+        runner._dataset_service.get_image_by_path.return_value = None
+
+        runner.emit_image_captioned(
+            "test_ds",
+            "abc123",
+            MagicMock(path="/missing.jpg", caption="x"),
+            api_url="",
+            api_model_name="",
+            duration_ms=0,
+        )
+
+        runner._dataset_service.refresh_image_index.assert_not_called()
+        runner._dataset_service.get_image.assert_not_called()
+        runner._event_dispatcher.dispatch.assert_not_called()
+
+    def test_skips_dispatch_when_image_vanishes_after_refresh(self, runner):
+        """If the image disappears between by-path lookup and the post-refresh
+        get_image call, no event is dispatched (the row was deleted mid-caption)."""
+        runner._dataset_service.get_image_by_path.return_value = _image_info()
+        runner._dataset_service.get_image.return_value = None
+
+        runner.emit_image_captioned(
+            "test_ds",
+            "abc123",
+            MagicMock(path="/img.jpg", caption="x"),
+            api_url="",
+            api_model_name="",
+            duration_ms=0,
+        )
+
+        runner._event_dispatcher.dispatch.assert_not_called()
+
+
+class TestRunnerEmitImageError:
+    """emit_image_error — uses image_id from the DB lookup, or -1 if the image is unknown."""
+
+    def test_dispatches_with_db_image_id(self, runner):
+        """When the image is in the DB, the event uses its real id."""
+        runner._dataset_service.get_image_by_path.return_value = _image_info(id_=99)
+
+        image = MagicMock(path="/img.jpg")
+        runner.emit_image_error(
+            "test_ds",
+            "abc123",
+            api_url="http://api",
+            api_model_name="m",
+            dataset_image=image,
+            error="boom",
+            duration_ms=500,
+        )
+
+        runner._event_dispatcher.dispatch.assert_called_once()
+        event = runner._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, ImageCaptionErrorEvent)
+        assert event.dataset_name == "test_ds"
+        assert event.job_id == "abc123"
+        assert event.image_id == 99
+        assert event.error == "boom"
+        assert event.duration_ms == 500
+        assert event.api_url == "http://api"
+        assert event.api_model_name == "m"
+
+    def test_dispatches_with_sentinel_image_id_when_unknown(self, runner):
+        """When the image is not in the DB, the event uses image_id = -1."""
+        runner._dataset_service.get_image_by_path.return_value = None
+
+        runner.emit_image_error(
+            "test_ds",
+            "abc123",
+            api_url="",
+            api_model_name="",
+            dataset_image=MagicMock(path="/missing.jpg"),
+            error="boom",
+            duration_ms=0,
+        )
+
+        event = runner._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, ImageCaptionErrorEvent)
+        assert event.image_id == -1
+
+
+class TestRunnerEmitImageRefined:
+    """emit_image_refined — dispatches ImageRefinedEvent for a dry-run refine result."""
+
+    def test_dispatches_with_source_and_draft_name(self, runner):
+        """Dispatches ImageRefinedEvent with refine.source and refine.refine_draft_name."""
+        from yadc.api.services.captioning.models import RefineOptions
+
+        runner._dataset_service.get_image_by_path.return_value = _image_info()
+
+        image = MagicMock(path="/img.jpg")
+        refine = RefineOptions(refine_source="draft", refine_draft_name="gemma")
+        runner.emit_image_refined("test_ds", "abc123", image, "refined caption", refine)
+
+        runner._event_dispatcher.dispatch.assert_called_once()
+        event = runner._event_dispatcher.dispatch.call_args[0][0]
+        assert isinstance(event, ImageRefinedEvent)
+        assert event.dataset_name == "test_ds"
+        assert event.job_id == "abc123"
+        assert event.image_id == 42
+        assert event.caption == "refined caption"
+        assert event.source == "draft"
+        assert event.draft_name == "gemma"
+
+    def test_skips_dispatch_when_image_not_in_db(self, runner):
+        """If the image isn't in the DB, no event is dispatched."""
+        from yadc.api.services.captioning.models import RefineOptions
+
+        runner._dataset_service.get_image_by_path.return_value = None
+
+        runner.emit_image_refined(
+            "test_ds",
+            "abc123",
+            MagicMock(path="/missing.jpg"),
+            "x",
+            RefineOptions(),
+        )
+
+        runner._event_dispatcher.dispatch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +779,9 @@ template = "test"
     @pytest.mark.asyncio
     async def test_returns_done_when_no_images(self, captioning_service):
         """When preflight returns 0 images, start_job_async returns done without starting a task."""
-        with patch.object(AsyncCaptionJob, "preflight_images", return_value=[]):
+        with patch("yadc.api.services.captioning.job_runner.load_dataset_config") as mock_load:
+            mock_config = MagicMock()
+            mock_load.return_value = (mock_config, [])
             with patch.object(AsyncCaptionJob, "start") as mock_start:
                 info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 
@@ -567,7 +793,7 @@ template = "test"
     @pytest.mark.asyncio
     async def test_returns_error_on_preflight_failure(self, captioning_service):
         """When preflight raises, start_job_async returns error without starting a task."""
-        with patch.object(AsyncCaptionJob, "preflight_images", side_effect=ValueError("bad config")):
+        with patch("yadc.api.services.captioning.job_runner.load_dataset_config", side_effect=ValueError("bad config")):
             with patch.object(AsyncCaptionJob, "start") as mock_start:
                 info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 
@@ -581,7 +807,9 @@ template = "test"
         mock_img = MagicMock()
         mock_img.path = "/fake/img.jpg"
 
-        with patch.object(AsyncCaptionJob, "preflight_images", return_value=[mock_img]):
+        with patch("yadc.api.services.captioning.job_runner.load_dataset_config") as mock_load:
+            mock_config = MagicMock()
+            mock_load.return_value = (mock_config, [mock_img])
             with patch.object(AsyncCaptionJob, "start") as mock_start:
                 info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 

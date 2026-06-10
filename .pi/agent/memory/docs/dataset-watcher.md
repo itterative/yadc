@@ -160,7 +160,7 @@ Each frontend tab generates a unique `clientId` on module load (stored in `event
 | File | Role |
 |------|------|
 | `yadc/api/modules/dataset_watcher.py` | `DatasetWatcherService` — watcher, debouncing, expected-change tracking |
-| `yadc/api/services/captioning.py` | `CaptioningService` — sets `expect_changes` at job start, clears on completion |
+| `yadc/api/services/captioning/service.py` | `CaptioningService` — sets `expect_changes` at job start, clears on completion |
 | `yadc/api/services/datasets.py` | `DatasetService` — calls `watch_dataset`, `expect_file_change` for webui edits, handles `DatasetChangedEvent` |
 | `yadc/api/configuration.py` | `watcher_debounce_seconds`, `watcher_expected_file_max`, `watcher_expected_file_ttl` |
 | `yadc/webui/src/lib/stores/events.ts` | Frontend SSE listener — per-tab clientId generation, job_id-based suppression |

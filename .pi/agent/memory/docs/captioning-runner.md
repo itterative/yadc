@@ -41,22 +41,22 @@ from yadc.core.captioning import (
 The runner is an async context manager. `__aenter__` creates the `AsyncSession` and `APICaptioner`; `__aexit__` calls `model.log_usage()` and `async_session.aclose()`:
 
 ```python
-async with CaptioningRunner(config, options) as runner:
+async with CaptioningRunner(config, options, callbacks) as runner:
     for image in images:
-        caption = await runner.caption_image(image, callbacks)
+        caption = await runner.caption_image(image)
 ```
 
-### `caption_image(image, callbacks, *, caption_rounds=None, extra_messages=None, prediction_context=None)`
+### `caption_image(image, *, caption_rounds=None, extra_messages=None, prediction_context=None)`
 
 Stream + accumulate + save. Calls `callbacks.on_image_started`, `on_token` per streamed token, `on_image_captioned` on success. On a non-cancellation exception, calls `callbacks.on_image_error(image, str(exc), duration_ms)` and re-raises. `CancelledError` re-raises without firing the error callback.
 
-### `caption_image_dry_run(image, callbacks, *, caption_rounds=None, extra_messages=None, prediction_context=None)`
+### `caption_image_dry_run(image, *, caption_rounds=None, extra_messages=None, prediction_context=None)`
 
-Stream + accumulate. Does not save. Does not call `expected_change_registrar`. Does not fire `on_image_captioned`. Used by the CLI's interactive flow where the user may retry/reject before committing; the caller calls `runner.save_caption(image, caption)` after acceptance.
+Stream + accumulate. Does not save. Does not call `on_before_save`. Does not fire `on_image_captioned`. Used by the CLI's interactive flow where the user may retry/reject before committing; the caller calls `runner.save_caption(image, caption)` after acceptance.
 
 ### `save_caption(image, caption)` — public, sync
 
-Writes the caption (or draft) to disk, calling `expected_change_registrar` (if provided) with the file paths first so the API watcher can suppress inotify events. Honors `options.draft` (writes the draft file instead of caption/TOML/history).
+Writes the caption (or draft) to disk. If `callbacks` is provided, calls `callbacks.on_before_save(paths)` with the file paths before any writes. The API passes its callbacks so the watcher can suppress inotify events; the CLI passes `None`. Honors `options.draft` (writes the draft file instead of caption/TOML/history).
 
 ### `model` — property
 
@@ -64,7 +64,7 @@ Returns the underlying `APICaptioner`. Used by the CLI for the `api_type` prefil
 
 ## `CaptioningCallbacks` Protocol
 
-Four async methods that the runner awaits from its async context:
+Five methods that the runner awaits/calls from its async context:
 
 ```python
 class CaptioningCallbacks(Protocol):
@@ -72,11 +72,12 @@ class CaptioningCallbacks(Protocol):
     async def on_image_started(self, image: DatasetImage) -> None: ...
     async def on_image_captioned(self, image: DatasetImage, duration_ms: int) -> None: ...
     async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None: ...
+    async def on_before_save(self, paths: list[str]) -> None: ...
 ```
 
-`@runtime_checkable`. Implementations pass `self` to `caption_image` directly. The runner always calls all four methods (no `None` checks); implementations provide no-ops for events they don't care about. `# pyright: ignore[reportUnusedParameter]` is the convention for unused Protocol-required params (keeps the parameter name for Protocol match).
+`@runtime_checkable`. Implementations pass `self` to `caption_image` directly. The runner always calls all five methods (no `None` checks); implementations provide no-ops for events they don't care about. `# pyright: ignore[reportUnusedParameter]` is the convention for unused Protocol-required params (keeps the parameter name for Protocol match).
 
-All four methods are `async def` so implementations can do async work directly (e.g. `await asyncio.Lock`) without scheduling it as a separate task. The runner `await`s each method in turn, so callbacks run sequentially in the runner's task.
+The five async methods are `async def` so implementations can do async work directly (e.g. `await asyncio.Lock`) without scheduling it as a separate task. The runner `await`s each method in turn, so callbacks run sequentially in the runner's task.
 
 **`on_image_captioned`** is called only when the caption is non-empty and was successfully saved. **Empty captions** (`""` from the model) → no save, no callback.
 
@@ -87,10 +88,10 @@ All four methods are `async def` so implementations can do async work directly (
 The CLI's interactive flow uses `caption_image_dry_run` per image and `save_caption` after the user accepts:
 
 ```python
-async with CaptioningRunner(config, options, cache=cache, response_logger=response_logger) as runner:
+async with CaptioningRunner(config, options, cli_callbacks, cache=cache, response_logger=response_logger) as runner:
     for image in dataset_to_do:
         # interactive action menu (continue / retry / reply / edit / prompts / skip / quit)
-        caption = await runner.caption_image_dry_run(image, cli_callbacks, prediction_context=ctx)
+        caption = await runner.caption_image_dry_run(image, prediction_context=ctx)
         # user accepts
         runner.save_caption(image, caption)
 ```
@@ -99,22 +100,17 @@ async with CaptioningRunner(config, options, cache=cache, response_logger=respon
 
 ## How the API uses it
 
-The API's `AsyncCaptionJob` implements `CaptioningCallbacks` directly and passes `self` to the runner:
+The API's `AsyncCaptionJob` implements `CaptioningCallbacks` directly and passes `self` to the runner. The job is a pure state machine with no DI imports — it delegates all infrastructure (preflight, event emission, watcher registration) to `AsyncCaptionJobRunner`:
 
 ```python
-async with CaptioningRunner(
-    config,
-    options,
-    expected_change_registrar=self._expected_change_registrar,  # watcher suppression
-    http_timeouts=HTTPTTimeouts(...),                          # from Configuration
-) as runner:
-    for image in to_do:
-        if self._check_stop():
-            break
-        await runner.caption_image(image, self, extra_messages=self._extra_messages)  # self implements CaptioningCallbacks; extra_messages from refine endpoint
+# AsyncCaptionJobRunner builds the CaptioningRunner
+runner = self._runner.build_runner(config, options, callbacks=self)
+
+async with runner:
+    await runner.caption_images(to_do, max_concurrent=...)  # runner holds self via callbacks=
 ```
 
-The job's `on_token` is a no-op (no SSE token stream), `on_image_started` / `on_image_captioned` / `on_image_error` dispatch `ImageCaptionStartedEvent` / `ImageCaptionedEvent` / `ImageCaptionErrorEvent` and update job state.
+The job's `on_token` is a no-op (no SSE token stream), `on_image_started` / `on_image_captioned` / `on_image_error` update job state and delegate event emission to the runner. `on_before_save` delegates to `runner.expect_file_changes` for watcher suppression.
 
 ## Multi-round and reply history
 

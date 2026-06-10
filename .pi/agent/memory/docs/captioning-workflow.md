@@ -6,7 +6,7 @@ category: architecture
 
 # Captioning Workflow
 
-The end-to-end captioning flow is shared between the CLI (`yadc/cli_caption.py`) and the API (`yadc/api/services/captioning.py`). The shared core is `yadc.core.captioning` (see `captioning-runner` for the runner's interface). Each side adds its own concerns on top.
+The end-to-end captioning flow is shared between the CLI (`yadc/cli_caption.py`) and the API (`yadc/api/services/captioning/` package). The API side splits responsibilities: `AsyncCaptionJobRunner` holds DI deps and does preflight/event emission, while `AsyncCaptionJob` is a pure state machine + `CaptioningCallbacks` implementation. The shared core is `yadc.core.captioning` (see `captioning-runner` for the runner's interface). Each side adds its own concerns on top.
 
 ## High-level shape
 
@@ -45,9 +45,9 @@ Returns `(config, images)`. Raises `FileNotFoundError` (missing config) or `Valu
 
 The runner is an async context manager. See `captioning-runner` for the full interface. Briefly:
 
-- `caption_image(image, callbacks)` — stream + save. Fires `on_image_started` / `on_token` / `on_image_captioned`. On error: `on_image_error` + re-raise.
-- `caption_image_dry_run(image, callbacks)` — stream only. No save. The CLI uses this for interactive flows (continue / retry / reply) and calls `runner.save_caption(image, caption)` after the user accepts.
-- `save_caption(image, caption)` — write the caption (or draft) to disk, calling `expected_change_registrar` first if set.
+- `caption_image(image)` — stream + save. Fires `on_image_started` / `on_token` / `on_image_captioned`. On error: `on_image_error` + re-raise.
+- `caption_image_dry_run(image)` — stream only. No save. The CLI uses this for interactive flows (continue / retry / reply) and calls `runner.save_caption(image, caption)` after the user accepts.
+- `save_caption(image, caption)` — write the caption (or draft) to disk. Calls `callbacks.on_before_save(paths)` before writing (the runner's `callbacks` are the same ones passed to the constructor).
 
 `caption_rounds`, `extra_messages`, `prediction_context` are per-call kwargs (not on `CaptionJobOptions`) — see `captioning-runner` for details.
 
@@ -56,7 +56,7 @@ The runner is an async context manager. See `captioning-runner` for the full int
 1. `on_image_started(image)` — caller logs / emits started event
 2. Stream tokens from `model.predict_stream(...)` → `on_token(token)` per token
 3. Strip + accumulate → caption text
-4. If non-empty and not dry-run → call `expected_change_registrar([paths])` then save:
+4. If non-empty and not dry-run → call `callbacks.on_before_save([paths])` then save:
    - **Draft mode** (`options.draft`): write `.{name}.draft~` only
    - **Normal**: write `.txt` (caption), `.toml` (current state with caption), `.history~` (append previous caption first if there was one)
 5. `on_image_captioned(image, duration_ms)` on success
@@ -99,9 +99,9 @@ The API's `AsyncCaptionJob` implements `CaptioningCallbacks` directly and passes
 | `on_image_captioned` | refresh image index, dispatch `ImageCaptionedEvent`, dispatch `CaptioningStatusEvent` (processed +1) |
 | `on_image_error` | log warning, dispatch `ImageCaptionErrorEvent`, dispatch `CaptioningStatusEvent` (errors +1, message recorded) |
 
-The job's `expected_change_registrar` calls `DatasetWatcherService.expect_file_change(dataset_name, path)` for each path before the runner writes, so the inotify-based watcher suppresses the resulting `DatasetChangedEvent`.
+The job's `on_before_save` callback delegates to `AsyncCaptionJobRunner.expect_file_changes`, which calls `DatasetWatcherService.expect_file_change(dataset_name, path)` for each path before the runner writes, so the inotify-based watcher suppresses the resulting `DatasetChangedEvent`.
 
-`CaptioningService` (in `captioning.py`) wraps the job: starts/stops background `asyncio.Task` instances, dispatches `CaptioningStatusEvent` for job-level transitions (idle → running → done/cancelled/error), and runs a final `DatasetService.rescan_dataset()` after the job completes.
+`CaptioningService` (in `captioning/service.py`) wraps the job. It creates an `AsyncCaptionJobRunner` (with DI deps) per job, then creates an `AsyncCaptionJob` with that runner. The service: starts/stops background `asyncio.Task` instances, dispatches `CaptioningStatusEvent` for job-level transitions (idle → running → done/cancelled/error), and runs a final `DatasetService.rescan_dataset()` after the job completes.
 
 ### API Refine endpoint
 

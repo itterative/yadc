@@ -49,7 +49,12 @@ yadc/api/
 
   services/           # Business logic + repositories (both auto-discovered as Service subclasses)
     __init__.py           # re-exports all services + repositories (CaptioningService, CaptionJobOptions, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ManagedDatasetsService, SettingsService, SettingsRepository, UploadProgressEvent)
-    captioning.py         # CaptioningService — manages background captioning jobs (start/stop/status). `AsyncCaptionJob` implements `CaptioningCallbacks` and delegates the model-create / stream / save loop to `yadc.core.captioning.CaptioningRunner`; the job itself owns job state, SSE event emission (via EventDispatcher), job cancellation, and the final rescan. Config loading uses `yadc.core.captioning.load_dataset_config`.
+    captioning/           # CaptioningService + job management (package, split from single file)
+      __init__.py           # re-exports CaptioningService, AsyncCaptionJob, AsyncCaptionJobRunner, RefineOptions, JobStatus, JobInfo
+      models.py             # RefineOptions, JobStatus, JobInfo (data classes / type aliases)
+      service.py            # CaptioningService — manages background captioning jobs (start/stop/status). Dispatches `CaptioningStatusEvent` for job-level transitions, runs final `DatasetService.rescan_dataset()` after completion.
+      job_runner.py          # AsyncCaptionJobRunner — API glue between the service and the captioning core. Holds DI deps, does preflight (config loading, image resolution, DB ordering), SSE event emission, watcher registration. Created by CaptioningService per job.
+      job.py                # AsyncCaptionJob — pure state machine + `CaptioningCallbacks` implementation. No DI imports; delegates all infrastructure to `AsyncCaptionJobRunner`. Owns lifecycle (start/stop/wait), state tracking, snapshot.
     config_history.py     # ConfigHistoryService — high-level config revision operations; delegates SQL to `ConfigHistoryRepository`
     config_history_repository.py # ConfigHistoryRepository — owns `ConfigHistoryEntry` dataclass + all SQL for the `config_history` table (reads + writes + pruning)
     dataset_repository.py # DatasetRepository — owns `DatasetInfo` + `ImageInfo` dataclasses + all SQL for `datasets` / `dataset_images` tables (list, get, upsert, delete, scan diff)

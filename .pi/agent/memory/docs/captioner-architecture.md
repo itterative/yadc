@@ -73,6 +73,6 @@ Multi-turn via `extra_messages: list[ReplyRound]`. Each ReplyRound has role (use
 
 ## Streaming Captioning
 
-`AsyncCaptionJob._acaption_one()` (in `yadc/api/services/captioning.py`) consumes `model.predict_stream()` token-by-token via `async for`, re-raising `CancelledError` to support mid-flight cancellation. The job's `request_stop()` cooperates with this — `CaptioningService.stop_job_async()` calls `job.wait(timeout=30)` after `request_stop()` so a new job can be started immediately. `_cleanup_async` is scheduled as a background task so `_arun` returns promptly.
+`AsyncCaptionJob` (in `yadc/api/services/captioning/job.py`) is a pure state machine that implements `CaptioningCallbacks` and delegates to `AsyncCaptionJobRunner` for all API infrastructure. The runner (in `job_runner.py`) consumes `model.predict_stream()` token-by-token via `async for`, re-raising `CancelledError` to support mid-flight cancellation. The job's `request_stop()` cooperates with this — `CaptioningService.stop_job_async()` calls `job.wait(timeout=30)` after `request_stop()` so a new job can be started immediately. `_cleanup_async` is scheduled as a background task so `_arun` returns promptly.
 
 Stream error handling: `predict`/`predict_stream` on both OpenAI and Gemini backends catch `httpx.RemoteProtocolError` / `httpx.ReadError`, log a warning, and raise a friendly `ValueError("Connection closed unexpectedly by the server. The API may have shut down or become unreachable.")` so the webui can surface a useful toast instead of an opaque httpx traceback.

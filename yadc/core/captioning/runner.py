@@ -10,7 +10,6 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from logging import Logger
 from typing import Any, Protocol, runtime_checkable
@@ -139,16 +138,15 @@ class _BatchErrorTracker:
 class CaptioningCallbacks(Protocol):
     """Callback interface for captioning events.
 
-    Any class with the four methods below (matching signatures)
+    Any class with the methods below (matching signatures)
     satisfies this protocol structurally — callers can pass ``self`` of
     a service class (e.g. the API's ``AsyncCaptionJob``) directly as
     the ``callbacks`` argument to the runner.
 
-    All four methods are ``async def`` so implementations can do
-    async work directly (e.g. ``await asyncio.Lock``) without
-    scheduling it as a separate task. The runner ``await``s each
-    method in turn, so callbacks run sequentially in the runner's
-    task.
+    All methods are ``async def`` so implementations can do async work
+    directly (e.g. ``await asyncio.Lock``) without scheduling it as a
+    separate task. The runner ``await``s each method in turn, so
+    callbacks run sequentially in the runner's task.
 
     ``on_image_captioned`` is called only when the caption is non-empty
     and was successfully saved. ``on_image_error`` is called on any
@@ -160,6 +158,7 @@ class CaptioningCallbacks(Protocol):
     async def on_image_started(self, image: DatasetImage) -> None: ...
     async def on_image_captioned(self, image: DatasetImage, duration_ms: int) -> None: ...
     async def on_image_error(self, image: DatasetImage, error: str, duration_ms: int) -> None: ...
+    async def on_before_save(self, paths: list[str]) -> None: ...
 
 
 @dataclass
@@ -194,19 +193,19 @@ class CaptioningRunner:
         self,
         config: Config,
         options: CaptionJobOptions,
+        callbacks: CaptioningCallbacks,
         *,
         cache: HTTPResponseCache | None = None,
         response_logger: ResponseLogger | None = None,
         http_timeouts: HTTPTTimeouts | None = None,
-        expected_change_registrar: Callable[[list[str]], None] | None = None,
         logger: Logger | None = None,
     ):
         self._config: Config = config
         self._options: CaptionJobOptions = options
+        self._callbacks: CaptioningCallbacks = callbacks
         self._cache: HTTPResponseCache | None = cache
         self._response_logger: ResponseLogger | None = response_logger
         self._http_timeouts: HTTPTTimeouts = http_timeouts or HTTPTTimeouts()
-        self._expected_change_registrar: Callable[[list[str]], None] | None = expected_change_registrar
         self._logger: Logger = logger or logging.getLogger(__name__)
 
         self._model: APICaptioner | None = None
@@ -265,7 +264,6 @@ class CaptioningRunner:
     async def caption_image(
         self,
         image: DatasetImage,
-        callbacks: CaptioningCallbacks,
         *,
         caption_rounds: list[CaptionerRound] | None = None,
         extra_messages: list[ReplyRound] | None = None,
@@ -285,18 +283,17 @@ class CaptioningRunner:
 
         Before writing caption/TOML/history (or the draft file in
         draft mode), the runner calls
-        ``expected_change_registrar([...])`` with the absolute paths so
-        the API watcher can suppress inotify events.
+        ``callbacks.on_before_save([...])`` with the absolute paths so
+        the caller can register expected file changes with a watcher.
         """
         assert self._model is not None, "CaptioningRunner used outside 'async with'"
 
-        await callbacks.on_image_started(image)
+        await self._callbacks.on_image_started(image)
         t0 = time.monotonic()
 
         try:
             caption = await self._stream_image(
                 image,
-                callbacks,
                 caption_rounds=caption_rounds,
                 extra_messages=extra_messages,
                 prediction_context=prediction_context,
@@ -306,22 +303,21 @@ class CaptioningRunner:
             raise
         except Exception as exc:
             duration_ms = int((time.monotonic() - t0) * 1000)
-            await callbacks.on_image_error(image, str(exc), duration_ms)
+            await self._callbacks.on_image_error(image, str(exc), duration_ms)
             raise
 
         if not caption:
             return ""
 
-        self.save_caption(image, caption)
+        await self.save_caption(image, caption)
 
         duration_ms = int((time.monotonic() - t0) * 1000)
-        await callbacks.on_image_captioned(image, duration_ms)
+        await self._callbacks.on_image_captioned(image, duration_ms)
         return caption
 
     async def caption_image_dry_run(
         self,
         image: DatasetImage,
-        callbacks: CaptioningCallbacks,
         *,
         caption_rounds: list[CaptionerRound] | None = None,
         extra_messages: list[ReplyRound] | None = None,
@@ -333,16 +329,14 @@ class CaptioningRunner:
         retry/reject before committing the caption to disk. Returns
         ``""`` if the model produced an empty caption.
 
-        Does not call ``expected_change_registrar`` and does not fire
-        ``on_image_captioned`` — there is nothing to save.
+        Does not call ``on_before_save`` or ``on_image_captioned`` — there is nothing to save.
         """
         assert self._model is not None, "CaptioningRunner used outside 'async with'"
 
-        await callbacks.on_image_started(image)
+        await self._callbacks.on_image_started(image)
 
         return await self._stream_image(
             image,
-            callbacks,
             caption_rounds=caption_rounds,
             extra_messages=extra_messages,
             prediction_context=prediction_context,
@@ -351,7 +345,6 @@ class CaptioningRunner:
     async def caption_images(
         self,
         images: list[DatasetImage],
-        callbacks: CaptioningCallbacks,
         *,
         max_concurrent: int = 1,
         caption_rounds: list[CaptionerRound] | None = None,
@@ -397,7 +390,6 @@ class CaptioningRunner:
                 try:
                     caption = await self.caption_image(
                         image,
-                        callbacks,
                         caption_rounds=caption_rounds,
                         extra_messages=extra_messages,
                     )
@@ -430,7 +422,6 @@ class CaptioningRunner:
     async def _stream_image(
         self,
         image: DatasetImage,
-        callbacks: CaptioningCallbacks,
         *,
         caption_rounds: list[CaptionerRound] | None = None,
         extra_messages: list[ReplyRound] | None = None,
@@ -459,18 +450,20 @@ class CaptioningRunner:
         caption_parts: list[str] = []
         async for token in self._model.predict_stream(image, **predict_kwargs):
             caption_parts.append(token)
-            await callbacks.on_token(token)
+            await self._callbacks.on_token(token)
 
         return "".join(caption_parts).strip()
 
-    def save_caption(self, image: DatasetImage, caption: str) -> None:
-        """Write caption (or draft) to disk, registering expected changes first.
+    async def save_caption(self, image: DatasetImage, caption: str) -> None:
+        """Write caption (or draft) to disk, notifying callbacks before writes.
 
         Public API so callers that used :meth:`caption_image_dry_run`
         (e.g. the CLI's interactive flow) can commit the caption after
         the user accepts it. Honors ``options.draft`` (writes the
-        draft file instead) and ``expected_change_registrar`` (called
-        with the file paths before writes).
+        draft file instead).
+
+        Calls ``callbacks.on_before_save`` with the file paths before
+        any writes.
         """
         if self._options.draft:
             paths = [str(image.draft_path(self._options.draft))]
@@ -481,8 +474,7 @@ class CaptioningRunner:
                 str(image.history_path),
             ]
 
-        if self._expected_change_registrar is not None:
-            self._expected_change_registrar(paths)
+        await self._callbacks.on_before_save(paths)
 
         if self._options.draft:
             image.write_draft(self._options.draft, caption)

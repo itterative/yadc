@@ -82,7 +82,7 @@ class TestContextManager:
 
     @pytest.mark.asyncio
     async def test_aenter_creates_session_and_loads_model(self, patched_async_session, patched_model):
-        async with CaptioningRunner(_config(), CaptionJobOptions()):
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)):
             pass
 
         patched_async_session.assert_called_once()
@@ -97,7 +97,10 @@ class TestContextManager:
     )
     @pytest.mark.asyncio
     async def test_aenter_authorization_header(self, patched_async_session, patched_model, token, expected):
-        async with CaptioningRunner(_config(token=token), CaptionJobOptions()):
+        options = CaptionJobOptions()
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(token=token), options, callbacks):
             pass
 
         headers = patched_async_session.call_args.kwargs["headers"]
@@ -109,7 +112,10 @@ class TestContextManager:
     @pytest.mark.asyncio
     async def test_aenter_passes_http_timeouts_to_session(self, patched_async_session, patched_model):
         timeouts = HTTPTTimeouts(connect=5.0, read=10.0, write=15.0, pool=20.0)
-        async with CaptioningRunner(_config(), CaptionJobOptions(), http_timeouts=timeouts):
+        options = CaptionJobOptions()
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), options, callbacks, http_timeouts=timeouts):
             pass
 
         kwargs = patched_async_session.call_args.kwargs
@@ -120,7 +126,7 @@ class TestContextManager:
 
     @pytest.mark.asyncio
     async def test_aexit_closes_session_and_logs_usage(self, patched_async_session, patched_model):
-        async with CaptioningRunner(_config(), CaptionJobOptions()):
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)):
             pass
 
         patched_model.log_usage.assert_called_once()
@@ -131,7 +137,7 @@ class TestContextManager:
         with patch(_PATCH_APICAPTIONER_CREATE, new_callable=AsyncMock) as mock_create:
             mock_create.side_effect = ValueError("bad config")
             with pytest.raises(ValueError, match="bad config"):
-                async with CaptioningRunner(_config(), CaptionJobOptions()):
+                async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)):
                     pass
 
 
@@ -142,10 +148,11 @@ class TestCaptionImage:
     async def test_streams_tokens_fires_callbacks_and_saves(self, patched_async_session, patched_model, tmp_path):
         patched_model.predict_stream = MagicMock(side_effect=lambda *a, **k: _fake_stream("foo", " ", "bar"))
         image = _real_image(tmp_path / "img.jpg")
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            caption = await runner.caption_image(image, callbacks)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            caption = await runner.caption_image(image)
 
         assert caption == "foo bar"
         callbacks.on_image_started.assert_called_once_with(image)
@@ -157,10 +164,11 @@ class TestCaptionImage:
     @pytest.mark.asyncio
     async def test_draft_mode_writes_to_draft_path_only(self, patched_async_session, patched_model, tmp_path):
         image = _real_image(tmp_path / "img.jpg")
+        options = CaptionJobOptions(draft="gemma")
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions(draft="gemma")) as runner:
-            await runner.caption_image(image, callbacks)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_image(image)
 
         assert image.draft_path("gemma").read_text() == "hello world"
         assert not image.caption_path.exists()
@@ -170,54 +178,46 @@ class TestCaptionImage:
     async def test_empty_caption_does_not_save_or_fire_captioned(self, patched_async_session, patched_model, tmp_path):
         patched_model.predict_stream = MagicMock(side_effect=lambda *a, **k: _fake_stream())
         image = _real_image(tmp_path / "img.jpg")
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
-        registered: list[list[str]] = []
-        async with CaptioningRunner(
-            _config(),
-            CaptionJobOptions(),
-            expected_change_registrar=lambda paths: registered.append(list(paths)),
-        ) as runner:
-            caption = await runner.caption_image(image, callbacks)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            caption = await runner.caption_image(image)
 
         assert caption == ""
         callbacks.on_image_captioned.assert_not_called()
-        assert registered == []
+        callbacks.on_before_save.assert_not_called()
         assert not image.caption_path.exists()
 
     @pytest.mark.asyncio
-    async def test_registrar_receives_normal_mode_paths(self, patched_async_session, patched_model, tmp_path):
+    async def test_before_save_receives_normal_mode_paths(self, patched_async_session, patched_model, tmp_path):
         image = _real_image(tmp_path / "img.jpg")
-        registered: list[list[str]] = []
-        async with CaptioningRunner(
-            _config(),
-            CaptionJobOptions(),
-            expected_change_registrar=lambda paths: registered.append(list(paths)),
-        ) as runner:
-            await runner.caption_image(image, AsyncMock(spec=CaptioningCallbacks))
+        options = CaptionJobOptions()
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_image(image)
 
-        assert set(registered[0]) == {str(image.caption_path), str(image.toml_path), str(image.history_path)}
+        callbacks.on_before_save.assert_called_once()
+        paths = callbacks.on_before_save.call_args[0][0]
+        assert set(paths) == {str(image.caption_path), str(image.toml_path), str(image.history_path)}
 
     @pytest.mark.asyncio
-    async def test_registrar_receives_draft_mode_path(self, patched_async_session, patched_model, tmp_path):
+    async def test_before_save_receives_draft_mode_path(self, patched_async_session, patched_model, tmp_path):
         image = _real_image(tmp_path / "img.jpg")
-        registered: list[list[str]] = []
-        async with CaptioningRunner(
-            _config(),
-            CaptionJobOptions(draft="gemma"),
-            expected_change_registrar=lambda paths: registered.append(list(paths)),
-        ) as runner:
-            await runner.caption_image(image, AsyncMock(spec=CaptioningCallbacks))
+        options = CaptionJobOptions(draft="gemma")
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_image(image)
 
-        assert registered[0] == [str(image.draft_path("gemma"))]
+        callbacks.on_before_save.assert_called_once_with([str(image.draft_path("gemma"))])
 
     @pytest.mark.asyncio
-    async def test_registrar_called_before_writes(self, patched_async_session, patched_model, tmp_path):
-        """expected_change_registrar must fire BEFORE the file writes."""
+    async def test_before_save_called_before_writes(self, patched_async_session, patched_model, tmp_path):
+        """on_before_save must fire BEFORE the file writes."""
         image = _real_image(tmp_path / "img.jpg")
         call_order: list[str] = []
 
-        def registrar(paths):
-            call_order.append("registrar")
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+        callbacks.on_before_save = AsyncMock(side_effect=lambda paths: call_order.append("before_save"))
 
         original_update = image.update_caption
 
@@ -227,14 +227,10 @@ class TestCaptionImage:
 
         image.update_caption = tracked_update
 
-        async with CaptioningRunner(
-            _config(),
-            CaptionJobOptions(),
-            expected_change_registrar=registrar,
-        ) as runner:
-            await runner.caption_image(image, AsyncMock(spec=CaptioningCallbacks))
+        async with CaptioningRunner(_config(), CaptionJobOptions(), callbacks) as runner:
+            await runner.caption_image(image)
 
-        assert call_order == ["registrar", "write_caption"]
+        assert call_order == ["before_save", "write_caption"]
 
     @pytest.mark.parametrize("exc_message", ["api error", "boom"])
     @pytest.mark.asyncio
@@ -250,8 +246,8 @@ class TestCaptionImage:
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
         with pytest.raises(RuntimeError, match=exc_message):
-            async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-                await runner.caption_image(image, callbacks)
+            async with CaptioningRunner(_config(), CaptionJobOptions(), callbacks) as runner:
+                await runner.caption_image(image)
 
         callbacks.on_image_error.assert_called_once()
         # First arg is the image, second is the error string
@@ -270,8 +266,8 @@ class TestCaptionImage:
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
         with pytest.raises(asyncio.CancelledError):
-            async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-                await runner.caption_image(image, callbacks)
+            async with CaptioningRunner(_config(), CaptionJobOptions(), callbacks) as runner:
+                await runner.caption_image(image)
 
         # Cancellation is not a per-image error — on_image_error must not fire
         callbacks.on_image_error.assert_not_called()
@@ -285,19 +281,14 @@ class TestCaptionImageDryRun:
         patched_model.predict_stream = MagicMock(side_effect=lambda *a, **k: _fake_stream("a", "b", "c"))
         image = _real_image(tmp_path / "img.jpg")
         callbacks = AsyncMock(spec=CaptioningCallbacks)
-        registered: list[list[str]] = []
-        async with CaptioningRunner(
-            _config(),
-            CaptionJobOptions(),
-            expected_change_registrar=lambda paths: registered.append(list(paths)),
-        ) as runner:
-            caption = await runner.caption_image_dry_run(image, callbacks)
+        async with CaptioningRunner(_config(), CaptionJobOptions(), callbacks) as runner:
+            caption = await runner.caption_image_dry_run(image)
 
         assert caption == "abc"
         callbacks.on_image_started.assert_called_once_with(image)
         callbacks.on_token.assert_has_calls([call("a"), call("b"), call("c")])
         callbacks.on_image_captioned.assert_not_called()
-        assert registered == []
+        callbacks.on_before_save.assert_not_called()
         assert not image.caption_path.exists()
         assert not image.history_path.exists()
 
@@ -311,8 +302,8 @@ class TestExtrasForwarded:
 
         image = _real_image(tmp_path / "img.jpg")
         messages = [ReplyRound(role="user", content="hi")]
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks), extra_messages=messages)
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)) as runner:
+            await runner.caption_image_dry_run(image, extra_messages=messages)
 
         assert patched_model.predict_stream.call_args.kwargs["extra_messages"] is messages
 
@@ -322,8 +313,8 @@ class TestExtrasForwarded:
 
         image = _real_image(tmp_path / "img.jpg")
         rounds = [CaptionerRound(iteration=1, caption="prev")]
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks), caption_rounds=rounds)
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)) as runner:
+            await runner.caption_image_dry_run(image, caption_rounds=rounds)
 
         assert patched_model.predict_stream.call_args.kwargs["caption_rounds"] is rounds
 
@@ -333,8 +324,8 @@ class TestExtrasForwarded:
 
         image = _real_image(tmp_path / "img.jpg")
         ctx = PredictionContext()
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks), prediction_context=ctx)
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)) as runner:
+            await runner.caption_image_dry_run(image, prediction_context=ctx)
 
         assert patched_model.predict_stream.call_args.kwargs["prediction_context"] is ctx
 
@@ -343,8 +334,8 @@ class TestExtrasForwarded:
         from yadc.core.prediction import PredictionContext
 
         image = _real_image(tmp_path / "img.jpg")
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks))
+        async with CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)) as runner:
+            await runner.caption_image_dry_run(image)
 
         assert isinstance(patched_model.predict_stream.call_args.kwargs["prediction_context"], PredictionContext)
 
@@ -356,13 +347,13 @@ class TestUsedWithoutContextManager:
     async def test_caption_image_asserts_without_aenter(self, tmp_path):
         image = _real_image(tmp_path / "img.jpg")
         with pytest.raises(AssertionError):
-            await CaptioningRunner(_config(), CaptionJobOptions()).caption_image(image, AsyncMock(spec=CaptioningCallbacks))
+            await CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)).caption_image(image)
 
     @pytest.mark.asyncio
     async def test_caption_image_dry_run_asserts_without_aenter(self, tmp_path):
         image = _real_image(tmp_path / "img.jpg")
         with pytest.raises(AssertionError):
-            await CaptioningRunner(_config(), CaptionJobOptions()).caption_image_dry_run(image, AsyncMock(spec=CaptioningCallbacks))
+            await CaptioningRunner(_config(), CaptionJobOptions(), AsyncMock(spec=CaptioningCallbacks)).caption_image_dry_run(image)
 
 
 class _Gate:
@@ -403,18 +394,24 @@ class TestCaptionImages:
 
     @pytest.mark.asyncio
     async def test_empty_images_is_a_noop(self, patched_async_session, patched_model, tmp_path):
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_images([], AsyncMock(spec=CaptioningCallbacks), max_concurrent=4)
+        options = CaptionJobOptions()
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_images([], max_concurrent=4)
         patched_model.predict_stream.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_max_concurrent_must_be_at_least_one(self, patched_async_session, patched_model, tmp_path):
         images = _many_images(tmp_path, 2)
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+        options = CaptionJobOptions()
+        callbacks = AsyncMock(spec=CaptioningCallbacks)
+
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
             with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
-                await runner.caption_images(images, AsyncMock(spec=CaptioningCallbacks), max_concurrent=0)
+                await runner.caption_images(images, max_concurrent=0)
             with pytest.raises(ValueError, match="max_concurrent must be >= 1"):
-                await runner.caption_images(images, AsyncMock(spec=CaptioningCallbacks), max_concurrent=-1)
+                await runner.caption_images(images, max_concurrent=-1)
 
     @pytest.mark.asyncio
     async def test_max_concurrent_one_processes_serially(self, patched_async_session, patched_model, tmp_path):
@@ -423,10 +420,11 @@ class TestCaptionImages:
         gate = _Gate(release, tokens=("a",))
         gate.attach(patched_model)
         images = _many_images(tmp_path, 5)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=1))
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            task = asyncio.create_task(runner.caption_images(images, max_concurrent=1))
             # Give the runner a chance to start the first stream
             await asyncio.sleep(0.01)
             assert gate.in_flight == 1
@@ -446,10 +444,11 @@ class TestCaptionImages:
         gate = _Gate(release, tokens=("ok",))
         gate.attach(patched_model)
         images = _many_images(tmp_path, 10)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=3))
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            task = asyncio.create_task(runner.caption_images(images, max_concurrent=3))
             # Wait for the gate to fill
             for _ in range(100):
                 if gate.in_flight == 3:
@@ -483,10 +482,11 @@ class TestCaptionImages:
             return _fake_stream("ok")
 
         patched_model.predict_stream = MagicMock(side_effect=maybe_raise)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_images(images, callbacks, max_concurrent=3)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_images(images, max_concurrent=3)
 
         # All three were attempted
         assert call_count["n"] == 3
@@ -508,10 +508,11 @@ class TestCaptionImages:
         gate = _Gate(release, tokens=("x",))
         gate.attach(patched_model)
         images = _many_images(tmp_path, 4)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=4))
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            task = asyncio.create_task(runner.caption_images(images, max_concurrent=4))
             for _ in range(100):
                 if gate.in_flight == 4:
                     break
@@ -530,10 +531,11 @@ class TestCaptionImages:
         gate = _Gate(release, tokens=("x",))
         gate.attach(patched_model)
         images = _many_images(tmp_path, 5)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            task = asyncio.create_task(runner.caption_images(images, callbacks, max_concurrent=3))
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            task = asyncio.create_task(runner.caption_images(images, max_concurrent=3))
             # Wait until the semaphore is full
             for _ in range(100):
                 if gate.in_flight == 3:
@@ -567,11 +569,12 @@ class TestCaptionImages:
             return _raise()
 
         patched_model.predict_stream = MagicMock(side_effect=raise_api_error)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
             with pytest.raises(BatchAbortedError, match="3 consecutive API errors"):
-                await runner.caption_images(images, callbacks, max_concurrent=5)
+                await runner.caption_images(images, max_concurrent=5)
 
         # Threshold is 3: at most 3 in flight when the abort fires; the
         # 4th and 5th never start. We don't assert the exact number
@@ -622,11 +625,12 @@ class TestCaptionImages:
             return _raise_image()
 
         patched_model.predict_stream = MagicMock(side_effect=per_call)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
             # Should NOT raise BatchAbortedError
-            await runner.caption_images(images, callbacks, max_concurrent=1)
+            await runner.caption_images(images, max_concurrent=1)
 
         assert call_count["n"] == 6
         assert callbacks.on_image_error.call_count == 6
@@ -662,10 +666,11 @@ class TestCaptionImages:
             return _raise()
 
         patched_model.predict_stream = MagicMock(side_effect=per_call)
+        options = CaptionJobOptions()
         callbacks = AsyncMock(spec=CaptioningCallbacks)
 
-        async with CaptioningRunner(_config(), CaptionJobOptions()) as runner:
-            await runner.caption_images(images, callbacks, max_concurrent=1)
+        async with CaptioningRunner(_config(), options, callbacks) as runner:
+            await runner.caption_images(images, max_concurrent=1)
 
         assert call_count["n"] == 4
         assert callbacks.on_image_error.call_count == 4
