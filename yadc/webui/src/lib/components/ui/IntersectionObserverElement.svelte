@@ -9,7 +9,8 @@
         bottom = 0,
         left = 0,
         right = 0,
-        onintersect = () => {}
+        onintersect = () => {},
+        class: klazz = ''
     } = $props();
 
     let fired = false;
@@ -91,4 +92,4 @@
     });
 </script>
 
-<div class="clear-none h-0 w-0" bind:this={container}></div>
+<div class="clear-none h-0 w-0 {klazz}" bind:this={container}></div>

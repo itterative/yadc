@@ -135,7 +135,7 @@
     });
 </script>
 
-<div class={klazz} style="overflow: hidden;">
+<div class="{klazz} relative" style="overflow: hidden;">
     <div
         class="grid-cols-auto grid w-full gap-4 [--x-grid-cols:2] lg:[--x-grid-cols:3] xl:[--x-grid-cols:4] 2xl:[--x-grid-cols:5]"
         bind:this={container}
@@ -169,13 +169,23 @@
                 {/if}
             </div>
         {/each}
-
-        <IntersectionObserverElement top={200} onintersect={onendreached} />
     </div>
 
     {#if isLoadingMore}
         <SpinnerBlock class="py-6" size="h-8 w-8" />
     {/if}
+
+    <!-- Sentinel for infinite scroll. Positioned absolutely at the bottom of
+         the scrollable parent so it always sits at the visual bottom of the
+         gallery, regardless of column heights. (Inside the grid, the sentinel
+         would be auto-placed in the second row, first column — which can sit
+         higher than the bottom of a taller neighbouring column, causing the
+         observer to never fire as the user scrolls.) -->
+    <IntersectionObserverElement
+        class="absolute right-0 bottom-4"
+        top={200}
+        onintersect={onendreached}
+    />
 </div>
 
 <style>
