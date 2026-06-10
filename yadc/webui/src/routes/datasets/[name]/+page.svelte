@@ -323,6 +323,52 @@
         previewItem = null;
     }
 
+    // --- Preview navigation ---
+
+    let previewIndex = $derived.by(() => {
+        if (previewItem === null) {
+            return -1;
+        }
+        return images.findIndex((img) => img.id === previewItem!.id);
+    });
+
+    let canPreviewPrev = $derived(previewIndex > 0);
+
+    let canPreviewNext = $derived(
+        previewIndex >= 0 && (previewIndex < images.length - 1 || (hasMore && !isLoadingMore))
+    );
+
+    function handlePreviewPrev() {
+        if (previewItem === null || previewIndex <= 0) {
+            return;
+        }
+        previewItem = images[previewIndex - 1];
+    }
+
+    function handlePreviewNext() {
+        if (previewItem === null || previewIndex < 0) {
+            return;
+        }
+        // At the last loaded image — try to load more before giving up.
+        if (previewIndex === images.length - 1 && hasMore) {
+            loadMore();
+            return;
+        }
+        if (previewIndex < images.length - 1) {
+            previewItem = images[previewIndex + 1];
+        }
+    }
+
+    // Keep the side panel in sync with the lightbox preview. When the user
+    // navigates within the lightbox (arrows, keyboard), the side panel's
+    // focused item follows so caption/TOML info stays relevant. When the
+    // lightbox closes, focusedItem stays at the last previewed image.
+    $effect(() => {
+        if (previewItem !== null) {
+            focusedItem = previewItem;
+        }
+    });
+
     function handlePanelClose() {
         focusedItem = null;
         panelTab = 'caption';
@@ -597,5 +643,15 @@
 
 <!-- Image preview lightbox (opened on double-click in the gallery). -->
 {#if previewItem !== null}
-    <ImagePreviewDialog open={true} onclose={handlePreviewClose} {datasetName} item={previewItem} />
+    <ImagePreviewDialog
+        open={true}
+        onclose={handlePreviewClose}
+        onprev={handlePreviewPrev}
+        onnext={handlePreviewNext}
+        canprev={canPreviewPrev}
+        cannext={canPreviewNext}
+        isloadingnext={isLoadingMore && previewIndex === images.length - 1}
+        {datasetName}
+        item={previewItem}
+    />
 {/if}
