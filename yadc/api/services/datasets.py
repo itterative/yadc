@@ -27,13 +27,15 @@ management.
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomlkit
 
@@ -42,6 +44,7 @@ from yadc.core.dataset import DatasetImage
 from yadc.utils.dict_utils import load_toml, toml_to_plain
 
 from ..configuration import Configuration
+from ..constants import IMAGE_EXTENSIONS
 from ..events import DatasetChangedEvent
 from ..modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService
 from ..modules.db_connection_factory import DBConnectionFactory
@@ -51,6 +54,12 @@ from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 from .dataset_loader import DatasetLoader
 from .dataset_scanner import DatasetScanner
+from .managed_paths import (
+    MANAGED_FOLDERS_PREFIX,
+    MANAGED_IMAGES_PREFIX,
+    managed_folders_dir,
+    managed_images_dir,
+)
 
 # Base directory for all dataset state directories.
 DATASETS_DIR: Path = STATE_PATH / "datasets"
@@ -67,6 +76,18 @@ from .dataset_repository import (  # noqa: E402
 def _dataset_config_path(name: str) -> Path:
     """Return the config TOML path for a named dataset."""
     return DATASETS_DIR / name / "config.toml"
+
+
+class HardlinkNotSupportedError(OSError):
+    """Raised by :meth:`DatasetService.duplicate_managed_dataset` when
+    ``mode="hardlink"`` is requested but the target filesystem doesn't
+    support hardlinks.
+
+    Subclass of :class:`OSError` so it integrates with existing
+    exception handling. The duplicate endpoint maps this to HTTP
+    409 so the frontend can prompt the user to retry with
+    ``mode="copy"``.
+    """
 
 
 @dataclass
@@ -710,6 +731,178 @@ class DatasetService(Service):
                 shutil.rmtree(state_dir, ignore_errors=True)
 
         return found
+
+    def _probe_hardlink_in_dir(self, target_dir: Path) -> bool:
+        """Probe whether ``os.link`` succeeds in ``target_dir``.
+
+        Creates a small temp file in ``target_dir``, attempts to
+        hardlink it, cleans up. Returns True on success, False on
+        any ``OSError`` or ``PermissionError``.
+
+        Used by :meth:`duplicate_managed_dataset` to fail fast on
+        filesystems that don't support hardlinks (exFAT, FAT32,
+        some network FS). The probe runs against the actual
+        destination dir (``STATE_PATH / datasets / <new_name>``)
+        so the result reflects the filesystem the real hardlinks
+        will run on.
+        """
+        target_dir = Path(target_dir)
+        if not target_dir.exists() or not target_dir.is_dir():
+            return False
+        tmp_path: Path | None = None
+        link_path: Path | None = None
+        try:
+            fd, tmp_name = tempfile.mkstemp(prefix=".yadc-probe-", dir=str(target_dir))
+            try:
+                os.write(fd, b"probe")
+            finally:
+                os.close(fd)
+            tmp_path = Path(tmp_name)
+            link_path = tmp_path.with_suffix(tmp_path.suffix + ".link")
+            try:
+                os.link(tmp_path, link_path)
+                return True
+            except (OSError, PermissionError):
+                return False
+        except (OSError, PermissionError):
+            return False
+        finally:
+            if link_path is not None:
+                link_path.unlink(missing_ok=True)
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+
+    def duplicate_managed_dataset(
+        self,
+        name: str,
+        new_name: str,
+        *,
+        mode: Literal["copy", "hardlink"] = "hardlink",
+    ) -> DatasetInfo:
+        """Duplicate a managed dataset to a new name under the state dir.
+
+        Copies ``config.toml`` and every file under ``images/`` and
+        ``folders/*`` (recursively) to a new managed dataset at
+        ``DATASETS_DIR / new_name /``. ``.staging/`` is not part of
+        the walk (it's a sibling of ``images/``/``folders/``, not
+        underneath them) and is therefore naturally excluded.
+
+        Per-file copy policy:
+
+        - **Image bytes** (suffix in :data:`IMAGE_EXTENSIONS`):
+          ``os.link`` if ``mode == "hardlink"``, else
+          ``shutil.copy2``.
+        - **Sidecars** (``.txt``, ``.toml``, ``.history~``,
+          ``.draft~``) and **config**: always ``shutil.copy2``,
+          regardless of mode.
+        - **``.staging/``**: skipped (not walked).
+
+        Default ``mode`` is ``"hardlink"``. The service honors the
+        requested mode and never silently falls back. If
+        ``mode == "hardlink"`` and the target filesystem doesn't
+        support hardlinks, the service:
+
+        1. Creates the new dataset dir and copies the config.
+        2. Probes the actual destination dir (not the parent)
+           with a small hardlink test.
+        3. If the probe fails, removes the partial new dir and
+           raises :class:`HardlinkNotSupportedError`. The
+           controller maps this to HTTP 409 so the frontend can
+           prompt the user to retry with ``mode="copy"``.
+
+        On success, the new dataset is registered (indexed,
+        watched, DB stats updated) via :meth:`register` and the
+        resulting :class:`DatasetInfo` is returned.
+
+        Note: per-tab suppression of ``DatasetChangedEvent`` is not
+        implemented here. The new dataset's watcher doesn't exist
+        during the copy, and the source's watcher won't see events
+        on the destination path, so no events need to be suppressed
+        in the common case. If we later add a ``?source=`` query
+        param to the duplicate endpoint for originating-tab
+        suppression, plumb it through to ``register`` and the
+        watcher the same way the upload endpoints do.
+
+        Raises:
+            ValueError: if the source dataset doesn't exist, isn't
+                managed (``source != "upload"``), has no config
+                path, the new name is empty / same as the source /
+                collides with an existing dataset, or the new state
+                dir already exists on disk.
+            HardlinkNotSupportedError: if ``mode == "hardlink"``
+                and the target filesystem doesn't support
+                hardlinks. The partial new dir is removed before
+                raising.
+            OSError: for any other I/O failure during the
+                duplication. The partial new dir is removed before
+                raising.
+        """
+        info = self.get_dataset(name)
+        if info is None:
+            raise ValueError(f"Dataset '{name}' not found")
+        if info.source != "upload":
+            raise ValueError(f"Dataset '{name}' is not a managed dataset")
+        if not info.config_path:
+            raise ValueError(f"Dataset '{name}' has no config path")
+        if not new_name:
+            raise ValueError("new_name must not be empty")
+        if new_name == name:
+            raise ValueError(f"new_name must differ from source name: {new_name!r}")
+        if self.get_dataset(new_name) is not None:
+            raise ValueError(f"Dataset '{new_name}' already exists")
+
+        src_config_path = Path(info.config_path)
+        src_images_dir = managed_images_dir(src_config_path)
+        src_folders_dir = managed_folders_dir(src_config_path)
+
+        dest_dir = DATASETS_DIR / new_name
+        dest_config_path = dest_dir / "config.toml"
+
+        if dest_dir.exists():
+            raise ValueError(f"Target directory already exists: {dest_dir}")
+
+        try:
+            # 1. Create the new dataset dir and copy the config TOML
+            dest_dir.mkdir(parents=True, exist_ok=False)
+            shutil.copy2(src_config_path, dest_config_path)
+
+            # 2. If hardlink mode, probe the actual destination dir
+            # so we fail fast on filesystems that don't support
+            # hardlinks. The probe runs after the dir exists so it
+            # tests the same filesystem the real hardlinks will
+            # run on.
+            if mode == "hardlink" and not self._probe_hardlink_in_dir(dest_dir):
+                raise HardlinkNotSupportedError(f"Hardlinks are not supported on the target filesystem ({dest_dir})")
+
+            # 3. Walk images/ and folders/* and copy or hardlink each file
+            for source_dir, prefix in (
+                (src_images_dir, MANAGED_IMAGES_PREFIX),
+                (src_folders_dir, MANAGED_FOLDERS_PREFIX),
+            ):
+                if not source_dir.exists():
+                    continue
+                for src_file in source_dir.rglob("*"):
+                    if not src_file.is_file():
+                        continue
+                    rel = src_file.relative_to(source_dir)
+                    dest_file = dest_dir / prefix / rel
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    # Image bytes go through os.link in hardlink mode;
+                    # sidecars (and config above) always copy2.
+                    if mode == "hardlink" and src_file.suffix.lower() in IMAGE_EXTENSIONS:
+                        os.link(src_file, dest_file)
+                    else:
+                        shutil.copy2(src_file, dest_file)
+        except Exception:
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+            raise
+
+        # Register the new dataset (index, watch, db). The
+        # originating-tab suppression pattern from upload/delete:
+        # pass ``source`` through so the resulting
+        # ``DatasetChangedEvent`` can be filtered.
+        return self.register(new_name, str(dest_config_path), source="upload")
 
     def register(self, name: str, config_path: str, *, source: str = "import") -> DatasetInfo:
         """Upsert a dataset record and scan its images."""

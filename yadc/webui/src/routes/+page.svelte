@@ -12,7 +12,9 @@
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import AddDatasetDialog from './AddDatasetDialog.svelte';
     import EditDatasetDialog from './EditDatasetDialog.svelte';
+    import DuplicateDatasetDialog from './DuplicateDatasetDialog.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
+    import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgPhoto from '$lib/icons/SvgPhoto.svelte';
@@ -26,6 +28,9 @@
 
     // Edit state
     let editingDataset: DatasetInfo | null = $state(null);
+
+    // Duplicate state
+    let duplicatingDataset: DatasetInfo | null = $state(null);
 
     onMount(() => {
         if (!browser) {
@@ -54,6 +59,10 @@
     }
 
     function handleDatasetCreated(dataset: DatasetInfo) {
+        datasets = [...datasets, dataset];
+    }
+
+    function handleDatasetDuplicated(dataset: DatasetInfo) {
         datasets = [...datasets, dataset];
     }
 
@@ -168,6 +177,19 @@
                 <div
                     class="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-100"
                 >
+                    {#if dataset.source === 'upload'}
+                        <button
+                            class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 hover:bg-black/80 hover:text-white"
+                            title="Duplicate dataset"
+                            onclick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                duplicatingDataset = dataset;
+                            }}
+                        >
+                            <SvgCopy class="h-4 w-4" />
+                        </button>
+                    {/if}
                     <button
                         class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 hover:bg-black/80 hover:text-white"
                         title="Edit dataset"
@@ -210,6 +232,16 @@
             source={editingDataset.source}
             onclose={() => (editingDataset = null)}
             onsaved={loadDatasets}
+        />
+    {/if}
+
+    <!-- Duplicate dialog -->
+    {#if duplicatingDataset}
+        <DuplicateDatasetDialog
+            open={true}
+            sourceDatasetName={duplicatingDataset.name}
+            onclose={() => (duplicatingDataset = null)}
+            onduplicated={handleDatasetDuplicated}
         />
     {/if}
 {/if}

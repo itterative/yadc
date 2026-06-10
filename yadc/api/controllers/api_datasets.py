@@ -20,8 +20,17 @@ HTTP surface (all JSON unless noted):
 - ``POST /datasets/<name>/upload`` / ``POST .../upload/append`` — create
   or append to a dataset from a multipart upload (delegates to
   ``DatasetUploadService``).
-- ``GET /datasets/<name>/managed/...`` — managed-dataset folder listing
-  and deletion (``ManagedDatasetsService``).
+- ``GET /datasets/<name>/folders`` / ``DELETE /datasets/<name>/items`` —
+  managed-dataset folder listing and item deletion
+  (``ManagedDatasetsService``).
+- ``POST /datasets/<name>/duplicate`` —
+  duplicate a managed dataset to a new name. The body
+  takes ``new_name`` and an optional ``mode`` (``"copy"`` or
+  ``"hardlink"``, defaulting to ``"hardlink"``). The service probes
+  the actual destination dir and returns 409 with cleanup if
+  hardlinks aren't supported, so the frontend can prompt the user
+  to retry with ``mode="copy"``. See
+  ``DatasetService.duplicate_managed_dataset``.
 
 Errors raised by services are translated to a stable JSON shape via
 ``utils_json.jsonify_error`` (with the right ``ErrorCode``).
@@ -51,7 +60,7 @@ from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService
 from ..services.config_history import ConfigHistoryService
 from ..services.dataset_upload import DatasetUploadService
-from ..services.datasets import DatasetService
+from ..services.datasets import DatasetService, HardlinkNotSupportedError
 from ..services.managed_datasets import ManagedDatasetsService
 from . import controller
 from .blueprints import ApiBlueprint
@@ -71,6 +80,11 @@ class CommitStagedUploadBody(pydantic.BaseModel):
 
 class DeleteItemsBody(pydantic.BaseModel):
     paths: list[str]
+
+
+class DuplicateDatasetBody(pydantic.BaseModel):
+    new_name: str
+    mode: typing.Literal["copy", "hardlink"] = "hardlink"
 
 
 class UpdateImageCaptionBody(pydantic.BaseModel):
@@ -346,6 +360,51 @@ def api_datasets(
             return jsonify(folders)
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+
+    @app.post("/datasets/<name>/duplicate")
+    async def duplicate_dataset(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Duplicate a managed dataset to a new name.
+
+        Body:
+            ``{"new_name": "<string>", "mode": "copy" | "hardlink"}``
+
+        ``mode`` defaults to ``"hardlink"`` — image bytes are
+        hardlinked (no extra storage for the bulk of the data)
+        and config + sidecars are always ``shutil.copy2``'d. The
+        service probes the target filesystem by attempting a
+        small hardlink in the actual new dataset dir; if the
+        probe fails, the partial new dir is removed and
+        :class:`HardlinkNotSupportedError` is raised, which this
+        endpoint maps to HTTP 409. The frontend handles 409 by
+        prompting the user to retry with ``mode="copy"``.
+
+        Returns:
+            ``201`` with the new :class:`DatasetInfo`.
+
+        Errors:
+            ``400`` if the dataset is not managed or the new name
+            is empty / same as source / collides with an existing
+            dataset or the new state dir already exists on disk;
+            ``404`` if the source dataset doesn't exist;
+            ``409`` if the source is currently being captioned
+            or hardlinks aren't supported on the target
+            filesystem (with cleanup of the partial new dir).
+        """
+        if captioning.is_captioning(name):
+            return jsonify_error("Cannot duplicate dataset while captioning is in progress", status=409, code=ErrorCode.CONFLICT)
+
+        body = validate_body(DuplicateDatasetBody, await request.get_json(silent=True))
+
+        try:
+            result = datasets.duplicate_managed_dataset(name, body.new_name, mode=body.mode)
+            return jsonify_dataclass(result), 201
+        except ValueError as e:
+            return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+        except HardlinkNotSupportedError as e:
+            return jsonify_error(str(e), status=409, code=ErrorCode.CONFLICT)
+        except Exception as e:
+            _logger.exception("Failed to duplicate dataset '%s'", name)
+            return jsonify_error(str(e), status=500)
 
     @app.get("/datasets")
     def list_datasets():  # pyright: ignore[reportUnusedFunction]

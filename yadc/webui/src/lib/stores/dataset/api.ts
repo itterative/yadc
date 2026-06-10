@@ -309,6 +309,36 @@ export async function rescanDataset(name: string): Promise<DatasetInfo> {
     return res.json();
 }
 
+/** Duplicate a managed dataset to a new name.
+ *
+ *  Defaults to `mode='hardlink'` (image bytes are hardlinked,
+ *  config + sidecars are copied). The service probes the actual
+ *  destination dir; if hardlinks aren't supported, the endpoint
+ *  returns 409 after cleaning up the partial new dir. The
+ *  frontend should catch this case and offer to retry with
+ *  `mode='copy'`.
+ */
+export async function duplicateDataset(
+    name: string,
+    newName: string,
+    mode: 'copy' | 'hardlink' = 'hardlink'
+): Promise<DatasetInfo> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_name: newName, mode })
+    });
+    if (!res.ok) {
+        // Attach the HTTP status so callers can branch on specific
+        // status codes (e.g. 409 hardlink-not-supported).
+        const message = await apiErrorMessage(res);
+        const err = new Error(message);
+        (err as Error & { status?: number }).status = res.status;
+        throw err;
+    }
+    return res.json();
+}
+
 async function _fetchImages(
     datasetName: string,
     options: { limit?: number; next?: string } = {}

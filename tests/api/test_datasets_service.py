@@ -5,6 +5,8 @@ Tests for ``update_extras`` / ``update_caption`` / ``get_history`` live in
 with a real database to exercise the on-disk history sidecar round-trip.
 """
 
+import os
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,7 +16,7 @@ from yadc.api.events import DatasetChangedEvent
 from yadc.api.modules import DatasetWatcherService, DBConnectionFactory, EventDispatcher
 from yadc.api.services import DatasetLoader, DatasetScanner
 from yadc.api.services.dataset_repository import DatasetRepository, ImageInfo
-from yadc.api.services.datasets import DatasetService
+from yadc.api.services.datasets import DATASETS_DIR, DatasetService, HardlinkNotSupportedError
 
 
 @pytest.fixture
@@ -433,3 +435,424 @@ class TestUpdateExtrasHistoryRoundTrip:
         assert history[0].extras.get("artist") == "Rembrandt"
         assert isinstance(history[0].extras["artist"], str)
         assert history[0].caption == "old caption"
+
+
+class TestProbeHardlinkInDir:
+    """``DatasetService._probe_hardlink_in_dir`` — used to fail fast on filesystems
+    that don't support hardlinks. Drops a small temp file in the target dir,
+    attempts ``os.link``, cleans up, returns the result."""
+
+    @pytest.fixture
+    def service(self, test_configuration, logging_factory):
+        return DatasetService(
+            db=MagicMock(spec=DBConnectionFactory),
+            watcher=MagicMock(spec=DatasetWatcherService),
+            configuration=test_configuration,
+            event_dispatcher=MagicMock(spec=EventDispatcher),
+            logging=logging_factory,
+            repo=MagicMock(spec=DatasetRepository),
+            scanner=MagicMock(spec=DatasetScanner),
+            loader=MagicMock(spec=DatasetLoader),
+        )
+
+    def test_probe_returns_true_when_link_succeeds(self, service, tmp_path, monkeypatch):
+        """When ``os.link`` succeeds, the probe returns True and leaves no files behind."""
+        monkeypatch.setattr("yadc.api.services.datasets.os.link", lambda src, dst: None)
+        assert service._probe_hardlink_in_dir(tmp_path) is True
+        assert list(tmp_path.iterdir()) == []
+
+    def test_probe_returns_false_when_link_raises(self, service, tmp_path, monkeypatch):
+        """When ``os.link`` raises OSError, the probe returns False and leaves no files behind."""
+
+        def raise_oserror(*_args, **_kwargs):
+            raise OSError("not supported")
+
+        monkeypatch.setattr("yadc.api.services.datasets.os.link", raise_oserror)
+        assert service._probe_hardlink_in_dir(tmp_path) is False
+        assert list(tmp_path.iterdir()) == []
+
+    def test_probe_returns_false_when_mkstemp_raises(self, service, tmp_path, monkeypatch):
+        """If even creating the temp file fails (e.g. read-only volume), return False."""
+
+        def raise_oserror(*_args, **_kwargs):
+            raise OSError("read-only")
+
+        monkeypatch.setattr("tempfile.mkstemp", raise_oserror)
+        assert service._probe_hardlink_in_dir(tmp_path) is False
+        assert list(tmp_path.iterdir()) == []
+
+    def test_probe_returns_false_for_nonexistent_dir(self, service, tmp_path):
+        """A path that doesn't exist (or isn't a dir) returns False without crashing."""
+        assert service._probe_hardlink_in_dir(tmp_path / "does-not-exist") is False
+
+
+class TestDuplicateManagedDataset:
+    """``DatasetService.duplicate_managed_dataset`` — copies config + images + sidecars
+    to a new managed dataset, applying the per-file-type copy policy (hardlink images,
+    copy sidecars + config, skip ``.staging/``). On hardlink failure, raises
+    :class:`HardlinkNotSupportedError` after cleaning up the partial new dir.
+    """
+
+    # Patch ``DATASETS_DIR`` so the new dataset gets created under
+    # ``tmp_path`` instead of the real ``~/.local/state/yadc/datasets``
+    # (which would be a destructive surprise if the test ever ran outside
+    # the sandbox). Matches the pattern in ``test_dataset_upload_service``.
+    @pytest.fixture(autouse=True)
+    def patch_datasets_dir(self, tmp_path, monkeypatch):
+        from yadc.api.services import datasets as datasets_module
+
+        state_path = tmp_path / "state"
+        state_path.mkdir()
+        datasets_dir = state_path / "datasets"
+        datasets_dir.mkdir()
+        monkeypatch.setattr(datasets_module, "DATASETS_DIR", datasets_dir)
+        # ``DATASETS_DIR`` is re-exported from the service module; tests
+        # that import it directly (this file does) see the original value
+        # unless we patch the binding in this module too.
+        monkeypatch.setattr("tests.api.test_datasets_service.DATASETS_DIR", datasets_dir)
+
+    @pytest.fixture
+    def service(self, db_connection_factory, test_configuration, logging_factory):
+        repo = DatasetRepository(db=db_connection_factory, logging=logging_factory)
+        loader = DatasetLoader(logging=logging_factory)
+        scanner = DatasetScanner(
+            db=db_connection_factory,
+            repo=repo,
+            loader=loader,
+            logging=logging_factory,
+            configuration=test_configuration,
+        )
+        watcher = MagicMock(spec=DatasetWatcherService)
+        event_dispatcher = MagicMock(spec=EventDispatcher)
+        return DatasetService(
+            db=db_connection_factory,
+            watcher=watcher,
+            configuration=test_configuration,
+            event_dispatcher=event_dispatcher,
+            logging=logging_factory,
+            repo=repo,
+            scanner=scanner,
+            loader=loader,
+        )
+
+    def _setup_managed_dataset(self, service: DatasetService, src_dir: Path) -> str:
+        """Create a managed dataset (source=upload) on disk with images, sidecars,
+        folders, and a ``.staging/`` dir. Register it and return the dataset name.
+        """
+        from PIL import Image
+
+        # Config uses relative paths like a real upload-sourced dataset.
+        # The scanner resolves them against the config's parent dir.
+        config_path = src_dir / "config.toml"
+        config_path.write_text('[[dataset]]\npath = "images"\n[[dataset]]\npath = "folders/train"\n')
+
+        # Root images + their sidecars
+        images_dir = src_dir / "images"
+        images_dir.mkdir()
+        Image.new("RGB", (1, 1), color="red").save(images_dir / "foo.jpg", format="JPEG")
+        (images_dir / "foo.txt").write_text("caption for foo")
+        (images_dir / "foo.toml").write_text('artist = "tester"\n')
+        (images_dir / "foo.history~").write_text("----------\nold caption\n")
+        (images_dir / "foo.gemma.draft~").write_text("draft from gemma")
+
+        # Folder upload: folders/train/ with its own image + sidecar
+        train_dir = src_dir / "folders" / "train"
+        train_dir.mkdir(parents=True)
+        Image.new("RGB", (1, 1), color="blue").save(train_dir / "bar.jpg", format="JPEG")
+        (train_dir / "bar.txt").write_text("caption for bar")
+
+        # .staging/ is transient upload state — must NOT be copied
+        staging_dir = src_dir / ".staging" / "abc-123"
+        staging_dir.mkdir(parents=True)
+        (staging_dir / "in_progress.jpg").write_bytes(b"partial upload")
+
+        service.register("src_ds", str(config_path), source="upload")
+        return "src_ds"
+
+    def _track_io(self, monkeypatch: pytest.MonkeyPatch) -> tuple[list[Path], list[Path]]:
+        """Patch ``os.link`` and ``shutil.copy2`` so the tests can inspect calls.
+        The real functions still run (so files actually exist on disk).
+        Returns (link_sources, copy_sources) lists that get appended to on each call.
+
+        Note: ``_probe_hardlink_in_dir`` also calls ``os.link`` (with a
+        temp file inside the destination dir) when ``mode='hardlink'``,
+        so callers should filter probe artifacts before asserting. See
+        :meth:`_real_link_sources`.
+        """
+        link_sources: list[Path] = []
+        copy_sources: list[Path] = []
+
+        real_link = os.link
+        real_copy2 = shutil.copy2
+
+        def mock_link(src, dst, *args, **kwargs):
+            link_sources.append(Path(src))
+            return real_link(src, dst, *args, **kwargs)
+
+        def mock_copy2(src, dst, *args, **kwargs):
+            copy_sources.append(Path(src))
+            return real_copy2(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr("yadc.api.services.datasets.os.link", mock_link)
+        monkeypatch.setattr("yadc.api.services.datasets.shutil.copy2", mock_copy2)
+        return link_sources, copy_sources
+
+    @staticmethod
+    def _real_link_sources(link_sources: list[Path]) -> list[Path]:
+        """Filter out the probe's internal ``os.link`` call. The probe drops
+        a temp file with the ``.yadc-probe-`` prefix inside the destination
+        dir and links it; that call is recorded by ``_track_io`` but isn't
+        a real image-bytes hardlink and should be ignored when asserting
+        the per-file-type policy."""
+        return [p for p in link_sources if not p.name.startswith(".yadc-probe-")]
+
+    def test_duplicate_managed_dataset_hardlink(self, service, tmp_path, monkeypatch):
+        """mode='hardlink' (default) hardlinks image bytes, copies config + sidecars,
+        skips ``.staging/``, registers the new dataset, leaves the source untouched."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        link_sources, copy_sources = self._track_io(monkeypatch)
+
+        # Mock the second register call (the duplicate's own) so we don't
+        # have to re-test the registration logic. The first register
+        # (for the source) has already run with the real implementation.
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+        # New dataset structure mirrors the source layout under DATASETS_DIR / new_ds
+        new_dir = DATASETS_DIR / "new_ds"
+        assert new_dir.is_dir()
+        assert (new_dir / "config.toml").read_text() == (src_dir / "config.toml").read_text()
+        assert (new_dir / "images" / "foo.jpg").is_file()
+        assert (new_dir / "images" / "foo.txt").read_text() == "caption for foo"
+        assert (new_dir / "images" / "foo.toml").read_text() == 'artist = "tester"\n'
+        assert (new_dir / "images" / "foo.history~").read_text() == "----------\nold caption\n"
+        assert (new_dir / "images" / "foo.gemma.draft~").read_text() == "draft from gemma"
+        assert (new_dir / "folders" / "train" / "bar.jpg").is_file()
+        assert (new_dir / "folders" / "train" / "bar.txt").read_text() == "caption for bar"
+        # .staging/ is not walked and must not appear in the new dir
+        assert not (new_dir / ".staging").exists()
+
+        # Image bytes went through os.link; config + sidecars went through shutil.copy2
+        real_links = self._real_link_sources(link_sources)
+        assert sorted(p.name for p in real_links) == ["bar.jpg", "foo.jpg"]
+        assert sorted(p.name for p in copy_sources) == [
+            "bar.txt",
+            "config.toml",
+            "foo.gemma.draft~",
+            "foo.history~",
+            "foo.toml",
+            "foo.txt",
+        ]
+
+        # The source layout is unchanged
+        assert (src_dir / "images" / "foo.jpg").is_file()
+        assert (src_dir / ".staging" / "abc-123" / "in_progress.jpg").is_file()
+
+        # register was called for the new dataset with source='upload'
+        service.register.assert_called_once()
+        args, kwargs = service.register.call_args
+        assert args[0] == "new_ds"
+        assert kwargs.get("source") == "upload"
+
+    def test_duplicate_managed_dataset_default_mode_is_hardlink(self, service, tmp_path, monkeypatch):
+        """When ``mode`` is omitted, the service defaults to hardlink — image bytes
+        go through ``os.link`` without the caller specifying it."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        link_sources, _copy_sources = self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        service.duplicate_managed_dataset("src_ds", "new_ds")
+
+        real_links = self._real_link_sources(link_sources)
+        assert sorted(p.name for p in real_links) == ["bar.jpg", "foo.jpg"]
+        assert (DATASETS_DIR / "new_ds" / "config.toml").is_file()
+
+    def test_duplicate_managed_dataset_copy(self, service, tmp_path, monkeypatch):
+        """mode='copy' uses shutil.copy2 for everything, including image bytes."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        _link_sources, copy_sources = self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        service.duplicate_managed_dataset("src_ds", "new_ds", mode="copy")
+
+        # Every file (images + sidecars + config) went through shutil.copy2.
+        # os.link was never called.
+        copy_names = sorted(p.name for p in copy_sources)
+        assert "foo.jpg" in copy_names
+        assert "bar.jpg" in copy_names
+        assert "config.toml" in copy_names
+        # No hardlinks happened
+        # (we already assert link_sources was empty if no hardlinks)
+
+    def test_duplicate_managed_dataset_copy_link_sources_empty(self, service, tmp_path, monkeypatch):
+        """In copy mode, ``os.link`` is never called for image bytes."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        link_sources, _copy_sources = self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        service.duplicate_managed_dataset("src_ds", "new_ds", mode="copy")
+        assert link_sources == []
+
+    def test_duplicate_non_managed_raises(self, service, tmp_path, monkeypatch):
+        """Datasets whose source != 'upload' cannot be duplicated. Raises ValueError."""
+        # Set up a dataset with source='import' (not managed)
+        from PIL import Image
+
+        img_dir = tmp_path / "ext"
+        img_dir.mkdir()
+        Image.new("RGB", (1, 1), color="red").save(img_dir / "x.jpg", format="JPEG")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'[[dataset]]\npath = "{img_dir}"\n')
+        service.register("ext_ds", str(config_path), source="import")
+        link_sources, copy_sources = self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        with pytest.raises(ValueError, match="not a managed dataset"):
+            service.duplicate_managed_dataset("ext_ds", "new_ds", mode="hardlink")
+
+        assert link_sources == []
+        assert copy_sources == []
+        assert not (DATASETS_DIR / "new_ds").exists()
+
+    def test_duplicate_missing_source_raises(self, service, tmp_path, monkeypatch):
+        """Unknown source dataset name raises ValueError."""
+        self._track_io(monkeypatch)
+        with pytest.raises(ValueError, match="not found"):
+            service.duplicate_managed_dataset("nope", "new_ds", mode="hardlink")
+        assert not (DATASETS_DIR / "new_ds").exists()
+
+    def test_duplicate_name_collision_raises(self, service, tmp_path, monkeypatch):
+        """A new_name that already exists (registered or on disk) raises ValueError."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+
+        # Register another dataset with the name we want to duplicate to
+        from PIL import Image
+
+        other_dir = tmp_path / "other"
+        other_dir.mkdir()
+        Image.new("RGB", (1, 1), color="red").save(other_dir / "y.jpg", format="JPEG")
+        other_config = other_dir / "config.toml"
+        other_config.write_text(f'[[dataset]]\npath = "{other_dir}"\n')
+        service.register("new_ds", str(other_config), source="import")
+
+        with pytest.raises(ValueError, match="already exists"):
+            service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+    def test_duplicate_dest_dir_already_exists_raises(self, service, tmp_path, monkeypatch):
+        """If the new dataset dir exists on disk (stale state) but the dataset isn't
+        registered, the service refuses to clobber it. Raises ValueError."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+
+        # Pre-create a stale dir with the target name
+        stale = DATASETS_DIR / "new_ds"
+        stale.mkdir(parents=True)
+        (stale / "leftover.txt").write_text("stale state")
+
+        with pytest.raises(ValueError, match="already exists"):
+            service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+        # The stale state must not have been clobbered
+        assert (stale / "leftover.txt").is_file()
+
+    def test_duplicate_empty_new_name_raises(self, service, tmp_path, monkeypatch):
+        """An empty new_name raises ValueError before any I/O happens."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+
+        with pytest.raises(ValueError, match="must not be empty"):
+            service.duplicate_managed_dataset("src_ds", "", mode="hardlink")
+
+    def test_duplicate_same_name_as_source_raises(self, service, tmp_path, monkeypatch):
+        """A new_name equal to the source name raises ValueError."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+
+        with pytest.raises(ValueError, match="must differ from source name"):
+            service.duplicate_managed_dataset("src_ds", "src_ds", mode="hardlink")
+
+    def test_duplicate_hardlink_not_supported(self, service, tmp_path, monkeypatch):
+        """When the probe says hardlinks aren't supported, the service raises
+        HardlinkNotSupportedError and cleans up the partial new dir."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        # Force the probe to return False (simulating an exFAT-style fs)
+        monkeypatch.setattr(service, "_probe_hardlink_in_dir", lambda _dir: False)
+
+        with pytest.raises(HardlinkNotSupportedError, match="Hardlinks are not supported"):
+            service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+        # The partial new dir was created (config copied) before the probe
+        # fired, and must be removed by the cleanup in the except block.
+        assert not (DATASETS_DIR / "new_ds").exists()
+        # register was never called for the new dataset
+        service.register.assert_not_called()
+
+    def test_duplicate_partial_failure_cleanup(self, service, tmp_path, monkeypatch):
+        """An I/O error mid-walk (e.g. a specific os.link fails) cleans up the
+        partial new dir and re-raises."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        # Force the second os.link call (bar.jpg) to fail. The first one
+        # (foo.jpg) succeeds, the second raises.
+        real_link = os.link
+        call_count = {"n": 0}
+
+        def flaky_link(src, dst, *args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise OSError("simulated I/O failure")
+            return real_link(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr("yadc.api.services.datasets.os.link", flaky_link)
+
+        with pytest.raises(OSError, match="simulated I/O failure"):
+            service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+        # The partial new dir is gone
+        assert not (DATASETS_DIR / "new_ds").exists()
+        service.register.assert_not_called()
+
+    def test_duplicate_skips_staging(self, service, tmp_path, monkeypatch):
+        """``.staging/<uuid>/`` is a sibling of ``images/``/``folders/`` and is
+        therefore not part of the walk — verify no staging contents appear
+        in the new dataset even when the source has them."""
+        src_dir = tmp_path / "source"
+        src_dir.mkdir()
+        self._setup_managed_dataset(service, src_dir)
+        _link_sources, _copy_sources = self._track_io(monkeypatch)
+        service.register = MagicMock(return_value=MagicMock(name="DatasetInfo"))
+
+        service.duplicate_managed_dataset("src_ds", "new_ds", mode="hardlink")
+
+        new_dir = DATASETS_DIR / "new_ds"
+        # No .staging anywhere under the new dir
+        assert not (new_dir / ".staging").exists()
+        # Specifically the in-progress upload is not there
+        assert not list(new_dir.rglob("in_progress.jpg"))
