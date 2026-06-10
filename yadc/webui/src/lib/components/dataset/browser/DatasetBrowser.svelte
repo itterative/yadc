@@ -16,6 +16,7 @@
          *  Under ``max_concurrent > 1`` this can hold multiple IDs. */
         captioningIds?: ReadonlySet<number>;
         onclick: (item: ImageInfo) => void;
+        ondblclick?: (item: ImageInfo) => void;
         onendreached: () => void;
     }
 
@@ -28,6 +29,7 @@
         selectedId = null,
         captioningIds = new Set<number>(),
         onclick,
+        ondblclick,
         onendreached
     }: Props = $props();
 
@@ -149,6 +151,7 @@
                         selected={item.id === selectedId}
                         captioning={captioningIds.has(item.id)}
                         onclick={() => onclick(item)}
+                        ondblclick={ondblclick ? () => ondblclick(item) : undefined}
                     />
                 {/each}
 

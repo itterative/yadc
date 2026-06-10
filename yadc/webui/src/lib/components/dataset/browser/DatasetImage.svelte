@@ -9,6 +9,7 @@
         selected?: boolean;
         captioning?: boolean;
         onclick: (item: ImageInfo) => void;
+        ondblclick?: (item: ImageInfo) => void;
     }
 
     let {
@@ -17,7 +18,8 @@
         item,
         selected = false,
         captioning = false,
-        onclick
+        onclick,
+        ondblclick
     }: Props = $props();
 
     let media: HTMLImageElement | null = $state(null);
@@ -60,6 +62,7 @@
         ? 'animate-tile-flash'
         : ''}"
     onclick={() => onclick(item)}
+    ondblclick={ondblclick ? () => ondblclick(item) : undefined}
     class:has-caption={item.has_caption}
     class:has-toml={item.has_toml}
     onanimationend={handleFlashEnd}

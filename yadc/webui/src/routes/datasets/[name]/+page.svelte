@@ -5,6 +5,7 @@
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
+    import ImagePreviewDialog from '$lib/components/dataset/browser/ImagePreviewDialog.svelte';
     import SidePanel from './SidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
     import DropUploadZone from './DropUploadZone.svelte';
@@ -41,6 +42,7 @@
     let datasets: DatasetInfo[] = $state([]);
     let currentDataset: DatasetInfo | null = $state(null);
     let focusedItem: ImageInfo | null = $state(null);
+    let previewItem: ImageInfo | null = $state(null);
 
     let images: ImageInfo[] = $state([]);
     let isLoading = $state(true);
@@ -313,6 +315,14 @@
         panelOpen = true;
     }
 
+    function handleItemDblClick(item: ImageInfo) {
+        previewItem = item;
+    }
+
+    function handlePreviewClose() {
+        previewItem = null;
+    }
+
     function handlePanelClose() {
         focusedItem = null;
         panelTab = 'caption';
@@ -532,6 +542,7 @@
                     selectedId={focusedItem?.id ?? null}
                     captioningIds={captioningImageIds}
                     onclick={handleItemClick}
+                    ondblclick={handleItemDblClick}
                     onendreached={loadMore}
                 />
 
@@ -582,4 +593,9 @@
         onclose={handleAddFilesClose}
         oncomplete={handleAddFilesComplete}
     />
+{/if}
+
+<!-- Image preview lightbox (opened on double-click in the gallery). -->
+{#if previewItem !== null}
+    <ImagePreviewDialog open={true} onclose={handlePreviewClose} {datasetName} item={previewItem} />
 {/if}
