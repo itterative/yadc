@@ -18,8 +18,8 @@ import type {
 
 // --- API helpers ---
 
-async function _fetchDatasets(): Promise<DatasetInfo[]> {
-    const res = await fetch(`${API_BASE}/api/datasets`);
+async function _fetchDatasets(signal?: AbortSignal): Promise<DatasetInfo[]> {
+    const res = await fetch(`${API_BASE}/api/datasets`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -30,11 +30,16 @@ async function _fetchDatasets(): Promise<DatasetInfo[]> {
 export const fetchDatasets = debounce(_fetchDatasets);
 
 /** Import an existing TOML config as a new dataset. */
-export async function importDataset(name: string, tomlPath: string): Promise<DatasetInfo> {
+export async function importDataset(
+    name: string,
+    tomlPath: string,
+    signal?: AbortSignal
+): Promise<DatasetInfo> {
     const res = await fetch(`${API_BASE}/api/datasets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, toml_path: tomlPath })
+        body: JSON.stringify({ name, toml_path: tomlPath }),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -43,11 +48,16 @@ export async function importDataset(name: string, tomlPath: string): Promise<Dat
 }
 
 /** Create a new dataset from image directory paths. */
-export async function createDataset(name: string, imagePaths: string[]): Promise<DatasetInfo> {
+export async function createDataset(
+    name: string,
+    imagePaths: string[],
+    signal?: AbortSignal
+): Promise<DatasetInfo> {
     const res = await fetch(`${API_BASE}/api/datasets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, image_paths: imagePaths })
+        body: JSON.stringify({ name, image_paths: imagePaths }),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -240,14 +250,16 @@ export async function commitStagingUpload(
  */
 export async function deleteDatasetItems(
     name: string,
-    paths: string[]
+    paths: string[],
+    signal?: AbortSignal
 ): Promise<{ deleted: string[]; warnings: string[] }> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(name)}/items?source=${encodeURIComponent(clientId)}`,
         {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paths })
+            body: JSON.stringify({ paths }),
+            signal
         }
     );
     if (!res.ok) {
@@ -257,8 +269,10 @@ export async function deleteDatasetItems(
 }
 
 /** List folders for a managed dataset with image counts. */
-export async function fetchFolders(name: string): Promise<DatasetFolder[]> {
-    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/folders`);
+export async function fetchFolders(name: string, signal?: AbortSignal): Promise<DatasetFolder[]> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/folders`, {
+        signal
+    });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -266,8 +280,13 @@ export async function fetchFolders(name: string): Promise<DatasetFolder[]> {
 }
 
 /** List draft names with image counts for a dataset. */
-export async function fetchDraftSummary(name: string): Promise<DraftSummary[]> {
-    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/drafts/summary`);
+export async function fetchDraftSummary(
+    name: string,
+    signal?: AbortSignal
+): Promise<DraftSummary[]> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/drafts/summary`, {
+        signal
+    });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -275,10 +294,14 @@ export async function fetchDraftSummary(name: string): Promise<DraftSummary[]> {
 }
 
 /** Delete a named draft from all images in a dataset. */
-export async function deleteDraftAll(name: string, draftName: string): Promise<number> {
+export async function deleteDraftAll(
+    name: string,
+    draftName: string,
+    signal?: AbortSignal
+): Promise<number> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(name)}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -288,9 +311,10 @@ export async function deleteDraftAll(name: string, draftName: string): Promise<n
 }
 
 /** Delete/unregister a dataset. */
-export async function deleteDataset(name: string): Promise<void> {
+export async function deleteDataset(name: string, signal?: AbortSignal): Promise<void> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -298,10 +322,10 @@ export async function deleteDataset(name: string): Promise<void> {
 }
 
 /** Rescan a dataset's images from disk. Returns updated dataset info. */
-export async function rescanDataset(name: string): Promise<DatasetInfo> {
+export async function rescanDataset(name: string, signal?: AbortSignal): Promise<DatasetInfo> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(name)}/rescan?source=${encodeURIComponent(clientId)}`,
-        { method: 'POST' }
+        { method: 'POST', signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -321,12 +345,14 @@ export async function rescanDataset(name: string): Promise<DatasetInfo> {
 export async function duplicateDataset(
     name: string,
     newName: string,
-    mode: 'copy' | 'hardlink' = 'hardlink'
+    mode: 'copy' | 'hardlink' = 'hardlink',
+    signal?: AbortSignal
 ): Promise<DatasetInfo> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(name)}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_name: newName, mode })
+        body: JSON.stringify({ new_name: newName, mode }),
+        signal
     });
     if (!res.ok) {
         // Attach the HTTP status so callers can branch on specific
@@ -341,7 +367,8 @@ export async function duplicateDataset(
 
 async function _fetchImages(
     datasetName: string,
-    options: { limit?: number; next?: string } = {}
+    options: { limit?: number; next?: string } = {},
+    signal?: AbortSignal
 ): Promise<ImagePage> {
     const params = new URLSearchParams();
     if (options.limit) {
@@ -353,7 +380,8 @@ async function _fetchImages(
     }
 
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images?${params}`
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images?${params}`,
+        { signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -364,9 +392,14 @@ async function _fetchImages(
 /** Debounced image fetch — dedupes rapid calls (e.g., tab switching). */
 export const fetchImages = debounce(_fetchImages);
 
-async function _fetchCaption(datasetName: string, imageId: number): Promise<CaptionData> {
+async function _fetchCaption(
+    datasetName: string,
+    imageId: number,
+    signal?: AbortSignal
+): Promise<CaptionData> {
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`,
+        { signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -380,14 +413,16 @@ export const fetchCaption = debounce(_fetchCaption);
 export async function updateCaption(
     datasetName: string,
     imageId: number,
-    caption: string
+    caption: string,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption?source=${encodeURIComponent(clientId)}`,
         {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ caption })
+            body: JSON.stringify({ caption }),
+            signal
         }
     );
     if (!res.ok) {
@@ -395,9 +430,14 @@ export async function updateCaption(
     }
 }
 
-async function _fetchHistory(datasetName: string, imageId: number): Promise<HistoryEntry[]> {
+async function _fetchHistory(
+    datasetName: string,
+    imageId: number,
+    signal?: AbortSignal
+): Promise<HistoryEntry[]> {
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history`
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history`,
+        { signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -411,11 +451,12 @@ export const fetchHistory = debounce(_fetchHistory);
 export async function restoreHistory(
     datasetName: string,
     imageId: number,
-    historyIndex: number
+    historyIndex: number,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${historyIndex}/restore?source=${encodeURIComponent(clientId)}`,
-        { method: 'PUT', headers: { 'Content-Type': 'application/json' } }
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -425,11 +466,12 @@ export async function restoreHistory(
 export async function deleteHistory(
     datasetName: string,
     imageId: number,
-    entryHash: string
+    entryHash: string,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/history/${entryHash}?source=${encodeURIComponent(clientId)}`,
-        { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -439,11 +481,12 @@ export async function deleteHistory(
 export async function deleteDraft(
     datasetName: string,
     imageId: number,
-    draftName: string
+    draftName: string,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
-        { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -454,14 +497,16 @@ export async function writeDraft(
     datasetName: string,
     imageId: number,
     draftName: string,
-    content: string
+    content: string,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/drafts/${encodeURIComponent(draftName)}?source=${encodeURIComponent(clientId)}`,
         {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content })
+            body: JSON.stringify({ content }),
+            signal
         }
     );
     if (!res.ok) {
@@ -472,14 +517,16 @@ export async function writeDraft(
 export async function updateExtras(
     datasetName: string,
     imageId: number,
-    extrasRaw: string
+    extrasRaw: string,
+    signal?: AbortSignal
 ): Promise<void> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/extras?source=${encodeURIComponent(clientId)}`,
         {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ extras_raw: extrasRaw })
+            body: JSON.stringify({ extras_raw: extrasRaw }),
+            signal
         }
     );
     if (!res.ok) {
@@ -494,14 +541,16 @@ export function thumbnailUrl(datasetName: string, imageId: number, size = 256): 
 export async function fetchPromptPreview(
     datasetName: string,
     imageId: number,
-    options: { template?: string; template_name?: string } = {}
+    options: { template?: string; template_name?: string } = {},
+    signal?: AbortSignal
 ): Promise<PromptPreview> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/preview-prompt`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(options)
+            body: JSON.stringify(options),
+            signal
         }
     );
     if (!res.ok) {
@@ -519,14 +568,16 @@ export function mediaUrl(datasetName: string, imageId: number): string {
 /** Start a captioning job. Returns initial job info. */
 export async function startCaptioning(
     datasetName: string,
-    options: Record<string, unknown>
+    options: Record<string, unknown>,
+    signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
     const password = sessionPassword.get();
     const body = password ? { ...options, password } : options;
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -535,8 +586,13 @@ export async function startCaptioning(
 }
 
 /** Fetch the current captioning status for a dataset. */
-async function _fetchCaptioningStatus(datasetName: string): Promise<CaptioningJobInfo> {
-    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`);
+async function _fetchCaptioningStatus(
+    datasetName: string,
+    signal?: AbortSignal
+): Promise<CaptioningJobInfo> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {
+        signal
+    });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -547,9 +603,10 @@ async function _fetchCaptioningStatus(datasetName: string): Promise<CaptioningJo
 export const fetchCaptioningStatus = debounce(_fetchCaptioningStatus);
 
 /** Stop a running captioning job. Raw API call — for toast-enabled version use `captionActions.stopCaptioning`. */
-export async function stopCaptioning(datasetName: string): Promise<boolean> {
+export async function stopCaptioning(datasetName: string, signal?: AbortSignal): Promise<boolean> {
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        signal
     });
     return res.ok;
 }
@@ -558,7 +615,8 @@ export async function stopCaptioning(datasetName: string): Promise<boolean> {
 export async function captionSingleImage(
     datasetName: string,
     imageId: number,
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown> = {},
+    signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
     const password = sessionPassword.get();
     const body = password ? { ...options, password } : options;
@@ -567,7 +625,8 @@ export async function captionSingleImage(
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal
         }
     );
     if (!res.ok) {
@@ -584,7 +643,8 @@ export async function refineCaption(
     imageId: number,
     feedback: string,
     caption: string,
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown> = {},
+    signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
     const password = sessionPassword.get();
     const body = {
@@ -598,7 +658,8 @@ export async function refineCaption(
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal
         }
     );
     if (!res.ok) {
@@ -612,7 +673,8 @@ export async function fetchRefineResult(
     datasetName: string,
     imageId: number,
     source: 'caption' | 'draft' = 'caption',
-    draftName: string = ''
+    draftName: string = '',
+    signal?: AbortSignal
 ): Promise<string | null> {
     const params = new URLSearchParams();
     if (source === 'draft' && draftName) {
@@ -621,7 +683,8 @@ export async function fetchRefineResult(
     }
     const qs = params.toString();
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine${qs ? '?' + qs : ''}`
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine${qs ? '?' + qs : ''}`,
+        { signal }
     );
     if (res.status === 404) {
         return null;

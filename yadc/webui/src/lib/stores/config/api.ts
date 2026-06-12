@@ -12,29 +12,33 @@ import type {
 
 // --- Export API helpers ---
 
-export async function fetchExportBackends(): Promise<ExportBackend[]> {
-    const res = await fetch(`${API_BASE}/api/export/backends`);
+export async function fetchExportBackends(signal?: AbortSignal): Promise<ExportBackend[]> {
+    const res = await fetch(`${API_BASE}/api/export/backends`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
 }
 
-export async function runExport(options: {
-    dataset: string;
-    backend?: string;
-    format?: string;
-    source?: string;
-    draft?: string;
-    with_drafts?: string[];
-    output?: string;
-    append?: boolean;
-    caption_extension?: string;
-}): Promise<ExportResult> {
+export async function runExport(
+    options: {
+        dataset: string;
+        backend?: string;
+        format?: string;
+        source?: string;
+        draft?: string;
+        with_drafts?: string[];
+        output?: string;
+        append?: boolean;
+        caption_extension?: string;
+    },
+    signal?: AbortSignal
+): Promise<ExportResult> {
     const res = await fetch(`${API_BASE}/api/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options)
+        body: JSON.stringify(options),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -42,12 +46,13 @@ export async function runExport(options: {
     return res.json();
 }
 
-export async function exportZip(options: ExportZipOptions): Promise<void> {
+export async function exportZip(options: ExportZipOptions, signal?: AbortSignal): Promise<void> {
     const body = { ...options, zip: true };
     const res = await fetch(`${API_BASE}/api/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -71,8 +76,13 @@ export async function exportZip(options: ExportZipOptions): Promise<void> {
 
 // --- Dataset drafts API ---
 
-export async function fetchDatasetDrafts(datasetName: string): Promise<string[]> {
-    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/drafts`);
+export async function fetchDatasetDrafts(
+    datasetName: string,
+    signal?: AbortSignal
+): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/drafts`, {
+        signal
+    });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -81,16 +91,16 @@ export async function fetchDatasetDrafts(datasetName: string): Promise<string[]>
 
 // --- Config API helpers ---
 
-export async function fetchConfigs(): Promise<DatasetConfig[]> {
-    const res = await fetch(`${API_BASE}/api/configs`);
+export async function fetchConfigs(signal?: AbortSignal): Promise<DatasetConfig[]> {
+    const res = await fetch(`${API_BASE}/api/configs`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
     return res.json();
 }
 
-async function _fetchConfig(name: string): Promise<DatasetConfigDetail> {
-    const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`);
+async function _fetchConfig(name: string, signal?: AbortSignal): Promise<DatasetConfigDetail> {
+    const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -101,7 +111,8 @@ export const fetchConfig = debounce(_fetchConfig);
 
 async function _fetchConfigHistory(
     name: string,
-    options?: { limit?: number; next?: string | null }
+    options?: { limit?: number; next?: string | null },
+    signal?: AbortSignal
 ): Promise<ConfigHistoryPage> {
     const params = new URLSearchParams();
     if (options?.limit) {
@@ -115,7 +126,8 @@ async function _fetchConfigHistory(
     }
     const qs = params.toString();
     const res = await fetch(
-        `${API_BASE}/api/configs/${encodeURIComponent(name)}/history${qs ? '?' + qs : ''}`
+        `${API_BASE}/api/configs/${encodeURIComponent(name)}/history${qs ? '?' + qs : ''}`,
+        { signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -125,11 +137,16 @@ async function _fetchConfigHistory(
 
 export const fetchConfigHistory = debounce(_fetchConfigHistory);
 
-export async function updateConfig(name: string, content: string): Promise<DatasetConfigDetail> {
+export async function updateConfig(
+    name: string,
+    content: string,
+    signal?: AbortSignal
+): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content }),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -139,12 +156,14 @@ export async function updateConfig(name: string, content: string): Promise<Datas
 
 export async function patchConfig(
     name: string,
-    patch: Partial<Config>
+    patch: Partial<Config>,
+    signal?: AbortSignal
 ): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
+        body: JSON.stringify(patch),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -154,12 +173,14 @@ export async function patchConfig(
 
 export async function previewConfig(
     name: string,
-    patch: Partial<Config>
+    patch: Partial<Config>,
+    signal?: AbortSignal
 ): Promise<DatasetConfigDetail> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}?dry_run=true`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
+        body: JSON.stringify(patch),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -169,11 +190,12 @@ export async function previewConfig(
 
 export async function restoreConfigHistory(
     name: string,
-    entryId: number
+    entryId: number,
+    signal?: AbortSignal
 ): Promise<DatasetConfigDetail> {
     const res = await fetch(
         `${API_BASE}/api/configs/${encodeURIComponent(name)}/history/${entryId}/restore`,
-        { method: 'POST' }
+        { method: 'POST', signal }
     );
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -181,9 +203,10 @@ export async function restoreConfigHistory(
     return res.json();
 }
 
-export async function deleteConfig(name: string): Promise<void> {
+export async function deleteConfig(name: string, signal?: AbortSignal): Promise<void> {
     const res = await fetch(`${API_BASE}/api/configs/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));

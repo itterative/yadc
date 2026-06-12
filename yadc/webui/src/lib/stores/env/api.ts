@@ -4,8 +4,8 @@ import { get } from 'svelte/store';
 import { sessionPassword } from '../sessionPassword';
 import type { EnvInfo, EnvListResult } from './store';
 
-async function _fetchEnvs(): Promise<EnvInfo[]> {
-    const res = await fetch(`${API_BASE}/api/envs`);
+async function _fetchEnvs(signal?: AbortSignal): Promise<EnvInfo[]> {
+    const res = await fetch(`${API_BASE}/api/envs`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -28,12 +28,14 @@ export async function saveEnv(
         api_token?: string | null;
         api_model_name?: string | null;
         max_concurrent?: number | null;
-    }
+    },
+    signal?: AbortSignal
 ): Promise<EnvInfo> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -41,16 +43,17 @@ export async function saveEnv(
     return res.json();
 }
 
-export async function deleteEnv(name: string): Promise<void> {
+export async function deleteEnv(name: string, signal?: AbortSignal): Promise<void> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
 }
 
-async function _fetchModels(name: string): Promise<EnvListResult> {
+async function _fetchModels(name: string, signal?: AbortSignal): Promise<EnvListResult> {
     // POST so we can supply the session password in the body when the env
     // is password-mode. The endpoint also accepts GET (no body) for the
     // simple case where ``YADC_PASSWORD`` is set in the server env.
@@ -62,7 +65,8 @@ async function _fetchModels(name: string): Promise<EnvListResult> {
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}/models`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -76,7 +80,8 @@ export const fetchModels = debounce(_fetchModels);
 export async function revealEnvValue(
     name: string,
     key: string,
-    password?: string | null
+    password?: string | null,
+    signal?: AbortSignal
 ): Promise<{ value: string }> {
     const body: Record<string, unknown> = { key };
     const resolvedPassword = password !== undefined ? password : get(sessionPassword);
@@ -86,7 +91,8 @@ export async function revealEnvValue(
     const res = await fetch(`${API_BASE}/api/envs/${encodeURIComponent(name)}/reveal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
@@ -94,11 +100,11 @@ export async function revealEnvValue(
     return res.json();
 }
 
-export async function fetchKeyMode(): Promise<{
+export async function fetchKeyMode(signal?: AbortSignal): Promise<{
     mode: 'keyring' | 'password';
     env_password_set: boolean;
 }> {
-    const res = await fetch(`${API_BASE}/api/envs/key-mode`);
+    const res = await fetch(`${API_BASE}/api/envs/key-mode`, { signal });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
@@ -108,7 +114,8 @@ export async function fetchKeyMode(): Promise<{
 export async function setKeyMode(
     mode: 'keyring' | 'password',
     password?: string,
-    oldPassword?: string
+    oldPassword?: string,
+    signal?: AbortSignal
 ): Promise<{ mode: 'keyring' | 'password' }> {
     const body: Record<string, unknown> = { mode };
     if (password !== undefined) {
@@ -120,7 +127,8 @@ export async function setKeyMode(
     const res = await fetch(`${API_BASE}/api/envs/key-mode`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
