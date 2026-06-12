@@ -11,6 +11,20 @@ const DEFAULT_DEBOUNCE_MS = Number(import.meta.env.PUBLIC_API_DEFAULT_DEBOUNCE_M
  * existing promise (dedupe).  When the callback completes the entry is removed
  * so the next call starts fresh.
  *
+ * **AbortSignal handling** (opt-in by convention): if the **last** argument
+ * is an `AbortSignal`, the debouncer treats it as the caller's signal.  The
+ * debouncer owns a per-entry `AbortController` (created eagerly on the first
+ * call) and passes `controller.signal` to the underlying `cb(...)` instead of
+ * the caller's signal.  Every caller's signal is linked to the controller via
+ * an abort event listener — if **any** linked signal aborts, the in-flight
+ * call is aborted.  All listeners are removed when the entry resolves or
+ * rejects.  Callers that pass an already-aborted signal are rejected
+ * immediately without scheduling a fetch.
+ *
+ * The convention requires the wrapped callback's last parameter to be an
+ * `AbortSignal` (typically optional) whenever the caller passes a signal.
+ * Callbacks that don't accept a signal must be called without one.
+ *
  * On the server (SSR) the wrapper is a no-op pass-through since `window` is
  * not available.
  */
@@ -26,13 +40,47 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
 
     type V = Awaited<ReturnType<T>>;
 
+    interface Entry {
+        /** The dedup key — stored so `finalize` can remove the entry from the
+         *  map without scanning it. */
+        key: string;
+        resolve: (v: V) => void;
+        reject: (e: unknown) => void;
+        promise: Promise<V>;
+        /** Eagerly-created AbortController for the in-flight call.  Its signal
+         *  is passed to `cb(...)` when the timer fires.  Aborting this
+         *  controller aborts the underlying fetch. */
+        controller: AbortController;
+        /** Abort event listener cleanups, called when the entry resolves or
+         *  rejects. */
+        cleanups: Array<() => void>;
+    }
+
     const timers = new Map<string, number>();
-    const entries = new Map<
-        string,
-        { resolve: (v: V) => void; reject: (e: unknown) => void; promise: Promise<V> }
-    >();
+    const entries = new Map<string, Entry>();
 
     return (...args: Parameters<T>) => {
+        // Convention: the last arg, if it is an AbortSignal, is the caller's
+        // signal.  It is used for abort coordination but is NOT passed to
+        // `cb` directly — the debouncer passes `entry.controller.signal`
+        // instead.
+        let callerSignal: AbortSignal | undefined;
+        let cbArgs: unknown[];
+        if (args.length > 0 && args[args.length - 1] instanceof AbortSignal) {
+            callerSignal = args[args.length - 1] as AbortSignal;
+            cbArgs = args.slice(0, -1);
+        } else {
+            cbArgs = args.slice();
+        }
+
+        // If the caller's signal is already aborted, reject immediately.
+        if (callerSignal?.aborted) {
+            return Promise.reject(callerSignal.reason ?? new DOMException('Aborted', 'AbortError'));
+        }
+
+        // The key is computed from the full args (including the signal) so
+        // that calls with the same non-signal args dedup.  The signal is
+        // automatically dropped from the key by `JSON.stringify`.
         const key = JSON.stringify(args);
 
         // Cancel and restart the timer (true debounce — reset on each call).
@@ -41,7 +89,8 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
             window.clearTimeout(existingTimer);
         }
 
-        // Dedupe: reuse the existing promise if one is already pending or in-flight.
+        // Dedupe: reuse the existing entry if one is already pending or
+        // in-flight.
         let entry = entries.get(key);
         if (entry === undefined) {
             let resolve!: (value: V) => void;
@@ -52,39 +101,69 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
                 resolve = res;
                 reject = rej;
             });
-            entry = { resolve, reject, promise };
+            entry = {
+                key,
+                resolve,
+                reject,
+                promise,
+                controller: new AbortController(),
+                cleanups: []
+            };
             entries.set(key, entry);
         }
 
-        // Start / restart the debounce timer.
+        // Link the caller's signal to the entry's controller: if the caller's
+        // signal aborts, abort the in-flight call (if/when it starts).
+        if (callerSignal !== undefined) {
+            const onAbort = () => entry!.controller.abort();
+            callerSignal.addEventListener('abort', onAbort, { once: true });
+            entry.cleanups.push(() => callerSignal!.removeEventListener('abort', onAbort));
+        }
+
+        // Start / restart the debounce timer.  Capture the latest cbArgs and
+        // hadSignal so the fire call uses the most recent caller's args.
+        const hadSignal = callerSignal !== undefined;
         const timer = window.setTimeout(() => {
             timers.delete(key);
-            fire(key, args);
+            const current = entries.get(key);
+            if (current === undefined) {
+                return;
+            }
+            fire(current, cbArgs, hadSignal);
         }, delay);
         timers.set(key, timer);
 
         return entry.promise;
     };
 
-    function fire(key: string, args: Parameters<T>) {
-        const entry = entries.get(key);
-        if (!entry) {
-            return;
-        }
+    function fire(entry: Entry, cbArgs: unknown[], hadSignal: boolean) {
         try {
-            cb(...args)
+            // Append the controller's signal as the last positional arg of
+            // `cb` per the AbortSignal convention.  TypeScript can't verify
+            // this statically, so we cast through `unknown[]` to satisfy the
+            // generic constraint.
+            const callArgs: unknown[] = hadSignal ? [...cbArgs, entry.controller.signal] : cbArgs;
+            (cb as (...a: unknown[]) => Promise<V>)(...callArgs)
                 .then((v) => {
-                    entries.delete(key);
+                    finalize(entry);
                     entry.resolve(v);
                 })
                 .catch((e) => {
-                    entries.delete(key);
+                    finalize(entry);
                     entry.reject(e);
                 });
         } catch (e) {
-            entries.delete(key);
+            finalize(entry);
             entry.reject(e);
         }
+    }
+
+    function finalize(entry: Entry) {
+        entries.delete(entry.key);
+        for (const cleanup of entry.cleanups) {
+            cleanup();
+        }
+        entry.cleanups.length = 0;
     }
 }
 
