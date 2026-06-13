@@ -31,9 +31,17 @@ const _envs = writable<EnvStoreState>({ loaded: false, items: [] });
 /** Reactive store for environments. */
 export const envs: Readable<EnvStoreState> = readonly(_envs);
 
-/** Fetch all environments from the API and update the store. */
-export async function refreshEnvs(): Promise<EnvInfo[]> {
-    const items = await fetchEnvs();
-    _envs.set({ loaded: true, items });
+/** Fetch all environments from the API and update the store.
+ *
+ * If the request is aborted, the store is left unchanged. */
+export async function refreshEnvs(signal?: AbortSignal): Promise<EnvInfo[]> {
+    let items: EnvInfo[] = [];
+    try {
+        items = await fetchEnvs(signal);
+    } finally {
+        if (!signal?.aborted) {
+            _envs.set({ loaded: true, items });
+        }
+    }
     return items;
 }
