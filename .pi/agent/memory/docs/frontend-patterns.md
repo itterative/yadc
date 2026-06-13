@@ -132,7 +132,10 @@ Every fetch helper in `yadc/webui/src/lib/stores/<domain>/api.ts` accepts an opt
 
 - If the last argument is an `AbortSignal`, the debouncer creates its own per-key `AbortController`.
 - The callback receives the debouncer's controller signal, not the caller's.
-- If any deduped caller's signal aborts, the in-flight fetch is aborted.
+- Callers with the same key share the underlying fetch, but each gets their own promise.
+- If a caller's signal aborts, only that caller's promise rejects; the fetch continues for remaining interested callers.
+- The fetch is only cancelled when the last interested caller aborts.
+- If all callers abort before the debounce timer fires, the timer is dropped and the callback is never invoked.
 - The dedupe key ignores the signal so calls with/without signals still dedupe.
 
 ### Store refresh helpers

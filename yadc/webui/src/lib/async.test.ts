@@ -31,7 +31,7 @@ describe('debounce', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const promise = debounced('a');
         expect(cb).not.toHaveBeenCalled();
@@ -46,17 +46,19 @@ describe('debounce', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const p1 = debounced('a');
         const p2 = debounced('a');
 
-        // Both calls return the same promise (dedupe).
-        expect(p1).toBe(p2);
+        // Both calls are backed by the same underlying fetch, but each caller
+        // gets their own promise so aborts are isolated.
+        expect(p1).not.toBe(p2);
 
         await tick(50);
         const result = await p1;
         expect(result).toBe('result');
+        expect(await p2).toBe('result');
         expect(cb).toHaveBeenCalledOnce();
     });
 
@@ -64,7 +66,7 @@ describe('debounce', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         debounced('a');
         vi.advanceTimersByTime(40);
@@ -82,7 +84,7 @@ describe('debounce', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const p1 = debounced('a');
         const p2 = debounced('b');
@@ -105,7 +107,7 @@ describe('debounce with AbortSignal', () => {
             receivedSignal = signal;
             return 'result';
         });
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller = new AbortController();
         const promise = debounced('a', caller.signal);
@@ -123,7 +125,7 @@ describe('debounce with AbortSignal', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller = new AbortController();
         caller.abort();
@@ -136,7 +138,7 @@ describe('debounce with AbortSignal', () => {
         expect(cb).not.toHaveBeenCalled();
     });
 
-    it('aborts the in-flight call when the caller signal aborts', async () => {
+    it('rejects only the aborted caller when a single caller aborts', async () => {
         vi.useFakeTimers();
 
         const { promise: inflight, resolve: resolveInflight } = deferred<string>();
@@ -145,7 +147,7 @@ describe('debounce with AbortSignal', () => {
             receivedSignal = signal;
             return inflight;
         });
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller = new AbortController();
         const promise = debounced('a', caller.signal);
@@ -158,15 +160,18 @@ describe('debounce with AbortSignal', () => {
         // Abort while the callback is in-flight.
         caller.abort();
 
-        // Resolve the in-flight promise — the callback returns, fire() resolves.
-        resolveInflight('result');
-        await expect(promise).resolves.toBe('result');
+        // The aborted caller's promise rejects.
+        await expect(promise).rejects.toThrow('This operation was aborted');
 
         // The controller's signal (passed to cb) was aborted.
         expect(receivedSignal!.aborted).toBe(true);
+
+        // Resolving the in-flight promise should not cause any uncaught rejection.
+        resolveInflight('result');
+        await tick(0);
     });
 
-    it('aborts if any linked signal aborts (multiple callers)', async () => {
+    it('continues the fetch for remaining callers when one aborts', async () => {
         vi.useFakeTimers();
 
         const { promise: inflight, resolve: resolveInflight } = deferred<string>();
@@ -175,7 +180,7 @@ describe('debounce with AbortSignal', () => {
             receivedSignal = signal;
             return inflight;
         });
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller1 = new AbortController();
         const caller2 = new AbortController();
@@ -183,18 +188,23 @@ describe('debounce with AbortSignal', () => {
         // First caller starts the timer.
         const p1 = debounced('a', caller1.signal);
 
-        // Second caller resets the timer — same key, deduped promise.
+        // Second caller dedupes onto the same entry.
         const p2 = debounced('a', caller2.signal);
-        expect(p1).toBe(p2);
+        expect(p1).not.toBe(p2);
 
         // Timer fires.
         vi.advanceTimersByTime(50);
         await new Promise<void>((r) => queueMicrotask(r));
 
-        // Aborting caller2's signal should abort the entry's controller.
+        // Aborting caller2's signal should NOT abort the entry's controller
+        // because caller1 is still interested.
         caller2.abort();
-        expect(receivedSignal!.aborted).toBe(true);
+        expect(receivedSignal!.aborted).toBe(false);
 
+        // caller2's promise rejects.
+        await expect(p2).rejects.toThrow('This operation was aborted');
+
+        // caller1's promise resolves normally when the fetch completes.
         resolveInflight('result');
         await expect(p1).resolves.toBe('result');
     });
@@ -207,17 +217,18 @@ describe('debounce with AbortSignal', () => {
             receivedSignal = signal;
             return 'result';
         });
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller = new AbortController();
         const p1 = debounced('a', caller.signal);
 
         // Second caller does not pass a signal, but the first one did.
         const p2 = debounced('a');
-        expect(p1).toBe(p2);
+        expect(p1).not.toBe(p2);
 
         await tick(50);
         await expect(p1).resolves.toBe('result');
+        await expect(p2).resolves.toBe('result');
 
         // Because at least one deduped caller passed a signal, the callback
         // receives the debouncer's internal controller signal.
@@ -229,7 +240,7 @@ describe('debounce with AbortSignal', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const promise = debounced('a');
         await tick(50);
@@ -243,7 +254,7 @@ describe('debounce with AbortSignal', () => {
         vi.useFakeTimers();
 
         const cb = vi.fn().mockResolvedValue('result');
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller = new AbortController();
         const promise = debounced('a', caller.signal);
@@ -266,7 +277,7 @@ describe('debounce with AbortSignal', () => {
             callCount++;
             return `result-${callCount}`;
         });
-        const debounced = debounce(cb, 50);
+        const debounced = debounce(cb, { delay: 50 });
 
         const caller1 = new AbortController();
         const p1 = debounced('a', caller1.signal);
@@ -280,5 +291,209 @@ describe('debounce with AbortSignal', () => {
         await expect(p2).resolves.toBe('result-2');
 
         expect(cb).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cancel the fetch when the only caller aborts before the timer fires', async () => {
+        vi.useFakeTimers();
+
+        const cb = vi.fn().mockResolvedValue('result');
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller = new AbortController();
+        const promise = debounced('a', caller.signal);
+
+        // Abort during the debounce window, before the callback is invoked.
+        caller.abort();
+
+        await expect(promise).rejects.toThrow('This operation was aborted');
+
+        // The timer should still fire, but with no interested callers the
+        // callback is not invoked.
+        vi.advanceTimersByTime(50);
+        expect(cb).not.toHaveBeenCalled();
+    });
+
+    it('keeps the fetch alive for remaining callers when one aborts during the debounce window', async () => {
+        vi.useFakeTimers();
+
+        const cb = vi.fn().mockResolvedValue('result');
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller1 = new AbortController();
+        const caller2 = new AbortController();
+
+        const p1 = debounced('a', caller1.signal);
+        const p2 = debounced('a', caller2.signal);
+
+        // Abort the first caller during the debounce window.
+        caller1.abort();
+
+        // First caller's promise rejects.
+        await expect(p1).rejects.toThrow('This operation was aborted');
+
+        // Second caller still gets the result when the timer fires.
+        await tick(50);
+        await expect(p2).resolves.toBe('result');
+        expect(cb).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the fetch alive for remaining callers when one aborts in-flight', async () => {
+        vi.useFakeTimers();
+
+        const { promise: inflight, resolve: resolveInflight } = deferred<string>();
+        let receivedSignal: AbortSignal | undefined;
+        const cb = vi.fn().mockImplementation(async (_arg: string, signal?: AbortSignal) => {
+            receivedSignal = signal;
+            return inflight;
+        });
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller1 = new AbortController();
+        const caller2 = new AbortController();
+
+        const p1 = debounced('a', caller1.signal);
+        const p2 = debounced('a', caller2.signal);
+
+        // Timer fires and fetch starts.
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((r) => queueMicrotask(r));
+
+        // Abort the first caller while in-flight.
+        caller1.abort();
+
+        // First caller's promise rejects, but the controller is not aborted
+        // because caller2 is still interested.
+        await expect(p1).rejects.toThrow('This operation was aborted');
+        expect(receivedSignal!.aborted).toBe(false);
+
+        // Completing the fetch resolves the remaining caller.
+        resolveInflight('result');
+        await expect(p2).resolves.toBe('result');
+    });
+
+    it('gives a fresh controller to a new caller after all prior callers aborted in-flight', async () => {
+        vi.useFakeTimers();
+
+        const { promise: inflight, resolve: resolveInflight } = deferred<string>();
+        let receivedSignal: AbortSignal | undefined;
+        const cb = vi.fn().mockImplementation(async (_arg: string, signal?: AbortSignal) => {
+            receivedSignal = signal;
+            return inflight;
+        });
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller1 = new AbortController();
+        const p1 = debounced('a', caller1.signal);
+
+        // Timer fires and fetch starts.
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((r) => queueMicrotask(r));
+        expect(cb).toHaveBeenCalledOnce();
+
+        // The only caller aborts while in-flight. This finalizes the entry.
+        caller1.abort();
+        await expect(p1).rejects.toThrow('This operation was aborted');
+
+        // A new caller arrives before the old fetch resolves. It must get a
+        // brand-new entry with a fresh (non-aborted) controller.
+        const caller2 = new AbortController();
+        const p2 = debounced('a', caller2.signal);
+
+        // New timer should fire and start a second fetch.
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((r) => queueMicrotask(r));
+
+        expect(cb).toHaveBeenCalledTimes(2);
+        expect(receivedSignal!.aborted).toBe(false);
+
+        resolveInflight('result');
+        await expect(p2).resolves.toBe('result');
+    });
+
+    it('does not let an old aborted fetch clobber a new entry for the same key', async () => {
+        // Matches the user's log flow:
+        //   1. entry created, timer fires, cb in-flight
+        //   2. only caller aborts -> entry finalized, controller aborted
+        //   3. new caller arrives with same key -> new entry created
+        //   4. old fetch rejects with AbortError
+        //   5. new caller must still get a fresh fetch, not be orphaned.
+        vi.useFakeTimers();
+
+        const inflights: ReturnType<typeof deferred<string>>[] = [];
+        const cb = vi.fn().mockImplementation(async (_arg: string, signal?: AbortSignal) => {
+            const d = deferred<string>();
+            signal?.addEventListener(
+                'abort',
+                () => {
+                    d.reject(new DOMException('The operation was aborted.', 'AbortError'));
+                },
+                { once: true }
+            );
+            inflights.push(d);
+            return d.promise;
+        });
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller1 = new AbortController();
+        const p1 = debounced('a', caller1.signal);
+
+        // Timer fires and fetch starts.
+        await vi.advanceTimersByTimeAsync(50);
+        expect(cb).toHaveBeenCalledOnce();
+        expect(inflights).toHaveLength(1);
+
+        // Caller aborts while in-flight. This also rejects the underlying
+        // fetch, but we do NOT await p1 yet — we want the new caller to arrive
+        // before the old fetch's rejection microtask runs.
+        caller1.abort();
+
+        // New caller arrives before the old fetch rejection has been processed.
+        const caller2 = new AbortController();
+        const p2 = debounced('a', caller2.signal);
+
+        // Flush microtasks so the old rejection is processed BEFORE the new
+        // debounce timer (a macrotask) has a chance to fire.
+        await expect(p1).rejects.toThrow('This operation was aborted');
+
+        // The new caller must not be rejected by the old fetch's AbortError.
+        // Its timer must still fire and start a brand-new fetch.
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(cb).toHaveBeenCalledTimes(2);
+        expect(inflights).toHaveLength(2);
+
+        // Resolving the second fetch should satisfy the new caller.
+        inflights[1].resolve('result');
+        await expect(p2).resolves.toBe('result');
+    });
+
+    it('does not schedule a second fetch when a new caller dedupes onto an in-flight entry', async () => {
+        vi.useFakeTimers();
+
+        const { promise: inflight, resolve: resolveInflight } = deferred<string>();
+        const cb = vi.fn().mockImplementation(async () => inflight);
+        const debounced = debounce(cb, { delay: 50 });
+
+        const caller1 = new AbortController();
+        const p1 = debounced('a', caller1.signal);
+
+        // Timer fires and fetch starts.
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((r) => queueMicrotask(r));
+        expect(cb).toHaveBeenCalledOnce();
+
+        // A second caller arrives while the fetch is still in-flight.
+        const caller2 = new AbortController();
+        const p2 = debounced('a', caller2.signal);
+
+        // Advancing timers further should NOT trigger another fetch.
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((r) => queueMicrotask(r));
+        expect(cb).toHaveBeenCalledOnce();
+
+        // Both callers share the result of the single fetch.
+        resolveInflight('result');
+        await expect(p1).resolves.toBe('result');
+        await expect(p2).resolves.toBe('result');
     });
 });
