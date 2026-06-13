@@ -167,3 +167,68 @@ class TestCaptionSingleImage:
         call_args = mock_service.start_job_async.call_args
         assert call_args[0][0] == "test"
         assert call_args[0][1].image_ids == [1]
+
+
+class TestDeleteRefineResult:
+    """DELETE /api/datasets/<name>/images/<id>/refine — evicts the cached
+    refine result after the user accepts it. 200 on success, 409 when
+    the cached value doesn't match (a newer refine is cached) or no
+    entry is cached, 400 on invalid body."""
+
+    @pytest.mark.asyncio
+    async def test_returns_200_on_successful_evict(self, client, mock_service):
+        mock_service.evict_refine_result = AsyncMock(return_value=True)
+
+        resp = await client.delete(
+            "/api/datasets/test/images/42/refine",
+            json={"caption": "accepted text", "source": "caption"},
+        )
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data["status"] == "ok"
+        mock_service.evict_refine_result.assert_awaited_once_with(
+            "test", 42, "accepted text", source="caption", draft_name=""
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_409_when_service_returns_false(self, client, mock_service):
+        """The service returns False for both missing entries and mismatches
+        (newer refine cached). Both surface as 409 to the client."""
+        mock_service.evict_refine_result = AsyncMock(return_value=False)
+
+        resp = await client.delete(
+            "/api/datasets/test/images/42/refine",
+            json={"caption": "stale text"},
+        )
+
+        assert resp.status_code == 409
+        data = await resp.get_json()
+        assert data["code"] == "CONFLICT"
+
+    @pytest.mark.asyncio
+    async def test_returns_400_on_invalid_source(self, client, mock_service):
+        mock_service.evict_refine_result = AsyncMock(return_value=True)
+
+        resp = await client.delete(
+            "/api/datasets/test/images/42/refine",
+            json={"caption": "accepted text", "source": "bogus"},
+        )
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        mock_service.evict_refine_result.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_400_on_invalid_body(self, client, mock_service):
+        mock_service.evict_refine_result = AsyncMock()
+        resp = await client.delete(
+            "/api/datasets/test/images/42/refine",
+            json={},  # missing required `caption`
+        )
+
+        assert resp.status_code == 400
+        data = await resp.get_json()
+        assert data["code"] == "BAD_REQUEST"
+        mock_service.evict_refine_result.assert_not_awaited()

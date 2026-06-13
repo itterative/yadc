@@ -19,11 +19,14 @@ This controller is a thin HTTP layer; all state lives in
 - ``POST /datasets/<name>/images/<id>/refine`` — refine the caption
   via an interactive reply round (uses ``RefineOptions``); result
   cached up to ``Configuration.refine_result_buffer_size`` entries.
+- ``GET/DELETE /datasets/<name>/images/<id>/refine`` — read or
+  evict the cached refine result.
 
 All errors funnel through ``utils_json.jsonify_error`` with the right
 ``ErrorCode`` (``NOT_FOUND``, ``CONFLICT``, ``PASSWORD_REQUIRED``, ...).
 """
 
+import pydantic
 from quart import jsonify, request
 
 from yadc.cmd import envs as cmd_envs
@@ -187,3 +190,45 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         if result is None:
             return jsonify_error("No refine result available", status=404, code=ErrorCode.NOT_FOUND)
         return jsonify({"caption": result})
+
+    class EvictRefineResultBody(pydantic.BaseModel):
+        """Body for DELETE /refine — drop the cached refine result so the
+        next open of the dialog starts from a clean state.
+
+        ``caption`` is the text the user accepted. The backend compares it
+        to the cached value; a mismatch means a newer refine is in the
+        cache and we should leave it alone (returns 409 to signal the
+        conflict to the caller).
+        """
+
+        caption: str
+        source: str = "caption"
+        draft_name: str = ""
+
+    @app.delete("/datasets/<name>/images/<int:image_id>/refine")
+    async def delete_refine_result(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
+        """Drop the cached refine result for an image.
+
+        Called by the frontend after the user accepts a refinement, so
+        reopening the dialog doesn't surface a stale result the user
+        already committed. Returns 409 if the cached value doesn't match
+        the accepted text — that means a newer refine result is cached
+        and we don't want to evict it.
+        """
+        body = validate_body(EvictRefineResultBody, await request.get_json(silent=True))
+        if body.source not in ("caption", "draft"):
+            return jsonify_error(
+                "Invalid source — must be 'caption' or 'draft'",
+                status=400,
+                code=ErrorCode.BAD_REQUEST,
+            )
+        evicted = await captioning.evict_refine_result(
+            name, image_id, body.caption, source=body.source, draft_name=body.draft_name
+        )
+        if not evicted:
+            return jsonify_error(
+                "Cached refine result does not match the accepted text (or no result is cached)",
+                status=409,
+                code=ErrorCode.CONFLICT,
+            )
+        return jsonify({"status": "ok"})

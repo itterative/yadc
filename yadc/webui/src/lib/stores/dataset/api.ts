@@ -695,3 +695,42 @@ export async function fetchRefineResult(
     const data = await res.json();
     return data.caption ?? null;
 }
+
+/** Evict the cached refine result for an image after the user accepts it.
+ *
+ * Called after a successful caption/draft write so the next open of the
+ * refine dialog starts from a clean state. Treats 404 (nothing cached) and
+ * 409 (a different value is cached — a newer refine) as non-errors and
+ * returns ``false``. Throws on other failures.
+ */
+export async function deleteRefineResult(
+    datasetName: string,
+    imageId: number,
+    caption: string,
+    source: 'caption' | 'draft' = 'caption',
+    draftName: string = '',
+    signal?: AbortSignal
+): Promise<boolean> {
+    const password = sessionPassword.get();
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine`,
+        {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                caption,
+                source,
+                draft_name: draftName,
+                ...(password ? { password } : {})
+            }),
+            signal
+        }
+    );
+    if (res.status === 404 || res.status === 409) {
+        return false;
+    }
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return true;
+}

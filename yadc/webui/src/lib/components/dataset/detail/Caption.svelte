@@ -18,9 +18,11 @@
     import RefineDialog from './RefineDialog.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import type { CaptionData, HistoryEntry, ImageInfo } from '$lib/stores/dataset';
+    import { deleteRefineResult } from '$lib/stores/dataset/api';
     import { friendlyErrorMessage } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
     import { toast } from '$lib/stores/toasts';
+    import { autosize } from '$lib/actions/autosize';
 
     interface Props {
         datasetName: string;
@@ -176,15 +178,6 @@
         }
     }
 
-    function autosize(el: HTMLTextAreaElement) {
-        function resize() {
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 360) + 'px';
-        }
-        resize();
-        return { update: resize };
-    }
-
     function escapeParentheses(text: string): string {
         return text.replace(/([()])/g, '\\$1');
     }
@@ -255,11 +248,6 @@
                                 class="w-full resize-none bg-transparent p-3 font-mono text-sm whitespace-pre-wrap text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
                                 placeholder="Enter caption..."
                                 use:autosize
-                                oninput={(e) => {
-                                    const el = e.currentTarget;
-                                    el.style.height = 'auto';
-                                    el.style.height = Math.min(el.scrollHeight, 360) + 'px';
-                                }}
                             ></textarea>
                         {:else if captionData}
                             {#if captionData.caption}
@@ -496,6 +484,18 @@
             } else {
                 await onSaveCaption(text);
             }
+            // Best-effort cleanup of the cached refine result on the server.
+            // 404 (nothing cached) and 409 (a newer refine is cached) are
+            // both non-errors and just no-op. We don't want a stale cache
+            // entry to surface the same refinement the user just accepted
+            // when they next open the dialog.
+            const acceptedSource = refineInitialCaption?.source || 'caption';
+            const acceptedDraftName = refineInitialCaption?.draftName || '';
+            deleteRefineResult(datasetName, item.id, text, acceptedSource, acceptedDraftName).catch(
+                () => {
+                    // Ignore — see comment above.
+                }
+            );
         }}
     />
 </div>

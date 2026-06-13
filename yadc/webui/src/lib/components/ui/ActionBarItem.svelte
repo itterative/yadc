@@ -6,6 +6,7 @@
         disabled?: boolean;
         icon?: Component<{ class?: string }>;
         variant?: 'primary' | 'secondary' | 'danger';
+        type?: 'button' | 'submit';
         children: Snippet;
     }
 
@@ -14,6 +15,7 @@
         disabled = false,
         icon: Icon,
         variant = 'secondary',
+        type = 'button',
         children
     }: Props = $props();
 
@@ -31,6 +33,7 @@
         ]}"
         {onclick}
         {disabled}
+        {type}
     >
         {#if Icon}
             <Icon class="h-4 w-4 shrink-0" />

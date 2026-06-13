@@ -216,6 +216,35 @@ class CaptioningService(Service):
         async with self._refine_lock:
             return self._refine_results.get(key)
 
+    async def evict_refine_result(
+        self,
+        dataset_name: str,
+        image_id: int,
+        expected_caption: str,
+        source: Literal["caption", "draft"] = "caption",
+        draft_name: str = "",
+    ) -> bool:
+        """Drop the cached refine result for an image if its value matches
+        ``expected_caption``.
+
+        The frontend calls this after the user accepts a refinement, so
+        the next open of the refine dialog starts from a clean state.
+        We compare values (not just the key) to avoid evicting a newer
+        refine that arrived after the user accepted an older one —
+        the next open will surface that newer result instead.
+
+        Returns ``True`` if the entry was evicted, ``False`` if the
+        entry is missing or has a different value.
+        """
+        source_key = f"{source}/{draft_name}" if source == "draft" else "caption"
+        key = f"{dataset_name}/{image_id}/{source_key}"
+        async with self._refine_lock:
+            existing = self._refine_results.get(key)
+            if existing is None or existing != expected_caption:
+                return False
+            del self._refine_results[key]
+            return True
+
     # -- private helpers -----------------------------------------------------
 
     async def _cleanup_async(self, dataset_name: str, sleep_time: float = 5) -> None:

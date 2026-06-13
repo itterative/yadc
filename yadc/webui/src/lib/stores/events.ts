@@ -346,6 +346,21 @@ export function addCurrentlyCaptioning(datasetName: string, imageId: number): vo
     });
 }
 
+/** Remove a single image from the currently-captioning set (idempotent).
+ *  Used to clean up optimistic entries when an HTTP request fails before
+ *  the server ever emits image_caption_started/image_refined. */
+export function removeCurrentlyCaptioning(datasetName: string, imageId: number): void {
+    const k = _key(datasetName, imageId);
+    _currentlyCaptioningMap.update((map) => {
+        if (!map.has(k)) {
+            return map;
+        }
+        const next = new Map(map);
+        next.delete(k);
+        return next;
+    });
+}
+
 /** Remove all currently-captioning entries for a dataset. Called when
  *  a job reaches a terminal state so cancelled in-flight tasks don't
  *  leave stale entries behind. */

@@ -695,6 +695,54 @@ class TestCaptioningServiceCleanupRescan:
         captioning_service._dataset_service.rescan_dataset.assert_called_once_with("test_ds")
 
 
+class TestEvictRefineResult:
+    """evict_refine_result — drops the cached refine result when its
+    value matches what the user accepted, leaving newer (mismatching)
+    refinements in place."""
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_entry_exists(self, captioning_service):
+        """No entry cached → returns False (caller maps to 409)."""
+        ok = await captioning_service.evict_refine_result(
+            "test_ds", 42, "some caption", source="caption"
+        )
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_value_mismatches(self, captioning_service):
+        """A newer refine is cached → returns False, leaves it alone."""
+        captioning_service._refine_results["test_ds/42/caption"] = "newer refinement"
+        ok = await captioning_service.evict_refine_result(
+            "test_ds", 42, "older refinement", source="caption"
+        )
+        assert ok is False
+        assert captioning_service._refine_results.get("test_ds/42/caption") == "newer refinement"
+
+    @pytest.mark.asyncio
+    async def test_returns_true_and_removes_when_value_matches(self, captioning_service):
+        """Accepted text matches the cached value → returns True, entry is gone."""
+        captioning_service._refine_results["test_ds/42/caption"] = "accepted text"
+        ok = await captioning_service.evict_refine_result(
+            "test_ds", 42, "accepted text", source="caption"
+        )
+        assert ok is True
+        assert "test_ds/42/caption" not in captioning_service._refine_results
+
+    @pytest.mark.asyncio
+    async def test_uses_draft_source_key_for_drafts(self, captioning_service):
+        """draft_name is incorporated into the key so a draft refine and
+        a caption refine for the same image don't collide."""
+        captioning_service._refine_results["test_ds/42/caption"] = "caption refine"
+        captioning_service._refine_results["test_ds/42/draft/gemma"] = "draft refine"
+        ok = await captioning_service.evict_refine_result(
+            "test_ds", 42, "draft refine", source="draft", draft_name="gemma"
+        )
+        assert ok is True
+        # The caption entry is untouched.
+        assert captioning_service._refine_results.get("test_ds/42/caption") == "caption refine"
+        assert "test_ds/42/draft/gemma" not in captioning_service._refine_results
+
+
 class TestCaptioningServiceStartup:
     """Tests for CaptioningService's @event_handler(StartupEvent) starting the cleanup task.
 

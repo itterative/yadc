@@ -5,7 +5,12 @@ import {
     refineCaption as apiRefineCaption,
     stopCaptioning as apiStopCaptioning
 } from '../dataset/api';
-import { registerJobId, setCaptioningStatus, addCurrentlyCaptioning } from '../events';
+import {
+    registerJobId,
+    setCaptioningStatus,
+    addCurrentlyCaptioning,
+    removeCurrentlyCaptioning
+} from '../events';
 import { withPasswordRetry } from '../passwordPrompt';
 import { toast } from '../toasts';
 import type { CaptionOptions } from './options';
@@ -84,47 +89,59 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
     });
     addCurrentlyCaptioning(datasetName, imageId);
     const options = get(captionOptions);
-    const info = await withPasswordRetry(() =>
-        apiCaptionSingleImage(datasetName, imageId, options as Record<string, unknown>)
-    );
-    registerJobId(info.job_id);
+    try {
+        const info = await withPasswordRetry(() =>
+            apiCaptionSingleImage(datasetName, imageId, options as Record<string, unknown>)
+        );
+        registerJobId(info.job_id);
 
-    // Seed stores so the spinner appears immediately, but only if the job
-    // hasn't already finished. Fast completions (e.g. 0 images due to
-    // no-overwrite) may finish before the HTTP response arrives; seeding
-    // a stale 'running' state can race with the SSE 'done' event and leave
-    // the UI stuck.
-    if (info.status === 'running' || info.status === 'stopping') {
-        setCaptioningStatus({
-            status: info.status,
-            dataset_name: info.dataset_name,
-            processed: info.processed,
-            total: info.total,
-            errors: info.errors,
-            job_id: info.job_id,
-            error: info.error,
-            error_messages: [],
-            api_url: info.api_url,
-            api_model_name: info.api_model_name,
-            elapsed: info.elapsed,
-            max_concurrent: info.max_concurrent
-        });
-        addCurrentlyCaptioning(info.dataset_name, imageId);
+        // Seed stores so the spinner appears immediately, but only if the job
+        // hasn't already finished. Fast completions (e.g. 0 images due to
+        // no-overwrite) may finish before the HTTP response arrives; seeding
+        // a stale 'running' state can race with the SSE 'done' event and leave
+        // the UI stuck.
+        if (info.status === 'running' || info.status === 'stopping') {
+            setCaptioningStatus({
+                status: info.status,
+                dataset_name: info.dataset_name,
+                processed: info.processed,
+                total: info.total,
+                errors: info.errors,
+                job_id: info.job_id,
+                error: info.error,
+                error_messages: [],
+                api_url: info.api_url,
+                api_model_name: info.api_model_name,
+                elapsed: info.elapsed,
+                max_concurrent: info.max_concurrent
+            });
+            addCurrentlyCaptioning(info.dataset_name, imageId);
+        }
+
+        lastStartedJobId.set(info.job_id);
+        return info.job_id;
+    } catch (e) {
+        removeCurrentlyCaptioning(datasetName, imageId);
+        throw e;
     }
-
-    lastStartedJobId.set(info.job_id);
-    return info.job_id;
 }
 
 /** Start a refine job for a single image. Sends the current caption
  *  and user feedback as extra_messages to the model.
  *  Handles password retry, registers the job, and seeds the SSE stores
- *  for immediate spinner feedback. */
+ *  for immediate spinner feedback.
+ *  ``source`` and ``draftName`` identify whether to refine a caption
+ *  or a named draft; they are merged into the request body so the
+ *  backend can route the event back with the right ``source`` value
+ *  for the frontend to match against. */
 export async function refineCaption(
     datasetName: string,
     imageId: number,
     feedback: string,
-    caption: string
+    caption: string,
+    source: 'caption' | 'draft' = 'caption',
+    draftName: string = '',
+    signal?: AbortSignal
 ): Promise<string> {
     setCaptioningStatus({
         status: 'starting',
@@ -139,38 +156,47 @@ export async function refineCaption(
         max_concurrent: 1
     });
     addCurrentlyCaptioning(datasetName, imageId);
-    const options = get(captionOptions);
-    const info = await withPasswordRetry(() =>
-        apiRefineCaption(
-            datasetName,
-            imageId,
-            feedback,
-            caption,
-            options as Record<string, unknown>
-        )
-    );
-    registerJobId(info.job_id);
-
-    if (info.status === 'running' || info.status === 'stopping') {
-        setCaptioningStatus({
-            status: info.status,
-            dataset_name: info.dataset_name,
-            processed: info.processed,
-            total: info.total,
-            errors: info.errors,
-            job_id: info.job_id,
-            error: info.error,
-            error_messages: [],
-            api_url: info.api_url,
-            api_model_name: info.api_model_name,
-            elapsed: info.elapsed,
-            max_concurrent: info.max_concurrent
-        });
-        addCurrentlyCaptioning(info.dataset_name, imageId);
+    const options: Record<string, unknown> = { ...get(captionOptions) };
+    if (source === 'draft' && draftName) {
+        options.draft = draftName;
     }
+    try {
+        const info = await withPasswordRetry(() =>
+            apiRefineCaption(
+                datasetName,
+                imageId,
+                feedback,
+                caption,
+                options as Record<string, unknown>,
+                signal
+            )
+        );
+        registerJobId(info.job_id);
 
-    lastStartedJobId.set(info.job_id);
-    return info.job_id;
+        if (info.status === 'running' || info.status === 'stopping') {
+            setCaptioningStatus({
+                status: info.status,
+                dataset_name: info.dataset_name,
+                processed: info.processed,
+                total: info.total,
+                errors: info.errors,
+                job_id: info.job_id,
+                error: info.error,
+                error_messages: [],
+                api_url: info.api_url,
+                api_model_name: info.api_model_name,
+                elapsed: info.elapsed,
+                max_concurrent: info.max_concurrent
+            });
+            addCurrentlyCaptioning(info.dataset_name, imageId);
+        }
+
+        lastStartedJobId.set(info.job_id);
+        return info.job_id;
+    } catch (e) {
+        removeCurrentlyCaptioning(datasetName, imageId);
+        throw e;
+    }
 }
 
 /** Stop a running captioning job. Shows a toast on failure.
