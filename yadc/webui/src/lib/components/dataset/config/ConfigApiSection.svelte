@@ -33,9 +33,14 @@
             try {
                 await refreshEnvs(abort.signal);
             } catch (e) {
+                if (abort.signal.aborted) {
+                    return;
+                }
                 envsError = friendlyErrorMessage(e, 'Failed to load environments');
             } finally {
-                isLoadingEnvs = false;
+                if (!abort.signal.aborted) {
+                    isLoadingEnvs = false;
+                }
             }
         })();
         return () => abort.abort();

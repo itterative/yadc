@@ -108,14 +108,22 @@
                 fetchConfig(datasetName, signal),
                 refreshTemplates(signal)
             ]);
+            if (signal?.aborted) {
+                return;
+            }
             validationErrors = config.validation_error ?? [];
             previewContent = config.content;
             loadedConfigPath = config.config_path;
             configState.populateFields(config.parsed, config.content);
         } catch (e) {
+            if (signal?.aborted) {
+                return;
+            }
             error = friendlyErrorMessage(e, 'Failed to load config');
         } finally {
-            isLoading = false;
+            if (!signal?.aborted) {
+                isLoading = false;
+            }
         }
     }
 

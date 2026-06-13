@@ -47,9 +47,14 @@
         try {
             await refreshEnvs(abort.signal);
         } catch (e) {
+            if (abort.signal.aborted) {
+                return;
+            }
             envsError = friendlyErrorMessage(e, 'Failed to load environments');
         } finally {
-            isLoadingEnvs = false;
+            if (!abort.signal.aborted) {
+                isLoadingEnvs = false;
+            }
         }
     }
 
@@ -99,12 +104,20 @@
         modelsError = null;
         try {
             const result = await fetchModels(selectedEnv, signal);
+            if (signal?.aborted) {
+                return;
+            }
             models = result.models;
             modelFetchDone = true;
         } catch (e) {
+            if (signal?.aborted) {
+                return;
+            }
             modelsError = friendlyErrorMessage(e, 'Failed to fetch models');
         } finally {
-            isLoadingModels = false;
+            if (!signal?.aborted) {
+                isLoadingModels = false;
+            }
         }
     }
 </script>
