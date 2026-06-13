@@ -21,6 +21,11 @@ const DEFAULT_DEBOUNCE_MS = Number(import.meta.env.PUBLIC_API_DEFAULT_DEBOUNCE_M
  * rejects.  Callers that pass an already-aborted signal are rejected
  * immediately without scheduling a fetch.
  *
+ * If multiple callers dedupe for the same key and *any* of them passed a
+ * signal, the callback is invoked with the debouncer's internal controller
+ * signal so that aborts from any linked caller can reach the underlying
+ * fetch.
+ *
  * The convention requires the wrapped callback's last parameter to be an
  * `AbortSignal` (typically optional) whenever the caller passes a signal.
  * Callbacks that don't accept a signal must be called without one.
@@ -54,6 +59,10 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
         /** Abort event listener cleanups, called when the entry resolves or
          *  rejects. */
         cleanups: Array<() => void>;
+        /** Whether any deduped caller passed an `AbortSignal`.  If true, the
+         *  callback is invoked with the entry's controller signal so that
+         *  aborts are forwarded to the underlying fetch. */
+        hadSignal: boolean;
     }
 
     const timers = new Map<string, number>();
@@ -78,10 +87,10 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
             return Promise.reject(callerSignal.reason ?? new DOMException('Aborted', 'AbortError'));
         }
 
-        // The key is computed from the full args (including the signal) so
-        // that calls with the same non-signal args dedup.  The signal is
-        // automatically dropped from the key by `JSON.stringify`.
-        const key = JSON.stringify(args);
+        // The key is computed from the args without the signal so that calls
+        // with the same non-signal arguments dedupe regardless of whether a
+        // signal was passed.
+        const key = JSON.stringify(cbArgs);
 
         // Cancel and restart the timer (true debounce — reset on each call).
         const existingTimer = timers.get(key);
@@ -107,7 +116,8 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
                 reject,
                 promise,
                 controller: new AbortController(),
-                cleanups: []
+                cleanups: [],
+                hadSignal: false
             };
             entries.set(key, entry);
         }
@@ -115,21 +125,21 @@ export function debounce<T extends (...args: any[]) => Promise<any>>(
         // Link the caller's signal to the entry's controller: if the caller's
         // signal aborts, abort the in-flight call (if/when it starts).
         if (callerSignal !== undefined) {
+            entry.hadSignal = true;
             const onAbort = () => entry!.controller.abort();
             callerSignal.addEventListener('abort', onAbort, { once: true });
             entry.cleanups.push(() => callerSignal!.removeEventListener('abort', onAbort));
         }
 
-        // Start / restart the debounce timer.  Capture the latest cbArgs and
-        // hadSignal so the fire call uses the most recent caller's args.
-        const hadSignal = callerSignal !== undefined;
+        // Start / restart the debounce timer.  cbArgs comes from the latest
+        // caller; hadSignal is OR-ed across every deduped caller for this key.
         const timer = window.setTimeout(() => {
             timers.delete(key);
             const current = entries.get(key);
             if (current === undefined) {
                 return;
             }
-            fire(current, cbArgs, hadSignal);
+            fire(current, cbArgs, current.hadSignal);
         }, delay);
         timers.set(key, timer);
 

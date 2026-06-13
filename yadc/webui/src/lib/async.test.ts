@@ -199,6 +199,32 @@ describe('debounce with AbortSignal', () => {
         await expect(p1).resolves.toBe('result');
     });
 
+    it('passes a signal when any deduped caller provided one', async () => {
+        vi.useFakeTimers();
+
+        let receivedSignal: AbortSignal | undefined;
+        const cb = vi.fn().mockImplementation(async (_arg: string, signal?: AbortSignal) => {
+            receivedSignal = signal;
+            return 'result';
+        });
+        const debounced = debounce(cb, 50);
+
+        const caller = new AbortController();
+        const p1 = debounced('a', caller.signal);
+
+        // Second caller does not pass a signal, but the first one did.
+        const p2 = debounced('a');
+        expect(p1).toBe(p2);
+
+        await tick(50);
+        await expect(p1).resolves.toBe('result');
+
+        // Because at least one deduped caller passed a signal, the callback
+        // receives the debouncer's internal controller signal.
+        expect(receivedSignal).toBeDefined();
+        expect(receivedSignal).not.toBe(caller.signal);
+    });
+
     it('does not pass a signal when caller does not provide one', async () => {
         vi.useFakeTimers();
 
