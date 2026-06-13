@@ -1,6 +1,7 @@
 """SSE event stream endpoint with ``Last-Event-ID`` resumption support (replays from the ring buffer on reconnect)."""
 
 import asyncio
+import dataclasses
 import json
 
 from quart import Response, request
@@ -48,7 +49,11 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
                             yield ": ping\n\n"
                             continue
 
-                        parts = [f"event: {event.TYPE}", f"data: {json.dumps(event, cls=DataclassJSONEncoder)}"]
+                        # Prepend ``_type`` so the event type shows up at the top of
+                        # the data payload — useful in browsers (e.g. Firefox) whose
+                        # devtools don't surface the SSE ``event:`` field.
+                        data = {"_type": event.TYPE, **dataclasses.asdict(event)}
+                        parts = [f"event: {event.TYPE}", f"data: {json.dumps(data, cls=DataclassJSONEncoder)}"]
                         if event_id:
                             parts.append(f"id: {event_id}")
                         yield "\n".join(parts) + "\n\n"

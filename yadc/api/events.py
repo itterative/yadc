@@ -45,6 +45,7 @@ from typing import ClassVar, Literal
 from quart import Quart
 
 
+@dataclass
 class Event:
     TYPE: ClassVar[str]
 
@@ -55,10 +56,12 @@ class SetupAppEvent(Event):
     app: Quart
 
 
+@dataclass
 class StartupEvent(Event):
     TYPE: ClassVar[str] = "startup"
 
 
+@dataclass
 class ShutdownEvent(Event):
     TYPE: ClassVar[str] = "shutdown"
 
