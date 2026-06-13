@@ -58,4 +58,9 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
         response = Response(_retrieve_events(), mimetype="text/event-stream")
         response.headers["Cache-Control"] = "no-cache"
         response.headers["X-Accel-Buffering"] = "no"
+
+        # NOTE: fix for quart closing the stream after 1m
+        # https://github.com/pallets/quart/blob/main/docs/how_to_guides/streaming_response.rst#timeout
+        response.timeout = None
+
         return response
