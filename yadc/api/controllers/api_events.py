@@ -5,6 +5,8 @@ import json
 
 from quart import Response, request
 
+from yadc.api.events import PingEvent
+
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from ..modules.sse_events import SSEEvents
@@ -42,6 +44,10 @@ def api_events(configuration: Configuration, app: ApiBlueprint, logging: Logging
                     last_event_id=last_event_id,
                 ):
                     try:
+                        if event.TYPE == PingEvent.TYPE:
+                            yield ": ping\n\n"
+                            continue
+
                         parts = [f"event: {event.TYPE}", f"data: {json.dumps(event, cls=DataclassJSONEncoder)}"]
                         if event_id:
                             parts.append(f"id: {event_id}")
