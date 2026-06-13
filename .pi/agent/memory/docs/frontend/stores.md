@@ -10,7 +10,7 @@ category: architecture
 
 ## See also (in `.pi/agent/memory/docs/`)
 
-- `frontend-patterns` — SSE self-connecting module, Topbar pattern, Notifications
+- `frontend-patterns` — Abort contexts, SSE self-connecting module, Topbar pattern, Notifications
 - `dataset-watcher` — Backend SSE event payload + suppression (referenced from SSE)
 
 ## Domain Sub-Folders
@@ -20,7 +20,7 @@ yadc/webui/src/lib/stores/
   dataset/                       # Dataset domain — types + API split
     index.ts                     # Re-exports for `$lib/stores/dataset`
     types.ts                     # DatasetInfo, ImageInfo, ImagePage, CaptionData, HistoryEntry, DatasetUploadResult, UploadConflict, UploadProgressEvent, CaptioningJobInfo, DatasetFolder, DraftSummary, PromptPreview
-    api.ts                       # All fetch/CRUD/upload/captioning helpers (debounced via `debounce()`)
+    api.ts                       # All fetch/CRUD/upload/captioning helpers. Accepts optional `signal?: AbortSignal` as the last positional parameter. Debounced helpers (`fetchDatasets`, `fetchImages`, `fetchCaption`, `fetchHistory`, `fetchPromptPreview`) use the `lib/async.ts` AbortSignal convention.
   caption/                       # Caption domain — actions + type + persisted settings
     index.ts                     # Re-exports for `$lib/stores/caption`
     actions.ts                   # captionOptions + lastStartedJobId + startBatchCaptioning/captionSingleImage/stopCaptioning (with toasts + optional onError callback)
@@ -29,15 +29,15 @@ yadc/webui/src/lib/stores/
   config/                        # Config domain — types + API split
     index.ts                     # Re-exports for `$lib/stores/config`
     types.ts                     # Config + ConfigApi/ConfigPrompt/ConfigSettings/ConfigReasoning/ConfigDatasetEntry + DatasetConfig/Detail + ExportBackend/Result + ConfigHistoryEntry
-    api.ts                       # Config CRUD + export API + drafts API. `fetchConfig`/`fetchConfigHistory` debounced.
+    api.ts                       # Config CRUD + export API + drafts API. Accepts optional `signal?: AbortSignal` as the last positional parameter. `fetchConfig`/`fetchConfigHistory` debounced.
   env/                           # Env domain — store + API split
     index.ts                     # Re-exports for `$lib/stores/env`
-    store.ts                     # `envs` writable + `refreshEnvs` action + types
-    api.ts                       # Env CRUD + model fetching + key-mode. `fetchEnvs`/`fetchModels` debounced.
+    store.ts                     # `envs` writable + `refreshEnvs` action + types. `refreshEnvs(signal?)` skips updating the store if the signal was aborted.
+    api.ts                       # Env CRUD + model fetching + key-mode. Accepts optional `signal?: AbortSignal` as the last positional parameter. `fetchEnvs`/`fetchModels` debounced.
   templates/                     # Templates domain — store + API + pure helper
     index.ts                     # Re-exports for `$lib/stores/templates`
-    store.ts                     # `templates` writable + `refreshTemplates` action + types
-    api.ts                       # Template CRUD. `fetchTemplates`/`fetchTemplate` debounced. `duplicateTemplate` is a frontend-only helper (GET source + PUT new name) — no backend endpoint.
+    store.ts                     # `templates` writable + `refreshTemplates` action + types. `refreshTemplates(signal?)` skips updating the store if the signal was aborted.
+    api.ts                       # Template CRUD. Accepts optional `signal?: AbortSignal` as the last positional parameter. `fetchTemplates`/`fetchTemplate` debounced. `duplicateTemplate` is a frontend-only helper (GET source + PUT new name) — no backend endpoint.
     jinja.ts                     # Pure `extractVariables()` (Jinja2 regex helpers)
 ```
 

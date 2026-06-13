@@ -1,6 +1,6 @@
 ---
 name: frontend-patterns
-description: WebUI frontend patterns — Tabs system, Z-index layers, Topbar pattern, Browser notifications, Svelte 5 conventions, Drop-to-upload, SSE.
+description: WebUI frontend patterns — Abort contexts, Tabs system, Z-index layers, Topbar pattern, Browser notifications, Svelte 5 conventions, Drop-to-upload, SSE.
 category: architecture
 keep_updated: true
 ---
@@ -83,3 +83,62 @@ See `dataset-watcher` for the backend ring buffer + suppression pattern.
 - No pipe directives on events (`on:click` is gone — use `onclick`).
 - No nested `<button>`. Use `<div role="button">` for clickable list items.
 - Shared state across components uses `$state` modules (`.svelte.ts` files) — see `topbar.svelte.ts` for the pattern.
+
+## Abort Contexts
+
+`yadc/webui/src/lib/abort.ts` provides a composable abort-context layer for cancelling in-flight fetches when components unmount or effects rerun.
+
+### API
+
+- `createAbortContext()` — creates an `AbortController` linked to the nearest parent context. Children compose with this new signal. Use at route/component level.
+- `getAbortContext()` — reads the parent signal (returns `undefined` at the root).
+- `linkedController(parent?)` — creates an effect-scoped `AbortController` that aborts when the parent aborts. Use inside `$effect` blocks.
+- `setAbortContext(signal)` — used once in `+layout.svelte` to establish the root context.
+
+### Typical pattern in a route or component
+
+```svelte
+<script lang="ts">
+  import { createAbortContext } from '$lib/abort';
+
+  const abort = createAbortContext();
+
+  $effect(() => {
+    loadThings(abort.signal);
+    return () => abort.abort();
+  });
+</script>
+```
+
+### Typical pattern inside an `$effect` that reruns on value changes
+
+```svelte
+<script lang="ts">
+  import { getAbortContext, linkedController } from '$lib/abort';
+
+  const parentSignal = getAbortContext();
+
+  $effect(() => {
+    const controller = linkedController(parentSignal);
+    fetchThing(id, controller.signal);
+    return () => controller.abort();
+  });
+</script>
+```
+
+### API helper convention
+
+Every fetch helper in `yadc/webui/src/lib/stores/<domain>/api.ts` accepts an optional `signal?: AbortSignal` as the last positional parameter and forwards it to `fetch()`. Debounced helpers (`fetchDatasets`, `fetchImages`, `fetchCaption`, `fetchHistory`, `fetchConfig`, `fetchModels`, etc.) use the signal convention in `lib/async.ts`:
+
+- If the last argument is an `AbortSignal`, the debouncer creates its own per-key `AbortController`.
+- The callback receives the debouncer's controller signal, not the caller's.
+- If any deduped caller's signal aborts, the in-flight fetch is aborted.
+- The dedupe key ignores the signal so calls with/without signals still dedupe.
+
+### Store refresh helpers
+
+`refreshEnvs()` and `refreshTemplates()` accept a signal and skip updating their stores when aborted, so a late response from a cancelled fetch doesn't clobber newer data.
+
+### Background refreshes
+
+SSE-driven refreshes in `stores/events.ts` intentionally do **not** pass signals. They are global background tasks and should survive page navigation.

@@ -27,7 +27,7 @@ All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.p
 | [`cli-cmd-structure`](.pi/agent/memory/docs/cli-cmd-structure.md) | How CLI commands and `cmd/` modules are structured — click commands vs pure logic split. |
 | [`debug-api-logging`](.pi/agent/memory/docs/debug-api-logging.md) | `YADC_DEBUG_CAPTION_RESPONSES=1` feature for logging caption API request/response pairs to JSONL files. |
 | [`export-system`](.pi/agent/memory/docs/export-system.md) | How the export system works — backends, formats, and the draft/caption source selection. |
-| [`frontend-patterns`](.pi/agent/memory/docs/frontend-patterns.md) | Frontend patterns — Tabs system, Z-index layers, Topbar pattern, Browser notifications, Drop-to-upload, SSE, Svelte 5 conventions. |
+| [`frontend-patterns`](.pi/agent/memory/docs/frontend-patterns.md) | Frontend patterns — Abort contexts, Tabs system, Z-index layers, Topbar pattern, Browser notifications, Drop-to-upload, SSE, Svelte 5 conventions. |
 | [`paths-and-storage`](.pi/agent/memory/docs/paths-and-storage.md) | File system paths used by yadc (platformdirs) and file storage conventions for `DatasetImage` persistence. |
 | [`repository-pattern`](.pi/agent/memory/docs/repository-pattern.md) | Repository pattern for API services — repos own SQL + data model, services own transactions + business logic. Covers the `DBConnectionFactory.connection`/`transaction` contract, the auto-enrollment mechanism, and what belongs in which layer. |
 | [`template-system`](.pi/agent/memory/docs/template-system.md) | Jinja2 prompt template system — template resolution, loading, and variable context. |
