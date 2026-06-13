@@ -14,6 +14,7 @@
     import SvgVisibility from '$lib/icons/SvgVisibility.svelte';
     import Alert from '$lib/components/ui/Alert.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
+    import { getAbortContext, linkedController } from '$lib/abort';
 
     interface Props {
         datasetName: string;
@@ -23,6 +24,9 @@
     }
 
     let { datasetName, configVersion = 0, onsaved }: Props = $props();
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
 
     let entries: ConfigHistoryEntry[] = $state([]);
     let loading = $state(false);
@@ -38,7 +42,7 @@
 
     const PAGE_SIZE = 5;
 
-    async function loadHistory(append = false) {
+    async function loadHistory(append = false, signal?: AbortSignal) {
         loading = true;
         error = null;
         try {
@@ -46,10 +50,7 @@
             // The first page sends no cursor; subsequent pages pass
             // back whatever the server emitted as ``next_token``.
             const next = append ? nextToken : undefined;
-            const page = await fetchConfigHistory(datasetName, {
-                limit: PAGE_SIZE,
-                next
-            });
+            const page = await fetchConfigHistory(datasetName, { limit: PAGE_SIZE, next }, signal);
             // ``hasMore`` is authoritative: the server knows whether
             // there are more pages, regardless of the returned
             // count.
@@ -98,7 +99,9 @@
     $effect(() => {
         void datasetName;
         void configVersion;
-        loadHistory();
+        const controller = linkedController(parentSignal);
+        loadHistory(false, controller.signal);
+        return () => controller.abort();
     });
 </script>
 

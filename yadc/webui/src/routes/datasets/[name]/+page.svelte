@@ -28,6 +28,7 @@
     import { lastStartedJobId } from '$lib/stores/caption';
     import { toast, dismissToast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext } from '$lib/abort';
     import {
         fetchDatasets,
         fetchImages,
@@ -38,6 +39,10 @@
     } from '$lib/stores/dataset';
 
     let datasetName = $derived($page.params.name ?? '');
+
+    // Abort context for this page — aborted on unmount (SPA navigation)
+    // so in-flight requests are cancelled.
+    const abort = createAbortContext();
 
     let datasets: DatasetInfo[] = $state([]);
     let currentDataset: DatasetInfo | null = $state(null);
@@ -221,7 +226,7 @@
         error = null;
 
         try {
-            const page = await fetchImages(name, { limit: PAGE_SIZE });
+            const page = await fetchImages(name, { limit: PAGE_SIZE }, abort.signal);
             images = page.images;
             nextToken = page.next_token;
             hasMore = page.next_token !== null;
@@ -245,10 +250,14 @@
         isLoadingMore = true;
 
         try {
-            const page = await fetchImages(datasetName, {
-                limit: PAGE_SIZE,
-                next: nextToken
-            });
+            const page = await fetchImages(
+                datasetName,
+                {
+                    limit: PAGE_SIZE,
+                    next: nextToken
+                },
+                abort.signal
+            );
             images = [...images, ...page.images];
             nextToken = page.next_token;
             hasMore = page.next_token !== null;
@@ -271,7 +280,7 @@
         // clobber a more recent SSE event.
         (async () => {
             try {
-                const status = await fetchCaptioningStatus(name);
+                const status = await fetchCaptioningStatus(name, abort.signal);
                 const current = get(captioningStatus);
                 if (
                     status.dataset_name === name &&
@@ -298,11 +307,12 @@
         }
         (async () => {
             try {
-                datasets = await fetchDatasets();
+                datasets = await fetchDatasets(abort.signal);
             } catch {
                 datasets = [];
             }
         })();
+        return () => abort.abort();
     });
 
     // --- Side panel state ---
@@ -383,7 +393,7 @@
             loadInitial(datasetName);
             (async () => {
                 try {
-                    datasets = await fetchDatasets();
+                    datasets = await fetchDatasets(abort.signal);
                 } catch {
                     /* ignore */
                 }
@@ -413,7 +423,7 @@
             }
             (async () => {
                 try {
-                    datasets = await fetchDatasets();
+                    datasets = await fetchDatasets(abort.signal);
                 } catch {
                     /* ignore */
                 }
@@ -443,7 +453,7 @@
         }
         isRefreshing = true;
         try {
-            await rescanDataset(datasetName);
+            await rescanDataset(datasetName, abort.signal);
             // Dismiss any pending watcher toast since we've just refreshed
             if (watcherToastId) {
                 dismissToast(watcherToastId);
@@ -452,7 +462,7 @@
             clearPendingDatasetChange(datasetName);
             await loadInitial(datasetName);
             try {
-                datasets = await fetchDatasets();
+                datasets = await fetchDatasets(abort.signal);
             } catch {
                 /* ignore */
             }
@@ -476,7 +486,7 @@
         loadInitial(datasetName);
         (async () => {
             try {
-                datasets = await fetchDatasets();
+                datasets = await fetchDatasets(abort.signal);
             } catch {
                 /* ignore */
             }
@@ -512,7 +522,7 @@
             watcherToastId = null;
         }
         try {
-            datasets = await fetchDatasets();
+            datasets = await fetchDatasets(abort.signal);
         } catch {
             /* ignore */
         }

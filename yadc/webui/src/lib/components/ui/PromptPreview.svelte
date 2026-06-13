@@ -7,6 +7,7 @@
     } from '$lib/stores/dataset';
     import { captionOptions } from '$lib/stores/caption';
     import { friendlyErrorMessage } from '$lib/api';
+    import { getAbortContext, linkedController } from '$lib/abort';
 
     interface Props {
         datasetName: string;
@@ -19,6 +20,9 @@
     let promptPreview: PromptPreviewData | null = $state(null);
     let isLoadingPreview = $state(false);
     let previewError: string | null = $state(null);
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
 
     // Track the previously rendered image so we only clear the preview on image
     // changes, not on template edits (keeps the old preview visible during the
@@ -48,7 +52,6 @@
             lastRenderedImageId = id;
         }
 
-        let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | null = null;
 
         const options: { template?: string; template_name?: string } = {};
@@ -58,34 +61,36 @@
             options.template_name = templateName;
         }
 
+        // AbortController plumbed into the network request — switching
+        // images (or template fields) cancels the in-flight fetch. Also
+        // linked to the parent abort context (ImageDetail) so that switching
+        // images cancels the preview fetch via the signal chain.
+        const controller = linkedController(parentSignal);
+
         timer = setTimeout(() => {
-            if (cancelled) {
-                return;
-            }
             isLoadingPreview = true;
-            fetchPromptPreview(dsName, id, options)
+            fetchPromptPreview(dsName, id, options, controller.signal)
                 .then((data) => {
-                    if (cancelled) {
+                    if (controller.signal.aborted) {
                         return;
                     }
                     promptPreview = data;
                 })
                 .catch((e) => {
-                    if (cancelled) {
+                    if (controller.signal.aborted) {
                         return;
                     }
                     previewError = friendlyErrorMessage(e, 'Failed to preview prompt');
                 })
                 .finally(() => {
-                    if (cancelled) {
-                        return;
+                    if (!controller.signal.aborted) {
+                        isLoadingPreview = false;
                     }
-                    isLoadingPreview = false;
                 });
         }, 200);
 
         return () => {
-            cancelled = true;
+            controller.abort();
             if (timer !== null) {
                 clearTimeout(timer);
             }

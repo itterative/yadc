@@ -28,6 +28,7 @@
     import { confirmDialog } from '$lib/stores/confirm';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, linkedController } from '$lib/abort';
     import Caption from './Caption.svelte';
     import Preview from './Preview.svelte';
     import ExtrasTab from './Extras.svelte';
@@ -40,6 +41,11 @@
     }
 
     let { datasetName, item, source, ondelete }: Props = $props();
+
+    // Component-level abort scope — linked to any parent context and
+    // propagated to children (e.g. PromptPreview). Aborting this controller
+    // cancels all in-flight requests in this component and its descendants.
+    const abort = createAbortContext();
 
     let captionData: CaptionData | null = $state(null);
     let isLoadingCaption = $state(false);
@@ -76,7 +82,6 @@
             return;
         }
 
-        let cancelled = false;
         const id = item.id;
         const dsName = datasetName;
         isLoadingCaption = true;
@@ -84,38 +89,42 @@
         captionData = null;
         historyEntries = [];
 
+        // Effect-scoped controller that also aborts if the component-level
+        // scope fires (e.g. parent unmount / parent abort).
+        const controller = linkedController(abort.signal);
+
         (async () => {
             try {
                 const [data, hist] = await Promise.all([
-                    fetchCaption(dsName, id),
-                    fetchHistory(dsName, id)
+                    fetchCaption(dsName, id, controller.signal),
+                    fetchHistory(dsName, id, controller.signal)
                 ]);
-                if (cancelled) {
+                if (controller.signal.aborted) {
                     return;
                 }
                 captionData = data;
                 historyEntries = hist;
                 clearStoredCaption(id);
             } catch (e) {
-                if (cancelled) {
+                if (controller.signal.aborted) {
                     return;
                 }
                 captionError = friendlyErrorMessage(e, 'Failed to load caption');
             } finally {
-                if (!cancelled) {
+                if (!controller.signal.aborted) {
                     isLoadingCaption = false;
                 }
             }
         })();
 
-        return () => {
-            cancelled = true;
-        };
+        return () => controller.abort();
     });
 
     // Re-fetch caption + history when a single-image captioning job completes
     $effect(() => {
         const current = isCaptioning;
+        const controller = linkedController(abort.signal);
+
         if (wasCaptioning && !current && item !== null) {
             const id = item.id;
             const dsName = datasetName;
@@ -128,20 +137,28 @@
             (async () => {
                 try {
                     const [data, hist] = await Promise.all([
-                        fetchCaption(dsName, id),
-                        fetchHistory(dsName, id)
+                        fetchCaption(dsName, id, controller.signal),
+                        fetchHistory(dsName, id, controller.signal)
                     ]);
+                    if (controller.signal.aborted) {
+                        return;
+                    }
                     if (item?.id !== id) {
                         return;
                     }
                     captionData = data;
                     historyEntries = hist;
                 } catch (e) {
+                    if (controller.signal.aborted) {
+                        return;
+                    }
                     captionError = friendlyErrorMessage(e, 'Failed to load caption');
                 }
             })();
         }
         wasCaptioning = current;
+
+        return () => controller.abort();
     });
 
     async function handleSaveCaption(text: string) {

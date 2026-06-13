@@ -6,6 +6,7 @@
         deleteTemplate
     } from '$lib/stores/templates';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, getAbortContext, linkedController } from '$lib/abort';
     import { confirmDialog } from '$lib/stores/confirm';
     import { toast } from '$lib/stores/toasts';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
@@ -28,6 +29,13 @@
     }
 
     let { selectedTemplate = $bindable(''), datasetDefaultTemplate = '' }: Props = $props();
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
+
+    // Component-level abort scope for the template list fetch, which only runs
+    // once on mount and should cancel on unmount.
+    const abort = createAbortContext();
 
     // --- Section-internal state (not exposed to the parent) ---
 
@@ -57,6 +65,7 @@
     // check the same emptiness precondition).
     $effect(() => {
         void loadTemplateList();
+        return () => abort.abort();
     });
 
     // Load the selected template's content when `selectedTemplate` changes
@@ -69,31 +78,31 @@
             return;
         }
 
-        let cancelled = false;
+        const controller = linkedController(parentSignal);
         isLoadingContent = true;
         contentError = null;
         (async () => {
             try {
-                const info = await fetchTemplate(name);
-                if (cancelled) {
+                const info = await fetchTemplate(name, controller.signal);
+                if (controller.signal.aborted) {
                     return;
                 }
                 currentContent = info.content;
             } catch (e) {
-                if (cancelled) {
+                if (controller.signal.aborted) {
                     return;
                 }
                 currentContent = '';
                 contentError = friendlyErrorMessage(e, 'Failed to load template');
             } finally {
-                if (!cancelled) {
+                if (!controller.signal.aborted) {
                     isLoadingContent = false;
                 }
             }
         })();
 
         return () => {
-            cancelled = true;
+            controller.abort();
         };
     });
 
@@ -101,15 +110,23 @@
         isLoadingTemplates = true;
         templatesError = null;
         try {
-            const list = await refreshTemplates();
+            const list = await refreshTemplates(abort.signal);
+            if (abort.signal.aborted) {
+                return;
+            }
             const hasDefault = list.some((t) => t.name === 'default');
             if (hasDefault && !selectedTemplate) {
                 selectedTemplate = 'default';
             }
         } catch {
+            if (abort.signal.aborted) {
+                return;
+            }
             templatesError = 'Failed to load templates';
         } finally {
-            isLoadingTemplates = false;
+            if (!abort.signal.aborted) {
+                isLoadingTemplates = false;
+            }
         }
     }
 

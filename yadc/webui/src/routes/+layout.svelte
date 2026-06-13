@@ -16,6 +16,7 @@
     import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
     import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
     import { toast } from '$lib/stores/toasts';
+    import { setAbortContext } from '$lib/abort';
     import { captioningStatus, resumptionFailed } from '$lib/stores/events';
     import { sendNotification } from '$lib/notifications';
     import { settingsDialog } from '$lib/stores/settings';
@@ -30,6 +31,10 @@
     let currentHash = $derived($page.url.hash);
     let isDatasetPage = $derived(currentHash === '#/' || currentHash.startsWith('#/datasets/'));
     let isTemplatesPage = $derived(currentHash.startsWith('#/templates'));
+
+    // Root abort context — never aborted itself, but provides the top of
+    // the signal chain so route pages and global dialogs can compose with it.
+    setAbortContext(new AbortController().signal);
 
     let showExport = $state(false);
     let sidebarOpen = $state(false);

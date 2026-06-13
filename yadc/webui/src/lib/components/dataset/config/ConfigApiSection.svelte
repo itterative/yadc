@@ -4,10 +4,18 @@
     import { envs, refreshEnvs, fetchModels } from '$lib/stores/env';
     import { settingsDialog } from '$lib/stores/settings';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, getAbortContext, linkedController } from '$lib/abort';
     import { configState } from './state.svelte';
 
     let isLoadingEnvs = $state(false);
     let envsError: string | null = $state(null);
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
+
+    // Component-level abort scope for the env list fetch, which has no
+    // per-effect reruns and should cancel on unmount.
+    const abort = createAbortContext();
 
     let models: string[] = $state([]);
     let isLoadingModels = $state(false);
@@ -16,19 +24,21 @@
 
     let envInfo = $derived($envs.items.find((e) => e.name === configState.envName) ?? null);
 
-    // Load envs on mount (SSE auto-refresh handles subsequent changes)
+    // Load envs on mount (SSE auto-refresh handles subsequent changes).
+    // This fetch is tied to the component scope, not an effect rerun.
     $effect(() => {
         void (async () => {
             isLoadingEnvs = true;
             envsError = null;
             try {
-                await refreshEnvs();
+                await refreshEnvs(abort.signal);
             } catch (e) {
                 envsError = friendlyErrorMessage(e, 'Failed to load environments');
             } finally {
                 isLoadingEnvs = false;
             }
         })();
+        return () => abort.abort();
     });
 
     // Fetch models when the selected env changes. Only update placeholders
@@ -42,32 +52,32 @@
         if (!env) {
             return;
         }
-        let cancelled = false;
+        const controller = linkedController(parentSignal);
         void (async () => {
-            if (cancelled) {
+            if (controller.signal.aborted) {
                 return;
             }
             isLoadingModels = true;
             try {
-                const result = await fetchModels(env);
-                if (cancelled) {
+                const result = await fetchModels(env, controller.signal);
+                if (controller.signal.aborted) {
                     return;
                 }
                 models = result.models;
                 modelFetchDone = true;
             } catch (e) {
-                if (cancelled) {
+                if (controller.signal.aborted) {
                     return;
                 }
                 modelsError = friendlyErrorMessage(e, 'Failed to fetch models');
             } finally {
-                if (!cancelled) {
+                if (!controller.signal.aborted) {
                     isLoadingModels = false;
                 }
             }
         })();
         return () => {
-            cancelled = true;
+            controller.abort();
         };
     });
 
@@ -76,16 +86,25 @@
         if (!env) {
             return;
         }
+        const controller = linkedController(parentSignal);
         isLoadingModels = true;
         modelsError = null;
         try {
-            const result = await fetchModels(env);
+            const result = await fetchModels(env, controller.signal);
+            if (controller.signal.aborted) {
+                return;
+            }
             models = result.models;
             modelFetchDone = true;
         } catch (e) {
+            if (controller.signal.aborted) {
+                return;
+            }
             modelsError = friendlyErrorMessage(e, 'Failed to fetch models');
         } finally {
-            isLoadingModels = false;
+            if (!controller.signal.aborted) {
+                isLoadingModels = false;
+            }
         }
     }
 </script>

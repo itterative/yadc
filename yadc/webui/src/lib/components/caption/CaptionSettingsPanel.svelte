@@ -13,6 +13,7 @@
     import { promptNotificationsOnce } from '$lib/notifications';
     import { deferred } from '$lib/async';
     import { fetchConfig } from '$lib/stores/config';
+    import { getAbortContext } from '$lib/abort';
     import { get } from 'svelte/store';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
     import { PasswordPromptCancelled } from '$lib/stores/passwordPrompt';
@@ -30,6 +31,9 @@
     }
 
     let { datasetName: _datasetName, onclose: _onclose }: Props = $props();
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
 
     // Derive batch captioning state from the global SSE store
     let isBatchCaptioning = $derived(
@@ -190,7 +194,7 @@
 
     async function loadDatasetDefaults() {
         try {
-            const config = await fetchConfig(_datasetName);
+            const config = await fetchConfig(_datasetName, parentSignal);
             const p = config.parsed;
 
             datasetDefaults = {

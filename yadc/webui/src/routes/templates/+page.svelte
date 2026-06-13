@@ -15,6 +15,7 @@
     import SvgFile from '$lib/icons/SvgFile.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext } from '$lib/abort';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import DuplicateTemplateDialog from './DuplicateTemplateDialog.svelte';
@@ -22,6 +23,9 @@
     let loading = $state(true);
     let error = $state('');
     let showAddTemplate = $state(false);
+
+    // Abort context for this page — aborted on unmount (SPA navigation).
+    const abort = createAbortContext();
 
     // Edit state
     let editingTemplate: TemplateListItem | null = $state(null);
@@ -34,11 +38,12 @@
             return;
         }
         loadTemplates();
+        return () => abort.abort();
     });
 
     async function loadTemplates() {
         try {
-            await refreshTemplates();
+            await refreshTemplates(abort.signal);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load templates');
         } finally {
@@ -54,8 +59,8 @@
             return;
         }
         try {
-            await deleteTemplate(template.name);
-            await refreshTemplates();
+            await deleteTemplate(template.name, abort.signal);
+            await refreshTemplates(abort.signal);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to delete template');
         }

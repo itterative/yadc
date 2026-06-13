@@ -13,6 +13,7 @@
     } from '$lib/stores/config';
     import { fetchDatasets, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, linkedController } from '$lib/abort';
 
     interface Props {
         open: boolean;
@@ -24,6 +25,9 @@
     }
 
     let { open, onclose, datasetName = '', onexported }: Props = $props();
+
+    // Abort context — cancelled when the dialog closes (effect cleanup).
+    const abort = createAbortContext();
 
     // --- Data ---
     let datasets: DatasetInfo[] = $state([]);
@@ -63,7 +67,9 @@
             result = null;
             error = null;
             selectedDataset = datasetName;
-            load();
+            const controller = linkedController(abort.signal);
+            load(controller.signal);
+            return () => controller.abort();
         }
     });
 
@@ -78,17 +84,22 @@
     $effect(() => {
         chainedDrafts = [];
         if (selectedDataset) {
-            loadDrafts(selectedDataset);
+            const controller = linkedController(abort.signal);
+            loadDrafts(selectedDataset, controller.signal);
+            return () => controller.abort();
         } else {
             availableDrafts = [];
         }
     });
 
-    async function load() {
+    async function load(signal?: AbortSignal) {
         isLoading = true;
         error = null;
         try {
-            const [ds, be] = await Promise.all([fetchDatasets(), fetchExportBackends()]);
+            const [ds, be] = await Promise.all([
+                fetchDatasets(signal),
+                fetchExportBackends(signal)
+            ]);
             datasets = ds;
             backends = be;
         } catch (e) {
@@ -98,9 +109,9 @@
         }
     }
 
-    async function loadDrafts(dataset: string) {
+    async function loadDrafts(dataset: string, signal?: AbortSignal) {
         try {
-            availableDrafts = await fetchDatasetDrafts(dataset);
+            availableDrafts = await fetchDatasetDrafts(dataset, signal);
         } catch {
             availableDrafts = [];
         }

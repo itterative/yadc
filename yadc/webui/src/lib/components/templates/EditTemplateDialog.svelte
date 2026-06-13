@@ -5,6 +5,7 @@
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
     import { fetchTemplate, saveTemplate } from '$lib/stores/templates';
     import { friendlyErrorMessage } from '$lib/api';
+    import { getAbortContext, linkedController } from '$lib/abort';
 
     interface Props {
         open: boolean;
@@ -16,6 +17,9 @@
     }
 
     let { open, templateName, onclose, onsaved }: Props = $props();
+
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
 
     let isNew = $derived(templateName === null);
 
@@ -44,31 +48,31 @@
             return;
         }
 
-        let cancelled = false;
+        const controller = linkedController(parentSignal);
         isLoading = true;
 
         (async () => {
             try {
-                const info = await fetchTemplate(templateName!);
-                if (cancelled) {
+                const info = await fetchTemplate(templateName!, controller.signal);
+                if (controller.signal.aborted) {
                     return;
                 }
                 content = info.content;
                 templateSource = info.source;
             } catch (e) {
-                if (cancelled) {
+                if (controller.signal.aborted) {
                     return;
                 }
                 error = friendlyErrorMessage(e, 'Failed to load template');
             } finally {
-                if (!cancelled) {
+                if (!controller.signal.aborted) {
                     isLoading = false;
                 }
             }
         })();
 
         return () => {
-            cancelled = true;
+            controller.abort();
         };
     });
 

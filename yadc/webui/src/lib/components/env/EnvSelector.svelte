@@ -4,6 +4,7 @@
     import { envs, refreshEnvs, fetchModels } from '$lib/stores/env';
     import { settingsDialog } from '$lib/stores/settings';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, getAbortContext, linkedController } from '$lib/abort';
 
     interface Props {
         /** Selected environment name. */
@@ -23,6 +24,13 @@
         apiModelName: envModelName = $bindable('')
     }: Props = $props();
 
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
+
+    // Component-level abort scope for the env list fetch, which only runs once
+    // on mount and should cancel on unmount.
+    const abort = createAbortContext();
+
     let envInfo = $derived($envs.items.find((e) => e.name === selectedEnv) ?? null);
 
     let models: string[] = $state([]);
@@ -37,7 +45,7 @@
         isLoadingEnvs = true;
         envsError = null;
         try {
-            await refreshEnvs();
+            await refreshEnvs(abort.signal);
         } catch (e) {
             envsError = friendlyErrorMessage(e, 'Failed to load environments');
         } finally {
@@ -45,9 +53,11 @@
         }
     }
 
-    // Load envs on mount (SSE auto-refresh handles subsequent changes)
+    // Load envs on mount (SSE auto-refresh handles subsequent changes).
+    // This fetch is tied to the component scope, not an effect rerun.
     $effect(() => {
         loadEnvs();
+        return () => abort.abort();
     });
 
     // Pre-fill fields and reset models when selection changes
@@ -68,26 +78,27 @@
         modelFetchDone = false;
         modelsError = null;
 
-        let cancelled = false;
+        const controller = linkedController(parentSignal);
         (async () => {
-            if (!cancelled) {
-                await loadModels();
+            if (controller.signal.aborted) {
+                return;
             }
+            await loadModels(controller.signal);
         })();
 
         return () => {
-            cancelled = true;
+            controller.abort();
         };
     });
 
-    async function loadModels() {
+    async function loadModels(signal?: AbortSignal) {
         if (!selectedEnv) {
             return;
         }
         isLoadingModels = true;
         modelsError = null;
         try {
-            const result = await fetchModels(selectedEnv);
+            const result = await fetchModels(selectedEnv, signal);
             models = result.models;
             modelFetchDone = true;
         } catch (e) {
@@ -206,7 +217,7 @@
                 {/if}
                 <button
                     class="cursor-pointer rounded-lg border border-border bg-bg px-3 py-2 text-gray-400 transition-colors hover:border-gray-500 hover:text-white disabled:opacity-50"
-                    onclick={loadModels}
+                    onclick={() => loadModels()}
                     disabled={isLoadingModels || !selectedEnv}
                     title="Fetch available models"
                 >

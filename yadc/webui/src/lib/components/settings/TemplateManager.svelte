@@ -5,6 +5,7 @@
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import { friendlyErrorMessage } from '$lib/api';
+    import { getAbortContext, linkedController } from '$lib/abort';
     import {
         templates,
         refreshTemplates,
@@ -20,6 +21,9 @@
 
     let { open }: Props = $props();
 
+    // Parent abort context — read at init time, used in effects.
+    const parentSignal = getAbortContext();
+
     let selectedTemplateName = $state('');
     let templateContent = $state('');
     let templateSource: 'user' | 'builtin' | '' = $state('');
@@ -30,18 +34,24 @@
     let isNewTemplate = $state(false);
     let newTemplateName = $state('');
 
+    // Tracks the in-flight fetch for the currently selected template so
+    // clicking a different template cancels the previous request.
+    let currentTemplateController: AbortController | null = null;
+
     $effect(() => {
         if (open) {
             templateError = null;
             templateDirty = false;
             isNewTemplate = false;
-            loadTemplates();
+            const controller = linkedController(parentSignal);
+            loadTemplates(controller.signal);
+            return () => controller.abort();
         }
     });
 
-    async function loadTemplates() {
+    async function loadTemplates(signal?: AbortSignal) {
         try {
-            await refreshTemplates();
+            await refreshTemplates(signal);
         } catch (e) {
             templateError = friendlyErrorMessage(e, 'Failed to load templates');
         }
@@ -53,16 +63,33 @@
         templateError = null;
         templateDirty = false;
         isNewTemplate = false;
+
+        // Cancel any previous template fetch before starting a new one.
+        currentTemplateController?.abort();
+        const controller = linkedController(parentSignal);
+        currentTemplateController = controller;
+
         try {
-            const info = await fetchTemplate(name);
+            const info = await fetchTemplate(name, controller.signal);
+            if (controller.signal.aborted) {
+                return;
+            }
             templateContent = info.content;
             templateSource = info.source;
         } catch (e) {
+            if (controller.signal.aborted) {
+                return;
+            }
             templateError = friendlyErrorMessage(e, 'Failed to load template');
             templateContent = '';
             templateSource = '';
         } finally {
-            isLoadingTemplate = false;
+            if (currentTemplateController === controller) {
+                currentTemplateController = null;
+            }
+            if (!controller.signal.aborted) {
+                isLoadingTemplate = false;
+            }
         }
     }
 

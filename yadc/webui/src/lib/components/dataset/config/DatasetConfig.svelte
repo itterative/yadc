@@ -12,9 +12,10 @@
         updateConfig,
         type ConfigValidationError
     } from '$lib/stores/config';
-    import { refreshTemplates } from '$lib/stores/templates';
     import { toast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext, linkedController } from '$lib/abort';
+    import { refreshTemplates } from '$lib/stores/templates';
     import { buildPatch, createPreviewScheduler } from './patch';
     import { configState } from './state.svelte';
     import ConfigHistory from './ConfigHistory.svelte';
@@ -33,6 +34,9 @@
     }
 
     let { datasetName, source, onsaved }: Props = $props();
+
+    // Abort context — children (ConfigHistory, ConfigApiSection) inherit.
+    const abort = createAbortContext();
 
     // --- Container-only state (data fetching + UI) ---
 
@@ -90,16 +94,20 @@
         if (!name) {
             return;
         }
-        loadConfig();
+        const controller = linkedController(abort.signal);
+        loadConfig(controller.signal);
+        return () => controller.abort();
     });
 
-    async function loadConfig() {
+    async function loadConfig(signal?: AbortSignal) {
         isLoading = true;
         error = null;
 
         try {
-            const templatesReady = refreshTemplates();
-            const [config] = await Promise.all([fetchConfig(datasetName), templatesReady]);
+            const [config] = await Promise.all([
+                fetchConfig(datasetName, signal),
+                refreshTemplates(signal)
+            ]);
             validationErrors = config.validation_error ?? [];
             previewContent = config.content;
             loadedConfigPath = config.config_path;
@@ -231,7 +239,11 @@
     {#if !isLoading && !error && activeView !== 'history'}
         <div class="shrink-0 border-t border-border p-4">
             <div class="flex gap-2">
-                <button class="btn-secondary flex-1" onclick={loadConfig} disabled={isSaving}>
+                <button
+                    class="btn-secondary flex-1"
+                    onclick={() => loadConfig()}
+                    disabled={isSaving}
+                >
                     <SvgRefresh class="mr-1 inline-block h-4 w-4" />
                     Reload
                 </button>

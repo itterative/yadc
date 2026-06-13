@@ -20,11 +20,16 @@
     import SvgPhoto from '$lib/icons/SvgPhoto.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { friendlyErrorMessage } from '$lib/api';
+    import { createAbortContext } from '$lib/abort';
 
     let datasets: DatasetInfo[] = $state([]);
     let loading = $state(true);
     let error = $state('');
     let showAddDataset = $state(false);
+
+    // Abort context for this page — aborted on unmount (SPA navigation)
+    // so in-flight requests are cancelled.
+    const abort = createAbortContext();
 
     // Edit state
     let editingDataset: DatasetInfo | null = $state(null);
@@ -37,6 +42,7 @@
             return;
         }
         loadDatasets();
+        return () => abort.abort();
     });
 
     // Captioning status for a specific dataset (null if idle/not captioning)
@@ -50,7 +56,7 @@
 
     async function loadDatasets() {
         try {
-            datasets = await fetchDatasets();
+            datasets = await fetchDatasets(abort.signal);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to load datasets');
         } finally {
@@ -74,7 +80,7 @@
             return;
         }
         try {
-            await deleteDataset(dataset.name);
+            await deleteDataset(dataset.name, abort.signal);
             datasets = datasets.filter((d) => d.name !== dataset.name);
         } catch (e) {
             error = friendlyErrorMessage(e, 'Failed to delete dataset');

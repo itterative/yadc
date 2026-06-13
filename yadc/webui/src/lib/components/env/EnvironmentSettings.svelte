@@ -15,6 +15,7 @@
         type EnvInfo
     } from '$lib/stores/env';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
+    import { createAbortContext } from '$lib/abort';
     import {
         withPasswordRetry,
         PasswordPromptCancelled,
@@ -37,15 +38,20 @@
     let showToken = $state(false);
     let revealedToken = $state('');
 
+    // Abort context for this component — aborted on unmount so in-flight
+    // env list fetches don't update the store after the user navigates away.
+    const abort = createAbortContext();
+
     $effect(() => {
         loadEnvs();
+        return () => abort.abort();
     });
 
     async function loadEnvs() {
         envLoading = true;
         envError = null;
         try {
-            await refreshEnvs();
+            await refreshEnvs(abort.signal);
         } catch (e) {
             envError = friendlyErrorMessage(e, 'Failed to load environments');
         } finally {
