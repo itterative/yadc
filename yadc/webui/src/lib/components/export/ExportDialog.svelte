@@ -203,7 +203,7 @@
     }
 </script>
 
-<Dialog class="dialog-panel max-h-[85vh] max-w-lg overflow-y-auto" {open} {onclose}>
+<Dialog class="dialog-panel max-h-[85dvh] max-w-lg overflow-y-auto" {open} {onclose}>
     <div class="space-y-5 p-6">
         <!-- Header -->
         <div class="dialog-header">

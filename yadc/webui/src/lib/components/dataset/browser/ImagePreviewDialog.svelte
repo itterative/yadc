@@ -61,7 +61,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <Dialog
-    class="relative m-auto flex max-h-[calc(90vh-4rem)] max-w-[calc(90vw-12rem)] flex-col items-center"
+    class="relative m-auto flex max-h-[calc(90dvh-4rem)] max-w-[calc(90vw-12rem)] flex-col items-center"
     {open}
     {onclose}
 >

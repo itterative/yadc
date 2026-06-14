@@ -16,7 +16,7 @@
     let { open, datasetName, files, onclose, oncomplete }: Props = $props();
 </script>
 
-<Dialog class="dialog-panel max-h-[85vh] max-w-2xl overflow-y-auto" {open} {onclose}>
+<Dialog class="dialog-panel max-h-[85dvh] max-w-2xl overflow-y-auto" {open} {onclose}>
     <div class="p-5">
         <div class="dialog-header">
             <h2 class="dialog-title">Add Files to {datasetName}</h2>

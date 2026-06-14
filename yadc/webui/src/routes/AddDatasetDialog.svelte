@@ -23,7 +23,7 @@
     }
 </script>
 
-<Dialog class="dialog-panel max-h-[80vh] max-w-lg overflow-y-auto" {open} {onclose}>
+<Dialog class="dialog-panel max-h-[80dvh] max-w-lg overflow-y-auto" {open} {onclose}>
     <div class="p-5">
         <div class="dialog-header">
             <h2 class="dialog-title">Add Dataset</h2>

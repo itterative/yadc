@@ -290,7 +290,7 @@
     }
 </script>
 
-<Dialog class="dialog-panel max-h-[85vh] max-w-2xl overflow-y-auto" {open} {onclose}>
+<Dialog class="dialog-panel max-h-[85dvh] max-w-2xl overflow-y-auto" {open} {onclose}>
     <form class="p-5" onsubmit={handleRefine}>
         <!-- Header -->
         <div class="dialog-header">
@@ -308,7 +308,7 @@
         <img
             src={thumbnailSrc}
             alt={item.file_name}
-            class="-mx-5 mb-4 h-32 w-[calc(100%+var(--spacing)*10)] max-w-none bg-gray-700 object-cover box-content"
+            class="-mx-5 mb-4 box-content h-32 w-[calc(100%+var(--spacing)*10)] max-w-none bg-gray-700 object-cover"
         />
 
         <!-- Card 1: Caption / draft to refine -->

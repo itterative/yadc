@@ -29,7 +29,7 @@
     });
 </script>
 
-<Dialog class="dialog-panel flex max-h-[85vh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
+<Dialog class="dialog-panel flex max-h-[85dvh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
     <!-- Header -->
     <div class="flex items-center justify-between p-5 pb-0">
         <h2 class="dialog-title">Settings</h2>

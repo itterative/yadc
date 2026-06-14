@@ -96,7 +96,7 @@
     }
 </script>
 
-<Dialog class="dialog-panel flex h-[85vh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
+<Dialog class="dialog-panel flex h-[85dvh] max-w-3xl flex-col overflow-hidden" {open} {onclose}>
     <div class="flex h-full flex-col p-5">
         <!-- Header -->
         <div class="dialog-header">
