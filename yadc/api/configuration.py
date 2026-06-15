@@ -24,13 +24,19 @@ Grouped by subsystem:
   ``AsyncSession``.
 - **Caches** — ``api_models_cache_ttl`` for ``/api/envs/.../models``,
   ``refine_result_buffer_size`` for the refine endpoint.
+- **Model-list timeout** — ``list_models_timeout`` caps the entire
+  ``/api/envs/<name>/models`` operation so a dead/slow env doesn't
+  leave the model picker spinning forever. Surfaces as HTTP 504.
 - **Yadc paths** — ``config_path``, ``state_path``, ``cache_path``,
   ``db_path`` (SQLite for the web UI's datasets/configs/settings tables).
 """
 
 from dataclasses import dataclass, field
 
-from yadc.captioners.api.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
+from yadc.captioners.api.constants import (
+    DEFAULT_LIST_MODELS_TIMEOUT_SECONDS,
+    DEFAULT_MODELS_CACHE_TTL_SECONDS,
+)
 from yadc.cmd.app import CACHE_PATH, CONFIG_PATH, STATE_PATH
 
 
@@ -94,6 +100,15 @@ class Configuration:
     # `/models` probes. Short enough to pick up newly added models, long
     # enough to keep model pickers snappy.
     api_models_cache_ttl: float = DEFAULT_MODELS_CACHE_TTL_SECONDS
+
+    # Upper bound (seconds) for the entire ``/api/envs/<name>/models``
+    # operation — env decryption + API-type inference probes + the
+    # per-backend list call. Exceeding this surfaces as HTTP 504
+    # GATEWAY_TIMEOUT so a misconfigured/unreachable env fails fast in
+    # the WebUI model picker instead of hanging. ``None`` would
+    # effectively re-enable indefinite blocking, so this is a
+    # ``float`` (no ``None``) on purpose.
+    list_models_timeout: float = DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
 
     # Captioning job cleanup
     captioning_cleanup_interval_seconds: float = 10.0

@@ -43,6 +43,10 @@ OpenAICaptioner / GeminiCaptioner / etc.  # per-backend
 | Local (llamacpp, etc.) | 1536×1536 | 25 MiB |
 | Gemini | 2048×2048 | 5 MiB |
 
+## Model-List Timeout
+
+`cmd_envs.list_models()` (and the controller's `/api/envs/<name>/models` endpoint) bounds the entire operation — API-type inference probes + the per-backend list call — with `asyncio.wait_for` using `Configuration.list_models_timeout` (default `DEFAULT_LIST_MODELS_TIMEOUT_SECONDS = 10.0`, in `captioners/api/constants.py`). On timeout the controller returns HTTP 504 `GATEWAY_TIMEOUT` so a dead/slow env can't leave the WebUI model picker spinning forever. `timeout=None` disables the cap (used by CLI scripts that don't need a hard bound).
+
 ## Mixin Pattern
 
 - **ErrorNormalizationMixin**: `_normalize_error(error)` — handles HTTPError, GenerationError, Pydantic response objects. Parses OpenAI/Gemini error JSON, OpenRouter moderation errors. Falls back to HTTP status code messages.

@@ -1,5 +1,6 @@
 """Environment CRUD endpoints — backed by the ``cmd.envs`` module."""
 
+import asyncio
 from typing import ClassVar, Literal
 
 import httpx
@@ -176,7 +177,11 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         backend detection, HTTP retries, response parsing, and
         per-backend quirks (OpenAI / Gemini / Ollama / Koboldcpp / etc.).
 
-        The cache TTL is read from ``Configuration.api_models_cache_ttl``.
+        The cache TTL is read from ``Configuration.api_models_cache_ttl``,
+        and the overall operation is bounded by
+        ``Configuration.list_models_timeout`` — exceeding it surfaces as
+        HTTP 504 GATEWAY_TIMEOUT so a dead/slow env doesn't leave the
+        model picker spinning forever.
         """
         env_data = cmd_envs.get_env(name)
         if env_data is None:
@@ -196,12 +201,19 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
                 name,
                 password=password,
                 cache_ttl=configuration.api_models_cache_ttl,
+                timeout=configuration.list_models_timeout,
             )
         except PasswordRequiredError:
             return jsonify_error(
                 "Password required to decrypt environment settings",
                 status=403,
                 code=ErrorCode.PASSWORD_REQUIRED,
+            )
+        except asyncio.TimeoutError:
+            return jsonify_error(
+                f"Timed out fetching model list after {configuration.list_models_timeout} seconds — check the API URL or network",
+                status=504,
+                code=ErrorCode.GATEWAY_TIMEOUT,
             )
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             return jsonify_error(f"Could not reach API: {e}", status=502, code=ErrorCode.UPSTREAM_ERROR)

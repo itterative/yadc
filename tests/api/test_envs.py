@@ -596,6 +596,42 @@ class TestListModels:
         assert data["error"] == "bad response shape"
 
     @pytest.mark.asyncio
+    async def test_returns_504_on_timeout(self, client, patched_cmd_envs, patched_list_models, test_configuration: Configuration):
+        """A dead/slow env that exceeds ``Configuration.list_models_timeout``
+        surfaces as 504 GATEWAY_TIMEOUT (not 502 UPSTREAM_ERROR) so the
+        frontend can render a "timed out" message instead of a generic
+        upstream error.
+        """
+        env_data = make_app_config_env()
+        patched_cmd_envs.get_env.return_value = env_data
+        patched_list_models.side_effect = TimeoutError("simulated hang")
+
+        resp = await client.get("/api/envs/default/models")
+
+        assert resp.status_code == 504
+        data = await resp.get_json()
+        assert data["code"] == "GATEWAY_TIMEOUT"
+        assert str(test_configuration.list_models_timeout) in data["error"]
+        assert "API URL" in data["error"] or "network" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_passes_timeout_from_configuration(self, client, patched_cmd_envs, patched_list_models, test_configuration: Configuration):
+        """The ``timeout`` kwarg forwarded to ``cmd_envs.list_models``
+        matches ``Configuration.list_models_timeout`` so a misconfigured
+        env can't override the cap by accident.
+        """
+        env_data = make_app_config_env(api_model_name=None)
+        patched_cmd_envs.get_env.return_value = env_data
+        patched_list_models.return_value = []
+
+        resp = await client.get("/api/envs/default/models")
+
+        assert resp.status_code == 200
+        patched_list_models.assert_awaited_once()
+        _args, kwargs = patched_list_models.call_args
+        assert kwargs.get("timeout") == test_configuration.list_models_timeout
+
+    @pytest.mark.asyncio
     async def test_returns_models_and_default(self, client, patched_cmd_envs, patched_list_models):
         """Happy path — env has api_model_name set, captioner returns sorted models."""
         env_data = make_app_config_env()
@@ -639,6 +675,17 @@ class TestListModels:
         assert kwargs.get("cache_ttl") == test_configuration.api_models_cache_ttl
         # And the configured value should be the default 5-minute TTL.
         assert test_configuration.api_models_cache_ttl == 300.0
+
+    @pytest.mark.asyncio
+    async def test_default_timeout_matches_captioner_constant(self, test_configuration: Configuration):
+        """Sanity: the configuration default is the shared captioner constant.
+
+        Guards against accidental drift between the configuration
+        default and the captioner package's default.
+        """
+        from yadc.captioners.api.constants import DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
+
+        assert test_configuration.list_models_timeout == DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
 
     @pytest.mark.asyncio
     async def test_cookie_password_forwarded_to_cmd_envs(self, client, patched_cmd_envs, patched_list_models, cookie_password):
