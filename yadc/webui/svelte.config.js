@@ -9,6 +9,13 @@ const config = {
         adapter: adapter(),
         router: {
             type: 'hash'
+        },
+        alias: {
+            // Points to the yadc Python package root, which is a sibling
+            // of this webui/ directory. Lets Svelte components import
+            // shared package resources (e.g. bundled Jinja templates)
+            // without fragile deep `..` chains.
+            $yadc: '../'
         }
     },
 

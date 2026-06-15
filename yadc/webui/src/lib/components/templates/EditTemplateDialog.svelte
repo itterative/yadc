@@ -3,7 +3,7 @@
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
-    import { fetchTemplate, saveTemplate } from '$lib/stores/templates';
+    import { fetchTemplate, saveTemplate, NEW_TEMPLATE_STUB } from '$lib/stores/templates';
     import { friendlyErrorMessage } from '$lib/api';
     import { getAbortContext, linkedController } from '$lib/abort';
 
@@ -41,8 +41,8 @@
         error = null;
         isSaving = false;
         newName = '';
-        content = '';
         templateSource = '';
+        content = isNew ? NEW_TEMPLATE_STUB : '';
 
         if (isNew) {
             return;
