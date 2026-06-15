@@ -1,6 +1,7 @@
 """CLI commands for managing caption drafts."""
 
 import sys
+from pathlib import Path
 from typing import TextIO
 
 import click
@@ -27,9 +28,14 @@ def _load_images(dataset_stream: TextIO):
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
+    base_dir: str | None = None
+    if dataset_stream.name:
+        base_dir = str(Path(dataset_stream.name).parent)
+
     resolved_images: list[DatasetImage] = resolve_dataset(
         dataset_toml.dataset,
         dataset_toml.caption_suffix,
+        base_dir=base_dir,
     )
 
     if not resolved_images:
