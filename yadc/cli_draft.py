@@ -22,7 +22,7 @@ def _load_images(dataset_stream: TextIO):
     dataset_toml_raw = load_toml_file(dataset_stream)
 
     try:
-        dataset_toml = parse_config(dataset_toml_raw)
+        dataset_toml = parse_config(dataset_toml_raw, strict=False)
     except Exception as e:
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
