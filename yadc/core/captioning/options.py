@@ -43,7 +43,12 @@ class CaptionJobOptions(pydantic.BaseModel):
     reasoning_effort: str = "low"
     reasoning_exclude_output: bool = True
 
-    # Password for decrypting password-mode environment settings
+    # Password for decrypting password-mode environment settings.
+    # **Server-set** — the body field is dropped (``extra="ignore"``) so
+    # HTTP clients can't supply it. The controller sets this from the
+    # ``yadc_password`` session cookie (with the ``YADC_PASSWORD``
+    # env-var fallback) before starting a job; the CLI sets it from
+    # ``--password`` / ``YADC_PASSWORD`` / interactive prompt.
     password: str | None = None
 
     # If set, only caption these specific image IDs (single-image mode)

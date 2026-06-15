@@ -3,6 +3,7 @@
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { envs, refreshEnvs, fetchModels } from '$lib/stores/env';
     import { settingsDialog } from '$lib/stores/settings';
+    import { withPasswordRetry } from '$lib/stores/passwordPrompt';
     import { friendlyErrorMessage } from '$lib/api';
     import { createAbortContext, getAbortContext, linkedController } from '$lib/abort';
 
@@ -103,7 +104,14 @@
         isLoadingModels = true;
         modelsError = null;
         try {
-            const result = await fetchModels(selectedEnv, signal);
+            // ``fetchModels`` calls the backend's ``/api/envs/<name>/models``
+            // endpoint, which decrypts the env's API token. If the env is in
+            // password mode and the ``yadc_password`` session cookie isn't
+            // set, the backend returns 403 PASSWORD_REQUIRED — the retry
+            // helper prompts the user and re-runs the call. The signal
+            // aborts the prompt too, so switching envs mid-prompt doesn't
+            // leave a dangling dialog.
+            const result = await withPasswordRetry(() => fetchModels(selectedEnv, signal), signal);
             if (signal?.aborted) {
                 return;
             }
@@ -195,8 +203,9 @@
             {:else if envInfo?.token_method === 'password'}
                 <div class="rounded-lg border border-blue-700/50 bg-blue-900/50 px-3 py-2">
                     <p class="text-xs text-blue-200">
-                        This environment has a password-encrypted API token. Ensure the server has
-                        access to the password (via <code>YADC_PASSWORD</code> env).
+                        This environment has a password-encrypted API token. You'll be prompted for
+                        the password the first time you use it; it's then held in a session cookie
+                        for the rest of the tab. You can also sign in via Settings → Security.
                     </p>
                 </div>
             {/if}

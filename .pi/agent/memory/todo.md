@@ -31,32 +31,6 @@ The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on d
 
 - **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
 
-## Standardize password-passing on a single mechanism (header)
-
-The current API has **inconsistent** ways for the client to pass a decryption password to endpoints that decrypt env settings:
-
-- `POST /envs/<name>/reveal` — `{"password": "..."}` in the request body
-- `PUT /envs/key-mode` — `{"password": "..."}` in the request body
-- `POST /envs/<name>/models` (added 2026-06-05, see `plans/list-models-captioner-reuse-plan`) — `{"password": "..."}` in the request body
-
-The original `list_models` was `GET` (no body) and the controller could only surface a 403 `PASSWORD_REQUIRED` — the client had no way to actually supply a password. We extended it to `POST` with a body, matching the `reveal_env_value` / `set_key_mode` precedent.
-
-This is fine for now but **header-based credential passing is the better long-term shape**:
-
-- Conventional (mirrors `Authorization: Bearer ...`, `X-API-Key`, etc.)
-- Not logged in URLs / browser history / request bodies
-- Avoids the awkward `@app.route(..., methods=["GET", "POST"])` dual-handler pattern that exists only because GETs can't carry a body
-- Standardizes the `YADC_PASSWORD` env-var fallback + custom-header override pattern
-
-**Migration plan** (deferred):
-
-1. Pick a header name — `X-YADC-Password` is the natural choice (sibling of `Authorization`).
-2. Add a small helper on the controller side: `_resolve_request_password(headers) -> str | None` that reads the header and falls back to `YADC_PASSWORD` (mirrors what `cmd_envs.decrypt_setting` already does internally).
-3. Convert each of the three POST-with-body endpoints to GET with a `X-YADC-Password` header. Keep backward compatibility by reading the body too (warn-once if both are set) for one release.
-4. Drop the body-reading code in each handler.
-5. Update the frontend `revealEnvValue` / `setKeyMode` / `fetchModels` to use the header.
-
-Tracking under TODO (not actively scheduled) — the current POST-with-body approach works and matches existing patterns, so there's no urgent need to migrate.
 
 ## Webui code quality pass
 

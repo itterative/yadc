@@ -19,6 +19,12 @@ _PATCH_CMD_ENVS = "yadc.api.controllers.api_envs.cmd_envs"
 _PATCH_SET_KEY_MODE = "yadc.api.controllers.api_envs.cmd_envs.set_key_mode"
 _PATCH_YADC_PASSWORD = "yadc.api.controllers.api_envs.YADC_PASSWORD"
 _PATCH_LIST_MODELS = "yadc.api.controllers.api_envs.cmd_envs.list_models"
+# The `_password` helper module owns the YADC_PASSWORD fallback. The
+# controller's own `YADC_PASSWORD` import (above) is only used by the
+# `GET /envs/key-mode` endpoint to surface `env_password_set` in the
+# response; the helper is what `resolve_request_password` actually
+# reads for the fallback chain.
+_PATCH_RESOLVE_PASSWORD_FALLBACK = "yadc.api.controllers._password.YADC_PASSWORD"
 
 
 def make_app_config_env(
@@ -94,6 +100,36 @@ def yadc_password():
 
 
 @pytest.fixture
+def cookie_password():
+    """Factory fixture: set the ``yadc_password`` cookie on the test client.
+
+    The cookie path is ``/api`` (matching the production cookie config),
+    so it's only sent to API routes — not the static frontend. Server
+    name is ``localhost`` (the test client default).
+    """
+
+    def _set(client, value):
+        client.set_cookie("localhost", "yadc_password", value, path="/api")
+
+    return _set
+
+
+@pytest.fixture
+def patched_resolve_password_fallback():
+    """Factory fixture: patch ``YADC_PASSWORD`` in the ``_password`` helper
+    so the ``resolve_request_password`` fallback chain returns *value*
+    when no cookie is set. The patched attribute is replaced with the
+    string directly (``new=``) — not a MagicMock — so the resolved
+    password is exactly the string the controller forwards to
+    ``cmd_envs.list_models``."""
+
+    def _patch(value):
+        return patch(_PATCH_RESOLVE_PASSWORD_FALLBACK, new=value)
+
+    return _patch
+
+
+@pytest.fixture
 def patched_list_models():
     """Patch ``cmd_envs.list_models`` in the controller."""
     with patch(_PATCH_LIST_MODELS, new_callable=AsyncMock) as mock:
@@ -133,20 +169,23 @@ class TestPutKeyMode:
     to the right HTTP status codes."""
 
     @pytest.mark.asyncio
-    async def test_wrong_old_password_returns_403_password_required(self, client, patched_cmd_config, patched_set_key_mode):
+    async def test_wrong_old_password_returns_403_password_required(self, client, patched_cmd_config, patched_set_key_mode, cookie_password):
         """Wrong current password returns 403 PASSWORD_REQUIRED, not 500 INTERNAL_ERROR.
 
         The backend distinguishes "you typed the wrong current password" (user
         error) from "something exploded on the server" (server error). The
         frontend relies on the 403 + PASSWORD_REQUIRED code to show a clear
         "Current password is incorrect" message instead of a generic 500.
+
+        The current password comes from the ``yadc_password`` session cookie.
         """
         patched_cmd_config.load_config.return_value.key_storage.mode = "password"
         patched_set_key_mode.side_effect = PasswordRequiredError("Password-protected private key requires a password to decrypt.")
+        cookie_password(client, "wrong")
 
         resp = await client.put(
             "/api/envs/key-mode",
-            json={"mode": "password", "password": "newpass", "old_password": "wrong"},
+            json={"mode": "password", "password": "newpass"},
         )
 
         assert resp.status_code == 403
@@ -155,12 +194,14 @@ class TestPutKeyMode:
         assert "incorrect" in data["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_successful_password_change_returns_200(self, client, patched_cmd_config, patched_set_key_mode):
+    async def test_successful_password_change_returns_200(self, client, patched_cmd_config, patched_set_key_mode, cookie_password):
+        """Current password comes from the cookie; new password from the body."""
         patched_cmd_config.load_config.return_value.key_storage.mode = "password"
+        cookie_password(client, "oldpass")
 
         resp = await client.put(
             "/api/envs/key-mode",
-            json={"mode": "password", "password": "newpass", "old_password": "oldpass"},
+            json={"mode": "password", "password": "newpass"},
         )
 
         assert resp.status_code == 200
@@ -451,12 +492,12 @@ class TestPutEnv:
 
 
 class TestListModels:
-    """POST (or GET) /api/envs/<name>/models — returns the env's available model list.
+    """GET /api/envs/<name>/models — returns the env's available model list.
 
-    The endpoint accepts both methods. ``POST`` is preferred by the frontend
-    because it can carry a ``{"password": "..."}`` body to decrypt a
-    password-mode env's token. ``GET`` is kept for the simple case where
-    ``YADC_PASSWORD`` is set in the server env.
+    GET-only since the decryption password is read from the
+    ``yadc_password`` session cookie (with the ``YADC_PASSWORD`` env-var
+    fallback). The browser auto-attaches the cookie so no body is
+    needed.
 
     Delegates the actual HTTP call to ``cmd_envs.list_models`` (which uses
     the captioner system). The controller is a thin wrapper that maps
@@ -468,7 +509,7 @@ class TestListModels:
     async def test_returns_404_when_env_not_found(self, client, patched_cmd_envs):
         patched_cmd_envs.get_env.return_value = None
 
-        resp = await client.post("/api/envs/missing/models", json={})
+        resp = await client.get("/api/envs/missing/models")
 
         assert resp.status_code == 404
         data = await resp.get_json()
@@ -484,7 +525,7 @@ class TestListModels:
 
         patched_cmd_envs.get_env.return_value = env_data
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 400
         data = await resp.get_json()
@@ -494,12 +535,15 @@ class TestListModels:
 
     @pytest.mark.asyncio
     async def test_returns_403_when_token_is_password_encrypted(self, client, patched_cmd_envs, patched_list_models):
+        """Without a cookie or ``YADC_PASSWORD`` env-var, a password-mode
+        env's token can't be decrypted and the call surfaces a
+        403 ``PASSWORD_REQUIRED``."""
         env_data = make_app_config_env(api_token="encrypted-token", encryption_method="password")
 
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.side_effect = PasswordRequiredError("test")
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 403
         data = await resp.get_json()
@@ -514,7 +558,7 @@ class TestListModels:
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.side_effect = httpx.ConnectError("connection refused")
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 502
         data = await resp.get_json()
@@ -531,7 +575,7 @@ class TestListModels:
         response = httpx.Response(401, request=request)
         patched_list_models.side_effect = httpx.HTTPStatusError("unauthorized", request=request, response=response)
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 502
         data = await resp.get_json()
@@ -544,7 +588,7 @@ class TestListModels:
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.side_effect = ValueError("bad response shape")
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 502
         data = await resp.get_json()
@@ -558,7 +602,7 @@ class TestListModels:
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = ["a-model", "b-model", "c-model"]
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 200
         data = await resp.get_json()
@@ -571,7 +615,7 @@ class TestListModels:
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = ["m1", "m2"]
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 200
         data = await resp.get_json()
@@ -586,7 +630,7 @@ class TestListModels:
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = []
 
-        resp = await client.post("/api/envs/default/models", json={})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 200
         patched_list_models.assert_awaited_once()
@@ -597,14 +641,16 @@ class TestListModels:
         assert test_configuration.api_models_cache_ttl == 300.0
 
     @pytest.mark.asyncio
-    async def test_post_forwards_password_to_cmd_envs(self, client, patched_cmd_envs, patched_list_models):
-        """A password in the POST body is forwarded to ``cmd_envs.list_models``
-        so the env's token can be decrypted when ``YADC_PASSWORD`` is unset."""
+    async def test_cookie_password_forwarded_to_cmd_envs(self, client, patched_cmd_envs, patched_list_models, cookie_password):
+        """The cookie value is forwarded to ``cmd_envs.list_models`` as the
+        ``password`` kwarg so the env's token can be decrypted when
+        ``YADC_PASSWORD`` is unset."""
         env_data = make_app_config_env(api_token="encrypted-token", encryption_method="password")
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = ["m1"]
+        cookie_password(client, "hunter2")
 
-        resp = await client.post("/api/envs/default/models", json={"password": "hunter2"})
+        resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 200
         patched_list_models.assert_awaited_once()
@@ -612,26 +658,11 @@ class TestListModels:
         assert kwargs.get("password") == "hunter2"
 
     @pytest.mark.asyncio
-    async def test_post_without_password_uses_none(self, client, patched_cmd_envs, patched_list_models):
-        """No password in the body means ``password=None`` is forwarded, which
-        lets ``cmd_envs.list_models`` fall back to ``YADC_PASSWORD`` (or fail
-        with ``PasswordRequiredError`` if neither is set)."""
-        env_data = make_app_config_env()
-        patched_cmd_envs.get_env.return_value = env_data
-        patched_list_models.return_value = ["m1"]
-
-        resp = await client.post("/api/envs/default/models", json={})
-
-        assert resp.status_code == 200
-        patched_list_models.assert_awaited_once()
-        _args, kwargs = patched_list_models.call_args
-        assert kwargs.get("password") is None
-
-    @pytest.mark.asyncio
-    async def test_get_still_works_without_password(self, client, patched_cmd_envs, patched_list_models):
-        """Regression: the GET path still works (no body, no password) so
-        callers that don't have a body to send — e.g. browser preflight
-        or the ``YADC_PASSWORD``-env-var case — keep functioning."""
+    async def test_get_without_cookie_uses_none(self, client, patched_cmd_envs, patched_list_models):
+        """No cookie means ``password=None`` is forwarded to
+        ``cmd_envs.list_models``, which lets it fall back to
+        ``YADC_PASSWORD`` (or fail with ``PasswordRequiredError`` if
+        neither is set)."""
         env_data = make_app_config_env()
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = ["m1"]
@@ -642,3 +673,104 @@ class TestListModels:
         patched_list_models.assert_awaited_once()
         _args, kwargs = patched_list_models.call_args
         assert kwargs.get("password") is None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_yadc_password_env(self, client, patched_cmd_envs, patched_list_models, patched_resolve_password_fallback):
+        """No cookie + ``YADC_PASSWORD`` env var set → the env-var value
+        is forwarded to ``cmd_envs.list_models``. Confirms the fallback
+        chain in ``resolve_request_password`` works end-to-end."""
+        env_data = make_app_config_env()
+        patched_cmd_envs.get_env.return_value = env_data
+        patched_list_models.return_value = ["m1"]
+        with patched_resolve_password_fallback("envpass"):
+            resp = await client.get("/api/envs/default/models")
+
+        assert resp.status_code == 200
+        patched_list_models.assert_awaited_once()
+        _args, kwargs = patched_list_models.call_args
+        assert kwargs.get("password") == "envpass"
+
+
+class TestRevealEnvValue:
+    """POST /api/envs/<name>/reveal — reveals the unredacted value of an
+    env key. The decryption password comes from the ``yadc_password``
+    session cookie (with the ``YADC_PASSWORD`` env-var fallback)."""
+
+    @pytest.mark.asyncio
+    async def test_cookie_password_decrypts_value(self, client, patched_cmd_envs, cookie_password):
+        """When the cookie is set, the value is forwarded to
+        ``cmd_envs.decrypt_setting`` and the decrypted text is returned."""
+        env_data = make_app_config_env(
+            api_token="encrypted-token",
+            encryption_method="password",
+        )
+        patched_cmd_envs.get_env.return_value = env_data
+        patched_cmd_envs.decrypt_setting = MagicMock(return_value="decrypted-secret")
+        cookie_password(client, "hunter2")
+
+        resp = await client.post("/api/envs/default/reveal", json={"key": "api_token"})
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data == {"value": "decrypted-secret"}
+        patched_cmd_envs.decrypt_setting.assert_called_once()
+        _args, kwargs = patched_cmd_envs.decrypt_setting.call_args
+        assert _args[0] == "encrypted-token"
+        assert kwargs.get("password") == "hunter2"
+
+    @pytest.mark.asyncio
+    async def test_403_when_no_cookie_and_password_encrypted(self, client, patched_cmd_envs):
+        """No cookie + no env-var → ``PasswordRequiredError`` propagates
+        from ``cmd_envs.decrypt_setting`` and surfaces as 403
+        ``PASSWORD_REQUIRED``."""
+        env_data = make_app_config_env(
+            api_token="encrypted-token",
+            encryption_method="password",
+        )
+        patched_cmd_envs.get_env.return_value = env_data
+        # Restore the real exception class on the mocked module so the
+        # controller's ``except cmd_envs.PasswordRequiredError`` clause
+        # matches. (Without this, ``cmd_envs.PasswordRequiredError`` is
+        # a MagicMock attribute and the ``except`` raises TypeError.)
+        patched_cmd_envs.PasswordRequiredError = PasswordRequiredError
+        patched_cmd_envs.decrypt_setting = MagicMock(side_effect=PasswordRequiredError("test"))
+
+        resp = await client.post("/api/envs/default/reveal", json={"key": "api_token"})
+
+        assert resp.status_code == 403
+        data = await resp.get_json()
+        assert data["code"] == "PASSWORD_REQUIRED"
+        assert "Password required" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_yadc_password_env(self, client, patched_cmd_envs, patched_resolve_password_fallback):
+        """No cookie + ``YADC_PASSWORD`` env var set → the env-var value
+        is forwarded to ``cmd_envs.decrypt_setting``."""
+        env_data = make_app_config_env(
+            api_token="encrypted-token",
+            encryption_method="password",
+        )
+        patched_cmd_envs.get_env.return_value = env_data
+        patched_cmd_envs.decrypt_setting = MagicMock(return_value="decrypted-secret")
+
+        with patched_resolve_password_fallback("envpass"):
+            resp = await client.post("/api/envs/default/reveal", json={"key": "api_token"})
+
+        assert resp.status_code == 200
+        patched_cmd_envs.decrypt_setting.assert_called_once()
+        _args, kwargs = patched_cmd_envs.decrypt_setting.call_args
+        assert kwargs.get("password") == "envpass"
+
+    @pytest.mark.asyncio
+    async def test_plaintext_value_returned_without_password(self, client, patched_cmd_envs):
+        """Non-encrypted values don't need a password — the cookie is
+        ignored and the plaintext is returned as-is."""
+        env_data = make_app_config_env(api_token="plaintext-token", encryption_method="none")
+        patched_cmd_envs.get_env.return_value = env_data
+
+        resp = await client.post("/api/envs/default/reveal", json={"key": "api_token"})
+
+        assert resp.status_code == 200
+        data = await resp.get_json()
+        assert data == {"value": "plaintext-token"}
+        patched_cmd_envs.decrypt_setting.assert_not_called()

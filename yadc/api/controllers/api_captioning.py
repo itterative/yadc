@@ -8,9 +8,11 @@ This controller is a thin HTTP layer; all state lives in
   for ``api_url``, ``api_token``, ``api_model_name``, ``env``,
   ``prompt_template``, ``prompt_name``, ``max_tokens``,
   ``image_quality``, ``overwrite``, ``draft``, ``reasoning``,
-  ``reasoning_effort``, ``reasoning_exclude_output``, ``password``.
+  ``reasoning_effort``, ``reasoning_exclude_output``.
   Pre-flights ``cmd_envs.load_env`` to surface ``PasswordRequiredError``
   as a 403 ``PASSWORD_REQUIRED`` *before* spawning the background job.
+  The decryption password is read from the ``yadc_password`` session
+  cookie (with the ``YADC_PASSWORD`` env-var fallback).
 - ``POST /datasets/<name>/caption/stop`` — request a graceful stop.
 - ``GET /datasets/<name>/caption/jobs`` — list the in-memory job log.
 - ``GET /datasets/<name>/caption/status`` — current job state.
@@ -36,6 +38,7 @@ from yadc.core.captioning import CaptionJobOptions
 from ..modules.logging_factory import LoggingFactory
 from ..services.captioning import CaptioningService, JobInfo, RefineOptions
 from . import controller
+from ._password import resolve_request_password
 from .blueprints import ApiBlueprint
 from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error, validate_body
 
@@ -51,10 +54,15 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         Optional JSON body fields (all override config / env defaults):
             api_url, api_token, api_model_name, env,
             prompt_template, prompt_name, max_tokens, image_quality,
-            overwrite, draft, reasoning, reasoning_effort, reasoning_exclude_output,
-            password
+            overwrite, draft, reasoning, reasoning_effort, reasoning_exclude_output
+
+        The decryption password is read from the ``yadc_password``
+        session cookie (with the ``YADC_PASSWORD`` env-var fallback)
+        and set on ``options.password`` before the pre-flight check
+        and the background job.
         """
         options = validate_body(CaptionJobOptions, await request.get_json(silent=True))
+        options.password = resolve_request_password(request)
 
         try:
             # Pre-flight env load to catch password-required errors before starting a background job.
@@ -96,6 +104,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         or poll GET /datasets/<name>/caption for completion.
         """
         options = validate_body(CaptionJobOptions, await request.get_json(silent=True))
+        options.password = resolve_request_password(request)
 
         try:
             cmd_envs.load_env(options.env, password=options.password)
@@ -128,6 +137,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
         or poll GET /datasets/<name>/caption for completion.
         """
         options = validate_body(CaptionJobOptions, await request.get_json(silent=True))
+        options.password = resolve_request_password(request)
 
         if not options.feedback.strip():
             return jsonify_error("'feedback' is required and cannot be empty", status=400, code=ErrorCode.BAD_REQUEST)
@@ -222,9 +232,7 @@ def api_captioning(app: ApiBlueprint, logging: LoggingFactory, captioning: Capti
                 status=400,
                 code=ErrorCode.BAD_REQUEST,
             )
-        evicted = await captioning.evict_refine_result(
-            name, image_id, body.caption, source=body.source, draft_name=body.draft_name
-        )
+        evicted = await captioning.evict_refine_result(name, image_id, body.caption, source=body.source, draft_name=body.draft_name)
         if not evicted:
             return jsonify_error(
                 "Cached refine result does not match the accepted text (or no result is cached)",

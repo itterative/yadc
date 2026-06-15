@@ -2,7 +2,6 @@ import { API_BASE, apiErrorMessage } from '$lib/api';
 import { upload, type UploadProgress } from '$lib/upload';
 import { debounce } from '$lib/async';
 import { clientId } from '../events';
-import { sessionPassword } from '../sessionPassword';
 import type {
     CaptionData,
     CaptioningJobInfo,
@@ -565,18 +564,20 @@ export function mediaUrl(datasetName: string, imageId: number): string {
 
 // --- Captioning API helpers ---
 
-/** Start a captioning job. Returns initial job info. */
+/** Start a captioning job. Returns initial job info.
+ *
+ *  The ``yadc_password`` session cookie is auto-attached by the
+ *  browser, so no body field is needed. Callers wrap this in
+ *  ``withPasswordRetry`` to handle 403 PASSWORD_REQUIRED. */
 export async function startCaptioning(
     datasetName: string,
     options: Record<string, unknown>,
     signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
-    const password = sessionPassword.get();
-    const body = password ? { ...options, password } : options;
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/caption`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(options),
         signal
     });
     if (!res.ok) {
@@ -611,21 +612,22 @@ export async function stopCaptioning(datasetName: string, signal?: AbortSignal):
     return res.ok;
 }
 
-/** Start a single-image captioning job. Returns initial job info. */
+/** Start a single-image captioning job. Returns initial job info.
+ *
+ *  The ``yadc_password`` session cookie is auto-attached by the
+ *  browser. Callers wrap this in ``withPasswordRetry``. */
 export async function captionSingleImage(
     datasetName: string,
     imageId: number,
     options: Record<string, unknown> = {},
     signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
-    const password = sessionPassword.get();
-    const body = password ? { ...options, password } : options;
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/caption`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify(options),
             signal
         }
     );
@@ -637,7 +639,9 @@ export async function captionSingleImage(
 
 /** Refine a caption by sending feedback to the model.
  *  Sends the current caption (or provided one) plus user feedback as
- *  extra_messages to the model. Returns initial job info. */
+ *  extra_messages to the model. Returns initial job info.
+ *  The ``yadc_password`` session cookie is auto-attached; callers wrap
+ *  this in ``withPasswordRetry``. */
 export async function refineCaption(
     datasetName: string,
     imageId: number,
@@ -646,12 +650,10 @@ export async function refineCaption(
     options: Record<string, unknown> = {},
     signal?: AbortSignal
 ): Promise<CaptioningJobInfo> {
-    const password = sessionPassword.get();
     const body = {
         ...options,
         feedback,
-        refine_caption: caption,
-        ...(password ? { password } : {})
+        refine_caption: caption
     };
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine`,
@@ -711,7 +713,6 @@ export async function deleteRefineResult(
     draftName: string = '',
     signal?: AbortSignal
 ): Promise<boolean> {
-    const password = sessionPassword.get();
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/refine`,
         {
@@ -720,8 +721,7 @@ export async function deleteRefineResult(
             body: JSON.stringify({
                 caption,
                 source,
-                draft_name: draftName,
-                ...(password ? { password } : {})
+                draft_name: draftName
             }),
             signal
         }

@@ -31,7 +31,9 @@ yadc/api/
     utils_json.py       # DataclassJSONEncoder + jsonify_dataclass + jsonify_error() (shared JSON utilities)
     models_errors.py    # APIErrorDetail + APIErrorResponse dataclasses, Pydantic ValidationError conversion
     blueprints.py       # ApiBlueprint, AppBlueprint (@singleton injector classes)
+    _password.py        # Shared cookie helpers (private): `resolve_request_password`, `set_password_cookie`, `clear_password_cookie`. All password-requiring controllers read the `yadc_password` session cookie via `resolve_request_password` (with `YADC_PASSWORD` env-var fallback).
     app_frontend.py     # @controller — serves SvelteKit build
+    api_auth.py         # @controller — `POST/DELETE /api/auth/password` — validate password and set/clear the `yadc_password` session cookie
     api_datasets.py     # @controller — dataset/image endpoints (wired to DatasetService)
     api_captioning.py   # @controller — captioning start/stop/status + per-image caption + refine (uses CaptioningService only — the SSE stream itself is in `api_events.py`)
     api_configs.py      # @controller — dataset config TOML CRUD (view/edit/delete)

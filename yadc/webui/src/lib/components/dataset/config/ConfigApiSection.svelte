@@ -3,6 +3,7 @@
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { envs, refreshEnvs, fetchModels } from '$lib/stores/env';
     import { settingsDialog } from '$lib/stores/settings';
+    import { withPasswordRetry } from '$lib/stores/passwordPrompt';
     import { friendlyErrorMessage } from '$lib/api';
     import { createAbortContext, getAbortContext, linkedController } from '$lib/abort';
     import { configState } from './state.svelte';
@@ -64,7 +65,14 @@
             }
             isLoadingModels = true;
             try {
-                const result = await fetchModels(env, controller.signal);
+                // Password-mode envs return 403 without the cookie — the
+                // retry helper prompts the user and re-runs the call. The
+                // signal aborts the prompt too, so env switches mid-prompt
+                // don't leave a dangling dialog.
+                const result = await withPasswordRetry(
+                    () => fetchModels(env, controller.signal),
+                    controller.signal
+                );
                 if (controller.signal.aborted) {
                     return;
                 }
@@ -95,7 +103,10 @@
         isLoadingModels = true;
         modelsError = null;
         try {
-            const result = await fetchModels(env, controller.signal);
+            const result = await withPasswordRetry(
+                () => fetchModels(env, controller.signal),
+                controller.signal
+            );
             if (controller.signal.aborted) {
                 return;
             }

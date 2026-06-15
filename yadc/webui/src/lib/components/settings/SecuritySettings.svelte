@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchKeyMode, setKeyMode, changeKeyPassword } from '$lib/stores/env';
+    import { clearAuthCookie, setAuthCookie, withPasswordRetry } from '$lib/stores/passwordPrompt';
     import { friendlyErrorMessage, PasswordRequiredError } from '$lib/api';
     import Alert from '$lib/components/ui/Alert.svelte';
 
@@ -9,7 +10,6 @@
     let keyModeError: string | null = $state(null);
     let keyModeSuccess: string | null = $state(null);
     let keyModePassword = $state('');
-    let keyModeOldPassword = $state('');
     let keyModeConfirmPassword = $state('');
     let envPasswordSet = $state(false);
 
@@ -28,30 +28,55 @@
         }
     }
 
+    /** Change the key storage password (already in password mode).
+     *
+     *  The current password comes from the ``yadc_password`` session
+     *  cookie (with the ``YADC_PASSWORD`` env-var fallback). If the
+     *  cookie is missing or wrong, ``withPasswordRetry`` will prompt
+     *  the user automatically. */
+    async function changePassword() {
+        await withPasswordRetry(() => changeKeyPassword(keyModePassword));
+        // Refresh the cookie so the next API call uses the new password
+        // (otherwise the still-old cookie would 403 the next request).
+        await setAuthCookie(keyModePassword);
+    }
+
+    /** Switch the key storage mode (``password`` ↔ ``keyring``).
+     *
+     *  - Switching to ``keyring``: backend reads the current password
+     *    from the cookie; the cookie is then cleared (no longer
+     *    needed).  ``withPasswordRetry`` handles the no-cookie case.
+     *  - Switching to ``password``: backend doesn't need a current
+     *    password (current mode is keyring).  The new cookie is set
+     *    after success so the next request authenticates. */
+    async function switchMode() {
+        if (desiredKeyMode === 'password') {
+            await setKeyMode('password', keyModePassword);
+            await setAuthCookie(keyModePassword);
+        } else {
+            await withPasswordRetry(() => setKeyMode('keyring'));
+            await clearAuthCookie();
+        }
+        keyMode = desiredKeyMode;
+    }
+
     async function handleKeyModeAction() {
         keyModeLoading = true;
         keyModeError = null;
         keyModeSuccess = null;
         try {
             if (keyMode === 'password' && desiredKeyMode === 'password') {
-                await changeKeyPassword(keyModeOldPassword, keyModePassword);
-                keyModePassword = '';
-                keyModeOldPassword = '';
-                keyModeConfirmPassword = '';
+                await changePassword();
                 keyModeSuccess = 'Password changed successfully.';
             } else {
-                const password = desiredKeyMode === 'password' ? keyModePassword : undefined;
-                const oldPassword = keyMode === 'password' ? keyModeOldPassword : undefined;
-                await setKeyMode(desiredKeyMode, password, oldPassword);
-                keyMode = desiredKeyMode;
-                keyModePassword = '';
-                keyModeOldPassword = '';
-                keyModeConfirmPassword = '';
+                await switchMode();
                 keyModeSuccess =
                     desiredKeyMode === 'password'
                         ? 'Switched to password-protected key storage.'
                         : 'Switched to system keyring.';
             }
+            keyModePassword = '';
+            keyModeConfirmPassword = '';
         } catch (e) {
             if (e instanceof PasswordRequiredError) {
                 keyModeError = 'Current password is incorrect. Please try again.';
@@ -68,6 +93,7 @@
             return true;
         }
         if (desiredKeyMode === keyMode) {
+            // Change-password case
             if (keyMode === 'password') {
                 if (!keyModePassword) {
                     return true;
@@ -78,8 +104,9 @@
             }
             return false;
         }
-        if (keyMode === 'password' && desiredKeyMode === 'keyring') {
-            return !keyModeOldPassword;
+        // Mode-switch case
+        if (desiredKeyMode === 'password' && !keyModePassword) {
+            return true;
         }
         return false;
     }
@@ -115,10 +142,10 @@
         {#if envPasswordSet}
             <div class="rounded-lg border border-yellow-700/50 bg-yellow-900/50 px-3 py-2">
                 <p class="text-xs text-yellow-200">
-                    <strong>YADC_PASSWORD</strong> is set in the server environment. Changing the
-                    password here will not update the environment variable — make sure to update
-                    <strong>YADC_PASSWORD</strong> as well or the backend will continue using the old
-                    password.
+                    <strong>YADC_PASSWORD</strong> is set in the server environment. The webui uses a
+                    session cookie for password auth, so the env var only matters for the first request
+                    of a new session (before the cookie is set) and for non-browser clients. The session
+                    cookie wins once it's set.
                 </p>
             </div>
         {/if}
@@ -151,17 +178,10 @@
         {#if keyMode === 'password' && desiredKeyMode === 'password'}
             <div class="space-y-3 border-t border-border pt-3">
                 <p class="text-xs font-medium text-gray-400">Change Password</p>
-                <div>
-                    <label class="label" for="key-mode-old-password">Current Password</label>
-                    <input
-                        id="key-mode-old-password"
-                        type="password"
-                        bind:value={keyModeOldPassword}
-                        class="input"
-                        placeholder="Enter current password"
-                        disabled={keyModeLoading}
-                    />
-                </div>
+                <p class="text-xs text-gray-500">
+                    The current password is read from your session cookie. If you don't have one
+                    yet, you'll be prompted for it.
+                </p>
                 <div>
                     <label class="label" for="key-mode-password">New Password</label>
                     <input
@@ -199,20 +219,14 @@
         {:else if keyMode === 'password' && desiredKeyMode === 'keyring'}
             <div class="space-y-3 border-t border-border pt-3">
                 <p class="text-xs font-medium text-gray-400">Switch to System Keyring</p>
-                <div>
-                    <label class="label" for="key-mode-old-password">Current Password</label>
-                    <input
-                        id="key-mode-old-password"
-                        type="password"
-                        bind:value={keyModeOldPassword}
-                        class="input"
-                        placeholder="Required to decrypt existing tokens"
-                        disabled={keyModeLoading}
-                    />
-                </div>
+                <p class="text-xs text-gray-500">
+                    Your current password (from the session cookie, or prompted if missing) is used
+                    to decrypt existing tokens before re-encrypting them with the keyring.
+                </p>
                 <div class="rounded-lg border border-yellow-700/50 bg-yellow-900/50 px-3 py-2">
                     <p class="text-xs text-yellow-200">
-                        All existing tokens will be re-encrypted with the system keyring.
+                        All existing tokens will be re-encrypted with the system keyring. The
+                        session cookie will be cleared.
                     </p>
                 </div>
                 <button
@@ -239,7 +253,8 @@
                 </div>
                 <div class="rounded-lg border border-yellow-700/50 bg-yellow-900/50 px-3 py-2">
                     <p class="text-xs text-yellow-200">
-                        All existing tokens will be re-encrypted with a password-protected key.
+                        All existing tokens will be re-encrypted with a password-protected key. The
+                        session cookie will be set to this password.
                     </p>
                 </div>
                 <button

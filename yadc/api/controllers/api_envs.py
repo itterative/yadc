@@ -14,13 +14,13 @@ from yadc.core.env import YADC_PASSWORD
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
 from . import controller
+from ._password import resolve_request_password
 from .blueprints import ApiBlueprint
 from .utils_json import ErrorCode, jsonify_error, validate_body
 
 
 class RevealEnvValueBody(pydantic.BaseModel):
     key: str
-    password: str | None = None
 
 
 class PutEnvBody(pydantic.BaseModel):
@@ -32,14 +32,17 @@ class PutEnvBody(pydantic.BaseModel):
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
 
-class ListModelsBody(pydantic.BaseModel):
-    password: str | None = None
-
-
 class PutKeyModeBody(pydantic.BaseModel):
+    """Body for ``PUT /api/envs/key-mode``.
+
+    ``password`` is the **new** password (a value being submitted). The
+    **current** password comes from the ``yadc_password`` session
+    cookie (with the ``YADC_PASSWORD`` env-var fallback) — see
+    :func:`_password.resolve_request_password`.
+    """
+
     mode: Literal["keyring", "password"]
     password: str | None = None
-    old_password: str | None = None
 
 
 def _format_env(name: str, env_data: cmd_config.AppConfigEnv | None) -> dict[str, object]:
@@ -84,9 +87,14 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
 
         JSON body:
             key: str
-            password: str | null  (required when the value is password-encrypted)
+
+        The decryption password is read from the ``yadc_password`` session
+        cookie (with the ``YADC_PASSWORD`` env-var fallback). Returns
+        403 ``PASSWORD_REQUIRED`` if neither is set and the value is
+        password-encrypted.
         """
         body = validate_body(RevealEnvValueBody, await request.get_json(silent=True))
+        password = resolve_request_password(request)
 
         if body.key not in cmd_config.AppConfigEnv.model_fields:
             return jsonify_error("Invalid key", status=400, code=ErrorCode.BAD_REQUEST)
@@ -105,7 +113,7 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         if value_obj.is_encrypted:
             method = cmd_envs.EncryptionMethod(value_obj.method)
             try:
-                decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method, password=body.password)
+                decrypted = cmd_envs.decrypt_setting(value_obj.value, method=method, password=password)
             except cmd_envs.PasswordRequiredError:
                 return jsonify_error(
                     "Password required to decrypt environment settings",
@@ -154,33 +162,21 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         _logger.info("Environment '%s' deleted.", name)
         return jsonify({"status": "ok"})
 
-    @app.route("/envs/<name>/models", methods=["GET", "POST"])
+    @app.get("/envs/<name>/models")
     async def list_models(name: str):  # pyright: ignore[reportUnusedFunction]
         """Fetch available models from the environment's API.
 
-        Accepts both ``GET`` and ``POST``:
+        The decryption password is read from the ``yadc_password`` session
+        cookie (with the ``YADC_PASSWORD`` env-var fallback), so the
+        ``GET`` carries everything it needs without a body.
 
-        - ``GET``: no body. The ``YADC_PASSWORD`` env var is the only way
-          to decrypt a password-mode env's token.
-        - ``POST``: optional ``{"password": "..."}`` body. Lets the client
-          supply the decryption password explicitly when the backend can't
-          read it from the env. Matches the body shape of
-          ``POST /envs/<name>/reveal`` and ``PUT /envs/key-mode``.
-
-        Both methods delegate to :func:`yadc.cmd.envs.models.list_models`,
-        which decrypts the env's token and forwards the request to the
+        Delegates to :func:`yadc.cmd.envs.models.list_models`, which
+        decrypts the env's token and forwards the request to the
         captioner system's ``list_models`` helper. The captioner handles
-        backend detection, HTTP retries, response parsing, and per-backend
-        quirks (OpenAI / Gemini / Ollama / Koboldcpp / etc.).
+        backend detection, HTTP retries, response parsing, and
+        per-backend quirks (OpenAI / Gemini / Ollama / Koboldcpp / etc.).
 
         The cache TTL is read from ``Configuration.api_models_cache_ttl``.
-
-        .. note::
-            This dual-method route is intentionally awkward — it exists
-            only because ``GET`` can't carry a body. The medium-term plan
-            is to standardize on a single ``X-YADC-Password`` header
-            across all password-passing endpoints. See the ``todo`` memory
-            for details.
         """
         env_data = cmd_envs.get_env(name)
         if env_data is None:
@@ -193,12 +189,7 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         if not env_data.api_url.value:
             return jsonify_error("Environment has no API URL configured", status=400, code=ErrorCode.BAD_REQUEST)
 
-        # POST can carry an explicit password; GET can't.
-        password: str | None = None
-        raw_body = await request.get_json(silent=True)
-        if request.method == "POST" and raw_body is not None:
-            body = validate_body(ListModelsBody, raw_body)
-            password = body.password
+        password = resolve_request_password(request)
 
         try:
             models = await cmd_envs.list_models(
@@ -244,13 +235,17 @@ def api_envs(app: ApiBlueprint, configuration: Configuration, logging: LoggingFa
         JSON body:
             mode: "keyring" | "password"
             password: str | null  (new password when mode="password")
-            old_password: str | null  (current password when changing FROM password mode)
+
+        The **current** password is read from the ``yadc_password``
+        session cookie (with the ``YADC_PASSWORD`` env-var fallback).
+        It's needed when switching FROM password mode to keyring.
         """
         body = validate_body(PutKeyModeBody, await request.get_json(silent=True))
+        old_password = resolve_request_password(request)
 
         try:
             config = cmd_config.load_config()
-            cmd_envs.set_key_mode(config, body.mode, password=body.password, old_password=body.old_password)
+            cmd_envs.set_key_mode(config, body.mode, password=body.password, old_password=old_password)
             if config.key_storage.mode == body.mode and body.password is not None:
                 _logger.info("Password changed for key storage mode '%s'.", body.mode)
             else:
