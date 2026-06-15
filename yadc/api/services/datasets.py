@@ -40,6 +40,7 @@ from typing import Any, Literal
 import tomlkit
 
 from yadc.cmd.app import STATE_PATH
+from yadc.core.config import Config, ConfigDatasetEntry
 from yadc.core.dataset import DatasetImage
 from yadc.utils.dict_utils import load_toml, toml_to_plain
 
@@ -316,7 +317,12 @@ class DatasetService(Service):
     def get_caption(self, dataset_name: str, image_id: int) -> dict[str, Any] | None:
         """Read the caption text and TOML extras for an image.
 
-        Returns dict with keys: caption, extras, drafts — or None if image not found.
+        Returns dict with keys: caption, extras, extras_raw, drafts — or None if image not found.
+
+        ``extras_raw`` is the raw content of the per-image TOML sidecar (used by
+        the Extras tab editor). ``extras`` is the parsed version merged with the
+        matching ``[[dataset]]`` entry's dataset-level extras — per-image keys
+        win — matching the template context the captioning runner sees.
         """
         info = self.get_image(dataset_name, image_id)
         if info is None:
@@ -340,13 +346,136 @@ class DatasetService(Service):
             except Exception:
                 pass
 
+        # Merge dataset-level extras (defaults) into the parsed view. Keep
+        # ``extras_raw`` as the per-image TOML only — the Extras tab editor
+        # edits the per-image file, not the dataset config.
+        merged_extras = self._merge_extras(dataset_name, image_path, extras)
+
         drafts: dict[str, str] = {}
         try:
             drafts = dataset_image.read_all_drafts()
         except Exception:
             pass
 
-        return {"caption": caption, "extras": extras, "extras_raw": extras_raw, "drafts": drafts}
+        return {"caption": caption, "extras": merged_extras, "extras_raw": extras_raw, "drafts": drafts}
+
+    def _find_entry_for_image(
+        self,
+        config: Config,
+        image_path: Path,
+        config_path: Path,
+    ) -> ConfigDatasetEntry | None:
+        """Find the ``[[dataset]]`` entry that contains the given image.
+
+        Path-based entries match when the image's absolute path is inside the
+        entry's resolved directory. Inline-image entries (with no ``path``
+        set) match when the image's absolute path equals one of the entry's
+        image paths.
+
+        When multiple path-based entries contain the image (e.g.
+        ``example/`` and ``example/foo/``), the most specific one wins — the
+        deepest ancestor — mirroring the resolver's non-recursive ``iterdir``
+        walk, which would only have the inner entry pick the image up. An
+        inline-image match always wins over a path-based match (inline
+        declarations are explicit; path-based are implicit). Returns ``None``
+        when no entry matches.
+        """
+        try:
+            image_abs = image_path.resolve()
+        except OSError:
+            return None
+
+        # Pass 1: inline images always win — an explicit declaration beats
+        # any path-based claim on the same image.
+        for entry in config.dataset:
+            for inline in entry.images:
+                try:
+                    if Path(inline.path).resolve() == image_abs:
+                        return entry
+                except (OSError, ValueError):
+                    continue
+
+        # Pass 2: path-based — collect all candidates, return the deepest
+        # ancestor. Use ``is_dir()`` to skip file paths (the resolver does
+        # the same — non-directory paths produce no images).
+        best: ConfigDatasetEntry | None = None
+        best_depth = -1
+        for entry in config.dataset:
+            if not entry.path:
+                continue
+            entry_path = Path(entry.path)
+            if not entry_path.is_absolute():
+                entry_path = config_path.parent / entry_path
+            try:
+                entry_path = entry_path.resolve()
+            except OSError:
+                continue
+            if not entry_path.is_dir():
+                continue
+            try:
+                if not image_abs.is_relative_to(entry_path):
+                    continue
+            except (OSError, ValueError):
+                continue
+            depth = len(entry_path.parts)
+            if depth > best_depth:
+                best = entry
+                best_depth = depth
+
+        return best
+
+    def _get_dataset_extras_for_image(
+        self,
+        dataset_name: str,
+        image_path: Path,
+    ) -> dict[str, Any]:
+        """Return the dataset-level extras for the entry that contains ``image_path``.
+
+        Falls back to an empty dict on any failure (missing config, parse
+        error, no matching entry) so the caller can merge unconditionally.
+        """
+        try:
+            info = self.get_dataset(dataset_name)
+        except Exception:
+            return {}
+        if info is None or not info.config_path:
+            return {}
+
+        config_path = Path(info.config_path)
+        if not config_path.exists():
+            return {}
+
+        try:
+            config = self._loader.load_config(config_path)
+        except Exception:
+            return {}
+        if config is None:
+            return {}
+
+        entry = self._find_entry_for_image(config, image_path, config_path)
+        if entry is None or not entry.extras:
+            return {}
+        return dict(entry.extras)
+
+    def _merge_extras(
+        self,
+        dataset_name: str,
+        image_path: Path,
+        per_image_extras: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge dataset-level extras (defaults) with per-image extras (overrides).
+
+        Per-image keys win over dataset-level keys, matching the merge
+        semantics of :func:`yadc.core.dataset_resolver.resolve_dataset`.
+        Returns ``per_image_extras`` unchanged when no dataset-level extras
+        apply.
+        """
+        dataset_extras = self._get_dataset_extras_for_image(dataset_name, image_path)
+        if not dataset_extras:
+            return per_image_extras
+        merged = dict(dataset_extras)
+        merged.update(per_image_extras)
+        return merged
 
     def preview_prompt(self, dataset_name: str, image_id: int, template: str) -> dict[str, Any] | None:
         """Render the system and user prompts for an image using a Jinja2 template.
@@ -373,6 +502,10 @@ class DatasetService(Service):
                     extras = load_toml(f.read())
             except Exception:
                 pass
+
+        # Merge in dataset-level extras (per-image wins) so the preview matches
+        # what the actual captioning runner sees.
+        extras = self._merge_extras(dataset_name, image_path, extras)
 
         # Apply extras as additional fields on the DatasetImage
         if extras:

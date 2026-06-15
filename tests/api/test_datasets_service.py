@@ -7,6 +7,7 @@ with a real database to exercise the on-disk history sidecar round-trip.
 
 import os
 import shutil
+import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,8 +16,10 @@ import pytest
 from yadc.api.events import DatasetChangedEvent
 from yadc.api.modules import DatasetWatcherService, DBConnectionFactory, EventDispatcher
 from yadc.api.services import DatasetLoader, DatasetScanner
-from yadc.api.services.dataset_repository import DatasetRepository, ImageInfo
+from yadc.api.services.dataset_repository import DatasetInfo, DatasetRepository, ImageInfo
 from yadc.api.services.datasets import DATASETS_DIR, DatasetService, HardlinkNotSupportedError
+from yadc.core.config import Config, ConfigApi, ConfigDatasetEntry, ConfigPrompt, ConfigReasoning, ConfigSettings
+from yadc.core.dataset import DatasetImage
 
 
 @pytest.fixture
@@ -47,6 +50,51 @@ def image_with_caption(tmp_path):
     caption_path.write_text("a red square")
 
     return img_path, caption_path
+
+
+def _make_config(entries: list[ConfigDatasetEntry]) -> Config:
+    """Build a minimal :class:`Config` for tests, skipping strict validation.
+
+    Uses ``model_construct`` for every field so no default factory fires
+    — the default factories would re-run ``ConfigApi()``'s validator in
+    strict mode and fail without a ``strict=False`` context. Mirrors the
+    pattern in :meth:`ConfigV1.to_v2`. Only ``dataset`` varies across the
+    test fixtures; the rest are stub values.
+    """
+    return Config.model_construct(
+        api=ConfigApi.model_construct(),
+        prompt=ConfigPrompt.model_construct(),
+        settings=ConfigSettings.model_construct(),
+        reasoning=ConfigReasoning.model_construct(),
+        dataset=entries,
+        env="",
+        interactive=False,
+        rounds=1,
+        caption_suffix=".txt",
+        overwrite_captions=False,
+    )
+
+
+def _setup_dataset_config(
+    service: DatasetService,
+    config: Config,
+    config_path: Path,
+) -> None:
+    """Wire up ``get_dataset`` + ``_loader.load_config`` and write a real TOML file.
+
+    The TOML body mirrors the parsed Config the mock returns. The file
+    isn't parsed by the test (the loader mock returns a synthetic Config),
+    but it must exist on disk so the service's ``config_path.exists()``
+    check passes — and having a real TOML keeps the test fixture
+    self-documenting.
+    """
+    import tomlkit
+
+    config_path.write_text(tomlkit.dumps(config.model_dump()))
+
+    info = DatasetInfo(name="test_ds", config_path=str(config_path))
+    service.get_dataset = MagicMock(return_value=info)
+    service._loader.load_config = MagicMock(return_value=config)
 
 
 class TestListImages:
@@ -142,7 +190,12 @@ class TestPreviewPrompt:
 
         # Write TOML sidecar with extras
         toml_path = img_path.with_suffix(".toml")
-        toml_path.write_text('custom_field = "hello"\nnumber = 42\n')
+        toml_path.write_text(
+            textwrap.dedent("""\
+                custom_field = "hello"
+                number = 42
+            """)
+        )
 
         self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
@@ -172,11 +225,12 @@ class TestPreviewPrompt:
         img_path, _ = image_with_caption
         self._setup_service_get_image(service, image_id=1, image_path=img_path)
 
-        custom_template = """
-{% set system_prompt %}You are a caption refiner.{% endset %}
-{% set user_prompt %}Current caption: {{ caption }}
-Please improve it.{% endset %}
-"""
+        custom_template = textwrap.dedent("""\
+            {% set system_prompt %}You are a caption refiner.{% endset %}
+            {% set user_prompt %}Current caption: {{ caption }}
+            Please improve it.{% endset %}
+        """)
+
         result = service.preview_prompt("test_ds", 1, custom_template)
         assert result is not None
         assert "a red square" in result["user_prompt"]
@@ -196,6 +250,349 @@ Please improve it.{% endset %}
 
         result = service.preview_prompt("test_ds", 1, "")
         assert result is None
+
+    def test_includes_dataset_level_extras(self, service, image_with_caption, tmp_path):
+        """Dataset-level extras from the [[dataset]] entry appear in the template context."""
+
+        img_path, _ = image_with_caption
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "genshin", "artist": "unknown"},
+                )
+            ]
+        )
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+        _setup_dataset_config(service, config=config, config_path=config_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert result["template_context"]["universe"] == "genshin"
+        assert result["template_context"]["artist"] == "unknown"
+
+    def test_per_image_extras_override_dataset_extras(self, service, image_with_caption, tmp_path):
+        """When both dataset and per-image TOML define the same key, the per-image value wins."""
+
+        img_path, _ = image_with_caption
+
+        # Per-image TOML sets 'universe' to "realistic"
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('universe = "realistic"\n')
+
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "anime", "artist": "unknown"},
+                )
+            ]
+        )
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+        _setup_dataset_config(service, config=config, config_path=config_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        # per-image wins
+        assert result["template_context"]["universe"] == "realistic"
+        # dataset extras for keys not in per-image TOML are still applied
+        assert result["template_context"]["artist"] == "unknown"
+
+    def test_relative_entry_path_is_resolved(self, service, image_with_caption, tmp_path):
+        """Relative entry paths are resolved against the config file's parent directory."""
+
+        img_path, _ = image_with_caption
+
+        config_dir = tmp_path / "cfg"
+        config_dir.mkdir()
+        config_path = config_dir / "config.toml"
+        # Entry uses a relative path; image lives in `images/`
+        config = _make_config([ConfigDatasetEntry(path="images", extras={"universe": "anime"})])
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+        _setup_dataset_config(service, config=config, config_path=config_path)
+
+        # The image is in tmp_path (NOT in config_dir / "images"), so the
+        # entry's resolved path is config_dir/"images" and the image doesn't
+        # actually match — the dataset extras should NOT be applied.
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert "universe" not in result["template_context"]
+
+        # Now the image IS inside config_dir/"images" — extras should apply.
+        relinked_img = config_dir / "images" / img_path.name
+        relinked_img.parent.mkdir(parents=True, exist_ok=True)
+        relinked_img.write_bytes(img_path.read_bytes())
+        self._setup_service_get_image(service, image_id=1, image_path=relinked_img)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert result["template_context"]["universe"] == "anime"
+
+    def test_no_dataset_extras_when_config_path_missing(self, service, image_with_caption, tmp_path):
+        """A DatasetInfo with no config_path falls through to per-image-only extras."""
+
+        img_path, _ = image_with_caption
+        info = DatasetInfo(name="test_ds", config_path=None)
+        service.get_dataset = MagicMock(return_value=info)
+        # loader must NOT be called in this path
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "anime"},
+                )
+            ]
+        )
+        service._loader.load_config = MagicMock(return_value=config)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        service._loader.load_config.assert_not_called()
+        assert "universe" not in result["template_context"]
+
+    def test_no_dataset_extras_when_config_file_missing(self, service, image_with_caption, tmp_path):
+        """A non-existent config file is treated as 'no dataset extras' (graceful degradation)."""
+
+        img_path, _ = image_with_caption
+        missing_cfg = tmp_path / "does-not-exist.toml"
+        info = DatasetInfo(name="test_ds", config_path=str(missing_cfg))
+        service.get_dataset = MagicMock(return_value=info)
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "anime"},
+                )
+            ]
+        )
+        service._loader.load_config = MagicMock(return_value=config)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        service._loader.load_config.assert_not_called()
+        assert "universe" not in result["template_context"]
+
+    def test_no_dataset_extras_when_loader_returns_none(self, service, image_with_caption, tmp_path):
+        """If the loader can't parse the config, the preview still works (per-image only)."""
+
+        img_path, _ = image_with_caption
+        config_path = tmp_path / "config.toml"
+        # The TOML file exists on disk (so the exists() check passes), but
+        # the loader mock returns None as if parsing failed.
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "anime"},
+                )
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        service._loader.load_config = MagicMock(return_value=None)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert "universe" not in result["template_context"]
+
+    def test_no_dataset_extras_when_image_outside_entry_path(self, service, image_with_caption, tmp_path):
+        """An image that isn't inside any entry's path is treated as having no dataset extras."""
+
+        img_path, _ = image_with_caption
+        other_dir = tmp_path / "other"
+        config_path = tmp_path / "config.toml"
+        config = _make_config([ConfigDatasetEntry(path=str(other_dir), extras={"universe": "anime"})])
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert "universe" not in result["template_context"]
+
+    def test_most_specific_path_wins_for_nested_entries(self, service, image_with_caption, tmp_path):
+        """When two path-based entries both contain the image, the deepest one wins.
+
+        Mirrors the resolver's non-recursive ``iterdir`` walk, which would
+        only have the inner entry pick the image up. Iterating in the
+        original config order with ``is_relative_to`` would return the outer
+        entry by accident — the test would fail without the depth sort.
+        """
+
+        img_path, _ = image_with_caption
+
+        # Lay out a parent + child directory structure under tmp_path so we
+        # have a real outer/inner pair. The image fixture lives at
+        # ``outer/child/test.jpg`` with both ``outer`` and ``outer/child``
+        # as path-based entries.
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        outer = nested / "outer"
+        outer.mkdir()
+        child = outer / "child"
+        child.mkdir()
+        nested_img = child / img_path.name
+        nested_img.write_bytes(img_path.read_bytes())
+
+        config_path = tmp_path / "config.toml"
+        # Outer is FIRST in the config — if the implementation is "first
+        # match wins", the outer would win. The correct behaviour is to
+        # pick the deeper one.
+        config = _make_config(
+            [
+                ConfigDatasetEntry(path=str(outer), extras={"universe": "outer"}),
+                ConfigDatasetEntry(path=str(child), extras={"universe": "inner"}),
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=nested_img)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        # The inner (more specific) entry wins, even though the outer is
+        # listed first in the config.
+        assert result["template_context"]["universe"] == "inner"
+
+    def test_outer_entry_still_wins_when_image_only_in_outer(self, service, image_with_caption, tmp_path):
+        """The most-specific-wins logic doesn't break the simple case: an
+        image in only the outer entry is still matched by the outer entry."""
+
+        img_path, _ = image_with_caption
+        sibling = tmp_path / "sibling"
+        sibling.mkdir()  # exists on disk, but the image is not in it
+
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(path=str(img_path.parent), extras={"universe": "outer"}),
+                ConfigDatasetEntry(path=str(sibling), extras={"universe": "sibling"}),
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert result["template_context"]["universe"] == "outer"
+
+    def test_inline_image_entry_wins_over_path_based_entry(self, service, image_with_caption, tmp_path):
+        """An inline-image match beats a path-based match on the same image.
+
+        Inline declarations are explicit; path-based are implicit. The
+        inline entry's extras should apply.
+        """
+
+        img_path, _ = image_with_caption
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "from_path"},
+                ),
+                ConfigDatasetEntry(
+                    images=[DatasetImage(path=str(img_path))],
+                    extras={"universe": "from_inline"},
+                ),
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert result["template_context"]["universe"] == "from_inline"
+
+    def test_file_path_entry_is_ignored(self, service, image_with_caption, tmp_path):
+        """An entry whose path is a file (not a directory) doesn't match
+        images. The resolver's non-recursive walk wouldn't process such
+        entries either."""
+
+        img_path, _ = image_with_caption
+        # The entry's path points at a file (the image itself), not a dir.
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path),
+                    extras={"universe": "should_not_match"},
+                )
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.preview_prompt("test_ds", 1, "")
+        assert result is not None
+        assert "universe" not in result["template_context"]
+
+
+class TestGetCaption:
+    """DatasetService.get_caption — verify the per-image fields and the merged extras view."""
+
+    def _setup_service_get_image(self, service: DatasetService, image_id: int, image_path: Path):
+        info = ImageInfo(
+            id=image_id,
+            file_name=image_path.name,
+            path=str(image_path),
+            has_caption=True,
+        )
+        service.get_image = MagicMock(return_value=info)
+
+    def test_includes_caption_and_extras_raw(self, service, image_with_caption):
+        """The per-image caption and TOML raw content are returned unchanged."""
+        img_path, _ = image_with_caption
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('artist = "Monet"\n')
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.get_caption("test_ds", 1)
+        assert result is not None
+        assert result["caption"] == "a red square"
+        assert result["extras_raw"] == 'artist = "Monet"\n'
+        # No dataset configured in this test, so extras mirrors per-image only
+        assert result["extras"] == {"artist": "Monet"}
+
+    def test_extras_merge_dataset_level(self, service, image_with_caption, tmp_path):
+        """The ``extras`` field merges dataset-level + per-image extras (per-image wins)."""
+
+        img_path, _ = image_with_caption
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text('universe = "realistic"\n')
+
+        config_path = tmp_path / "config.toml"
+        config = _make_config(
+            [
+                ConfigDatasetEntry(
+                    path=str(img_path.parent),
+                    extras={"universe": "anime", "artist": "unknown"},
+                )
+            ]
+        )
+        _setup_dataset_config(service, config=config, config_path=config_path)
+        self._setup_service_get_image(service, image_id=1, image_path=img_path)
+
+        result = service.get_caption("test_ds", 1)
+        assert result is not None
+        # ``extras`` is the merged view
+        assert result["extras"]["universe"] == "realistic"
+        assert result["extras"]["artist"] == "unknown"
+        # ``extras_raw`` stays as the per-image TOML (Extras tab editor uses it)
+        assert result["extras_raw"] == 'universe = "realistic"\n'
+        assert "artist" not in result["extras_raw"]
+
+    def test_returns_none_for_missing_image(self, service):
+        service.get_image = MagicMock(return_value=None)
+        assert service.get_caption("test_ds", 999) is None
+
+    def test_returns_none_for_missing_file(self, service, tmp_path):
+        nonexistent = tmp_path / "missing.jpg"
+        info = ImageInfo(id=1, file_name="missing.jpg", path=str(nonexistent))
+        service.get_image = MagicMock(return_value=info)
+        assert service.get_caption("test_ds", 1) is None
 
 
 class TestOnDatasetChangedSkipsSelfOriginated:
@@ -352,7 +749,12 @@ class TestUpdateExtrasHistoryRoundTrip:
 
         # Write initial extras (simulating an existing TOML sidecar)
         toml_path = img_path.with_suffix(".toml")
-        toml_path.write_text('artist = "Monet"\nstyle = "impressionism"\n')
+        toml_path.write_text(
+            textwrap.dedent("""\
+                artist = "Monet"
+                style = "impressionism"
+            """)
+        )
 
         # Update extras through the service (webui flow)
         new_extras = 'artist = "Picasso"\nstyle = "cubism"\n'
@@ -377,7 +779,12 @@ class TestUpdateExtrasHistoryRoundTrip:
 
         # Write initial extras with mixed types
         toml_path = img_path.with_suffix(".toml")
-        toml_path.write_text('year = 1872\ntags = ["painting", "landscape"]\n')
+        toml_path.write_text(
+            textwrap.dedent("""\
+                year = 1872
+                tags = ["painting", "landscape"]
+            """)
+        )
 
         # Update to new values
         service.update_extras(ds_name, image_id, 'year = 1937\ntags = ["abstract"]\n')
