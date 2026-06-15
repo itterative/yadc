@@ -15,17 +15,18 @@
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import {
         captioningStatus,
-        pendingDatasetChanges,
-        clearPendingDatasetChange,
         registerJobId,
+        setCaptioningStatus,
+        currentlyCaptioning,
+        lastStartedJobId
+    } from '$lib/stores/caption';
+    import { pendingDatasetChanges, clearPendingDatasetChange } from '$lib/stores/dataset';
+    import {
         resumptionFailed,
         clearResumptionFailed,
-        setCaptioningStatus,
         lastCaptionedImage,
-        lastCaptionError,
-        currentlyCaptioning
+        lastCaptionError
     } from '$lib/stores/events';
-    import { lastStartedJobId } from '$lib/stores/caption';
     import { toast, dismissToast } from '$lib/stores/toasts';
     import { friendlyErrorMessage } from '$lib/api';
     import { createAbortContext } from '$lib/abort';

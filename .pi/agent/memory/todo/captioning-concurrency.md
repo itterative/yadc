@@ -46,4 +46,4 @@ Only worth it if the API provider charges per-connection or you need strict glob
 - `yadc/api/services/captioning/models.py` — `"queued"` JobStatus
 - `yadc/api/services/captioning/job.py` — acquire semaphore in `_ado_run`
 - `yadc/api/configuration.py` — `max_concurrent_jobs` config field
-- `yadc/webui/src/lib/stores/events.ts` — handle `queued` status display
+- `yadc/webui/src/lib/stores/events.ts` + `caption/status.ts` — handle `queued` status display (extend the `CaptioningStatusZ` schema and the `CaptioningStatus` enum)

@@ -33,6 +33,7 @@ Then `DatasetTopbar` ETA uses the job identity store for ring-buffer lookup, and
 
 ## Files involved
 
-- `src/lib/stores/events.ts` — new store + lifecycle
-- `src/lib/stores/caption/actions.ts` — stop seeding API info into status
-- `src/routes/datasets/[name]/DatasetTopbar.svelte` — use new store for ETA
+- `src/lib/stores/caption/jobs.ts` — add a new store for job identity `{ api_url, api_model_name, job_id }` + set/clear lifecycle
+- `src/lib/stores/events.ts` — update the `captioning_status` handler to also update the job-identity store
+- `src/lib/stores/caption/actions.ts` — stop seeding `api_url`/`api_model_name` into `captioningStatus`; seed the job-identity store instead
+- `src/routes/datasets/[name]/DatasetTopbar.svelte` — use the job-identity store for ETA lookup instead of `$captioningStatus`

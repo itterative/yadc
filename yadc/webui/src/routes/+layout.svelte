@@ -17,7 +17,8 @@
     import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
     import { toast } from '$lib/stores/toasts';
     import { setAbortContext } from '$lib/abort';
-    import { captioningStatus, resumptionFailed } from '$lib/stores/events';
+    import { captioningStatus } from '$lib/stores/caption';
+    import { resumptionFailed } from '$lib/stores/events';
     import { sendNotification } from '$lib/notifications';
     import { settingsDialog } from '$lib/stores/settings';
     import { passwordPromptOpen, submitPassword, cancelPassword } from '$lib/stores/passwordPrompt';

@@ -67,7 +67,14 @@ Uploads are only allowed when `currentDataset.source === "upload"` and no batch 
 
 ## SSE (Frontend Side)
 
-`stores/events.ts` is a self-connecting store module. Opens `TypedEventSource` on module load, validates events with Zod, pipes into `readonly` writable stores.
+`stores/events.ts` is a self-connecting **event router** module. Opens `TypedEventSource` on module load, validates events with Zod, and routes each event to a writer in the appropriate domain store. Domain state itself (captioning status, in-flight images, LRU caption cache, timing ring, refined caption, etc.) lives in the relevant domain sub-folder — see `stores.md` for the file layout. `events.ts` owns:
+
+- The Zod schemas for every event type
+- The `TypedEventSource` connection lifecycle (see below)
+- The `clientId` (tab identity used for `dataset_changed` suppression)
+- The SSE-specific stores that don't fit any domain: `resumptionFailed` / `clearResumptionFailed`, `lastCaptionedImage`, `lastCaptionError`
+
+The `captioning_status` event handler, for example, is just two lines: `setCaptioningStatus(data)` (writer in `caption/status.ts`) and, on terminal states, `clearCurrentlyCaptioning(data.dataset_name)` (writer in `caption/inflight.ts`). All the multi-line "create new Map, mutate, return" patterns stay in the domain file.
 
 - Browser's built-in `EventSource` auto-reconnect handles reconnection automatically — it preserves and sends `Last-Event-ID` on reconnect, allowing the backend to replay missed events from its ring buffer.
 - For manual reconnections (e.g. mobile visibility recovery, fallback interval), `TypedEventSource.lastEventId` is tracked and passed as a `?lastEventId=` query parameter.

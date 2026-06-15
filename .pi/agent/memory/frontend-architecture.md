@@ -75,10 +75,31 @@ A domain gets its own sub-folder when it has ≥2 related files AND they all ser
 
 ### Current layout
 
-- 5 domain sub-folders: `dataset/`, `caption/`, `config/`, `env/`, `templates/`.
+- 5 domain sub-folders: `dataset/` (4 files), `caption/` (9 files), `config/` (3 files), `env/` (3 files), `templates/` (4 files).
 - 7 top-level singletons: `events.ts`, `toasts.ts`, `confirm.ts`, `passwordPrompt.ts`, `sessionPassword.ts`, `settings.ts`, `topbar.svelte.ts`, `storageStore.ts`.
 
 Full per-file summary in `frontend/stores.md`.
+
+### Naming convention for sub-folder files
+
+Two styles coexist; use whichever fits the domain's size:
+
+- **Role-based** (used by `dataset/`, `config/`, `env/`, `templates/`): one file per kind of code — `types.ts` (data shapes), `api.ts` (transport/fetch), `store.ts` (writables + actions), `actions.ts` (higher-level operations), `index.ts` (re-exporting barrel), plus domain-specific helpers (e.g. `jinja.ts`).
+- **Feature-based** (used by `caption/` once it grew past 3-4 files): one file per **concern** within the domain — `status.ts`, `inflight.ts`, `cache.ts`, `timing.ts`, `jobs.ts`, `refined.ts`. Each file owns the store, the actions, and the types for that one concern.
+
+Use role-based while the domain is small; switch to feature-based when adding a new file would feel forced under the role taxonomy (e.g. another `store.ts` in the same folder is a smell).
+
+### `events.ts` is the router, not the store
+
+`lib/stores/events.ts` is intentionally top-level (not a sub-folder) and owns only the SSE transport + event-routing layer. Domain state lives in the relevant domain sub-folder. The rule:
+
+- `events.ts` defines the Zod schemas for every event type
+- `events.ts` defines the `TypedEventSource` lifecycle (connect, reconnect, mobile visibility recovery, fallback interval)
+- `events.ts` owns `clientId` (tab identity for `dataset_changed` suppression)
+- `events.ts` owns the SSE-specific stores that don't fit any domain: `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`
+- Everything else — `captioningStatus`, `currentlyCaptioning`, `storedCaptions`, `captionTimingRing`, `imageRefined`, `pendingDatasetChanges`, `activeJobIds` — lives in the relevant domain sub-folder and is written via a domain-owned action (e.g. `setCaptioningStatus`, `addCurrentlyCaptioning`, `putStoredCaption`, `recordCaptionTiming`, `setImageRefined`, `addPendingDatasetChange`, `isOwnJobId`).
+
+This keeps `events.ts` small and means each store can be reasoned about (and tested) in isolation — the SSE handler is just a dispatch layer, not a god module.
 
 ### Imports
 

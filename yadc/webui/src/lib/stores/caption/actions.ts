@@ -5,13 +5,9 @@ import {
     refineCaption as apiRefineCaption,
     stopCaptioning as apiStopCaptioning
 } from '../dataset/api';
-import {
-    registerJobId,
-    setCaptioningStatus,
-    resetCaptioningStatus,
-    addCurrentlyCaptioning,
-    removeCurrentlyCaptioning
-} from '../events';
+import { addCurrentlyCaptioning, removeCurrentlyCaptioning } from './inflight';
+import { registerJobId } from './jobs';
+import { resetCaptioningStatus, setCaptioningStatus } from './status';
 import { withPasswordRetry } from '../passwordPrompt';
 import { toast } from '../toasts';
 import type { CaptionOptions } from './options';

@@ -12,7 +12,7 @@
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
     import ContextMenu from '$lib/components/ui/ContextMenu.svelte';
     import { autosize } from '$lib/actions/autosize';
-    import { currentlyCaptioning, imageRefined, consumeImageRefined } from '$lib/stores/events';
+    import { currentlyCaptioning, imageRefined, consumeImageRefined } from '$lib/stores/caption';
     import {
         refineCaption as refineCaptionAction,
         stopCaptioning as stopCaptioningAction

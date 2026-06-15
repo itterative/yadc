@@ -18,7 +18,7 @@
         captionSingleImage as startSingleCaptioning,
         stopCaptioning
     } from '$lib/stores/caption';
-    import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/events';
+    import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/caption';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import SvgVisibility from '$lib/icons/SvgVisibility.svelte';

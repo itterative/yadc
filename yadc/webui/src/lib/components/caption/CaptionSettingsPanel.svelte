@@ -9,7 +9,7 @@
     } from '$lib/stores/caption';
     import type { CaptionOptions } from '$lib/stores/caption';
     import { captionSettings } from '$lib/stores/caption';
-    import { captioningStatus } from '$lib/stores/events';
+    import { captioningStatus } from '$lib/stores/caption';
     import { promptNotificationsOnce } from '$lib/notifications';
     import { deferred } from '$lib/async';
     import { fetchConfig } from '$lib/stores/config';

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { DatasetInfo } from '$lib/stores/dataset';
-    import { captioningStatus, captionTimingRing } from '$lib/stores/events';
+    import { captioningStatus, captionTimingRing } from '$lib/stores/caption';
     import { formatEta } from '$lib/format';
     import { computeEtaSeconds } from '$lib/eta';
     import Topbar from '$lib/components/ui/Topbar.svelte';
