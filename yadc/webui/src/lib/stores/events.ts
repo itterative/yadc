@@ -330,6 +330,35 @@ export function setCaptioningStatus(status: CaptioningStatus): void {
     _captioningStatus.set(status);
 }
 
+/** Reset the captioning status to the initial idle state.
+ *
+ *  Gated: only fires when the current status is 'idle' or 'starting'
+ *  (the optimistic seed the caller just set). A 'running'/'stopping'
+ *  state is preserved so a second near-simultaneous request that
+ *  409s doesn't clobber the first request's real seed.
+ *
+ *  Pass ``force: true`` to bypass the gate. */
+export function resetCaptioningStatus(force: boolean = false): void {
+    if (!force) {
+        const current = get(_captioningStatus);
+        if (current.status !== 'idle' && current.status !== 'starting') {
+            return;
+        }
+    }
+    _captioningStatus.set({
+        status: 'idle',
+        dataset_name: '',
+        processed: 0,
+        total: 0,
+        errors: 0,
+        job_id: '',
+        error: null,
+        error_messages: [],
+        elapsed: 0,
+        max_concurrent: 1
+    });
+}
+
 /** Add an image to the currently-captioning set (idempotent).
  *  Used to seed immediate UI feedback before the SSE
  *  ``image_caption_started`` event arrives. The SSE handler removes

@@ -137,17 +137,19 @@ class CaptioningService(Service):
             # accurate (avoids returning 0/0 when images are present).  If
             # there is nothing to do we return done immediately without
             # starting a background task.
+            #
+            # Preflight errors propagate to the controller (4xx response)
+            # rather than being swallowed into a JobInfo(status="error")
+            # that would let the controller reply 202 with no SSE event
+            # to clear the frontend's optimistic 'starting' state.
             try:
                 config, to_do = job_runner.preflight(dataset_name, options)
-            except ValueError as exc:
-                # NOTE: drop possible zombie process
+            except ValueError:
+                # Drop the placeholder job entry so the controller's 4xx
+                # doesn't leave a leak in ``_async_jobs`` until the
+                # cleanup loop reaps it.
                 del self._async_jobs[dataset_name]
-                return JobInfo(
-                    status="error",
-                    dataset_name=dataset_name,
-                    job_id=job_id,
-                    error=str(exc),
-                )
+                raise
 
             if not to_do:
                 # NOTE: drop possible zombie process

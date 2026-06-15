@@ -122,6 +122,19 @@ class TestStartCaptioning:
         assert data["code"] == "PASSWORD_REQUIRED"
         mock_service.start_job_async.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_preflight_failure_returns_409(self, client, mock_service, patched_cmd_envs):
+        """Preflight ``ValueError`` surfaces as 4xx, not 202 + status='error'."""
+        patched_cmd_envs.PasswordRequiredError = PasswordRequiredError
+        mock_service.start_job_async = AsyncMock(side_effect=ValueError("api model_name must be provided"))
+
+        resp = await client.post("/api/datasets/test/caption", json={})
+
+        assert resp.status_code == 409
+        data = await resp.get_json()
+        assert data["error"] == "api model_name must be provided"
+        assert data["code"] == "CONFLICT"
+
 
 class TestCaptionSingleImage:
     """POST /api/datasets/<name>/images/<id>/caption — starts a single-image
@@ -168,6 +181,19 @@ class TestCaptionSingleImage:
         assert call_args[0][0] == "test"
         assert call_args[0][1].image_ids == [1]
 
+    @pytest.mark.asyncio
+    async def test_preflight_failure_returns_409(self, client, mock_service, patched_cmd_envs):
+        """Preflight ``ValueError`` surfaces as 4xx, not 202 + status='error'."""
+        patched_cmd_envs.PasswordRequiredError = PasswordRequiredError
+        mock_service.start_job_async = AsyncMock(side_effect=ValueError("api model_name must be provided"))
+
+        resp = await client.post("/api/datasets/test/images/1/caption", json={})
+
+        assert resp.status_code == 409
+        data = await resp.get_json()
+        assert data["error"] == "api model_name must be provided"
+        assert data["code"] == "CONFLICT"
+
 
 class TestDeleteRefineResult:
     """DELETE /api/datasets/<name>/images/<id>/refine — evicts the cached
@@ -187,9 +213,7 @@ class TestDeleteRefineResult:
         assert resp.status_code == 200
         data = await resp.get_json()
         assert data["status"] == "ok"
-        mock_service.evict_refine_result.assert_awaited_once_with(
-            "test", 42, "accepted text", source="caption", draft_name=""
-        )
+        mock_service.evict_refine_result.assert_awaited_once_with("test", 42, "accepted text", source="caption", draft_name="")
 
     @pytest.mark.asyncio
     async def test_returns_409_when_service_returns_false(self, client, mock_service):

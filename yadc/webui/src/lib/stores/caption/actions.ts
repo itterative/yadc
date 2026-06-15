@@ -8,6 +8,7 @@ import {
 import {
     registerJobId,
     setCaptioningStatus,
+    resetCaptioningStatus,
     addCurrentlyCaptioning,
     removeCurrentlyCaptioning
 } from '../events';
@@ -44,31 +45,39 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
         max_concurrent: 1
     });
     const options = get(captionOptions);
-    const info = await withPasswordRetry(() =>
-        startCaptioning(datasetName, options as Record<string, unknown>)
-    );
-    registerJobId(info.job_id);
-    lastStartedJobId.set(info.job_id);
-    // Seed the status immediately so the progress bar / ETA appear without
-    // waiting for the first SSE event. Fast completions may finish before
-    // the HTTP response, so only seed when the job is actually running.
-    if (info.status === 'running' || info.status === 'stopping') {
-        setCaptioningStatus({
-            status: info.status,
-            dataset_name: info.dataset_name,
-            processed: info.processed,
-            total: info.total,
-            errors: info.errors,
-            job_id: info.job_id,
-            error: info.error,
-            error_messages: [],
-            api_url: info.api_url,
-            api_model_name: info.api_model_name,
-            elapsed: info.elapsed,
-            max_concurrent: info.max_concurrent
-        });
+    try {
+        const info = await withPasswordRetry(() =>
+            startCaptioning(datasetName, options as Record<string, unknown>)
+        );
+        registerJobId(info.job_id);
+        lastStartedJobId.set(info.job_id);
+        // Seed the status immediately so the progress bar / ETA appear without
+        // waiting for the first SSE event. Fast completions may finish before
+        // the HTTP response, so only seed when the job is actually running.
+        if (info.status === 'running' || info.status === 'stopping') {
+            setCaptioningStatus({
+                status: info.status,
+                dataset_name: info.dataset_name,
+                processed: info.processed,
+                total: info.total,
+                errors: info.errors,
+                job_id: info.job_id,
+                error: info.error,
+                error_messages: [],
+                api_url: info.api_url,
+                api_model_name: info.api_model_name,
+                elapsed: info.elapsed,
+                max_concurrent: info.max_concurrent
+            });
+        }
+        return info.job_id;
+    } catch (e) {
+        // No SSE event will fire (no job was started), so clear the
+        // optimistic 'starting' status to avoid a stuck topbar. The
+        // caller is expected to surface the error to the user.
+        resetCaptioningStatus();
+        throw e;
     }
-    return info.job_id;
 }
 
 /** Start a single-image captioning job. Reads current options from the store,
@@ -122,6 +131,7 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
         return info.job_id;
     } catch (e) {
         removeCurrentlyCaptioning(datasetName, imageId);
+        resetCaptioningStatus();
         throw e;
     }
 }
@@ -195,6 +205,7 @@ export async function refineCaption(
         return info.job_id;
     } catch (e) {
         removeCurrentlyCaptioning(datasetName, imageId);
+        resetCaptioningStatus();
         throw e;
     }
 }

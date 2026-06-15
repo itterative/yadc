@@ -703,18 +703,14 @@ class TestEvictRefineResult:
     @pytest.mark.asyncio
     async def test_returns_false_when_no_entry_exists(self, captioning_service):
         """No entry cached → returns False (caller maps to 409)."""
-        ok = await captioning_service.evict_refine_result(
-            "test_ds", 42, "some caption", source="caption"
-        )
+        ok = await captioning_service.evict_refine_result("test_ds", 42, "some caption", source="caption")
         assert ok is False
 
     @pytest.mark.asyncio
     async def test_returns_false_when_value_mismatches(self, captioning_service):
         """A newer refine is cached → returns False, leaves it alone."""
         captioning_service._refine_results["test_ds/42/caption"] = "newer refinement"
-        ok = await captioning_service.evict_refine_result(
-            "test_ds", 42, "older refinement", source="caption"
-        )
+        ok = await captioning_service.evict_refine_result("test_ds", 42, "older refinement", source="caption")
         assert ok is False
         assert captioning_service._refine_results.get("test_ds/42/caption") == "newer refinement"
 
@@ -722,9 +718,7 @@ class TestEvictRefineResult:
     async def test_returns_true_and_removes_when_value_matches(self, captioning_service):
         """Accepted text matches the cached value → returns True, entry is gone."""
         captioning_service._refine_results["test_ds/42/caption"] = "accepted text"
-        ok = await captioning_service.evict_refine_result(
-            "test_ds", 42, "accepted text", source="caption"
-        )
+        ok = await captioning_service.evict_refine_result("test_ds", 42, "accepted text", source="caption")
         assert ok is True
         assert "test_ds/42/caption" not in captioning_service._refine_results
 
@@ -734,9 +728,7 @@ class TestEvictRefineResult:
         a caption refine for the same image don't collide."""
         captioning_service._refine_results["test_ds/42/caption"] = "caption refine"
         captioning_service._refine_results["test_ds/42/draft/gemma"] = "draft refine"
-        ok = await captioning_service.evict_refine_result(
-            "test_ds", 42, "draft refine", source="draft", draft_name="gemma"
-        )
+        ok = await captioning_service.evict_refine_result("test_ds", 42, "draft refine", source="draft", draft_name="gemma")
         assert ok is True
         # The caption entry is untouched.
         assert captioning_service._refine_results.get("test_ds/42/caption") == "caption refine"
@@ -804,15 +796,19 @@ class TestStartJobPreflight:
         mock_start.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_returns_error_on_preflight_failure(self, captioning_service):
-        """When preflight raises, start_job_async returns error without starting a task."""
-        with patch("yadc.api.services.captioning.job_runner.load_dataset_config", side_effect=ValueError("bad config")):
+    async def test_raises_on_preflight_failure(self, captioning_service):
+        """Preflight ``ValueError`` is re-raised (so the controller returns
+        4xx) and the placeholder job entry is dropped to avoid a leak."""
+        with patch(
+            "yadc.api.services.captioning.job_runner.load_dataset_config",
+            side_effect=ValueError("bad config"),
+        ):
             with patch.object(AsyncCaptionJob, "start") as mock_start:
-                info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
+                with pytest.raises(ValueError, match="bad config"):
+                    await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 
-        assert info.status == "error"
-        assert info.error == "bad config"
         mock_start.assert_not_called()
+        assert "test_ds" not in captioning_service._async_jobs
 
     @pytest.mark.asyncio
     async def test_starts_task_when_images_present(self, captioning_service):
