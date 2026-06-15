@@ -2,6 +2,7 @@
 
 import pathlib
 import sys
+from pathlib import Path
 from typing import TextIO
 
 import click
@@ -98,14 +99,19 @@ def export(
     dataset_toml_raw = load_toml_file(dataset)
 
     try:
-        dataset_toml = parse_config(dataset_toml_raw)
+        dataset_toml = parse_config(dataset_toml_raw, strict=False)
     except Exception as e:
         _logger.error("Error loading dataset: %s", e)
         sys.exit(cmd_status.STATUS_ERROR)
 
+    base_dir: str | None = None
+    if dataset.name:
+        base_dir = str(Path(dataset.name).parent)
+
     resolved_images: list[DatasetImage] = resolve_dataset(
         dataset_toml.dataset,
         dataset_toml.caption_suffix,
+        base_dir=base_dir,
     )
 
     if not resolved_images:
