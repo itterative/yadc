@@ -38,6 +38,10 @@ uv run pytest tests -k "test_name"
 
 ## Code Style
 
+### Comments
+
+Comments are long-lived artifacts — calibrate them to long-term value, not the in-the-moment context you have while writing the code. Explain the **why** (non-obvious decisions, footguns, design trade-offs) — not the **what**, which the code already shows. Match the existing comment density: module docstrings in this codebase are typically 1–5 lines (the longest, `Application`, is ~15). If yours is much longer, you are probably over-explaining. Prefer trimming over adding — a comment that "seems useful right now" usually isn't, six months later, when the surrounding code has changed.
+
 ### Python
 
 - **Ruff**: line-length 160, rules E/F/W/I (pycodestyle, pyflakes, warnings, isort)
