@@ -25,13 +25,6 @@ Key files changed: `yadc/api/application.py`, `yadc/api/controllers/`, `yadc/api
 
 When building wheels with `yadc/webui/__init__.py` present (needed for `package-data` to include `build/**/*`), setuptools discovers `yadc/webui/node_modules/flatted/python/flatted.py` as a submodule and includes it in the wheel. This is a harmless 3.7KB file but shouldn't be there. `exclude-package-data` doesn't work because setuptools treats it as a module, not data. Proper fix: use explicit `packages = [...]` list in pyproject.toml instead of `packages.find`, or filter out node_modules at the sdist level.
 
-## Sidebar / topbar refactor (visual polish)
-
-The navbar was moved from a horizontal top bar to a left sidebar (icon-rail on desktop, slide-in overlay on mobile). A topbar pattern was introduced for page-level header content (title, status). The structural move is done; this entry is now about **visual polish** (not part of `plans/archive/frontend-component-organization.md` which is purely structural).
-
-- **UI refinement**: The sidebar and topbar need a visual polish pass — spacing, sizing, visual consistency
-
-
 ## Webui code quality pass
 
 The webui frontend code is newly written and needs a cleanup pass to bring it up to a higher standard:
@@ -44,26 +37,6 @@ The webui frontend code is newly written and needs a cleanup pass to bring it up
 - **API controller basedpyright warnings**: `api_configs.py`, `api_datasets.py`, and `api_envs.py` have 21 pre-existing warnings (as of the error-response refactor). Root cause is Quart's untyped `request.get_json()` / `resp.json()` returning `Any`, so pyright flags every downstream access as `Unknown`. Fixing these requires either: (1) adding request/response Pydantic models and validating at the boundary, (2) using `typing.cast()` or `assert isinstance(...)` guards that pyright understands, or (3) adding `# type: ignore` comments with explanatory notes where runtime checks already guarantee safety.
 - **Watchdog Observer type**: `Observer` from `watchdog` is currently typed as `Any` to suppress basedpyright errors — this needs a proper fix. Investigate why basedpyright can't resolve `watchdog.observers.Observer` (likely missing/incomplete stubs) and find the right solution (e.g. custom stub, `type: ignore` with comment, or wrap with a protocol)
 
-## UI/UX overhaul
-
-The current UI is functional but needs a manual pass to improve overall look and feel. This is a larger undertaking covering:
-
-- Visual polish: spacing, typography, color consistency, border/shadow usage, hover/focus/active states
-- UX improvements: better loading states, empty states, error feedback, confirmation prompts for destructive actions
-- Responsive layout — ensure the UI works well at different viewport sizes
-- Accessibility basics — keyboard navigation, ARIA attributes, focus management in dialogs
-- Overall design coherence — the UI should feel like a unified application rather than assembled parts
-
-## Simplified dataset config editing
-
-See **plans/dataset-config-settings-plan** for full details. Mostly done — remaining:
-
-- [ ] TOML multiline string serialization for templates
-
-## Test captioning flow in the webui
-
-The full captioning workflow (start → progress → completion → result display) needs end-to-end testing through the webui to catch any integration issues between the frontend stores, SSE events, and the backend captioning API.
-
 ## Dataset browser scroll cutoff
 
 The dataset browser grid uses `overflow-y-auto` on its parent div, but images near the bottom get cut off because the scroll container's padding doesn't extend past the last items. The fix is to replace the padding-based spacing on the scroll container with margin-based spacing on the children (grid items), so the last row of images is fully visible when scrolled to the bottom.
@@ -75,29 +48,6 @@ See **plans/dataset-config-settings-plan** for full details. Phase 1 + 2 mostly 
 Remaining (Phase 3 nice-to-haves):
 - Preset profiles
 - Config diff banner
-
-## History restore UI and semantics
-
-The first pass of history browsing/restoring is implemented (backend API + frontend UI). Needs refinement:
-
-- **UI polish**: The history section in ImageDetail needs visual improvement — better layout, spacing, differentiation between entries
-- **Current state in history**: History always includes the current state as the most recent entry, which means restoring always adds a duplicate (current state gets saved again). Need to decide: should history only contain *past* states? Should the frontend filter out the current state? Should restore skip saving if the current state is already the target?
-
-## Incremental filesystem index updates
-
-**DONE** — Watcher-level change detection now plumbs affected paths through to the dataset service for targeted index updates.
-
-- `DatasetChangedEvent` carries a new optional `changed_paths: list[str]` field (empty for legacy/manual callers).
-- `DatasetWatcherService` accumulates the per-dataset set of changed paths in `_changed_paths` during the debounce window and ships it on the dispatched event. `on_moved` records both `src_path` and `dest_path` so renames don't drop the new file.
-- `DatasetService._on_dataset_changed` dispatches to `DatasetScanner.scan_targeted` when the event has `changed_paths` populated, falling back to `DatasetScanner.scan_disk` (full walk) for legacy/empty cases. Self-originated events (`job_id` set) are still skipped — the API endpoints keep the index in sync.
-- `DatasetScanner.scan_targeted` maps each changed path to its image row(s) via `resolve_affected_image_paths` (strips `.txt`/`.toml`/`.history~` to get the image stem; expands drafts to `<stem>.<ext>` candidates and filters to rows in the index), stats each candidate, and does targeted `upsert_image` / `delete_image` for the affected rows only. `update_dataset_stats` is updated with the new count (computed locally: `len(existing) + new_rows - len(to_delete)`).
-- **Refactor (post-completion)**: disk-scanning code was extracted out of `DatasetService` into `DatasetScanner` (`scan_disk`, `scan_targeted`, `read_disk`, `resolve_affected_image_paths`, `scan_image_meta`, `_image_meta_differs`, `IMAGE_EXTENSIONS`). Config-loading helpers (`load_config`, `load_raw_config`, `resolve_relative_paths`, `get_dataset_paths`) went to a new `DatasetLoader` service. `DatasetService` shrank from 1300+ to 891 lines and now orchestrates both. Tests split into `test_dataset_scanner.py` and `test_dataset_loader.py`; `test_datasets_service.py` kept the lifecycle/CRUD coverage.
-- `_scan_disk` and the new `_scan_image_meta` helper share the per-image metadata extraction logic.
-- Tests added: 11 in `test_datasets_service.py` (resolver + targeted update) and 7 in `test_dataset_watcher.py` (changed-paths tracking).
-
-## Unify DatasetImage resolution for webui preview and captioning
-
-`DatasetService.preview_prompt()` manually constructs `DatasetImage` instances (reading caption, TOML extras, drafts) with ad-hoc code that diverges from `read_image_from_disk()` used by `resolve_dataset()` in the captioning pipeline. This duplication caused the caption to be missing from the template preview context (fixed with a one-liner). A single shared resolution function (e.g. `DatasetImage.from_path()` or a service-level helper) should be used by both paths to prevent similar regressions. Key files: `yadc/api/services/datasets.py` (`preview_prompt`), `yadc/core/dataset_resolver.py` (`read_image_from_disk`).
 
 ## Clean up captioning server logs
 
@@ -120,13 +70,6 @@ The API captioning service (`CaptioningService` / `AsyncCaptionJob`) reuses CLI-
 - Store revisions in SQLite (new `config_history` table). Simpler but loses the "file is the source of truth" property.
 
 **Key files**: `yadc/api/services/configs.py` (`patch_config`), `yadc/api/controllers/api_configs.py`, `yadc/webui/src/lib/stores/configs.ts`, `yadc/webui/src/routes/datasets/[name]/DatasetConfig.svelte`.
-
-## TOML comment preservation on API write-back
-
-`PATCH /configs/<name>` and `PUT /configs/<name>` parse the TOML, merge changes, and re-serialize. Any comments in the original file are lost because the TOML data model has no concept of comments — all TOML libraries discard them on parse. This is fine for configs created/managed through the webui, but imported configs that the user authored with comments will have them stripped on the first edit. Possible approaches:
-- Text-level patching (find/replace in the raw string instead of parse→serialize) — works for simple scalar changes but can't handle structural changes
-- A TOML AST-aware library that preserves comments and formatting (e.g. `taplo`/Python bindings if they exist)
-- Accept the limitation and document it (comments are not preserved when editing configs through the webui)
 
 ## Normalize draft_names storage in SQLite
 
