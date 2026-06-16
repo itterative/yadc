@@ -22,7 +22,6 @@ import {
     addCurrentlyCaptioning,
     clearCurrentlyCaptioning,
     isOwnJobId,
-    putStoredCaption,
     recordCaptionTiming,
     removeCurrentlyCaptioning,
     setCaptioningStatus,
@@ -242,7 +241,6 @@ function connect() {
 
     _eventSource.listen('image_captioned', ImageCaptionedEventZ, (data) => {
         _lastCaptionedImage.set(data);
-        putStoredCaption(data.id, data.caption);
         if (data.api_url && data.api_model_name) {
             recordCaptionTiming(data.api_url, data.api_model_name, data.duration_ms);
         }

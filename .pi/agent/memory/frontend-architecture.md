@@ -85,7 +85,7 @@ Full per-file summary in `frontend/stores.md`.
 Two styles coexist; use whichever fits the domain's size:
 
 - **Role-based** (used by `dataset/`, `config/`, `env/`, `templates/`): one file per kind of code — `types.ts` (data shapes), `api.ts` (transport/fetch), `store.ts` (writables + actions), `actions.ts` (higher-level operations), `index.ts` (re-exporting barrel), plus domain-specific helpers (e.g. `jinja.ts`).
-- **Feature-based** (used by `caption/` once it grew past 3-4 files): one file per **concern** within the domain — `status.ts`, `inflight.ts`, `cache.ts`, `timing.ts`, `jobs.ts`, `refined.ts`. Each file owns the store, the actions, and the types for that one concern.
+- **Feature-based** (used by `caption/` once it grew past 3-4 files): one file per **concern** within the domain — `status.ts`, `inflight.ts`, `timing.ts`, `jobs.ts`, `refined.ts`. Each file owns the store, the actions, and the types for that one concern.
 
 Use role-based while the domain is small; switch to feature-based when adding a new file would feel forced under the role taxonomy (e.g. another `store.ts` in the same folder is a smell).
 
@@ -97,7 +97,7 @@ Use role-based while the domain is small; switch to feature-based when adding a 
 - `events.ts` defines the `TypedEventSource` lifecycle (connect, reconnect, mobile visibility recovery, fallback interval)
 - `events.ts` owns `clientId` (tab identity for `dataset_changed` suppression)
 - `events.ts` owns the SSE-specific stores that don't fit any domain: `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`
-- Everything else — `captioningStatus`, `currentlyCaptioning`, `storedCaptions`, `captionTimingRing`, `imageRefined`, `pendingDatasetChanges`, `activeJobIds` — lives in the relevant domain sub-folder and is written via a domain-owned action (e.g. `setCaptioningStatus`, `addCurrentlyCaptioning`, `putStoredCaption`, `recordCaptionTiming`, `setImageRefined`, `addPendingDatasetChange`, `isOwnJobId`).
+- Everything else — `captioningStatus`, `currentlyCaptioning`, `captionTimingRing`, `imageRefined`, `pendingDatasetChanges`, `activeJobIds` — lives in the relevant domain sub-folder and is written via a domain-owned action (e.g. `setCaptioningStatus`, `addCurrentlyCaptioning`, `recordCaptionTiming`, `setImageRefined`, `addPendingDatasetChange`, `isOwnJobId`).
 
 This keeps `events.ts` small and means each store can be reasoned about (and tested) in isolation — the SSE handler is just a dispatch layer, not a god module.
 

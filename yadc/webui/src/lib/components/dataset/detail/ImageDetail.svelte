@@ -16,9 +16,12 @@
     } from '$lib/stores/dataset';
     import {
         captionSingleImage as startSingleCaptioning,
+        currentlyCaptioning,
         stopCaptioning
     } from '$lib/stores/caption';
-    import { currentlyCaptioning, getStoredCaption, clearStoredCaption } from '$lib/stores/caption';
+    import { lastCaptionedImage, type ImageCaptionedEvent } from '$lib/stores/events';
+    import { untrack } from 'svelte';
+    import { get } from 'svelte/store';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import SvgVisibility from '$lib/icons/SvgVisibility.svelte';
@@ -56,8 +59,12 @@
     let isSavingExtras = $state(false);
     let copiedKey: string | null = $state(null);
     let copyTimeout: ReturnType<typeof setTimeout> | null = null;
-    let wasCaptioning = $state(false);
     let activeTab = $state('caption');
+
+    // Last image_captioned event already handled. Plain (non-reactive) so
+    // updating it never re-triggers the refresh effect; initialized to the
+    // current event so a caption that arrived before focus doesn't refresh.
+    let handledCaptionedEvent: ImageCaptionedEvent | null = get(lastCaptionedImage);
 
     let isCaptioning = $derived.by(() => {
         if (item === null) {
@@ -104,7 +111,6 @@
                 }
                 captionData = data;
                 historyEntries = hist;
-                clearStoredCaption(id);
             } catch (e) {
                 if (controller.signal.aborted) {
                     return;
@@ -120,43 +126,56 @@
         return () => controller.abort();
     });
 
-    // Re-fetch caption + history when a single-image captioning job completes
+    // Re-fetch caption + history when captioning finishes for the focused
+    // image. We react to the per-image "captioned" event directly (matching
+    // the selected image) instead of inferring completion from the in-flight
+    // store, which would require a state transition that is easy to get wrong.
+    //
+    // The optimistic swap reads captionData via untrack() so the assignment
+    // can't re-trigger this effect (a self-retrigger would run the cleanup and
+    // abort the fetch before its response arrives). handledCaptionedEvent is a
+    // plain non-reactive var so we refresh only for an event arriving while
+    // this image is focused, not one already present at mount.
     $effect(() => {
-        const current = isCaptioning;
+        const event = $lastCaptionedImage;
+        if (event === null || event === handledCaptionedEvent) {
+            return;
+        }
+        handledCaptionedEvent = event;
+        if (event.dataset_name !== datasetName || event.id !== item.id) {
+            return;
+        }
+
+        const id = item.id;
+        const dsName = datasetName;
         const controller = linkedController(abort.signal);
 
-        if (wasCaptioning && !current && item !== null) {
-            const id = item.id;
-            const dsName = datasetName;
-            // Show the stored caption immediately for instant feedback
-            const stored = getStoredCaption(id);
-            if (stored !== undefined && captionData !== null) {
-                captionData = { ...captionData, caption: stored };
-                clearStoredCaption(id);
+        // Optimistic: swap in the freshly-captioned text for instant feedback
+        // while the re-fetch is in flight.
+        untrack(() => {
+            if (captionData !== null) {
+                captionData = { ...captionData, caption: event.caption };
             }
-            (async () => {
-                try {
-                    const [data, hist] = await Promise.all([
-                        fetchCaption(dsName, id, controller.signal),
-                        fetchHistory(dsName, id, controller.signal)
-                    ]);
-                    if (controller.signal.aborted) {
-                        return;
-                    }
-                    if (item?.id !== id) {
-                        return;
-                    }
-                    captionData = data;
-                    historyEntries = hist;
-                } catch (e) {
-                    if (controller.signal.aborted) {
-                        return;
-                    }
-                    captionError = friendlyErrorMessage(e, 'Failed to load caption');
+        });
+
+        (async () => {
+            try {
+                const [data, hist] = await Promise.all([
+                    fetchCaption(dsName, id, controller.signal),
+                    fetchHistory(dsName, id, controller.signal)
+                ]);
+                if (controller.signal.aborted || item?.id !== id) {
+                    return;
                 }
-            })();
-        }
-        wasCaptioning = current;
+                captionData = data;
+                historyEntries = hist;
+            } catch (e) {
+                if (controller.signal.aborted) {
+                    return;
+                }
+                captionError = friendlyErrorMessage(e, 'Failed to load caption');
+            }
+        })();
 
         return () => controller.abort();
     });

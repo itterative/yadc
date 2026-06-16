@@ -1,5 +1,4 @@
 export * from './actions';
-export * from './cache';
 export * from './inflight';
 export * from './jobs';
 export * from './options';

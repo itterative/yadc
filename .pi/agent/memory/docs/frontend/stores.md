@@ -35,7 +35,6 @@ yadc/webui/src/lib/stores/
     inflight.ts                  # currentlyCaptioning derived (set view) + _currentlyCaptioningMap internal + addCurrentlyCaptioning/removeCurrentlyCaptioning/clearCurrentlyCaptioning
     jobs.ts                      # _activeJobIds (bounded ring) + registerJobId + isOwnJobId. Used by the SSE `dataset_changed` handler to suppress events caused by our own jobs.
     refined.ts                   # imageRefined store + setImageRefined + consumeImageRefined (multi-key match by imageId/source/draftName)
-    cache.ts                     # storedCaptions LRU (cap=64) + getStoredCaption + clearStoredCaption + putStoredCaption
     timing.ts                    # captionTimingRing (per-API+model, persisted to localStorage, cap=32 samples) + recordCaptionTiming
   config/                        # Config domain — types + API split
     index.ts                     # Re-exports for `$lib/stores/config`
@@ -52,7 +51,7 @@ yadc/webui/src/lib/stores/
     jinja.ts                     # Pure `extractVariables()` (Jinja2 regex helpers)
 ```
 
-**Naming convention for sub-folder files**: most sub-folders use a role-based convention (`types.ts`, `api.ts`, `store.ts`, `actions.ts`). When a single domain has many concerns (e.g. `caption/`), it can also use feature-based naming — one file per concern (`status.ts`, `inflight.ts`, `cache.ts`, `timing.ts`, etc.), where each file owns the store, the actions, and the types for that one concern. This scales better than the role-based convention when a domain grows past 3-4 files.
+**Naming convention for sub-folder files**: most sub-folders use a role-based convention (`types.ts`, `api.ts`, `store.ts`, `actions.ts`). When a single domain has many concerns (e.g. `caption/`), it can also use feature-based naming — one file per concern (`status.ts`, `inflight.ts`, `timing.ts`, etc.), where each file owns the store, the actions, and the types for that one concern. This scales better than the role-based convention when a domain grows past 3-4 files.
 
 ## Top-Level Singletons
 
