@@ -32,7 +32,7 @@ from quart import Quart
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
-from yadc.api.modules import EventDispatcher, LoggingFactory
+from yadc.api.modules import EventDispatcher
 
 from . import controllers as controllers_pkg
 from . import modules as modules_pkg
@@ -154,14 +154,15 @@ class Application(Module):
         # callback, not here, so that async handlers have a running event loop.
         self.configure_app()
 
-        logging = self.injector.get(LoggingFactory)
         event_dispatcher = self.injector.get(EventDispatcher)
 
         config = uvicorn.Config(
             self.app,
             host=self.configuration.http_host,
             port=self.configuration.http_port,
-            log_level=logging.log_level,
+            # log_level intentionally omitted — UvicornLoggingConfig owns
+            # all uvicorn logger levels; passing it here would have
+            # uvicorn setLevel() them post-dictConfig and clobber that.
             lifespan="on",
             timeout_graceful_shutdown=self.configuration.graceful_shutdown_timeout,
         )

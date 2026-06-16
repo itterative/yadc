@@ -4,6 +4,7 @@ import click
 
 from yadc.api.application import Application
 from yadc.api.configuration import Configuration
+from yadc.cmd.app import CACHE_PATH
 from yadc.core import logging
 
 
@@ -24,12 +25,28 @@ def webui():
     type=click.Choice(["debug", "info", "warning", "error"]),
     help="Set the logging level",
 )
-def serve(host: str, port: int, cors: bool, banner: bool, log_level: str):
+@click.option(
+    "--access-log-file",
+    default=None,
+    type=click.Path(dir_okay=False, writable=True),
+    help=(
+        "File path for the per-request access log. Default: ~/.cache/yadc/webui-access.log "
+        "(auto-rotated). When set, the file is watched instead (defer rotation to your "
+        "external setup, e.g. logrotate)."
+    ),
+)
+def serve(host: str, port: int, cors: bool, banner: bool, log_level: str, access_log_file: str | None):
     """Start the web UI server."""
     import logging as _logging
 
     # NOTE: temporary until we can properly merge the two logging systems (cli vs webui)
     logging.set_level("ERROR")
+
+    if access_log_file is None:
+        access_log_file = str(CACHE_PATH / "webui-access.log")
+        access_log_user_specified = False
+    else:
+        access_log_user_specified = True
 
     configuration = Configuration(
         http_host=host,
@@ -37,6 +54,8 @@ def serve(host: str, port: int, cors: bool, banner: bool, log_level: str):
         api_cors_enable=cors,
         banner_enable=banner,
         logging_default_level=getattr(_logging, log_level.upper(), _logging.INFO),
+        access_log_file=access_log_file,
+        access_log_user_specified=access_log_user_specified,
     )
     application = Application(configuration)
     application.run()

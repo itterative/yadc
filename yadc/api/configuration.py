@@ -20,6 +20,11 @@ Grouped by subsystem:
   scan for changes the inotify watcher can't see.
 - **Captioning job cleanup** — periodic GC of finished jobs
   (``captioning_cleanup_interval_seconds`` + grace period).
+- **Logging** — ``logging_default_level``, ``logging_log_format`` (applied
+  to the ``default`` uvicorn formatter), ``access_log_file`` (per-request
+  access log; ``RotatingFileHandler`` for the default cache path,
+  ``WatchedFileHandler`` when the user supplies the path), and the
+  rotation knobs ``access_log_max_bytes`` / ``access_log_backup_count``.
 - **HTTP client timeouts** — connect/read/write/pool, threaded into
   ``AsyncSession``.
 - **Caches** — ``api_models_cache_ttl`` for ``/api/envs/.../models``,
@@ -60,6 +65,13 @@ class Configuration:
     # Logging
     logging_default_level: int = 20  # logging.INFO
     logging_log_format: str = "%(asctime)s - %(levelname)s - %(message)s"
+    # Per-request access log. UvicornLoggingConfig picks RotatingFileHandler
+    # (default cache path) or WatchedFileHandler (user-supplied path) based
+    # on access_log_user_specified; access lines always emit at INFO.
+    access_log_file: str = field(default_factory=lambda: str(CACHE_PATH / "webui-access.log"))
+    access_log_user_specified: bool = False
+    access_log_max_bytes: int = 10 * 1024 * 1024  # 10 MB
+    access_log_backup_count: int = 5
 
     # SSE
     sse_listeners_warning: int = 25
