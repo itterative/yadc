@@ -1,8 +1,8 @@
 """``SSEEvents`` — SSE fan-out with monotonic event IDs and ``Last-Event-ID`` replay.
 
-Subscribes to all of the API's event types via ``@event_handler`` (see
-``event_dispatcher``) and fans them out to one ``asyncio.Queue`` per
-SSE client. Each real event is assigned a monotonically increasing id
+Subscribes once to the ``SSEEvent`` base class via ``@event_handler`` (see
+``event_dispatcher``), which fans every broadcast event out to one
+``asyncio.Queue`` per SSE client. Each real event is assigned a monotonically increasing id
 (``itertools.count(1)``) and pushed onto a ring buffer
 (``Configuration.sse_event_history_size``); ``PingEvent`` uses id 0 and
 is not buffered.
@@ -32,18 +32,11 @@ from logging import Logger
 
 from ..configuration import Configuration
 from ..events import (
-    CaptioningStatusEvent,
-    DatasetChangedEvent,
-    EnvironmentsChangedEvent,
     Event,
-    ImageCaptionedEvent,
-    ImageCaptionErrorEvent,
-    ImageCaptionStartedEvent,
-    ImageRefinedEvent,
     PingEvent,
     ResumptionFailedEvent,
     ShutdownEvent,
-    TemplatesChangedEvent,
+    SSEEvent,
 )
 from .event_dispatcher import EventDispatcher, event_handler
 from .job_scheduler import JobScheduler
@@ -93,40 +86,16 @@ class SSEEvents(Service):
         self._logger.info("Shutdown event received, stopping %d listeners", len(self._queues))
         self._shutdown = True
 
-    @event_handler(PingEvent)
-    async def on_ping(self, event: PingEvent) -> None:
-        await self.push(event)
+    @event_handler(SSEEvent)
+    async def on_sse_event(self, event: SSEEvent) -> None:
+        """Fan every broadcast event out to the SSE client queues.
 
-    @event_handler(CaptioningStatusEvent)
-    async def on_captioning_status(self, event: CaptioningStatusEvent) -> None:
-        await self.push(event)
-
-    @event_handler(DatasetChangedEvent)
-    async def on_dataset_changed(self, event: DatasetChangedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(EnvironmentsChangedEvent)
-    async def on_environments_changed(self, event: EnvironmentsChangedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(TemplatesChangedEvent)
-    async def on_templates_changed(self, event: TemplatesChangedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(ImageCaptionedEvent)
-    async def on_image_captioned(self, event: ImageCaptionedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(ImageCaptionStartedEvent)
-    async def on_image_caption_started(self, event: ImageCaptionStartedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(ImageRefinedEvent)
-    async def on_image_refined(self, event: ImageRefinedEvent) -> None:
-        await self.push(event)
-
-    @event_handler(ImageCaptionErrorEvent)
-    async def on_image_caption_error(self, event: ImageCaptionErrorEvent) -> None:
+        Subscribing to the ``SSEEvent`` base (the dispatcher walks the event's
+        MRO) catches all broadcast events — ping, captioning status, per-image
+        notifications, env/template changes, dataset changes — without a
+        dedicated handler per type. Lifecycle events and
+        ``ResumptionFailedEvent`` are not ``SSEEvent``s, so they stay excluded.
+        """
         await self.push(event)
 
     async def push(self, event: Event) -> None:

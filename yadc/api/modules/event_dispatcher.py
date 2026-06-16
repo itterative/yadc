@@ -1,4 +1,10 @@
-"""``EventDispatcher`` — subscribe/dispatch and ``@event_handler`` decorator for in-process pub/sub."""
+"""``EventDispatcher`` — subscribe/dispatch and ``@event_handler`` decorator for in-process pub/sub.
+
+Subscriptions are keyed by event class. ``dispatch`` walks the dispatched
+event's MRO, so a handler subscribed to a base class (e.g. ``SSEEvent``)
+receives every subclass — letting ``SSEEvents`` fan out all broadcast
+events from a single handler.
+"""
 
 import asyncio
 import inspect
@@ -59,10 +65,10 @@ def event_handler(
             if origin is not event_cls and (origin != Any and not issubclass(origin, event_cls)):
                 raise TypeError(f"Event handler's second parameter must be of type {event_cls.__name__}, got {ann}")
 
-        # Add metadata to the function
+        # Mark the function and record its event class so register_service can
+        # subscribe it. Routing is keyed by class identity, not the TYPE string.
         setattr(func, "_event_handler", True)
         setattr(func, "_event_class", event_cls)
-        setattr(func, "_event_type", event_cls.TYPE)
 
         return func
 
@@ -76,7 +82,7 @@ class EventDispatcher(Service):
     ):
         self._logger: Logger = logging.get_logger(__name__)
         self._lock: Lock = Lock()
-        self._subscribers: dict[str, list[Handler]] = {}
+        self._subscribers: dict[type[Event], list[Handler]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -84,17 +90,17 @@ class EventDispatcher(Service):
         self._loop = loop
 
     def subscribe[T: Event](self, event_cls: type[T], handler: Callable[[T], None]):
-        event_type = event_cls.TYPE
+        """Subscribe *handler* to *event_cls*.
 
+        Handlers subscribed to a base class (e.g. ``SSEEvent``) are invoked for
+        every subclass, because ``dispatch`` walks the event's MRO.
+        """
         with self._lock:
-            if event_type not in self._subscribers:
-                self._subscribers[event_type] = []
-
-            self._subscribers[event_type].append(cast(Handler, handler))
+            self._subscribers.setdefault(event_cls, []).append(cast(Handler, handler))
             self._logger.debug(
                 "Subscribed to event. [type=%s, total_subscribers=%d]",
-                event_type,
-                len(self._subscribers[event_type]),
+                event_cls.__name__,
+                len(self._subscribers[event_cls]),
             )
 
     def register_service(self, service: Service):
@@ -108,48 +114,42 @@ class EventDispatcher(Service):
             if not callable(attr) or not hasattr(attr, "_event_handler"):
                 continue
 
-            # Get the event class or type string
-            if hasattr(attr, "_event_class"):
-                event_cls = getattr(attr, "_event_class")
-            else:
-                event_type = getattr(attr, "_event_type")
-                event_cls = self._get_event_class_by_type(event_type)
+            event_cls = getattr(attr, "_event_class")
 
             # Get the bound method
             handler_method = getattr(service, attr_name)
 
             self._logger.debug(
                 "Registering event handler for %s in service %s",
-                event_cls.TYPE,
+                event_cls.__name__,
                 service_name,
             )
 
             self.subscribe(event_cls, handler_method)
 
-    # This method is no longer needed since we only support class-based event registration
-    # but kept for backward compatibility in case string-based event types are used
-    # in the metadata of old handlers
-    def _get_event_class_by_type(self, event_type: str) -> type[Event]:
-        """Get event class by its type string (for backward compatibility)."""
-        from .. import events as events_module
-
-        for attr_name in dir(events_module):
-            attr = getattr(events_module, attr_name)
-            if isinstance(attr, type) and issubclass(attr, Event) and hasattr(attr, "TYPE") and attr.TYPE == event_type:
-                return attr
-        raise ValueError(f"No event class found with type '{event_type}'")
-
     def dispatch(self, event: Event) -> None:
         """Dispatch an event to all registered handlers.
+
+        Handlers subscribed to any class in the event's MRO are invoked, so a
+        subscription to a base class (e.g. ``SSEEvent``) catches every subclass.
+        A handler subscribed to more than one class in the MRO fires only once.
 
         Sync handlers are called directly. Async handlers are scheduled on the
         captured event loop via ``create_task`` (same thread) or
         ``run_coroutine_threadsafe`` (background thread).
         """
-        event_type = event.__class__.TYPE
+        event_type = event.TYPE
 
         with self._lock:
-            handlers = self._subscribers.get(event_type, [])
+            handlers: list[Handler] = []
+            seen: set[int] = set()
+            for cls in type(event).__mro__:
+                if not issubclass(cls, Event):
+                    continue
+                for handler in self._subscribers.get(cls, []):
+                    if id(handler) not in seen:
+                        seen.add(id(handler))
+                        handlers.append(handler)
 
         for handler in list(handlers):
             try:

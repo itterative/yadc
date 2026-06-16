@@ -2,6 +2,8 @@
 
 Each event is a ``@dataclass`` subclass of :class:`Event` with a
 ``TYPE: ClassVar[str]`` carrying the wire name (e.g. ``"captioning_status"``).
+Events broadcast to SSE clients subclass :class:`SSEEvent` so
+:class:`SSEEvents` can fan them all out from a single handler.
 
 - ``SetupAppEvent`` — fired during ``Application.configure_app()``,
   *before* blueprints are registered on the Quart app. Carries the
@@ -51,6 +53,18 @@ class Event:
 
 
 @dataclass
+class SSEEvent(Event):
+    """Marker base for events broadcast to SSE clients.
+
+    Subscribing to ``SSEEvent`` (the dispatcher walks the event's MRO) catches
+    every broadcast event, so ``SSEEvents`` needs a single handler instead of
+    one per type. Lifecycle events (SetupApp/Startup/Shutdown) and
+    ``ResumptionFailedEvent`` stay plain ``Event``s and are excluded from the
+    SSE stream.
+    """
+
+
+@dataclass
 class SetupAppEvent(Event):
     TYPE: ClassVar[str] = "setup_app"
     app: Quart
@@ -67,13 +81,13 @@ class ShutdownEvent(Event):
 
 
 @dataclass
-class PingEvent(Event):
+class PingEvent(SSEEvent):
     TYPE: ClassVar[str] = "ping"
     time: str
 
 
 @dataclass
-class CaptioningStatusEvent(Event):
+class CaptioningStatusEvent(SSEEvent):
     TYPE: ClassVar[str] = "captioning_status"
     status: Literal["idle", "running", "stopping", "error", "done", "cancelled"]
     dataset_name: str
@@ -96,7 +110,7 @@ class CaptioningStatusEvent(Event):
 
 
 @dataclass
-class DatasetChangedEvent(Event):
+class DatasetChangedEvent(SSEEvent):
     TYPE: ClassVar[str] = "dataset_changed"
     dataset_name: str
     job_id: str | None = None
@@ -115,7 +129,7 @@ class ResumptionFailedEvent(Event):
 
 
 @dataclass
-class ImageCaptionedEvent(Event):
+class ImageCaptionedEvent(SSEEvent):
     TYPE: ClassVar[str] = "image_captioned"
     dataset_name: str
     job_id: str
@@ -135,7 +149,7 @@ class ImageCaptionedEvent(Event):
 
 
 @dataclass
-class ImageRefinedEvent(Event):
+class ImageRefinedEvent(SSEEvent):
     TYPE: ClassVar[str] = "image_refined"
     dataset_name: str
     job_id: str
@@ -146,19 +160,19 @@ class ImageRefinedEvent(Event):
 
 
 @dataclass
-class EnvironmentsChangedEvent(Event):
+class EnvironmentsChangedEvent(SSEEvent):
     TYPE: ClassVar[str] = "environments_changed"
     envs: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclass
-class TemplatesChangedEvent(Event):
+class TemplatesChangedEvent(SSEEvent):
     TYPE: ClassVar[str] = "templates_changed"
     templates: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclass
-class ImageCaptionStartedEvent(Event):
+class ImageCaptionStartedEvent(SSEEvent):
     TYPE: ClassVar[str] = "image_caption_started"
     dataset_name: str
     job_id: str
@@ -167,7 +181,7 @@ class ImageCaptionStartedEvent(Event):
 
 
 @dataclass
-class ImageCaptionErrorEvent(Event):
+class ImageCaptionErrorEvent(SSEEvent):
     TYPE: ClassVar[str] = "image_caption_error"
     dataset_name: str
     job_id: str
