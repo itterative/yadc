@@ -57,7 +57,7 @@ class AsyncCaptionJobRunner:
         self,
         dataset_name: str,
         options: CaptionJobOptions,
-    ) -> tuple[Config, list[DatasetImage]]:
+    ) -> tuple[Config, list[DatasetImage], int]:
         """Synchronously resolve the dataset and filter images.
 
         Performs config loading, override application, and dataset
@@ -66,8 +66,9 @@ class AsyncCaptionJobRunner:
         query so concurrent captioning starts with the newest images
         first.
 
-        Returns ``(config, images)``. Raises ``ValueError`` on
-        configuration / resolution errors.
+        Returns ``(config, images, skipped)`` where ``skipped`` is the
+        number of images dropped by the overwrite/draft filter. Raises
+        ``ValueError`` on configuration / resolution errors.
         """
         ds_info = self._dataset_service.get_dataset(dataset_name)
         if ds_info is None or ds_info.config_path is None:
@@ -77,7 +78,7 @@ class AsyncCaptionJobRunner:
         if not config_path.exists():
             raise ValueError(f"Config file not found: {config_path}")
 
-        config, images = load_dataset_config(
+        config, images, skipped = load_dataset_config(
             config_path,
             options,
             image_path_resolver=lambda image_id: self._image_path_resolver(dataset_name, image_id),
@@ -93,7 +94,7 @@ class AsyncCaptionJobRunner:
             sentinel = len(ordered_paths)
             images.sort(key=lambda img: position.get(img.path, sentinel))
 
-        return config, images
+        return config, images, skipped
 
     def _image_path_resolver(self, dataset_name: str, image_id: int) -> Path | None:
         """Resolve an image ID to its filesystem path for the loader's image_ids filter."""

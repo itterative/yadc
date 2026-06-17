@@ -245,7 +245,7 @@ class TestLoadDatasetConfig:
 
         with patch(_PATCH_CMD_ENVS) as mock_env:
             mock_env.load_env.return_value = _user_config()
-            cfg, images = load_dataset_config(config, CaptionJobOptions())
+            cfg, images, _skipped = load_dataset_config(config, CaptionJobOptions())
 
         assert cfg.api.url == "http://example.com"
         assert {img.path for img in images} == {str(img1), str(img2)}
@@ -275,7 +275,7 @@ class TestLoadDatasetConfig:
             mock_cfgs.merge_user_config.return_value = merged_raw
             with patch(_PATCH_CMD_ENVS) as mock_env:
                 mock_env.load_env.return_value = _user_config()
-                cfg, images = load_dataset_config(config, CaptionJobOptions(), user_config="myuser")
+                cfg, images, _skipped = load_dataset_config(config, CaptionJobOptions(), user_config="myuser")
         mock_cfgs.merge_user_config.assert_called_once()
         assert cfg.api.url == "http://from-user-cfg"
         assert len(images) == 1
@@ -301,7 +301,7 @@ class TestLoadDatasetConfig:
 
         with patch(_PATCH_CMD_ENVS) as mock_env:
             mock_env.load_env.return_value = _user_config()
-            _, images = load_dataset_config(
+            _, images, _skipped = load_dataset_config(
                 config,
                 CaptionJobOptions(image_ids=[2]),
                 image_path_resolver=resolver,
@@ -329,9 +329,12 @@ class TestLoadDatasetConfig:
 
         with patch(_PATCH_CMD_ENVS) as mock_env:
             mock_env.load_env.return_value = _user_config()
-            _, images = load_dataset_config(config, CaptionJobOptions(overwrite=False))
+            _, images, skipped = load_dataset_config(config, CaptionJobOptions(overwrite=False))
         assert len(images) == 1
         assert images[0].path == str(img2)
+        # The already-captioned image is reported as skipped so callers
+        # can count it as already-done progress.
+        assert skipped == 1
 
     def test_overwrite_true_includes_captioned(self, tmp_path):
         img1 = _real_image(tmp_path / "img1.jpg")
@@ -340,6 +343,8 @@ class TestLoadDatasetConfig:
 
         with patch(_PATCH_CMD_ENVS) as mock_env:
             mock_env.load_env.return_value = _user_config()
-            _, images = load_dataset_config(config, CaptionJobOptions(overwrite=True))
+            _, images, skipped = load_dataset_config(config, CaptionJobOptions(overwrite=True))
         assert len(images) == 1
         assert images[0].path == str(img1)
+        # Overwrite re-captions everything, so nothing is skipped.
+        assert skipped == 0

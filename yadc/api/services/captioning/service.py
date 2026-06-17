@@ -143,7 +143,7 @@ class CaptioningService(Service):
             # that would let the controller reply 202 with no SSE event
             # to clear the frontend's optimistic 'starting' state.
             try:
-                config, to_do = job_runner.preflight(dataset_name, options)
+                config, to_do, skipped = job_runner.preflight(dataset_name, options)
             except ValueError:
                 # Drop the placeholder job entry so the controller's 4xx
                 # doesn't leave a leak in ``_async_jobs`` until the
@@ -158,16 +158,16 @@ class CaptioningService(Service):
                     status="done",
                     dataset_name=dataset_name,
                     job_id=job_id,
-                    total=0,
-                    processed=0,
+                    total=skipped,
+                    processed=skipped,
                     errors=0,
                 )
 
             # Hand the preflight result to the job so the background
             # task doesn't re-parse the config and re-query the DB.
             # ``set_preflight`` also seeds ``api_url``/``api_model_name``/
-            # ``total`` synchronously for the response below.
-            job.set_preflight(config, to_do)
+            # ``total``/``processed`` synchronously for the response below.
+            job.set_preflight(config, to_do, skipped)
             if refine is None:
                 self._mark_expected_changes(dataset_name, job_id)
             job.start()

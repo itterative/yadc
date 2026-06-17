@@ -583,7 +583,7 @@ async def _caption_async(dataset: str, **kwargs: Any):
     )
 
     try:
-        config, dataset_to_do = load_dataset_config(
+        config, dataset_to_do, _skipped = load_dataset_config(
             dataset_path,
             options,
             user_config=user_config,
@@ -606,7 +606,7 @@ async def _caption_async(dataset: str, **kwargs: Any):
             sys.exit(cmd_status.STATUS_USER_ERROR)
         options = options.model_copy(update={"password": password})
         try:
-            config, dataset_to_do = load_dataset_config(
+            config, dataset_to_do, _skipped = load_dataset_config(
                 dataset_path,
                 options,
                 user_config=user_config,

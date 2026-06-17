@@ -25,7 +25,7 @@ yadc/core/captioning/
 ```python
 from yadc.core.captioning import (
     CaptionJobOptions,        # all knobs for one captioning run
-    load_dataset_config,      # load + parse + filter (returns Config, list[DatasetImage])
+    load_dataset_config,      # load + parse + filter (returns Config, list[DatasetImage], skipped:int)
     CaptioningRunner,         # the stream / save loop
     CaptioningCallbacks,      # Protocol — implement on_self and pass self in
     HTTPTTimeouts,            # connect / read / write / pool seconds

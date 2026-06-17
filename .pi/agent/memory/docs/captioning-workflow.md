@@ -39,7 +39,7 @@ API-specific: per-image SSE event dispatch (`ImageCaptionStartedEvent` / `ImageC
    - `overwrite=False` and not in `image_ids` mode → skip images with existing caption (or draft if `options.draft` is set)
    - `overwrite=True` → include everything
 
-Returns `(config, images)`. Raises `FileNotFoundError` (missing config) or `ValueError` (parse failure, user-config merge failure, template not found, image_ids resolves to empty).
+Returns `(config, images, skipped)` where `skipped` is how many images the overwrite/draft filter dropped (0 in single-image mode). The API folds `skipped` into progress so the status bar's denominator is the full dataset and `processed` starts at `skipped`. Raises `FileNotFoundError` (missing config) or `ValueError` (parse failure, user-config merge failure, template not found, image_ids resolves to empty).
 
 ## 2. Captioning loop (`yadc.core.captioning.CaptioningRunner`)
 
@@ -96,7 +96,7 @@ The API's `AsyncCaptionJob` implements `CaptioningCallbacks` directly and passes
 |----------|---------------|
 | `on_token` | no-op (SSE clients get the final caption in `ImageCaptionedEvent.caption`) |
 | `on_image_started` | dispatch `ImageCaptionStartedEvent` |
-| `on_image_captioned` | refresh image index, dispatch `ImageCaptionedEvent`, dispatch `CaptioningStatusEvent` (processed +1) |
+| `on_image_captioned` | refresh image index, dispatch `ImageCaptionedEvent`, dispatch `CaptioningStatusEvent` (processed +1; `total`/initial `processed` already account for skipped images, set in `set_preflight`/`_ado_run`) |
 | `on_image_error` | log warning, dispatch `ImageCaptionErrorEvent`, dispatch `CaptioningStatusEvent` (errors +1, message recorded) |
 
 The job's `on_before_save` callback delegates to `AsyncCaptionJobRunner.expect_file_changes`, which calls `DatasetWatcherService.expect_file_change(dataset_name, path)` for each path before the runner writes, so the inotify-based watcher suppresses the resulting `DatasetChangedEvent`.

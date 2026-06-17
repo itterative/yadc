@@ -71,7 +71,7 @@ class AsyncCaptionJob:
         # re-query the database. ``None`` when the job was created
         # outside the service (e.g. in tests) — ``_ado_run`` falls
         # back to ``self._runner.preflight(...)`` in that case.
-        self._preflighted: tuple[Config, list[DatasetImage]] | None = None
+        self._preflighted: tuple[Config, list[DatasetImage], int] | None = None
 
         # ``time.monotonic()`` at the moment the job actually starts
         # running (set in ``_arun``).  Used to compute ``elapsed`` for
@@ -101,18 +101,24 @@ class AsyncCaptionJob:
         if self._task is not None and not self._task.done():
             self._task.cancel()
 
-    def set_preflight(self, config: Config, to_do: list[DatasetImage]) -> None:
+    def set_preflight(self, config: Config, to_do: list[DatasetImage], skipped: int = 0) -> None:
         """Cache the preflight result so ``_ado_run`` can reuse it.
 
         Must be called before :meth:`start`. Populates the snapshot
-        fields (``api_url``, ``api_model_name``, ``total``)
+        fields (``api_url``, ``api_model_name``, ``total``, ``processed``)
         synchronously so the response from ``start_job_async`` is
         accurate without waiting for the background task to run.
+
+        ``skipped`` are images the overwrite/draft filter dropped
+        (already have output). They count as already-done progress,
+        so ``total`` is the full image set and ``processed`` starts at
+        ``skipped`` rather than 0.
         """
-        self._preflighted = (config, to_do)
+        self._preflighted = (config, to_do, skipped)
         self._api_url = config.api.url
         self._api_model_name = config.api.model_name
-        self._total = len(to_do)
+        self._total = len(to_do) + skipped
+        self._processed = skipped
 
     async def wait(self, timeout: float | None = None) -> None:
         """Wait for the underlying task to finish."""
@@ -211,17 +217,21 @@ class AsyncCaptionJob:
 
     async def _ado_run(self) -> None:
         if self._preflighted is not None:
-            config, to_do = self._preflighted
+            config, to_do, skipped = self._preflighted
         else:
             # Direct callers (tests) bypass the service's synchronous
             # preflight, so resolve here.
-            config, to_do = self._runner.preflight(self._dataset_name, self._opts)
+            config, to_do, skipped = self._runner.preflight(self._dataset_name, self._opts)
 
         self._api_url = config.api.url
         self._api_model_name = config.api.model_name
         self._config = config
 
-        await self._set_state(total=len(to_do))
+        # Seed progress accounting for skipped images (already have
+        # output): the denominator is the full image set and ``processed``
+        # starts at ``skipped``. ``total - processed`` — the only value
+        # the ETA depends on — is unaffected by the offset.
+        await self._set_state(total=len(to_do) + skipped, processed=skipped)
         await self._emit_status()
 
         if not to_do:
@@ -266,6 +276,7 @@ class AsyncCaptionJob:
         *,
         status: JobStatus | None = None,
         total: int | None = None,
+        processed: int | None = None,
         error: str | None = None,
         set_error: bool = False,
     ) -> None:
@@ -274,6 +285,8 @@ class AsyncCaptionJob:
                 self._status = status
             if total is not None:
                 self._total = total
+            if processed is not None:
+                self._processed = processed
             if set_error:
                 self._error = error
 

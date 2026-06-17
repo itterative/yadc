@@ -65,8 +65,8 @@ def dataset_toml(tmp_path: Path) -> Path:
     return config
 
 
-def _fake_loaded_config() -> tuple[MagicMock, list[MagicMock]]:
-    """Return a (config, images) tuple mocking load_dataset_config output."""
+def _fake_loaded_config() -> tuple[MagicMock, list[MagicMock], int]:
+    """Return a (config, images, skipped) tuple mocking load_dataset_config output."""
     config = MagicMock()
     config.prompt.name = ""
     config.prompt.template = "t"
@@ -83,7 +83,7 @@ def _fake_loaded_config() -> tuple[MagicMock, list[MagicMock]]:
     images = [MagicMock(spec=["path", "caption"])]
     images[0].path = "/tmp/img001.png"
     images[0].caption = ""
-    return config, images
+    return config, images, 0
 
 
 @pytest.fixture

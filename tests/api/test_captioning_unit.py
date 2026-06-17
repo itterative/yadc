@@ -200,7 +200,7 @@ class TestAdoRunWithRunner:
         """_ado_run builds a CaptioningRunner with the parsed config."""
         _, MockRunner, mock_load, runner, _ = ado_run_env
         mock_config = MagicMock()
-        mock_load.return_value = (mock_config, [MagicMock()])
+        mock_load.return_value = (mock_config, [MagicMock()], 0)
 
         await _make_job(runner)._ado_run()
 
@@ -214,7 +214,7 @@ class TestAdoRunWithRunner:
         """_ado_run calls caption_images with the to-do list and self as callbacks."""
         mock_instance, _, mock_load, runner, _ = ado_run_env
         images = [MagicMock(), MagicMock(), MagicMock()]
-        mock_load.return_value = (MagicMock(), images)
+        mock_load.return_value = (MagicMock(), images, 0)
 
         await _make_job(runner)._ado_run()
 
@@ -227,7 +227,7 @@ class TestAdoRunWithRunner:
     async def test_caption_images_passes_max_concurrent(self, ado_run_env):
         """_ado_run forwards the CaptionJobOptions.max_concurrent to the runner."""
         mock_instance, _, mock_load, runner, _ = ado_run_env
-        mock_load.return_value = (MagicMock(), [MagicMock()])
+        mock_load.return_value = (MagicMock(), [MagicMock()], 0)
 
         await _make_job(runner, max_concurrent=4)._ado_run()
 
@@ -260,7 +260,7 @@ class TestAdoRunWithRunner:
             str(img_a.path),
         ]
 
-        mock_load.return_value = (MagicMock(), [img_a, img_b, img_c])
+        mock_load.return_value = (MagicMock(), [img_a, img_b, img_c], 0)
 
         await _make_job(runner)._ado_run()
 
@@ -273,7 +273,7 @@ class TestAdoRunWithRunner:
     async def test_done_status_on_no_images(self, ado_run_env):
         """_ado_run early-exits with done status when there are no images."""
         _, _, mock_load, runner, _ = ado_run_env
-        mock_load.return_value = (MagicMock(), [])
+        mock_load.return_value = (MagicMock(), [], 0)
 
         job = _make_job(runner)
         await job._ado_run()
@@ -286,7 +286,7 @@ class TestAdoRunWithRunner:
     async def test_done_status_after_processing(self, ado_run_env):
         """_ado_run sets done status after processing all images without stop."""
         _, _, mock_load, runner, _ = ado_run_env
-        mock_load.return_value = (MagicMock(), [MagicMock(), MagicMock()])
+        mock_load.return_value = (MagicMock(), [MagicMock(), MagicMock()], 0)
 
         job = _make_job(runner)
         await job._ado_run()
@@ -298,7 +298,7 @@ class TestAdoRunWithRunner:
     async def test_cancelled_status_when_stop_event_set(self, ado_run_env):
         """_ado_run sets cancelled status when the stop event is set."""
         _, _, mock_load, runner, _ = ado_run_env
-        mock_load.return_value = (MagicMock(), [MagicMock()])
+        mock_load.return_value = (MagicMock(), [MagicMock()], 0)
 
         job = _make_job(runner)
         job._stop_event.set()
@@ -312,7 +312,7 @@ class TestAdoRunWithRunner:
         """_ado_run re-raises CancelledError (does not catch it)."""
         mock_instance, _, mock_load, runner, _ = ado_run_env
         mock_instance.caption_images = AsyncMock(side_effect=asyncio.CancelledError())
-        mock_load.return_value = (MagicMock(), [MagicMock()])
+        mock_load.return_value = (MagicMock(), [MagicMock()], 0)
 
         with pytest.raises(asyncio.CancelledError):
             await _make_job(runner)._ado_run()
@@ -324,7 +324,7 @@ class TestAdoRunWithRunner:
 
         mock_instance, _, mock_load, runner, _ = ado_run_env
         mock_instance.caption_images = AsyncMock(side_effect=BatchAbortedError("aborted"))
-        mock_load.return_value = (MagicMock(), [MagicMock()])
+        mock_load.return_value = (MagicMock(), [MagicMock()], 0)
 
         with pytest.raises(BatchAbortedError):
             await _make_job(runner)._ado_run()
@@ -377,6 +377,25 @@ class TestAdoRunWithRunner:
         assert snap.api_url == "http://prebuilt"
         assert snap.api_model_name == "prebuilt-model"
         assert snap.total == 3
+
+    @pytest.mark.asyncio
+    async def test_set_preflight_counts_skipped_as_done(self, runner):
+        """Skipped images (already have output) are folded into progress:
+        ``total`` is the full set (to_do + skipped) and ``processed``
+        starts at ``skipped`` so the bar reflects dataset coverage
+        rather than just the work left to do.
+        """
+        prebuilt_config = MagicMock()
+        prebuilt_config.api.url = "http://prebuilt"
+        prebuilt_config.api.model_name = "prebuilt-model"
+        prebuilt_images = [MagicMock(), MagicMock(), MagicMock()]
+
+        job = _make_job(runner)
+        job.set_preflight(prebuilt_config, prebuilt_images, skipped=2)
+
+        snap = await job.snapshot()
+        assert snap.total == 5  # 3 to-do + 2 skipped
+        assert snap.processed == 2
 
 
 # ---------------------------------------------------------------------------
@@ -786,7 +805,7 @@ class TestStartJobPreflight:
         """When preflight returns 0 images, start_job_async returns done without starting a task."""
         with patch("yadc.api.services.captioning.job_runner.load_dataset_config") as mock_load:
             mock_config = MagicMock()
-            mock_load.return_value = (mock_config, [])
+            mock_load.return_value = (mock_config, [], 0)
             with patch.object(AsyncCaptionJob, "start") as mock_start:
                 info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 
@@ -818,10 +837,28 @@ class TestStartJobPreflight:
 
         with patch("yadc.api.services.captioning.job_runner.load_dataset_config") as mock_load:
             mock_config = MagicMock()
-            mock_load.return_value = (mock_config, [mock_img])
+            mock_load.return_value = (mock_config, [mock_img], 0)
             with patch.object(AsyncCaptionJob, "start") as mock_start:
                 info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
 
         assert info.status == "running"
         assert info.total == 1
         mock_start.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skipped_images_counted_as_done_progress(self, captioning_service):
+        """Preflight's skipped count is folded into the initial status so
+        the progress bar starts at the already-captioned images and the
+        denominator is the full image set (to_do + skipped)."""
+        mock_img = MagicMock()
+        mock_img.path = "/fake/img.jpg"
+
+        with patch("yadc.api.services.captioning.job_runner.load_dataset_config") as mock_load:
+            mock_config = MagicMock()
+            mock_load.return_value = (mock_config, [mock_img], 2)
+            with patch.object(AsyncCaptionJob, "start"):
+                info = await captioning_service.start_job_async("test_ds", CaptionJobOptions())
+
+        assert info.status == "running"
+        assert info.total == 3  # 1 to-do + 2 skipped
+        assert info.processed == 2

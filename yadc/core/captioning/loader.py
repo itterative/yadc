@@ -117,7 +117,7 @@ def load_dataset_config(
     *,
     user_config: str | None = None,
     image_path_resolver: Callable[[int], Path | None] | None = None,
-) -> tuple[Config, list[DatasetImage]]:
+) -> tuple[Config, list[DatasetImage], int]:
     """Load a dataset config, apply options, parse, resolve, and filter images.
 
     Args:
@@ -132,11 +132,15 @@ def load_dataset_config(
             is set; ignored otherwise.
 
     Returns:
-        ``(config, images)`` where ``images`` is the resolved list
-        filtered for ``image_ids`` (if any) and for overwrite/draft.
-        Order matches ``resolve_dataset`` (filesystem iteration) — the
-        caller is responsible for reordering if a specific order is
-        needed (e.g. id DESC for parallel captioning).
+        ``(config, images, skipped)`` where ``images`` is the resolved
+        list filtered for ``image_ids`` (if any) and for overwrite/draft,
+        and ``skipped`` is how many images the overwrite/draft filter
+        dropped (0 in single-image mode). Callers that surface progress
+        use ``skipped`` so the denominator reflects the full dataset
+        rather than just the images left to caption. Order matches
+        ``resolve_dataset`` (filesystem iteration) — the caller is
+        responsible for reordering if a specific order is needed
+        (e.g. id DESC for parallel captioning).
 
     Raises:
         FileNotFoundError: If ``config_path`` does not exist.
@@ -180,7 +184,7 @@ def load_dataset_config(
         if not target_paths:
             raise ValueError("Specified image(s) not found in dataset")
         images = [img for img in images if Path(img.path) in target_paths]
-        return config, images
+        return config, images, 0
 
     to_do: list[DatasetImage] = []
     for img in images:
@@ -192,4 +196,4 @@ def load_dataset_config(
                 continue
         to_do.append(img)
 
-    return config, to_do
+    return config, to_do, len(images) - len(to_do)
