@@ -46,6 +46,23 @@ export interface EtaInput {
     maxConcurrent: number;
 }
 
+/** Effective concurrency given the work remaining. Concurrency can't
+ *  exceed the number of images still to caption: the last image of a
+ *  parallel job (or a single-image job) runs alone, so dividing
+ *  throughput by the full ``maxConcurrent`` would overstate speed.
+ *  Clamped to ≥ 1 because callers use it as a divisor.
+ *
+ *  Feed this into ``EtaInput.maxConcurrent`` (and the UI's "N
+ *  concurrent" label) so the ETA and the status line never disagree. */
+export function effectiveConcurrency(
+    maxConcurrent: number,
+    total: number,
+    processed: number
+): number {
+    const remaining = total - processed;
+    return Math.max(1, Math.min(maxConcurrent, remaining));
+}
+
 /** Estimate the wall-clock seconds remaining for a running captioning job.
  *  Returns ``null`` when we don't have enough information yet (no
  *  samples, or the job is already done). */

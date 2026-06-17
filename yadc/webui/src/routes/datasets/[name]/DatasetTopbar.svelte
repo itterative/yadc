@@ -2,7 +2,7 @@
     import type { DatasetInfo } from '$lib/stores/dataset';
     import { captioningStatus, captionTimingRing } from '$lib/stores/caption';
     import { formatEta } from '$lib/format';
-    import { computeEtaSeconds } from '$lib/eta';
+    import { computeEtaSeconds, effectiveConcurrency } from '$lib/eta';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import SvgChevronLeft from '$lib/icons/SvgChevronLeft.svelte';
     import SvgRefresh from '$lib/icons/SvgRefresh.svelte';
@@ -69,7 +69,11 @@
             total: status.total,
             processed: status.processed,
             ring: _ringForStatus(status, ring),
-            maxConcurrent: status.max_concurrent
+            maxConcurrent: effectiveConcurrency(
+                status.max_concurrent,
+                status.total,
+                status.processed
+            )
         });
     }
 
@@ -77,11 +81,23 @@
         _estimateRemainingSeconds($captioningStatus, $captionTimingRing)
     );
 
+    // Concurrency the job can actually use right now: capped at the
+    // images still to caption, so the last image (or a single-image
+    // job) doesn't claim ``max_concurrent`` is in flight. Shared by
+    // the "N concurrent" label and the ETA so they can't disagree.
+    let effectiveConcurrent = $derived(
+        effectiveConcurrency(
+            $captioningStatus.max_concurrent,
+            $captioningStatus.total,
+            $captioningStatus.processed
+        )
+    );
+
     let showConcurrency = $derived(
         isBatchCaptioning &&
             !isStopping &&
             $captioningStatus.status !== 'starting' &&
-            $captioningStatus.max_concurrent > 1
+            effectiveConcurrent > 1
     );
 </script>
 
@@ -119,7 +135,7 @@
                     <span class="text-sm text-gray-400">
                         Captioning… {captionProcessed}/{captionTotal} ({captionPct}%)
                         {#if showConcurrency}
-                            · {$captioningStatus.max_concurrent} concurrent
+                            · {effectiveConcurrent} concurrent
                         {/if}
                         {#if $captioningStatus.elapsed > 0}
                             · {formatEta(Math.round($captioningStatus.elapsed))} elapsed
