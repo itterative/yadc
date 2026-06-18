@@ -57,6 +57,7 @@
     // --- Derived ---
     let currentBackend = $derived(backends.find((b) => b.name === selectedBackend));
     let formats = $derived(currentBackend?.formats ?? ['jsonl']);
+    let zipOnly = $derived(currentBackend?.zip_only ?? false);
     let remainingDrafts = $derived(
         availableDrafts.filter((d) => d !== draftName && !chainedDrafts.includes(d))
     );
@@ -73,10 +74,14 @@
         }
     });
 
-    // When backend changes, reset format to first available
+    // When backend changes, reset format to first available and force zip for
+    // zip-only backends (e.g. yadc), which have no other output mode.
     $effect(() => {
         if (currentBackend && !currentBackend.formats.includes(selectedFormat)) {
             selectedFormat = currentBackend.formats[0];
+        }
+        if (zipOnly) {
+            asZip = true;
         }
     });
 
@@ -285,102 +290,108 @@
                 </div>
             </div>
 
-            <!-- Source -->
-            <div>
-                <fieldset>
-                    <legend class="label">Source</legend>
-                    <div class="flex gap-4">
-                        <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+            {#if !zipOnly}
+                <!-- Source -->
+                <div>
+                    <fieldset>
+                        <legend class="label">Source</legend>
+                        <div class="flex gap-4">
+                            <label
+                                class="flex cursor-pointer items-center gap-2 text-sm text-gray-200"
+                            >
+                                <input
+                                    type="radio"
+                                    name="export-source"
+                                    value="caption"
+                                    bind:group={source}
+                                />
+                                Captions
+                            </label>
+                            <label
+                                class="flex cursor-pointer items-center gap-2 text-sm text-gray-200"
+                            >
+                                <input
+                                    type="radio"
+                                    name="export-source"
+                                    value="draft"
+                                    bind:group={source}
+                                />
+                                Draft
+                            </label>
+                        </div>
+                    </fieldset>
+                    {#if source === 'draft'}
+                        <div class="mt-2">
                             <input
-                                type="radio"
-                                name="export-source"
-                                value="caption"
-                                bind:group={source}
+                                type="text"
+                                bind:value={draftName}
+                                class="input"
+                                placeholder="Draft name"
                             />
-                            Captions
-                        </label>
-                        <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                            <input
-                                type="radio"
-                                name="export-source"
-                                value="draft"
-                                bind:group={source}
-                            />
-                            Draft
-                        </label>
-                    </div>
-                </fieldset>
-                {#if source === 'draft'}
-                    <div class="mt-2">
-                        <input
-                            type="text"
-                            bind:value={draftName}
-                            class="input"
-                            placeholder="Draft name"
-                        />
-                        {#if availableDrafts.length > 0}
-                            <div class="mt-2 flex flex-wrap gap-1.5">
-                                {#each availableDrafts as d (d)}
-                                    {@const active = draftName === d}
-                                    <button
-                                        class="cursor-pointer rounded-md px-2 py-0.5 text-xs font-medium transition-colors {active
-                                            ? 'border border-accent/40 bg-accent/25 text-accent'
-                                            : 'border border-border bg-bg text-gray-400 hover:border-gray-500 hover:text-gray-200'}"
-                                        onclick={() => (draftName = active ? '' : d)}
-                                    >
-                                        {d}
-                                    </button>
-                                {/each}
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-            </div>
+                            {#if availableDrafts.length > 0}
+                                <div class="mt-2 flex flex-wrap gap-1.5">
+                                    {#each availableDrafts as d (d)}
+                                        {@const active = draftName === d}
+                                        <button
+                                            class="cursor-pointer rounded-md px-2 py-0.5 text-xs font-medium transition-colors {active
+                                                ? 'border border-accent/40 bg-accent/25 text-accent'
+                                                : 'border border-border bg-bg text-gray-400 hover:border-gray-500 hover:text-gray-200'}"
+                                            onclick={() => (draftName = active ? '' : d)}
+                                        >
+                                            {d}
+                                        </button>
+                                    {/each}
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+                </div>
 
-            <!-- Chain drafts -->
-            <div>
-                <label class="label" for="chain-draft-input">
-                    Chain Drafts
-                    <span class="ml-1 text-gray-600">(appended in order after source)</span>
-                </label>
-                {#if chainedDrafts.length > 0}
-                    <div class="mb-2 flex flex-wrap gap-1.5">
-                        {#each chainedDrafts as name, i (i)}
-                            <span
-                                class="inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
-                            >
-                                {name}
-                                <button
-                                    class="cursor-pointer transition-colors hover:text-white"
-                                    onclick={() => removeChainedDraft(i)}
+                <!-- Chain drafts -->
+                <div>
+                    <label class="label" for="chain-draft-input">
+                        Chain Drafts
+                        <span class="ml-1 text-gray-600">(appended in order after source)</span>
+                    </label>
+                    {#if chainedDrafts.length > 0}
+                        <div class="mb-2 flex flex-wrap gap-1.5">
+                            {#each chainedDrafts as name, i (i)}
+                                <span
+                                    class="inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
                                 >
-                                    <SvgClose class="h-3 w-3" />
+                                    {name}
+                                    <button
+                                        class="cursor-pointer transition-colors hover:text-white"
+                                        onclick={() => removeChainedDraft(i)}
+                                    >
+                                        <SvgClose class="h-3 w-3" />
+                                    </button>
+                                </span>
+                            {/each}
+                        </div>
+                    {/if}
+                    <input
+                        id="chain-draft-input"
+                        type="text"
+                        bind:value={chainInput}
+                        onkeydown={handleChainKeydown}
+                        class="input"
+                        placeholder="Type draft name, press Enter to add"
+                    />
+                    {#if remainingDrafts.length > 0}
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            {#each remainingDrafts as d (d)}
+                                <button
+                                    class="cursor-pointer rounded-md border border-border bg-bg px-2 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:border-gray-500 hover:text-gray-200"
+                                    onclick={() => addChainedDraft(d)}
+                                >
+                                    + {d}
                                 </button>
-                            </span>
-                        {/each}
-                    </div>
-                {/if}
-                <input
-                    id="chain-draft-input"
-                    type="text"
-                    bind:value={chainInput}
-                    onkeydown={handleChainKeydown}
-                    class="input"
-                    placeholder="Type draft name, press Enter to add"
-                />
-                {#if remainingDrafts.length > 0}
-                    <div class="mt-2 flex flex-wrap gap-1.5">
-                        {#each remainingDrafts as d (d)}
-                            <button
-                                class="cursor-pointer rounded-md border border-border bg-bg px-2 py-0.5 text-xs font-medium text-gray-400 transition-colors hover:border-gray-500 hover:text-gray-200"
-                                onclick={() => addChainedDraft(d)}
-                            >
-                                + {d}
-                            </button>
-                        {/each}
-                    </div>
-                {/if}
-            </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
 
             <!-- Output path (hidden for zip export) -->
             {#if !asZip}
@@ -399,45 +410,54 @@
                 </div>
             {/if}
 
-            <!-- Options -->
-            <div class="flex items-center gap-6">
-                {#if !asZip}
-                    <div class="flex items-center gap-2">
-                        <Checkbox id="export-append" bind:checked={append} />
-                        <label class="cursor-pointer text-sm text-gray-300" for="export-append"
-                            >Append</label
-                        >
-                    </div>
-                {/if}
-                <div class="flex items-center gap-2">
-                    <label class="text-sm text-gray-400" for="export-ext">Extension</label>
-                    <input
-                        id="export-ext"
-                        type="text"
-                        bind:value={captionExtension}
-                        class="input-sm w-20 px-2 py-1"
-                    />
+            {#if zipOnly}
+                <div
+                    class="rounded-lg border border-border bg-bg/50 px-3 py-2 text-sm text-gray-400"
+                >
+                    Bundles every image and all of its sidecar files (caption, drafts, metadata
+                    TOML, history) into a single zip.
                 </div>
-            </div>
+            {:else}
+                <!-- Options -->
+                <div class="flex items-center gap-6">
+                    {#if !asZip}
+                        <div class="flex items-center gap-2">
+                            <Checkbox id="export-append" bind:checked={append} />
+                            <label class="cursor-pointer text-sm text-gray-300" for="export-append"
+                                >Append</label
+                            >
+                        </div>
+                    {/if}
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-400" for="export-ext">Extension</label>
+                        <input
+                            id="export-ext"
+                            type="text"
+                            bind:value={captionExtension}
+                            class="input-sm w-20 px-2 py-1"
+                        />
+                    </div>
+                </div>
 
-            <!-- Zip options -->
-            <div class="flex items-center gap-6">
-                <div class="flex items-center gap-2">
-                    <Checkbox id="export-zip" bind:checked={asZip} />
-                    <label class="cursor-pointer text-sm text-gray-300" for="export-zip"
-                        >Download as ZIP</label
-                    >
-                </div>
-                {#if asZip}
+                <!-- Zip options -->
+                <div class="flex items-center gap-6">
                     <div class="flex items-center gap-2">
-                        <Checkbox id="export-include-images" bind:checked={includeImages} />
-                        <label
-                            class="cursor-pointer text-sm text-gray-300"
-                            for="export-include-images">Include images</label
+                        <Checkbox id="export-zip" bind:checked={asZip} />
+                        <label class="cursor-pointer text-sm text-gray-300" for="export-zip"
+                            >Download as ZIP</label
                         >
                     </div>
-                {/if}
-            </div>
+                    {#if asZip}
+                        <div class="flex items-center gap-2">
+                            <Checkbox id="export-include-images" bind:checked={includeImages} />
+                            <label
+                                class="cursor-pointer text-sm text-gray-300"
+                                for="export-include-images">Include images</label
+                            >
+                        </div>
+                    {/if}
+                </div>
+            {/if}
 
             <!-- Footer -->
             <div class="btn-bar border-t border-border">

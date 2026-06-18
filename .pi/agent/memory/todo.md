@@ -85,6 +85,19 @@ Research whether to standardize on thin events (notify-then-fetch) vs event-carr
 
 **Partial decision made**: `EnvironmentsChangedEvent` and `TemplatesChangedEvent` carry the full list of changed names (`envs: list[str]`, `templates: list[str]`). The frontend still calls `refreshEnvs()`/`refreshTemplates()` on these events (the lists are for debugging/future use). The pattern is "enriched thin events" — notify with context, then fetch for authoritative state.
 
+## CLI zip export support
+
+The export system supports two output paths: filesystem (`run_export()` → `backend.run()`) and zip (`run_export_zip()` → `backend.run_zip()`). The Web UI uses both, but the CLI (`yadc/cli_export.py`) only calls `run_export()` — there is no `--zip` option and no zip-writing code path.
+
+This means zip-only backends can't be used from the CLI. Concretely, `yadc export --backend yadc` (the raw sidecar-archive backend added in the export-system work) always raises, because its `run()` rejects filesystem output with a clear message pointing at `run_export_zip()`.
+
+To close the gap:
+- Add a `--zip` / `--output <path.zip>` mode to `yadc/cli_export.py` that calls `run_export_zip()` and writes the returned `BytesIO` to the given path.
+- Detect zip-only backends (`descriptor.zip_only`) and force zip output (mirroring `api_export.py`), rather than letting the user hit the `run()` error.
+- The backend dispatch (`run_export`/`run_export_zip`) already exists; this is CLI-only plumbing.
+
+Key files: `yadc/cli_export.py`, `yadc/core/exporters/__init__.py` (`_BackendDescriptor.zip_only`, `run_export_zip`). See **export-system** doc.
+
 # User TODOs (less verbose)
 
 * errors when starting captions show up in both the toast and at the top (latter needs removal)

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from ..dataset import DatasetImage
-from .utils import read_caption_source
+from .utils import read_caption_source, relative_arc_name
 
 
 @dataclass(frozen=True)
@@ -29,21 +29,10 @@ class Backend:
     name: str = "sd-scripts"
     description: str = "sd-scripts metadata formats (metadata.json, metadata.jsonl, per-image caption files)"
     formats: tuple[str, ...] = ("json", "jsonl", "txt")
+    zip_only: bool = False
 
 
 BACKEND = Backend()
-
-
-def _image_zip_path(image: DatasetImage, base_dir: pathlib.Path) -> str:
-    """Compute the relative path for an image inside a zip archive.
-
-    Falls back to the bare filename if the image is not under *base_dir*
-    (e.g. external / imported datasets).
-    """
-    try:
-        return str(image.absolute_path.relative_to(base_dir))
-    except ValueError:
-        return image.absolute_path.name
 
 
 def run(
@@ -204,7 +193,7 @@ def _zip_json(
     data: dict[str, dict[str, str]] = {}
     count = 0
     for image, text in _collect_captions(images, source, drafts):
-        data[_image_zip_path(image, base_dir)] = {"caption": text}
+        data[relative_arc_name(image.absolute_path, base_dir)] = {"caption": text}
         count += 1
 
     zf.writestr("metadata.json", json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -221,7 +210,7 @@ def _zip_jsonl(
     lines: list[str] = []
     count = 0
     for image, text in _collect_captions(images, source, drafts):
-        entry = {"image_path": _image_zip_path(image, base_dir), "caption": text}
+        entry = {"image_path": relative_arc_name(image.absolute_path, base_dir), "caption": text}
         lines.append(json.dumps(entry, ensure_ascii=False))
         count += 1
 
@@ -268,7 +257,7 @@ def _zip_txt(
 ) -> int:
     count = 0
     for image, text in _collect_captions(images, source, drafts):
-        rel = _image_zip_path(image, base_dir)
+        rel = relative_arc_name(image.absolute_path, base_dir)
         caption_rel = pathlib.PurePosixPath(rel).with_suffix(caption_extension)
         content = text if text.endswith("\n") else text + "\n"
         zf.writestr(str(caption_rel), content)
@@ -284,7 +273,7 @@ def _zip_images(
     """Add all image files to the zip archive."""
     seen: set[str] = set()
     for image in images:
-        arc_name = _image_zip_path(image, base_dir)
+        arc_name = relative_arc_name(image.absolute_path, base_dir)
         if arc_name in seen:
             continue
         seen.add(arc_name)

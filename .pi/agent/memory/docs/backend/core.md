@@ -29,9 +29,10 @@ yadc/core/
   dataset.py          # DatasetImage model (path, caption, drafts, history, TOML persistence)
   dataset_resolver.py # resolve_dataset() — scans paths, merges images, applies extras
   env.py              # env var flags (DEBUG_CAPTION_RESPONSES, YADC_PASSWORD, etc.)
-  exporters/          # export backends (currently sd-scripts: json/jsonl/txt)
+  exporters/          # export backends
     sd_scripts.py     # sd-scripts export backend (json/jsonl/txt)
-    utils.py          # read_caption_source() — shared caption/draft reading for export
+    yadc.py           # yadc export backend — raw zip of images + all sidecars (zip-only)
+    utils.py          # relative_arc_name(), read_caption_source() — shared helpers for export
   logging.py          # custom logger with TRACE level, global level/handler management
   prediction.py       # PredictionContext — mutable container for reasoning data
   user_config.py      # UserConfig / UserConfigApi models

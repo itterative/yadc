@@ -1,6 +1,20 @@
 """Shared utilities for export backends."""
 
+import pathlib
+
 from ..dataset import DatasetImage
+
+
+def relative_arc_name(path: pathlib.Path, base_dir: pathlib.Path) -> str:
+    """Relative path for *path* inside a zip, rooted at *base_dir*.
+
+    Falls back to the bare filename when *path* is not under *base_dir*
+    (e.g. external / imported datasets whose files live elsewhere).
+    """
+    try:
+        return str(path.relative_to(base_dir))
+    except ValueError:
+        return path.name
 
 
 def read_caption_source(

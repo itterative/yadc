@@ -4,6 +4,7 @@ export interface ExportBackend {
     name: string;
     description: string;
     formats: string[];
+    zip_only?: boolean;
 }
 
 export interface ExportResult {

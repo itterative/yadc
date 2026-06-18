@@ -62,6 +62,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                     "name": desc.name,
                     "description": desc.description,
                     "formats": list(desc.formats),
+                    "zip_only": desc.zip_only,
                 }
                 for desc in backends.values()
             ]
@@ -98,6 +99,17 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             backend_desc = get_backend(body.backend)
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
+
+        # zip-only backends (e.g. yadc) produce a single fixed-format zip; ignore
+        # any requested format and require the zip download path.
+        if backend_desc.zip_only:
+            body.format = backend_desc.formats[0]
+            if not body.zip:
+                return jsonify_error(
+                    f"Backend '{body.backend}' only supports zip export",
+                    status=400,
+                    code=ErrorCode.BAD_REQUEST,
+                )
 
         if body.format not in backend_desc.formats:
             return jsonify_error(

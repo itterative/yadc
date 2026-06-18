@@ -16,6 +16,7 @@ from typing import Protocol
 
 from ..dataset import DatasetImage
 from . import sd_scripts as _sd_scripts
+from . import yadc as _yadc
 
 
 class _RunFn(Protocol):
@@ -53,6 +54,7 @@ class _BackendDescriptor:
     name: str
     description: str
     formats: tuple[str, ...]
+    zip_only: bool = False
 
 
 _BACKENDS: dict[str, _BackendDescriptor] = {
@@ -62,6 +64,15 @@ _BACKENDS: dict[str, _BackendDescriptor] = {
         name=_sd_scripts.BACKEND.name,
         description=_sd_scripts.BACKEND.description,
         formats=_sd_scripts.BACKEND.formats,
+        zip_only=_sd_scripts.BACKEND.zip_only,
+    ),
+    "yadc": _BackendDescriptor(
+        run=_yadc.run,
+        run_zip=_yadc.run_zip,
+        name=_yadc.BACKEND.name,
+        description=_yadc.BACKEND.description,
+        formats=_yadc.BACKEND.formats,
+        zip_only=_yadc.BACKEND.zip_only,
     ),
 }
 

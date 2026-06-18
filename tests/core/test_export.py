@@ -1,11 +1,12 @@
 """Tests for yadc.core.exporters — caption export backends."""
 
 import json
+import zipfile
 
 import pytest
 
 from yadc.core.dataset import DatasetImage
-from yadc.core.exporters import get_backend, list_backends, run_export
+from yadc.core.exporters import get_backend, list_backends, run_export, run_export_zip
 from yadc.core.exporters.utils import read_caption_source
 
 # ---- helpers ----
@@ -612,3 +613,127 @@ class TestReadCaptionSource:
         tmp_path, images = tmp_images
         with pytest.raises(ValueError, match="source must be"):
             read_caption_source(images[0], source="bogus")
+
+
+# ---- yadc backend: fixtures ----
+
+
+@pytest.fixture
+def tmp_images_full_sidecars(tmp_path):
+    """Images carrying the full yadc sidecar set: caption, draft, metadata, backup, history."""
+    images = []
+    for name, caption_text in [
+        ("img001.png", "1girl, hatsune miku, vocaloid"),
+        ("img002.png", "1girl, sakura, cherry blossoms"),
+        ("img003.png", ""),  # no caption, but still has the other sidecars
+    ]:
+        img_path = tmp_path / name
+        img_path.write_bytes(_make_png())
+
+        stem = img_path.stem
+        if caption_text:
+            (tmp_path / f"{stem}.txt").write_text(caption_text)
+        (tmp_path / f"{stem}.gemma.draft~").write_text("gemma draft")
+        (tmp_path / f"{stem}.toml").write_text('foo = "bar"\n')
+        (tmp_path / f"{stem}.toml~").write_text('foo = "old"\n')
+        (tmp_path / f"{stem}.history~").write_text("snapshot\n----------\n")
+
+        images.append(DatasetImage(path=str(img_path), caption_suffix=".txt"))
+
+    return tmp_path, images
+
+
+# ---- yadc backend: registry ----
+
+
+class TestYadcRegistry:
+    def test_yadc_registered(self):
+        backends = list_backends()
+        assert "yadc" in backends
+        assert backends["yadc"].formats == ("zip",)
+        assert backends["yadc"].zip_only is True
+
+    def test_get_backend(self):
+        b = get_backend("yadc")
+        assert b.name == "yadc"
+        assert b.zip_only is True
+
+
+# ---- yadc backend: zip ----
+
+
+class TestYadcZip:
+    def test_zip_includes_images_and_all_sidecars(self, tmp_images_full_sidecars):
+        tmp_path, images = tmp_images_full_sidecars
+
+        buf, count = run_export_zip(
+            "yadc",
+            images,
+            fmt="zip",
+            source="caption",
+            base_dir=tmp_path,
+        )
+
+        assert count == 3  # all three images archived
+        with zipfile.ZipFile(buf) as zf:
+            names = set(zf.namelist())
+
+        # images (always included)
+        assert {"img001.png", "img002.png", "img003.png"} <= names
+        # caption sidecars — only for images that actually have one
+        assert {"img001.txt", "img002.txt"} <= names
+        assert "img003.txt" not in names
+        # drafts
+        assert {"img001.gemma.draft~", "img002.gemma.draft~", "img003.gemma.draft~"} <= names
+        # metadata, backup, history
+        assert {"img001.toml", "img001.toml~", "img001.history~"} <= names
+
+    def test_zip_preserves_sidecar_content(self, tmp_images_full_sidecars):
+        tmp_path, images = tmp_images_full_sidecars
+        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        with zipfile.ZipFile(buf) as zf:
+            assert zf.read("img001.txt").decode() == "1girl, hatsune miku, vocaloid"
+            assert zf.read("img001.toml").decode() == 'foo = "bar"\n'
+
+    def test_zip_preserves_relative_paths(self, tmp_path):
+        sub = tmp_path / "train"
+        sub.mkdir()
+        img = sub / "img001.png"
+        img.write_bytes(_make_png())
+        (sub / "img001.txt").write_text("caption")
+
+        images = [DatasetImage(path=str(img), caption_suffix=".txt")]
+
+        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        with zipfile.ZipFile(buf) as zf:
+            names = set(zf.namelist())
+        assert {"train/img001.png", "train/img001.txt"} <= names
+
+    def test_zip_does_not_match_longer_filename(self, tmp_path):
+        # img0010.* must not be swept in as a sidecar of the img001 image.
+        img1 = tmp_path / "img001.png"
+        img1.write_bytes(_make_png())
+        (tmp_path / "img001.txt").write_text("caption one")
+        img10 = tmp_path / "img0010.png"
+        img10.write_bytes(_make_png())
+        (tmp_path / "img0010.txt").write_text("caption ten")
+
+        images = [DatasetImage(path=str(img1), caption_suffix=".txt")]
+
+        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        with zipfile.ZipFile(buf) as zf:
+            names = set(zf.namelist())
+        assert {"img001.png", "img001.txt"} <= names
+        assert "img0010.png" not in names
+        assert "img0010.txt" not in names
+
+    def test_run_raises_zip_only(self, tmp_images_full_sidecars):
+        tmp_path, images = tmp_images_full_sidecars
+        with pytest.raises(ValueError, match="zips only"):
+            run_export(
+                "yadc",
+                images,
+                fmt="zip",
+                source="caption",
+                output=tmp_path / "out",
+            )
