@@ -12,6 +12,7 @@ file form an append-only log of caption snapshots separated by a
 ``----------`` marker, used for the dataset history view.
 """
 
+import copy
 import pathlib
 from functools import cached_property
 from pathlib import Path
@@ -285,7 +286,11 @@ class DatasetImage(BaseModel):
             str: TOML-formatted string of the metadata (and optionally caption).
         """
 
-        toml_dict = self.__pydantic_extra__ or {}
+        # Deep-copy: this is a serializer, not a mutator. The old shallow
+        # alias let the ``caption`` key (and mutable tomlkit values) leak
+        # back into ``__pydantic_extra__``, so ``save_history()`` wrote a
+        # stale ``caption`` into the live TOML on the next ``update_caption()``.
+        toml_dict = copy.deepcopy(self.__pydantic_extra__ or {})
 
         if with_caption:
             toml_dict["caption"] = self.caption

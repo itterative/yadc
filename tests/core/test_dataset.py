@@ -68,6 +68,21 @@ class TestDumpTomlRoundTrip:
         parsed = tomlkit.loads(img.dump_toml(with_caption=False))
         assert "caption" not in parsed
 
+    def test_with_caption_does_not_mutate_extras(self):
+        # dump_toml is a serializer and must not write back into
+        # __pydantic_extra__. Previously the ``caption`` key (and any mutable
+        # tomlkit values) leaked in, so a later save_history() + update_caption()
+        # wrote a stale caption into the live TOML sidecar.
+        img = DatasetImage(path="/fake/img.jpg", artist="abc", tags=["x", "y"])
+        img.caption = "a painting"
+
+        img.dump_toml(with_caption=True)
+
+        extras = img.__pydantic_extra__ or {}
+        assert "caption" not in extras
+        assert extras["artist"] == "abc"
+        assert extras["tags"] == ["x", "y"]
+
 
 class TestSaveHistoryRoundTrip:
     """save_history → read_history must preserve extras and caption."""

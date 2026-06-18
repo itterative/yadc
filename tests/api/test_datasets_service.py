@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import tomlkit
 
 from yadc.api.events import DatasetChangedEvent
 from yadc.api.modules import DatasetWatcherService, DBConnectionFactory, EventDispatcher
@@ -842,6 +843,40 @@ class TestUpdateExtrasHistoryRoundTrip:
         assert history[0].extras.get("artist") == "Rembrandt"
         assert isinstance(history[0].extras["artist"], str)
         assert history[0].caption == "old caption"
+
+    def test_update_caption_preserves_existing_extras_in_live_toml(self, service, tmp_path):
+        """Updating a caption must keep the existing extras in the live TOML sidecar.
+
+        Regression: update_caption() re-instantiated a bare DatasetImage (no
+        extras loaded) and wrote its empty dump_toml() over the sidecar,
+        wiping the extras. It must also not leak a stale ``caption`` key in.
+        """
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+
+        toml_path = img_path.with_suffix(".toml")
+        toml_path.write_text(
+            textwrap.dedent("""\
+                artist = "Monet"
+                year = 1872
+            """)
+        )
+        caption_path = img_path.with_suffix(".txt")
+        caption_path.write_text("old caption")
+
+        service.update_caption(ds_name, image_id, "new caption")
+
+        # The caption file carries the new caption ...
+        assert caption_path.read_text() == "new caption"
+
+        # ... and the live TOML sidecar keeps the extras, untouched in type,
+        # with no stale caption leaking in.
+        parsed = tomlkit.loads(toml_path.read_text())
+        assert parsed["artist"] == "Monet"
+        assert isinstance(parsed["artist"], str)
+        assert parsed["year"] == 1872
+        assert isinstance(parsed["year"], int)
+        assert "caption" not in parsed
 
 
 class TestProbeHardlinkInDir:

@@ -731,8 +731,9 @@ class DatasetService(Service):
         dataset_image.caption = dataset_image.read_caption()
         dataset_image.save_history()
 
-        # Now apply the update
-        dataset_image = DatasetImage(path=str(image_path))
+        # Apply the update on the already-loaded instance so the existing TOML
+        # extras (held in ``__pydantic_extra__``) are re-dumped instead of
+        # being replaced with an empty TOML sidecar.
         dataset_image.update_caption(caption)
 
         # Update the index
