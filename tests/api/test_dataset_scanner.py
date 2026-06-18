@@ -172,6 +172,57 @@ class TestScanImageMeta:
         assert meta is not None
         assert sorted(meta["draft_names"].split(",")) == ["gemma", "qwen"]
 
+    def test_includes_file_size(self, scanner, tmp_path):
+        from PIL import Image
+
+        img_path = tmp_path / "photo.jpg"
+        Image.new("RGB", (1, 1), color="red").save(img_path)
+        meta = scanner.scan_image_meta(img_path)
+        assert meta is not None
+        assert meta["file_size"] == img_path.stat().st_size
+
+    def test_size_only_change_triggers_meta_differs(self, scanner, tmp_path):
+        from PIL import Image
+
+        from yadc.api.services.dataset_repository import ImageInfo
+
+        img_path = tmp_path / "photo.jpg"
+        Image.new("RGB", (1, 1), color="red").save(img_path)
+        meta = scanner.scan_image_meta(img_path)
+        assert meta is not None
+
+        # A stored row whose file_size hasn't been backfilled (0) differs
+        # from the disk size — this is what repopulates existing rows
+        # after migration 0007 resets last_scanned_t.
+        stale = ImageInfo(
+            id=1,
+            file_name="photo.jpg",
+            path=str(img_path),
+            has_caption=False,
+            has_toml=False,
+            width=meta["width"],
+            height=meta["height"],
+            draft_names=[],
+            last_modified_t=meta["last_modified_t"],
+            file_size=0,
+        )
+        assert scanner._image_meta_differs(stale, meta) is True
+
+        # Once the stored size matches, there's no diff.
+        fresh = ImageInfo(
+            id=1,
+            file_name="photo.jpg",
+            path=str(img_path),
+            has_caption=False,
+            has_toml=False,
+            width=meta["width"],
+            height=meta["height"],
+            draft_names=[],
+            last_modified_t=meta["last_modified_t"],
+            file_size=meta["file_size"],
+        )
+        assert scanner._image_meta_differs(fresh, meta) is False
+
 
 class TestScanTargeted:
     """``scan_targeted`` — the index update driven by watcher paths.

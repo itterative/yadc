@@ -1,15 +1,22 @@
 """Tests for yadc.core.exporters — caption export backends."""
 
+import io
 import json
 import zipfile
 
 import pytest
 
 from yadc.core.dataset import DatasetImage
-from yadc.core.exporters import get_backend, list_backends, run_export, run_export_zip
+from yadc.core.exporters import get_backend, list_backends, run_export, stream_export_zip
 from yadc.core.exporters.utils import read_caption_source
 
 # ---- helpers ----
+
+
+def run_export_zip_to_buf(*args, **kwargs):
+    """Consume ``stream_export_zip``'s lazy byte iterator into a BytesIO for zipfile."""
+    stream, count = stream_export_zip(*args, **kwargs)
+    return io.BytesIO(b"".join(stream)), count
 
 
 def _make_png() -> bytes:
@@ -666,7 +673,7 @@ class TestYadcZip:
     def test_zip_includes_images_and_all_sidecars(self, tmp_images_full_sidecars):
         tmp_path, images = tmp_images_full_sidecars
 
-        buf, count = run_export_zip(
+        buf, count = run_export_zip_to_buf(
             "yadc",
             images,
             fmt="zip",
@@ -690,7 +697,7 @@ class TestYadcZip:
 
     def test_zip_preserves_sidecar_content(self, tmp_images_full_sidecars):
         tmp_path, images = tmp_images_full_sidecars
-        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        buf, _ = run_export_zip_to_buf("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
         with zipfile.ZipFile(buf) as zf:
             assert zf.read("img001.txt").decode() == "1girl, hatsune miku, vocaloid"
             assert zf.read("img001.toml").decode() == 'foo = "bar"\n'
@@ -704,7 +711,7 @@ class TestYadcZip:
 
         images = [DatasetImage(path=str(img), caption_suffix=".txt")]
 
-        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        buf, _ = run_export_zip_to_buf("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
         with zipfile.ZipFile(buf) as zf:
             names = set(zf.namelist())
         assert {"train/img001.png", "train/img001.txt"} <= names
@@ -720,7 +727,7 @@ class TestYadcZip:
 
         images = [DatasetImage(path=str(img1), caption_suffix=".txt")]
 
-        buf, _ = run_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        buf, _ = run_export_zip_to_buf("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
         with zipfile.ZipFile(buf) as zf:
             names = set(zf.namelist())
         assert {"img001.png", "img001.txt"} <= names
@@ -737,3 +744,63 @@ class TestYadcZip:
                 source="caption",
                 output=tmp_path / "out",
             )
+
+
+class TestStreamingZip:
+    """Behavior specific to the stream-zip streaming implementation."""
+
+    def test_entries_are_stored_uncompressed(self, tmp_images_full_sidecars):
+        tmp_path, images = tmp_images_full_sidecars
+        buf, _ = run_export_zip_to_buf("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        with zipfile.ZipFile(buf) as zf:
+            # Images are incompressible; STORED keeps archive size == sum of members,
+            # which the export UI's size estimate depends on.
+            for info in zf.infolist():
+                assert info.compress_type == zipfile.ZIP_STORED
+
+    def test_crc_is_valid(self, tmp_images_full_sidecars):
+        # stream-zip computes CRC32 per member; zipfile re-checks it on read.
+        tmp_path, images = tmp_images_full_sidecars
+        original = (tmp_path / "img001.png").read_bytes()
+        buf, _ = run_export_zip_to_buf("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        with zipfile.ZipFile(buf) as zf:
+            assert zf.testzip() is None  # None means every entry's CRC checked out
+            assert zf.read("img001.png") == original
+
+    def test_preflight_count_known_before_streaming(self, tmp_images_full_sidecars):
+        tmp_path, images = tmp_images_full_sidecars
+        # stream_export_zip runs pre-flight eagerly, so the count is available
+        # without consuming the byte iterator at all.
+        stream, count = stream_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+        assert count == 3
+        # Drain so the generator doesn't raise GeneratorExit warnings mid-stream.
+        b"".join(stream)
+
+    def test_preflight_raises_before_any_bytes_when_image_missing(self, tmp_path):
+        img = tmp_path / "img001.png"
+        img.write_bytes(_make_png())
+        (tmp_path / "img001.txt").write_text("caption")
+        images = [DatasetImage(path=str(img), caption_suffix=".txt")]
+
+        # Delete the image after resolving — pre-flight must catch this at call
+        # time rather than emitting a truncated stream after HTTP 200.
+        img.unlink()
+        with pytest.raises(FileNotFoundError):
+            stream_export_zip("yadc", images, fmt="zip", source="caption", base_dir=tmp_path)
+
+    def test_sd_scripts_zip_includes_metadata_and_images(self, tmp_images):
+        tmp_path, images = tmp_images
+        buf, count = run_export_zip_to_buf(
+            "sd-scripts",
+            images,
+            fmt="jsonl",
+            source="caption",
+            include_images=True,
+            base_dir=tmp_path,
+        )
+        with zipfile.ZipFile(buf) as zf:
+            names = set(zf.namelist())
+            assert "metadata.jsonl" in names
+            assert all(name.endswith(".png") or name == "metadata.jsonl" for name in names)
+            assert zf.testzip() is None
+        assert count >= 1

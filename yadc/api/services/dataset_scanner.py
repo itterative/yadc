@@ -128,6 +128,7 @@ class DatasetScanner(Service):
                     height=meta["height"],
                     draft_names=meta["draft_names"],
                     last_modified_t=meta["last_modified_t"],
+                    file_size=meta["file_size"],
                 )
             for image_id in to_delete:
                 self._repo.delete_image(image_id)
@@ -217,6 +218,7 @@ class DatasetScanner(Service):
                     height=meta["height"],
                     draft_names=meta["draft_names"],
                     last_modified_t=meta["last_modified_t"],
+                    file_size=meta["file_size"],
                 )
             for image_id in to_delete:
                 self._repo.delete_image(image_id)
@@ -367,9 +369,12 @@ class DatasetScanner(Service):
             pass
 
         try:
-            mod_time = image_path.stat().st_mtime
+            st = image_path.stat()
+            mod_time = st.st_mtime
+            file_size = st.st_size
         except OSError:
             mod_time = None
+            file_size = 0
 
         # Read image dimensions
         img_width = 0
@@ -388,6 +393,7 @@ class DatasetScanner(Service):
             "height": img_height,
             "draft_names": ",".join(sorted(draft_names)),
             "last_modified_t": mod_time,
+            "file_size": file_size,
         }
 
     @staticmethod
@@ -411,6 +417,8 @@ class DatasetScanner(Service):
         if info.height != meta["height"]:
             return True
         if info.last_modified_t != meta["last_modified_t"]:
+            return True
+        if info.file_size != meta["file_size"]:
             return True
         # ``draft_names`` is stored as a sorted CSV; the in-memory
         # ImageInfo parses it into a list. Sort-compare the lists so the

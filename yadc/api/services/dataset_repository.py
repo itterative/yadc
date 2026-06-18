@@ -44,6 +44,7 @@ class DatasetInfo:
     has_toml: int = 0
     last_scanned_t: float | None = None
     first_image_id: int | None = None
+    size_bytes: int = 0
 
 
 @dataclass
@@ -59,6 +60,7 @@ class ImageInfo:
     height: int = 0
     draft_names: list[str] = field(default_factory=list)
     last_modified_t: float | None = None
+    file_size: int = 0
     delete_path: str | None = None
 
 
@@ -81,7 +83,8 @@ class DatasetRepository(Service):
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
                        d.last_scanned_t,
-                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
+                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id),
+                       COALESCE((SELECT SUM(file_size) FROM dataset_images WHERE dataset_id = d.id), 0)
                 FROM datasets d
                 LEFT JOIN (
                     SELECT dataset_id,
@@ -103,6 +106,7 @@ class DatasetRepository(Service):
                 has_toml=row[5],
                 last_scanned_t=row[6],
                 first_image_id=row[7],
+                size_bytes=row[8],
             )
             for row in rows
         ]
@@ -117,7 +121,8 @@ class DatasetRepository(Service):
                        COALESCE(ci.has_caption, 0),
                        COALESCE(ci.has_toml, 0),
                        d.last_scanned_t,
-                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id)
+                       (SELECT MIN(di2.id) FROM dataset_images di2 WHERE di2.dataset_id = d.id),
+                       COALESCE((SELECT SUM(file_size) FROM dataset_images WHERE dataset_id = d.id), 0)
                 FROM datasets d
                 LEFT JOIN (
                     SELECT dataset_id,
@@ -142,6 +147,7 @@ class DatasetRepository(Service):
             has_toml=row[5],
             last_scanned_t=row[6],
             first_image_id=row[7],
+            size_bytes=row[8],
         )
 
     def get_dataset_row(self, name: str) -> tuple[int, str | None] | None:
@@ -185,7 +191,7 @@ class DatasetRepository(Service):
             rows = conn.execute(
                 """
                 SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml,
-                       di.width, di.height, di.draft_names, di.last_modified_t,
+                       di.width, di.height, di.draft_names, di.last_modified_t, di.file_size,
                        d.config_path
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
@@ -206,7 +212,8 @@ class DatasetRepository(Service):
                 height=row[6] or 0,
                 draft_names=row[7].split(",") if row[7] else [],
                 last_modified_t=row[8],
-                delete_path=compute_delete_path(row[2], row[9]),
+                file_size=row[9],
+                delete_path=compute_delete_path(row[2], row[10]),
             )
             for row in rows
         ]
@@ -217,7 +224,7 @@ class DatasetRepository(Service):
             row = conn.execute(
                 """
                 SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml,
-                       di.width, di.height, di.draft_names, di.last_modified_t,
+                       di.width, di.height, di.draft_names, di.last_modified_t, di.file_size,
                        d.config_path
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
@@ -237,7 +244,8 @@ class DatasetRepository(Service):
             height=row[6] or 0,
             draft_names=row[7].split(",") if row[7] else [],
             last_modified_t=row[8],
-            delete_path=compute_delete_path(row[2], row[9]),
+            file_size=row[9],
+            delete_path=compute_delete_path(row[2], row[10]),
         )
 
     def list_image_paths_desc(self, dataset_name: str) -> list[tuple[str, int]]:
@@ -267,7 +275,7 @@ class DatasetRepository(Service):
             row = conn.execute(
                 """
                 SELECT di.id, di.file_name, di.path, di.has_caption, di.has_toml,
-                       di.width, di.height, di.draft_names, di.last_modified_t,
+                       di.width, di.height, di.draft_names, di.last_modified_t, di.file_size,
                        d.config_path
                 FROM dataset_images di
                 JOIN datasets d ON d.id = di.dataset_id
@@ -287,7 +295,8 @@ class DatasetRepository(Service):
             height=row[6] or 0,
             draft_names=row[7].split(",") if row[7] else [],
             last_modified_t=row[8],
-            delete_path=compute_delete_path(row[2], row[9]),
+            file_size=row[9],
+            delete_path=compute_delete_path(row[2], row[10]),
         )
 
     def get_image_path(self, dataset_name: str, image_id: int) -> str | None:
@@ -408,7 +417,7 @@ class DatasetRepository(Service):
             rows = conn.execute(
                 """
                 SELECT id, file_name, path, has_caption, has_toml,
-                       width, height, draft_names, last_modified_t
+                       width, height, draft_names, last_modified_t, file_size
                 FROM dataset_images
                 WHERE dataset_id = ?
                 """,
@@ -425,6 +434,7 @@ class DatasetRepository(Service):
                 height=row[6] or 0,
                 draft_names=row[7].split(",") if row[7] else [],
                 last_modified_t=row[8],
+                file_size=row[9],
                 delete_path=compute_delete_path(row[2], config_path),
             )
             for row in rows
@@ -482,14 +492,15 @@ class DatasetRepository(Service):
         height: int,
         draft_names: str,
         last_modified_t: float | None,
+        file_size: int = 0,
     ) -> None:
         """Insert a new image, or update the existing one with the same path."""
         with self._db.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO dataset_images (dataset_id, path, file_name, has_caption, has_toml,
-                                            width, height, draft_names, last_modified_t)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                            width, height, draft_names, last_modified_t, file_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(path) DO UPDATE SET
                     file_name = excluded.file_name,
                     has_caption = excluded.has_caption,
@@ -497,7 +508,8 @@ class DatasetRepository(Service):
                     width = excluded.width,
                     height = excluded.height,
                     draft_names = excluded.draft_names,
-                    last_modified_t = excluded.last_modified_t
+                    last_modified_t = excluded.last_modified_t,
+                    file_size = excluded.file_size
                 """,
                 (
                     dataset_id,
@@ -509,6 +521,7 @@ class DatasetRepository(Service):
                     height,
                     draft_names,
                     last_modified_t,
+                    file_size,
                 ),
             )
 

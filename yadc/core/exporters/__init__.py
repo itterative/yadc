@@ -4,19 +4,20 @@ Each backend is a module under ``yadc.core.exporters`` that exposes:
 
 - ``BACKEND`` — a dataclass (frozen) with ``name``, ``description``, ``formats``.
 - ``run(images, *, fmt, source, drafts, output, append, caption_extension) -> int``
-- ``run_zip(images, *, fmt, source, drafts, caption_extension, include_images, base_dir) -> tuple[BytesIO, int]``
+- ``iter_zip_members(images, *, fmt, source, drafts, caption_extension, include_images, base_dir) -> tuple[Iterator[ZipMember], int]``
 
 To register a new backend, import its module and add it to ``_BACKENDS`` below.
 """
 
-import io
 import pathlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
 from ..dataset import DatasetImage
 from . import sd_scripts as _sd_scripts
 from . import yadc as _yadc
+from .zip_stream import ZipMember, stream_zip_bytes
 
 
 class _RunFn(Protocol):
@@ -33,7 +34,7 @@ class _RunFn(Protocol):
     ) -> int: ...
 
 
-class _RunZipFn(Protocol):
+class _IterZipMembersFn(Protocol):
     def __call__(
         self,
         images: list[DatasetImage],
@@ -44,13 +45,13 @@ class _RunZipFn(Protocol):
         caption_extension: str,
         include_images: bool,
         base_dir: pathlib.Path | None,
-    ) -> tuple[io.BytesIO, int]: ...
+    ) -> tuple[Iterator[ZipMember], int]: ...
 
 
 @dataclass(frozen=True)
 class _BackendDescriptor:
     run: _RunFn
-    run_zip: _RunZipFn
+    iter_zip_members: _IterZipMembersFn
     name: str
     description: str
     formats: tuple[str, ...]
@@ -60,7 +61,7 @@ class _BackendDescriptor:
 _BACKENDS: dict[str, _BackendDescriptor] = {
     "sd-scripts": _BackendDescriptor(
         run=_sd_scripts.run,
-        run_zip=_sd_scripts.run_zip,
+        iter_zip_members=_sd_scripts.iter_zip_members,
         name=_sd_scripts.BACKEND.name,
         description=_sd_scripts.BACKEND.description,
         formats=_sd_scripts.BACKEND.formats,
@@ -68,7 +69,7 @@ _BACKENDS: dict[str, _BackendDescriptor] = {
     ),
     "yadc": _BackendDescriptor(
         run=_yadc.run,
-        run_zip=_yadc.run_zip,
+        iter_zip_members=_yadc.iter_zip_members,
         name=_yadc.BACKEND.name,
         description=_yadc.BACKEND.description,
         formats=_yadc.BACKEND.formats,
@@ -121,7 +122,7 @@ def run_export(
     )
 
 
-def run_export_zip(
+def stream_export_zip(
     backend_name: str,
     images: list[DatasetImage],
     *,
@@ -131,13 +132,19 @@ def run_export_zip(
     caption_extension: str = ".txt",
     include_images: bool = False,
     base_dir: pathlib.Path | None = None,
-) -> tuple[io.BytesIO, int]:
-    """Dispatch to the named backend's ``run_zip()`` function."""
+) -> tuple[Iterator[bytes], int]:
+    """Stream a dataset export as a zip64 archive.
+
+    Runs the backend's pre-flight validation eagerly (so a missing file raises
+    before any bytes are produced), then returns a lazy byte iterator plus the
+    count of exported entries. The iterator yields the encoded zip on demand;
+    hand it directly to a streaming HTTP response.
+    """
     descriptor = get_backend(backend_name)
     if fmt not in descriptor.formats:
         raise ValueError(f"Backend {backend_name!r} does not support format {fmt!r}. Available: {', '.join(descriptor.formats)}")
 
-    return descriptor.run_zip(
+    members, count = descriptor.iter_zip_members(
         images,
         fmt=fmt,
         source=source,
@@ -146,3 +153,4 @@ def run_export_zip(
         include_images=include_images,
         base_dir=base_dir,
     )
+    return stream_zip_bytes(members), count

@@ -71,7 +71,7 @@ yadc/webui/src/lib/components/dataset/
 
 ```
   export/                         # Export domain
-    ExportDialog.svelte           # Export dialog (backend + draft/caption source selection)
+    ExportDialog.svelte           # Export dialog (backend + draft/caption source selection). Zip exports that bundle images show an image-size estimate (`DatasetInfo.size_bytes`) and confirm via `confirmDialog.warning(...)` above 500 MB.
 ```
 
 ## settings/

@@ -9,7 +9,7 @@ from quart import Response, jsonify, request
 from yadc.api.services.datasets import DatasetService
 from yadc.core.config import parse_config
 from yadc.core.dataset_resolver import resolve_dataset
-from yadc.core.exporters import get_backend, list_backends, run_export, run_export_zip
+from yadc.core.exporters import get_backend, list_backends, run_export, stream_export_zip
 from yadc.utils.dict_utils import load_toml_file
 
 from ..modules.logging_factory import LoggingFactory
@@ -145,7 +145,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
         # --- Zip export (streaming response) ---
         if body.zip:
             try:
-                buf, count = run_export_zip(
+                stream, count = stream_export_zip(
                     body.backend,
                     images,
                     fmt=body.format,
@@ -161,8 +161,11 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                 _logger.exception("Zip export failed for dataset '%s': %s", body.dataset, e)
                 return jsonify_error(str(e), status=500, code=ErrorCode.INTERNAL_ERROR)
 
+            # Pre-flight (file stats, caption reads) ran inside stream_export_zip,
+            # so by here every member is known-good. The count is final even though
+            # the bytes stream lazily after we return.
             _logger.info(
-                "Zip exported %d images from '%s' (backend=%s, format=%s, source=%s, include_images=%s)",
+                "Zip exporting %d images from '%s' (backend=%s, format=%s, source=%s, include_images=%s)",
                 count,
                 body.dataset,
                 body.backend,
@@ -172,8 +175,10 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             )
 
             filename = f"{body.dataset}_{body.backend}_{body.format}.zip"
+            # No Content-Length: chunked transfer — the zip is encoded lazily as
+            # the client reads, so total size isn't known up front.
             return Response(
-                buf.getvalue(),
+                stream,
                 mimetype="application/zip",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )

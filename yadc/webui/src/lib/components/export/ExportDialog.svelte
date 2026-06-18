@@ -14,6 +14,12 @@
     import { fetchDatasets, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
     import { createAbortContext, linkedController } from '$lib/abort';
+    import { formatBytes } from '$lib/format';
+    import { confirmDialog } from '$lib/stores/confirm';
+
+    // Confirm before downloads estimated above this size. Image-only bytes; tuned
+    // low since a streamed (chunked) download has no progress bar or Content-Length.
+    const SIZE_WARN_THRESHOLD = 500 * 1024 ** 2;
 
     interface Props {
         open: boolean;
@@ -61,6 +67,14 @@
     let remainingDrafts = $derived(
         availableDrafts.filter((d) => d !== draftName && !chainedDrafts.includes(d))
     );
+
+    // Size estimate: only zip exports that bundle images can grow large. yadc
+    // (zip_only) always includes images; sd-scripts only when include_images is
+    // on. size_bytes is the image-only SQLite total — sidecars are <0.5% and
+    // images don't compress under STORED, so it tracks the real zip size closely.
+    let selectedDatasetInfo = $derived(datasets.find((d) => d.name === selectedDataset));
+    let imagesInZip = $derived(asZip && (zipOnly || includeImages));
+    let estimatedSize = $derived(imagesInZip ? (selectedDatasetInfo?.size_bytes ?? 0) : 0);
 
     // --- Load data on open ---
     $effect(() => {
@@ -147,6 +161,20 @@
         if (!selectedDataset) {
             error = 'Please select a dataset';
             return;
+        }
+
+        // Confirm before a large zip download. Only zips that bundle images
+        // (yadc always; sd-scripts with include_images) can stream enough to
+        // matter — metadata-only exports are tiny text files.
+        if (imagesInZip && estimatedSize >= SIZE_WARN_THRESHOLD) {
+            const ok = await confirmDialog.warning({
+                title: 'Large download',
+                message: `This export is about ${formatBytes(estimatedSize)} (${selectedDatasetInfo?.image_count ?? 0} images). Download anyway?`,
+                confirmLabel: 'Download'
+            });
+            if (!ok) {
+                return;
+            }
         }
 
         isExporting = true;
@@ -455,6 +483,22 @@
                                 for="export-include-images">Include images</label
                             >
                         </div>
+                    {/if}
+                </div>
+            {/if}
+
+            {#if imagesInZip}
+                <div
+                    class="rounded-lg border border-border bg-bg/50 px-3 py-2 text-sm text-gray-400"
+                >
+                    <span class="text-gray-500">Estimated download size:</span>
+                    {#if estimatedSize > 0}
+                        <span class="font-medium text-gray-200">~{formatBytes(estimatedSize)}</span>
+                        {#if estimatedSize >= SIZE_WARN_THRESHOLD}
+                            <span class="text-yellow-400">— large download</span>
+                        {/if}
+                    {:else}
+                        <span class="text-gray-500">(unknown — dataset size not yet scanned)</span>
                     {/if}
                 </div>
             {/if}

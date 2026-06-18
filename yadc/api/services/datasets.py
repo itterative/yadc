@@ -1060,6 +1060,7 @@ class DatasetService(Service):
                     height=meta["height"],
                     draft_names=meta["draft_names"],
                     last_modified_t=meta["last_modified_t"],
+                    file_size=meta["file_size"],
                 )
             for path, img_id in existing_by_path.items():
                 if path not in disk_images:

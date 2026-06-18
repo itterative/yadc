@@ -166,6 +166,7 @@ class TestUpsertImage:
             height=200,
             draft_names="alpha",
             last_modified_t=1234.0,
+            file_size=4096,
         )
         img = repo.get_image("alpha", 1)
         assert img is not None
@@ -176,6 +177,7 @@ class TestUpsertImage:
         assert img.height == 200
         assert img.draft_names == ["alpha"]
         assert img.last_modified_t == 1234.0
+        assert img.file_size == 4096
 
     def test_upsert_updates_existing(self, repo):
         ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
@@ -485,3 +487,51 @@ class TestListDraftNamesCsv:
             last_modified_t=None,
         )
         assert repo.list_draft_names_csv("alpha") == []
+
+
+class TestSizeBytes:
+    """DatasetInfo.size_bytes is the SUM of its images' file_size."""
+
+    def _add_image(self, repo, ds_id, path, file_size):
+        repo.upsert_image(
+            dataset_id=ds_id,
+            path=path,
+            file_name=path.rsplit("/", 1)[-1],
+            has_caption=False,
+            has_toml=False,
+            width=0,
+            height=0,
+            draft_names="",
+            last_modified_t=None,
+            file_size=file_size,
+        )
+
+    def test_get_dataset_sums_file_sizes(self, repo):
+        ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        self._add_image(repo, ds_id, "/img/a.jpg", 100)
+        self._add_image(repo, ds_id, "/img/b.jpg", 250)
+        self._add_image(repo, ds_id, "/img/c.jpg", 0)
+        info = repo.get_dataset("alpha")
+        assert info is not None
+        assert info.size_bytes == 350
+
+    def test_list_datasets_sums_file_sizes(self, repo):
+        ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        self._add_image(repo, ds_id, "/img/a.jpg", 1000)
+        listed = repo.list_datasets()
+        assert listed[0].size_bytes == 1000
+
+    def test_empty_dataset_size_is_zero(self, repo):
+        repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        info = repo.get_dataset("alpha")
+        assert info is not None
+        assert info.size_bytes == 0
+
+    def test_image_reads_populate_file_size(self, repo):
+        ds_id = repo.upsert_dataset("alpha", "/cfg.toml", "import")
+        self._add_image(repo, ds_id, "/img/a.jpg", 4096)
+        # Every ImageInfo-returning read surfaces the stored size.
+        assert repo.get_image("alpha", 1).file_size == 4096
+        assert repo.get_image_by_path("alpha", "/img/a.jpg").file_size == 4096
+        assert repo.list_images("alpha", before_id=10**9, limit=10)[0].file_size == 4096
+        assert repo.list_image_infos(ds_id)["/img/a.jpg"].file_size == 4096

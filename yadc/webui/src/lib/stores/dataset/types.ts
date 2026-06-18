@@ -9,6 +9,7 @@ export interface DatasetInfo {
     has_toml: number;
     last_scanned_t: number | null;
     first_image_id: number | null;
+    size_bytes: number;
 }
 
 export interface ImageInfo {
@@ -21,6 +22,7 @@ export interface ImageInfo {
     height: number;
     draft_names: string[];
     last_modified_t: number | null;
+    file_size: number;
     caption_error?: string;
     flash?: number;
     delete_path?: string;
