@@ -22,6 +22,8 @@ import tomlkit
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from yadc.utils.dict_utils import load_toml
+
 HISTORY_MARKER = "----------"
 
 
@@ -237,7 +239,7 @@ class DatasetImage(BaseModel):
                 continue
 
             try:
-                history_data = tomlkit.loads(history_entry)
+                history_data = load_toml(history_entry)
                 history_data.setdefault("path", str(self.absolute_path))
                 history.append(DatasetImage.model_validate(history_data))
             except Exception:
