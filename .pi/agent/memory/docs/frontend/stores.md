@@ -15,7 +15,7 @@ category: architecture
 
 ## Convention: events.ts is the router, domain stores own the state
 
-`lib/stores/events.ts` is **only** the SSE transport + event-routing layer. It defines the Zod schemas and wires each event to a writer in the appropriate domain store. The writable stores themselves live in the domain sub-folder (e.g. `caption/status.ts` owns `captioningStatus` and its `setCaptioningStatus` / `resetCaptioningStatus` actions). This keeps `events.ts` small and means each store can be reasoned about (and tested) in isolation.
+`lib/stores/events.ts` is **only** the SSE transport + event-routing layer. It defines the Zod schemas and wires each event to a writer in the appropriate domain store. The writable stores themselves live in the domain sub-folder (e.g. `caption/status.ts` owns `captioningStatuses` and its `setCaptioningStatus` / `resetCaptioningStatus(datasetName)` actions). This keeps `events.ts` small and means each store can be reasoned about (and tested) in isolation.
 
 ## Domain Sub-Folders
 
@@ -31,7 +31,7 @@ yadc/webui/src/lib/stores/
     actions.ts                   # captionOptions + lastStartedJobId + startBatchCaptioning/captionSingleImage/refineCaption/stopCaptioning (with toasts + optional onError callback)
     options.ts                   # CaptionOptions type (mirrors backend CaptionJobOptions)
     settings.ts                  # Last-used caption settings persisted to localStorage (env, maxTokens, imageQuality, etc.)
-    status.ts                    # captioningStatus store + setCaptioningStatus + resetCaptioningStatus(force?). Gated reset preserves 'running'/'stopping' state. INITIAL_CAPTIONING_STATUS constant.
+    status.ts                    # captioningStatuses store (per-dataset Map keyed by dataset_name) + setCaptioningStatus (upsert + schedule terminal eviction) + resetCaptioningStatus(datasetName, force?). Gated reset preserves 'running'/'stopping' state. Terminal entries auto-evict after 5 min so several concurrent jobs' results stay visible on the dataset list. INITIAL_CAPTIONING_STATUS constant.
     inflight.ts                  # currentlyCaptioning derived (set view) + _currentlyCaptioningMap internal + addCurrentlyCaptioning/removeCurrentlyCaptioning/clearCurrentlyCaptioning
     jobs.ts                      # _activeJobIds (bounded ring) + registerJobId + isOwnJobId. Used by the SSE `dataset_changed` handler to suppress events caused by our own jobs.
     refined.ts                   # imageRefined store + setImageRefined + consumeImageRefined (multi-key match by imageId/source/draftName)

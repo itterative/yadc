@@ -14,7 +14,7 @@
     import Alert from '$lib/components/ui/Alert.svelte';
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
     import {
-        captioningStatus,
+        captioningStatuses,
         registerJobId,
         setCaptioningStatus,
         currentlyCaptioning,
@@ -64,11 +64,16 @@
 
     // --- Captioning state (derived from the global SSE store) ---
 
+    // Status for the dataset currently open in this page. The store holds a
+    // per-dataset map (so several datasets can caption concurrently); we read
+    // just our slot. Undefined when this dataset isn't (or wasn't recently)
+    // captioning.
+    let captionStatus = $derived($captioningStatuses.get(datasetName));
+
     let isBatchCaptioning = $derived(
-        $captioningStatus?.dataset_name === datasetName &&
-            ($captioningStatus.status === 'starting' ||
-                $captioningStatus.status === 'running' ||
-                $captioningStatus.status === 'stopping')
+        captionStatus?.status === 'starting' ||
+            captionStatus?.status === 'running' ||
+            captionStatus?.status === 'stopping'
     );
 
     // IDs of the images currently being captioned in this dataset
@@ -86,13 +91,11 @@
         return ids;
     });
 
-    let isStopping = $derived(
-        $captioningStatus?.dataset_name === datasetName && $captioningStatus.status === 'stopping'
-    );
+    let isStopping = $derived(captionStatus?.status === 'stopping');
 
     let captionPct = $derived(
-        $captioningStatus?.total > 0
-            ? Math.round(($captioningStatus.processed / $captioningStatus.total) * 100)
+        captionStatus && captionStatus.total > 0
+            ? Math.round((captionStatus.processed / captionStatus.total) * 100)
             : 0
     );
 
@@ -121,12 +124,8 @@
     // Register job_id from incoming status events so dataset_changed events
     // from our own captioning are suppressed
     $effect(() => {
-        const s = $captioningStatus;
-        if (
-            s?.dataset_name === datasetName &&
-            s.job_id &&
-            (s.status === 'running' || s.status === 'stopping')
-        ) {
+        const s = captionStatus;
+        if (s?.job_id && (s.status === 'running' || s.status === 'stopping')) {
             registerJobId(s.job_id);
         }
     });
@@ -135,8 +134,8 @@
     // Tracking by job_id avoids race conditions between SSE events and the
     // HTTP response, and prevents toasting for stale jobs on page load.
     $effect(() => {
-        const s = $captioningStatus;
-        if (s?.dataset_name !== datasetName) {
+        const s = captionStatus;
+        if (!s) {
             return;
         }
         if (s.status !== 'error' && s.status !== 'done' && s.status !== 'cancelled') {
@@ -282,10 +281,13 @@
         (async () => {
             try {
                 const status = await fetchCaptioningStatus(name, abort.signal);
-                const current = get(captioningStatus);
+                // Only seed when there's an actual running job AND we don't
+                // already have a fresher entry for this dataset from SSE — an
+                // SSE event always beats this one-shot cold-load poll.
                 if (
                     status.dataset_name === name &&
-                    (current.status === 'idle' || current.dataset_name !== name)
+                    status.status !== 'idle' &&
+                    !get(captioningStatuses).has(name)
                 ) {
                     setCaptioningStatus(status);
                 }
@@ -403,8 +405,8 @@
     }
 
     function handleCaptioningDone() {
-        const status = get(captioningStatus);
-        if (status.dataset_name !== datasetName) {
+        const status = get(captioningStatuses).get(datasetName);
+        if (!status) {
             return;
         }
 
@@ -545,8 +547,9 @@
     {isBatchCaptioning}
     {isStopping}
     {captionPct}
-    captionProcessed={$captioningStatus?.processed ?? 0}
-    captionTotal={$captioningStatus?.total ?? 0}
+    captionProcessed={captionStatus?.processed ?? 0}
+    captionTotal={captionStatus?.total ?? 0}
+    {captionStatus}
     {isRefreshing}
     {canUpload}
     onrefresh={handleManualRefresh}

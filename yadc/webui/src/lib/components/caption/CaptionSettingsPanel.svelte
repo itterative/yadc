@@ -9,7 +9,7 @@
     } from '$lib/stores/caption';
     import type { CaptionOptions } from '$lib/stores/caption';
     import { captionSettings } from '$lib/stores/caption';
-    import { captioningStatus } from '$lib/stores/caption';
+    import { captioningStatuses } from '$lib/stores/caption';
     import { promptNotificationsOnce } from '$lib/notifications';
     import { deferred } from '$lib/async';
     import { fetchConfig } from '$lib/stores/config';
@@ -35,13 +35,13 @@
     // Parent abort context — read at init time, used in effects.
     const parentSignal = getAbortContext();
 
-    // Derive batch captioning state from the global SSE store
-    let isBatchCaptioning = $derived(
-        $captioningStatus?.dataset_name === _datasetName &&
-            ($captioningStatus.status === 'starting' ||
-                $captioningStatus.status === 'running' ||
-                $captioningStatus.status === 'stopping')
-    );
+    // Derive batch captioning state from the per-dataset status map so this
+    // panel reflects only this dataset's job, even while other datasets are
+    // captioning concurrently.
+    let isBatchCaptioning = $derived.by(() => {
+        const s = $captioningStatuses.get(_datasetName);
+        return s?.status === 'starting' || s?.status === 'running' || s?.status === 'stopping';
+    });
 
     // --- State: Environment (managed by EnvSelector via bindings) ---
 

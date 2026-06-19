@@ -97,7 +97,7 @@ Use role-based while the domain is small; switch to feature-based when adding a 
 - `events.ts` defines the `TypedEventSource` lifecycle (connect, reconnect, mobile visibility recovery, fallback interval)
 - `events.ts` owns `clientId` (tab identity for `dataset_changed` suppression)
 - `events.ts` owns the SSE-specific stores that don't fit any domain: `resumptionFailed`, `lastCaptionedImage`, `lastCaptionError`
-- Everything else — `captioningStatus`, `currentlyCaptioning`, `captionTimingRing`, `imageRefined`, `pendingDatasetChanges`, `activeJobIds` — lives in the relevant domain sub-folder and is written via a domain-owned action (e.g. `setCaptioningStatus`, `addCurrentlyCaptioning`, `recordCaptionTiming`, `setImageRefined`, `addPendingDatasetChange`, `isOwnJobId`).
+- Everything else — `captioningStatuses`, `currentlyCaptioning`, `captionTimingRing`, `imageRefined`, `pendingDatasetChanges`, `activeJobIds` — lives in the relevant domain sub-folder and is written via a domain-owned action (e.g. `setCaptioningStatus`, `addCurrentlyCaptioning`, `recordCaptionTiming`, `setImageRefined`, `addPendingDatasetChange`, `isOwnJobId`).
 
 This keeps `events.ts` small and means each store can be reasoned about (and tested) in isolation — the SSE handler is just a dispatch layer, not a god module.
 

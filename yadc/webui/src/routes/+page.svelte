@@ -7,7 +7,7 @@
         thumbnailUrl,
         type DatasetInfo
     } from '$lib/stores/dataset';
-    import { captioningStatus } from '$lib/stores/caption';
+    import { captioningStatuses } from '$lib/stores/caption';
     import type { CaptioningStatus } from '$lib/stores/events';
     import Topbar from '$lib/components/ui/Topbar.svelte';
     import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -46,10 +46,12 @@
         return () => abort.abort();
     });
 
-    // Captioning status for a specific dataset (null if idle/not captioning)
+    // Captioning status for a specific dataset (null if idle/not captioning).
+    // Reads the per-dataset map so every concurrently-captioning dataset's
+    // card shows its own progress, not just the most recently reported one.
     function captionStatusFor(name: string): CaptioningStatus | null {
-        const s = $captioningStatus;
-        if (s && s.dataset_name === name && s.status !== 'idle') {
+        const s = $captioningStatuses.get(name);
+        if (s && s.status !== 'idle') {
             return s;
         }
         return null;

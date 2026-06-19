@@ -71,7 +71,7 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
         // No SSE event will fire (no job was started), so clear the
         // optimistic 'starting' status to avoid a stuck topbar. The
         // caller is expected to surface the error to the user.
-        resetCaptioningStatus();
+        resetCaptioningStatus(datasetName);
         throw e;
     }
 }
@@ -127,7 +127,7 @@ export async function captionSingleImage(datasetName: string, imageId: number): 
         return info.job_id;
     } catch (e) {
         removeCurrentlyCaptioning(datasetName, imageId);
-        resetCaptioningStatus();
+        resetCaptioningStatus(datasetName);
         throw e;
     }
 }
@@ -201,7 +201,7 @@ export async function refineCaption(
         return info.job_id;
     } catch (e) {
         removeCurrentlyCaptioning(datasetName, imageId);
-        resetCaptioningStatus();
+        resetCaptioningStatus(datasetName);
         throw e;
     }
 }

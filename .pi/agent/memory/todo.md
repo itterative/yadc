@@ -103,7 +103,7 @@ Key files: `yadc/cli_export.py`, `yadc/core/exporters/__init__.py` (`_BackendDes
 * errors when starting captions show up in both the toast and at the top (latter needs removal)
 * error toasts have no details (just says HTTP 502)
 * need to enable prettier
-* **Decouple ETA from captioningStatus store**: The ETA estimation is coupled to `captioningStatus` carrying `api_url`/`api_model_name`. A separate job-identity store should track `{api_url, api_model_name, job_id}` so `captioningStatus` only carries progress. See `todo/eta-decouple.md` for details.
+* **Decouple ETA from the captioningStatuses store**: The ETA estimation is coupled to per-dataset status entries carrying `api_url`/`api_model_name`. A separate job-identity store should track `{api_url, api_model_name, job_id}` so the status entries only carry progress. See `todo/eta-decouple.md` for details.
 * **Decide on `_metadata` field for env GET endpoints**: Consider grouping read-only metadata (`has_token`, `token_method`) under a `_metadata` key to make the PUT/GET shape symmetry explicit. Currently kept flat for simplicity, but worth revisiting if more read-only fields are added later.
 * **Firefox drag-and-drop broken on dataset browser**: File drops on the dataset browser page (`#/datasets/:name`) don't trigger in Firefox — the overlay never appears. Works fine in Chromium and works in the Add Files dialog (FileDropZone) in both browsers. A speculative `DOMStringList` fix was stashed but didn't resolve it. Needs real investigation. Stash: `wip: Firefox DOMStringList fix for dataset browser drag-and-drop`.
 

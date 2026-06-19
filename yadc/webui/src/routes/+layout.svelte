@@ -17,7 +17,7 @@
     import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
     import { toast } from '$lib/stores/toasts';
     import { setAbortContext } from '$lib/abort';
-    import { captioningStatus } from '$lib/stores/caption';
+    import { captioningStatuses } from '$lib/stores/caption';
     import { resumptionFailed } from '$lib/stores/events';
     import { sendNotification } from '$lib/notifications';
     import { settingsDialog } from '$lib/stores/settings';
@@ -64,40 +64,50 @@
     // Global browser notifications for captioning completion.
     // Tracked here (layout level) so notifications fire even if the user
     // navigated away from the dataset page.
-    let prevCaptioningActive = $state(false);
+    // Per-dataset "was active" tracking for completion notifications. Keyed by
+    // dataset name so several concurrent jobs each notify independently when
+    // they finish, instead of a single global boolean that misses interleaved
+    // completions.
+    let prevActiveByDataset: Record<string, boolean> = {};
     $effect(() => {
-        const s = $captioningStatus;
-        const isActive = s.status === 'running' || s.status === 'stopping';
-
-        // Detect transition from active → terminal
-        if (prevCaptioningActive && !isActive && s.dataset_name) {
-            if (s.status === 'cancelled') {
-                sendNotification({
-                    title: `Captioning cancelled: ${s.dataset_name}`,
-                    body: `${s.processed}/${s.total} processed before stop`,
-                    tag: `caption-${s.dataset_name}`
-                });
-            } else if (s.status === 'error') {
-                sendNotification({
-                    title: `Captioning failed: ${s.dataset_name}`,
-                    body: s.error ?? 'Unknown error',
-                    tag: `caption-${s.dataset_name}`
-                });
-            } else if (s.errors > 0) {
-                sendNotification({
-                    title: `Captioning complete with errors: ${s.dataset_name}`,
-                    body: `${s.processed}/${s.total} done, ${s.errors} errors`,
-                    tag: `caption-${s.dataset_name}`
-                });
-            } else {
-                sendNotification({
-                    title: `Captioning complete: ${s.dataset_name}`,
-                    body: `${s.processed}/${s.total} images captioned`,
-                    tag: `caption-${s.dataset_name}`
-                });
+        const statuses = $captioningStatuses;
+        const nextActive: Record<string, boolean> = {};
+        for (const [name, s] of statuses) {
+            const isActive = s.status === 'running' || s.status === 'stopping';
+            nextActive[name] = isActive;
+            const wasActive = prevActiveByDataset[name] ?? false;
+            // Detect transition from active → terminal for this dataset.
+            if (wasActive && !isActive) {
+                if (s.status === 'cancelled') {
+                    sendNotification({
+                        title: `Captioning cancelled: ${name}`,
+                        body: `${s.processed}/${s.total} processed before stop`,
+                        tag: `caption-${name}`
+                    });
+                } else if (s.status === 'error') {
+                    sendNotification({
+                        title: `Captioning failed: ${name}`,
+                        body: s.error ?? 'Unknown error',
+                        tag: `caption-${name}`
+                    });
+                } else if (s.errors > 0) {
+                    sendNotification({
+                        title: `Captioning complete with errors: ${name}`,
+                        body: `${s.processed}/${s.total} done, ${s.errors} errors`,
+                        tag: `caption-${name}`
+                    });
+                } else {
+                    sendNotification({
+                        title: `Captioning complete: ${name}`,
+                        body: `${s.processed}/${s.total} images captioned`,
+                        tag: `caption-${name}`
+                    });
+                }
             }
         }
-        prevCaptioningActive = isActive;
+        // Reassigning (rather than mutating) drops entries for datasets whose
+        // status was evicted, keeping this map from growing unbounded.
+        prevActiveByDataset = nextActive;
     });
 </script>
 

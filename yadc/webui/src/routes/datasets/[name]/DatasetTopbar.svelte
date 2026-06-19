@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { DatasetInfo } from '$lib/stores/dataset';
-    import { captioningStatus, captionTimingRing } from '$lib/stores/caption';
+    import { captionTimingRing } from '$lib/stores/caption';
+    import type { CaptioningStatus } from '$lib/stores/events';
     import { formatEta } from '$lib/format';
     import { computeEtaSeconds, effectiveConcurrency } from '$lib/eta';
     import Topbar from '$lib/components/ui/Topbar.svelte';
@@ -24,6 +25,8 @@
         captionProcessed: number;
         /** Total number of images to caption. */
         captionTotal: number;
+        /** Per-dataset captioning status for this dataset (undefined when idle). */
+        captionStatus: CaptioningStatus | undefined;
         /** True when a manual refresh is in progress. */
         isRefreshing: boolean;
         /** True when uploads are allowed (managed dataset + no batch captioning). */
@@ -42,16 +45,14 @@
         captionPct,
         captionProcessed,
         captionTotal,
+        captionStatus,
         isRefreshing,
         canUpload,
         onrefresh,
         onupload
     }: Props = $props();
 
-    function _ringForStatus(
-        status: import('$lib/stores/events').CaptioningStatus,
-        ring: Record<string, number[]>
-    ): number[] {
+    function _ringForStatus(status: CaptioningStatus, ring: Record<string, number[]>): number[] {
         if (!status.api_url || !status.api_model_name) {
             return [];
         }
@@ -59,7 +60,7 @@
     }
 
     function _estimateRemainingSeconds(
-        status: import('$lib/stores/events').CaptioningStatus,
+        status: CaptioningStatus,
         ring: Record<string, number[]>
     ): number | null {
         if (status.status !== 'running' && status.status !== 'stopping') {
@@ -78,7 +79,7 @@
     }
 
     let estimatedRemainingSeconds = $derived(
-        _estimateRemainingSeconds($captioningStatus, $captionTimingRing)
+        captionStatus ? _estimateRemainingSeconds(captionStatus, $captionTimingRing) : null
     );
 
     // Concurrency the job can actually use right now: capped at the
@@ -86,17 +87,19 @@
     // job) doesn't claim ``max_concurrent`` is in flight. Shared by
     // the "N concurrent" label and the ETA so they can't disagree.
     let effectiveConcurrent = $derived(
-        effectiveConcurrency(
-            $captioningStatus.max_concurrent,
-            $captioningStatus.total,
-            $captioningStatus.processed
-        )
+        captionStatus
+            ? effectiveConcurrency(
+                  captionStatus.max_concurrent,
+                  captionStatus.total,
+                  captionStatus.processed
+              )
+            : 0
     );
 
     let showConcurrency = $derived(
         isBatchCaptioning &&
             !isStopping &&
-            $captioningStatus.status !== 'starting' &&
+            captionStatus?.status !== 'starting' &&
             effectiveConcurrent > 1
     );
 </script>
@@ -129,7 +132,7 @@
             {#if isBatchCaptioning}
                 {#if isStopping}
                     <span class="text-sm text-yellow-300">Stopping…</span>
-                {:else if $captioningStatus.status === 'starting'}
+                {:else if captionStatus?.status === 'starting'}
                     <span class="text-sm text-gray-400">Starting…</span>
                 {:else}
                     <span class="text-sm text-gray-400">
@@ -137,8 +140,8 @@
                         {#if showConcurrency}
                             · {effectiveConcurrent} concurrent
                         {/if}
-                        {#if $captioningStatus.elapsed > 0}
-                            · {formatEta(Math.round($captioningStatus.elapsed))} elapsed
+                        {#if (captionStatus?.elapsed ?? 0) > 0}
+                            · {formatEta(Math.round(captionStatus?.elapsed ?? 0))} elapsed
                         {/if}
                         {#if estimatedRemainingSeconds != null}
                             · ~{formatEta(estimatedRemainingSeconds)} remaining
