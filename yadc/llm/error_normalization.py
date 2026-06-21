@@ -1,5 +1,12 @@
 """``normalize_error()`` — turns an error into a stable, captioned string.
 
+Async because ``httpx.HTTPStatusError`` raised from a streaming response
+carries a body that hasn't been read yet — accessing ``.text`` would
+raise ``ResponseNotRead``. ``normalize_error`` drains the body via
+``await response.aread()`` before reading the text. Non-streaming and
+``requests.HTTPError`` paths (sync, body always pre-read) are no-ops
+for the read.
+
 Called from ``except`` blocks by both the API captioners
 (``yadc/captioners/api/``) and the LLM client layer (``yadc/llm/``).
 Accepts ``httpx.HTTPStatusError`` / ``requests.HTTPError``, the
@@ -61,7 +68,7 @@ class GenerationError(Exception):
         super().__init__(error)
 
 
-def normalize_error(error: Any) -> str:
+async def normalize_error(error: Any) -> str:
     def _try_parse_moderation(moderation: dict[str, Any]) -> _ParsedError | None:
         try:
             moderation_error = OpenRouterModerationError.model_validate(moderation)
@@ -110,16 +117,29 @@ def normalize_error(error: Any) -> str:
     error_message = ""
 
     if isinstance(error, (requests.HTTPError, httpx.HTTPStatusError)):
-        # FIXME: doesn't work for streaming content
+        # ``httpx.HTTPStatusError`` raised from a streaming response
+        # carries a response whose body hasn't been consumed — accessing
+        # ``.text`` raises ``ResponseNotRead``. Drain the body first;
+        # ``aread()`` is a no-op for non-streaming / already-read responses.
+        if isinstance(error, httpx.HTTPStatusError):
+            try:
+                await error.response.aread()
+            except Exception as read_exc:
+                _logger.warning("Warning: failed to read error response body: %s", read_exc)
+
+        try:
+            error_text = error.response.text
+        except httpx.ResponseNotRead:
+            error_text = ""
 
         _logger.debug("HTTP error %d: headers %s", error.response.status_code, error.response.headers)
-        _logger.debug("HTTP error %d: %s", error.response.status_code, error.response.text)
+        _logger.debug("HTTP error %d: %s", error.response.status_code, error_text)
 
         error_source = "http"
         error_code = error.response.status_code
         error_message = ""
 
-        if error_parsed := _try_parse_error_json(error_source, error.response.text):
+        if error_parsed := _try_parse_error_json(error_source, error_text):
             return f"api returned an error ({error_parsed.source} {error_parsed.code}): {error_parsed.message}"
 
         _logger.warning("Warning: failed to process http error: %d", error.response.status_code)

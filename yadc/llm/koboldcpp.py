@@ -41,7 +41,7 @@ class KoboldcppLLMClient(OpenAICompatibleLLMClient):
         try:
             self._model = await self._load_model(model_repo, timeout=timeout)
         except httpx.HTTPStatusError as e:
-            raise ValueError(normalize_error(e)) from e
+            raise ValueError(await normalize_error(e)) from e
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             raise ValueError(f"api unavailable: {self._api_url}") from e
 

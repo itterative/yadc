@@ -734,15 +734,26 @@ anytime.**
 
 ## Status
 
-**Phase 1a + 1b + shared-infra relocation COMPLETE.** The captioner
-layer is now a single `APICaptioner` that composes a `BaseLLMClient` from
-`yadc/llm/`, and `yadc/llm/` is fully self-contained — the shared HTTP
-infra (`async_session.py`, `cache.py`, `response_logger.py`,
+**Phase 1a + 1b + 2 COMPLETE.** The captioner layer is now a single
+`APICaptioner` that composes a `BaseLLMClient` from `yadc/llm/`, and
+`yadc/llm/` is fully self-contained — the shared HTTP infra
+(`async_session.py`, `cache.py`, `response_logger.py`,
 `error_normalization.py`, `response_models.py`, `units.py`,
 `DEFAULT_MODELS_CACHE_TTL_SECONDS`) lives there, and the
-`captioners.api → llm` direction is unidirectional. Next up: Phase 2
-(backend prompt generation) builds on `create_client` +
-`predict_next_message_stream` directly.
+`captioners.api → llm` direction is unidirectional. Phase 2 lands
+the backend prompt-generation plumbing (see
+`history/prompt-generator-plan/001-phase-2-backend.md`):
+
+- `yadc/api/services/prompt_generation.py` — `PromptGenerationService`
+  calls `yadc.llm.create_client` directly (no captioner) and yields
+  `StreamChunk`s from `predict_next_message_stream(messages,
+  reasoning=None)`.
+- `yadc/api/controllers/api_prompts.py` — `POST /api/prompts/generate`
+  streaming NDJSON response (one `{"type": "token"}` line per chunk +
+  `{"type": "done"}` / `{"type": "error"}`).
+- Tests at the service and controller levels (33 new tests, all
+  passing). Phase 3 (frontend stores/components/route) builds on
+  this endpoint.
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);

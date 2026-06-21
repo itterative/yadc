@@ -40,6 +40,7 @@ yadc/api/
     api_envs.py         # @controller — environment CRUD + model list proxy
     api_export.py       # @controller — export backends listing + run export (filesystem or streaming zip)
     api_templates.py    # @controller — template CRUD + Jinja2 variable extraction
+    api_prompts.py      # @controller — POST /api/prompts/generate — streaming NDJSON response that delegates to PromptGenerationService (no SSE event bus; uses fetch + ReadableStream on the frontend)
     api_events.py       # @controller — SSE event stream with Last-Event-ID resumption support (replays from ring buffer on reconnect)
 
   modules/            # DI primitives + cross-cutting infrastructure
@@ -59,7 +60,7 @@ yadc/api/
     db_connection_factory.py # SQLite WAL, foreign keys, background init. `connection()` is a context manager that auto-enrolls in any active `transaction()`; standalone calls commit on success and close on exit. `transaction()` supports nested savepoints and is async/task-safe via `ContextVar`.
 
   services/           # Business logic + repositories (both auto-discovered as Service subclasses)
-    __init__.py           # re-exports all services + repositories (CaptioningService, CaptionJobOptions, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ManagedDatasetsService, SettingsService, SettingsRepository, UploadProgressEvent)
+    __init__.py           # re-exports all services and repositories (CaptioningService, CaptionJobOptions, ConfigHistoryService, ConfigHistoryRepository, DatasetService, DatasetRepository, DatasetUploadService, DatasetUploadResult, ExamplePair, ManagedDatasetsService, PromptGenerationFocus, PromptGenerationRequest, PromptGenerationService, SettingsService, SettingsRepository, UploadProgressEvent)
     captioning/           # CaptioningService + job management (package, split from single file)
       __init__.py           # re-exports CaptioningService, AsyncCaptionJob, AsyncCaptionJobRunner, RefineOptions, JobStatus, JobInfo
       models.py             # RefineOptions, JobStatus, JobInfo (data classes / type aliases)
@@ -75,6 +76,7 @@ yadc/api/
     datasets.py           # DatasetService — TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan, watches dirs via DatasetWatcherService. Injects `DatasetRepository` (no SQL in this file). Background refresh via `JobScheduler` (interval from `Configuration.dataset_refresh_interval_seconds`); `_refresh_lock` serializes background + manual rescans. `_apply_disk_scan` does a diff scan (no per-image upsert when nothing changed) and returns `bool` (whether the index changed). `rescan_dataset(source=...)` dispatches `DatasetChangedEvent(job_id=source)` when the scan changed rows.
     managed_datasets.py   # ManagedDatasetsService — operations specific to managed (upload-sourced) datasets: `list_folders` (images/ + folders/* with image counts + can_delete flag) and `delete_items` (file + sidecars, or folder, with `expect_file_change`/`expect_pattern_change` for self-suppression)
     managed_paths.py      # Layout constants and path builders for managed datasets: `MANAGED_IMAGES_PREFIX = "images"`, `MANAGED_FOLDERS_PREFIX = "folders"`, plus `managed_base_dir(config_path)`/`managed_images_dir(config_path)`/`managed_folders_dir(config_path)` builders and `compute_delete_path(image_path, config_path)` resolver. Single source of truth for the `<config_dir>/{images,folders}/...` layout — safe to import from anywhere (no service deps).
+    prompt_generation.py  # PromptGenerationService — one-shot Jinja2 prompt template generator. Builds the LLM client directly via `yadc.llm.create_client` (no captioner — there's no image). Yields `StreamChunk`s from the client's `predict_next_message_stream(messages, reasoning=None)`. Used by the `api_prompts` controller for the prompt-generator feature.
     settings.py           # SettingsService — KV store over SQLite settings table (JSON encode/decode + business policy); delegates SQL to `SettingsRepository`
     settings_repository.py # SettingsRepository — owns all SQL for the `settings` table (get, upsert, delete, list_all). Values are stored as raw JSON strings.
 ```

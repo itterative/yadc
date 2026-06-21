@@ -9,6 +9,7 @@ from .dataset_scanner import DatasetScanner
 from .dataset_upload import DatasetUploadResult, DatasetUploadService, UploadProgressEvent
 from .datasets import DatasetService
 from .managed_datasets import ManagedDatasetsService
+from .prompt_generation import ExamplePair, PromptGenerationFocus, PromptGenerationRequest, PromptGenerationService
 from .settings import SettingsService
 from .settings_repository import SettingsRepository
 
@@ -22,7 +23,11 @@ __all__ = [
     "DatasetService",
     "DatasetUploadResult",
     "DatasetUploadService",
+    "ExamplePair",
     "ManagedDatasetsService",
+    "PromptGenerationFocus",
+    "PromptGenerationRequest",
+    "PromptGenerationService",
     "SettingsRepository",
     "UploadProgressEvent",
     "SettingsService",

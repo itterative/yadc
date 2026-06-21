@@ -83,6 +83,12 @@ server has a bespoke loading endpoint):
 (`_reasoning_exclude`) that OpenRouter consumes for `reasoning.exclude`;
 Gemini reads it directly for `thinkingConfig.includeThoughts`.
 
+`normalize_error()` is async — it `await`s `response.aread()` for
+`httpx.HTTPStatusError` from a streaming response (whose body hasn't
+been consumed; accessing `.text` directly would raise
+`ResponseNotRead`). All call sites are inside async functions, so the
+`await` is free.
+
 `Message.role` is `str` (not a `Literal`) so the captioner can honour the
 advanced `system_role` override (e.g. `"developer"`); the Gemini client
 treats `system`/`developer` as the system message and maps `assistant`→`model`.

@@ -113,7 +113,7 @@ class GeminiLLMClient(BaseLLMClient):
 
             _logger.info("Model set to %s.", self._model)
         except httpx.HTTPStatusError as e:
-            raise ValueError(normalize_error(e)) from e
+            raise ValueError(await normalize_error(e)) from e
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             raise ValueError(f"api unavailable: {self._api_url}") from e
         except AssertionError as e:
@@ -187,7 +187,7 @@ class GeminiLLMClient(BaseLLMClient):
             handle.raise_for_status()
         except httpx.HTTPStatusError as e:
             await handle.aclose()
-            raise ValueError(normalize_error(e)) from e
+            raise ValueError(await normalize_error(e)) from e
 
         message = Message(role="assistant", content="")
         chunks = self._decode_chunks(handle)
@@ -328,7 +328,7 @@ class GeminiLLMClient(BaseLLMClient):
                             break
 
                         if candidate.finishReason and candidate.finishReason != "STOP":
-                            raise ValueError(normalize_error(line_response))
+                            raise ValueError(await normalize_error(line_response))
 
                         for part in candidate.content.parts:
                             if not part.text:
@@ -351,7 +351,7 @@ class GeminiLLMClient(BaseLLMClient):
                     _logger.error("Error: failed to process line: %s: %s", e, line)
                     break
         except GenerationError as e:
-            raise ValueError(normalize_error(e)) from e
+            raise ValueError(await normalize_error(e)) from e
         except (httpx.RemoteProtocolError, httpx.ReadError) as e:
             _logger.warning("Stream connection closed unexpectedly: %s", e)
             raise ValueError("Connection closed unexpectedly by the server. The API may have shut down or become unreachable.") from e

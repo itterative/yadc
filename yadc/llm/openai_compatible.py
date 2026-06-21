@@ -104,7 +104,7 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
             handle.raise_for_status()
         except httpx.HTTPStatusError as e:
             await handle.aclose()
-            raise ValueError(normalize_error(e)) from e
+            raise ValueError(await normalize_error(e)) from e
 
         message = Message(role="assistant", content="")
         chunks = self._decode_chunks(handle)
@@ -212,11 +212,11 @@ class OpenAICompatibleLLMClient(BaseLLMClient):
                             )
 
                     if chunk_response.error:
-                        raise ValueError(normalize_error(chunk_response))
+                        raise ValueError(await normalize_error(chunk_response))
 
                     for choice in chunk_response.choices:
                         if choice.finish_reason and choice.finish_reason != "stop":
-                            raise ValueError(normalize_error(chunk_response))
+                            raise ValueError(await normalize_error(chunk_response))
 
                         delta = choice.delta
 
