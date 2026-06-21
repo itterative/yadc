@@ -8,12 +8,11 @@ headers, request body, response status, response headers, response body
 (accumulated line-by-line for streams), the ``image_name`` capture
 context, and a UTC timestamp.
 
-Sensitive headers (``Authorization``, ``x-api-key``, ``api-key``,
-``openai-organization``, ``openai-project``) are redacted to
-``[REDACTED]`` before writing. The request body is only included when
-``YADC_DEBUG_CAPTION_REQUESTS_BODY=1`` is set (avoids leaking large
-base64 image payloads by default). For streams, the response body is
-the line-accumulated text produced by ``_LoggedStreamResponse``.
+Sensitive headers (``Authorization``, ``x-goog-api-key``) are redacted
+to ``[REDACTED]`` before writing. The request body is only included
+when ``YADC_DEBUG_CAPTION_REQUESTS_BODY=1`` is set (avoids leaking
+large base64 image payloads by default). For streams, the response body
+is the line-accumulated text produced by ``_LoggedStreamResponse``.
 
 Used only when ``YADC_DEBUG_CAPTION_RESPONSES=1`` is set in the
 environment.

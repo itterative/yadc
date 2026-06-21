@@ -57,7 +57,7 @@ Each file is a single JSON line:
 
 - `yadc/core/env.py` — `DEBUG_CAPTION_RESPONSES` + `DEBUG_CAPTION_REQUESTS_BODY` flags
 - `yadc/cmd/cache/cache.py` — `debug_log_dir()` computes the run directory path
-- `yadc/captioners/api/utils/response_logger.py` — `ResponseLogger` class (pure writer, accepts `log_dir`) + `DebugStreamProxy`
+- `yadc/llm/response_logger.py` — `ResponseLogger` class (pure writer, accepts `log_dir`) + `DebugStreamProxy`
 - `yadc/captioners/api/session.py` — `capture_response()` context manager + logging in `request()`
 - `yadc/captioners/api/base.py` — passes `ResponseLogger` to `Session` constructor
 - `yadc/captioners/api/openai.py` — wraps captioning POSTs with `capture_response()`

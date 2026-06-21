@@ -14,8 +14,6 @@ from typing import Any
 import click
 
 from yadc.captioners.api import APITypes
-from yadc.captioners.api.utils.cache import HTTPResponseCache
-from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.cmd import cache as cmd_cache
 from yadc.cmd import configs as cmd_configs
 from yadc.cmd import status as cmd_status
@@ -38,6 +36,8 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.dataset_resolver import reapply_dataset_extras
 from yadc.core.env import DEBUG_CAPTION_REQUESTS_BODY, DEBUG_CAPTION_RESPONSES, YADC_PASSWORD
 from yadc.core.prediction import PredictionContext
+from yadc.llm.cache import HTTPResponseCache
+from yadc.llm.response_logger import ResponseLogger
 from yadc.utils.dict_utils import load_toml, load_toml_file
 
 from . import cli_common

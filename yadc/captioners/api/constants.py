@@ -1,9 +1,8 @@
-"""Constants shared across the ``captioners.api`` package."""
+"""Constants used by the captioner layer and its env-orchestrator.
 
-# Default cache TTL for ``/models`` responses. Short enough that newly
-# added models show up promptly, long enough to keep model pickers snappy
-# when re-opened. Override via the API's ``Configuration.api_models_cache_ttl``.
-DEFAULT_MODELS_CACHE_TTL_SECONDS: float = 300.0
+The model-list cache TTL lives in :mod:`yadc.llm.constants` (alongside
+the cache behaviour) — only the orchestrator timeout stays here.
+"""
 
 # Default upper bound for the entire ``list_models`` operation (env
 # decryption + API-type inference probes + the list call itself). Caps

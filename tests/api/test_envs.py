@@ -705,16 +705,17 @@ class TestListModels:
         assert kwargs.get("password") == "hunter2"
 
     @pytest.mark.asyncio
-    async def test_get_without_cookie_uses_none(self, client, patched_cmd_envs, patched_list_models):
-        """No cookie means ``password=None`` is forwarded to
-        ``cmd_envs.list_models``, which lets it fall back to
-        ``YADC_PASSWORD`` (or fail with ``PasswordRequiredError`` if
-        neither is set)."""
+    async def test_get_without_cookie_uses_none(self, client, patched_cmd_envs, patched_list_models, patched_resolve_password_fallback):
+        """No cookie + no env password → ``password=None`` is forwarded
+        to ``cmd_envs.list_models``. The env-var fallback is pinned to
+        ``None`` so the test is hermetic against the real ``YADC_PASSWORD``
+        in the test process environment (which the integration-test
+        workflow legitimately sets via ``.env``)."""
         env_data = make_app_config_env()
         patched_cmd_envs.get_env.return_value = env_data
         patched_list_models.return_value = ["m1"]
-
-        resp = await client.get("/api/envs/default/models")
+        with patched_resolve_password_fallback(None):
+            resp = await client.get("/api/envs/default/models")
 
         assert resp.status_code == 200
         patched_list_models.assert_awaited_once()

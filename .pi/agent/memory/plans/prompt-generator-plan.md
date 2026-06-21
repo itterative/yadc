@@ -527,10 +527,20 @@ captioner collapse is the risky part (it rewrites every backend's
 hot path); it is decoupled so it can ship — and be bisected —
 independently after the feature works.
 
-### Phase 1a — Extract `yadc/llm/` client layer (additive, no user-visible change)
+### Phase 1a — Extract `yadc/llm/` client layer (additive, no user-visible change) — ✅ DONE
 
 Goal: a standalone client package the prompt generator uses directly.
 **Captioners are untouched** and keep working exactly as before.
+
+**Implemented** (see `yadc/llm/` + `tests/llm/`). Key realization during
+impl: the existing `AsyncSession.request(stream=True)` was **fake
+streaming** — it popped `stream` and never passed it to httpx, so the
+whole body was buffered before any line was yielded (verified with a
+slow SSE server). The client layer needed TRUE streaming for
+`MessageStream.cancel()` to be meaningful, so a new additive
+`AsyncSession.open_stream()` (built on `client.send(req, stream=True)`)
+was added; the legacy `request()`/`get()`/`post()` paths are untouched,
+so captioners keep their existing (buffered) behavior.
 
 1. Define `Message`, `StreamChunk`, content parts, `MessageStream` in
    `yadc/llm/types.py`.
@@ -566,7 +576,7 @@ After 1a, Phases 2–4 (backend prompt generation, frontend, CLI) can
 build on the client directly. **Phase 1b can land separately,
 anytime.**
 
-### Phase 1b — Collapse captioners onto the client (refactor, separately shippable)
+### Phase 1b — Collapse captioners onto the client (refactor, separately shippable) — ✅ DONE
 
 1. Collapse all per-server captioner classes (`OpenAICaptioner`,
    `OpenRouterCaptioner`, `VllmCaptioner`, `LlamacppCaptioner`,
@@ -724,6 +734,16 @@ anytime.**
 
 ## Status
 
+**Phase 1a + 1b + shared-infra relocation COMPLETE.** The captioner
+layer is now a single `APICaptioner` that composes a `BaseLLMClient` from
+`yadc/llm/`, and `yadc/llm/` is fully self-contained — the shared HTTP
+infra (`async_session.py`, `cache.py`, `response_logger.py`,
+`error_normalization.py`, `response_models.py`, `units.py`,
+`DEFAULT_MODELS_CACHE_TTL_SECONDS`) lives there, and the
+`captioners.api → llm` direction is unidirectional. Next up: Phase 2
+(backend prompt generation) builds on `create_client` +
+`predict_next_message_stream` directly.
+
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);
   `MessageStream` wraps an already-open response, so `cancel()` is a
@@ -742,4 +762,5 @@ Proposed — design refined after review:
 - CLI `generate` writes the template body to stdout (progress → stderr)
   so it pipes into `prompts save`.
 
-Still awaiting user approval before implementation.
+## User feedback
+* several docstrings reference the current plan; long-term, these docstrings are not relevant and should be focused on the current state of the files rather than on the referencing the refactoring done in this plan

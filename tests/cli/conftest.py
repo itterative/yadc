@@ -91,6 +91,32 @@ def cli():
             assert should_fail, f"command failed, but was expected to succeed: {full_cmd}"
             return ex.output
 
+    def _integration_get(key: str, *, required: bool = True) -> str | None:
+        """Run ``yadc envs get <key>`` for the current env.
+
+        Returns the value on success. When *required* is False, a
+        ``key not found`` exit is tolerated and returns ``None`` (local
+        backends don't always store ``api_token``). Any other failure
+        still fails the test.
+        """
+        full_cmd = f"yadc envs get {key}" if current_env is None else f"yadc envs get {key} --env {current_env}"
+        try:
+            data = subprocess.check_output(
+                full_cmd,
+                shell=True,
+                text=True,
+                stderr=subprocess.STDOUT,
+                encoding=None,
+                errors=None,
+                cwd=test_data_cwd,
+            )
+        except subprocess.CalledProcessError as ex:
+            output = ex.output or ""
+            if not required and "key not found" in output:
+                return None
+            raise
+        return data
+
     def _integration_cli(env: str):
         nonlocal current_env
 
@@ -99,9 +125,10 @@ def cli():
             pytest.skip(f"env {env} not found; available: {', '.join(envs)}")
 
         current_env = env
-        _integration_cmd("envs get api_url")
-        _integration_cmd("envs get api_token")
-        _integration_cmd("envs get api_model_name")
+        token_required = not env.startswith("integration-tests-local-")
+        _integration_get("api_url")
+        _integration_get("api_token", required=token_required)
+        _integration_get("api_model_name")
         return _integration_cmd
 
     # --- isolated mode ---

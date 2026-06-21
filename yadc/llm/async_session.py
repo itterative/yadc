@@ -23,7 +23,7 @@ body, response body accumulated line-by-line for streams) — used by
 import asyncio
 import functools
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import ParseResult, urlparse
@@ -32,8 +32,8 @@ import httpx
 
 from yadc.core import logging
 
-from .utils.cache import HTTPResponseCache
-from .utils.response_logger import ResponseLogger
+from .cache import HTTPResponseCache
+from .response_logger import ResponseLogger
 
 _logger = logging.get_logger(__name__)
 
@@ -49,6 +49,71 @@ class AsyncCaptureContext:
 
     def __init__(self, image_name: str):
         self.image_name = image_name
+
+
+class AsyncStreamHandle:
+    """An open streaming response returned by :meth:`AsyncSession.open_stream`.
+
+    Unlike the ``async with session.request(..., stream=True)`` path (which
+    reads the response body eagerly and then iterates the buffered lines),
+    a stream handle wraps a genuinely open response obtained via
+    ``client.send(request, stream=True)`` — bytes are pulled from the
+    network only as :meth:`aiter_lines` consumes them.
+
+    When a ``ResponseLogger`` is wired, :meth:`aiter_lines` transparently
+    accumulates lines into a buffer so the request/response pair can be
+    logged on close (mirroring ``_LoggedStreamResponse``). The caller must
+    :meth:`aclose` the handle when finished; that is idempotent, so the
+    consumer's cancel path and the decoder's natural-exhaustion cleanup can
+    both call it without double-logging or double-closing.
+    """
+
+    _response: httpx.Response
+    _accumulate: list[str] | None
+    _on_close: Callable[[], Awaitable[None]] | None
+    _closed: bool
+
+    def __init__(
+        self,
+        response: httpx.Response,
+        *,
+        accumulate: list[str] | None = None,
+        on_close: Callable[[], Awaitable[None]] | None = None,
+    ):
+        self._response = response
+        self._accumulate = accumulate
+        self._on_close = on_close
+        self._closed = False
+
+    @property
+    def status_code(self) -> int:
+        return self._response.status_code
+
+    @property
+    def headers(self) -> httpx.Headers:
+        return self._response.headers
+
+    @property
+    def response(self) -> httpx.Response:
+        return self._response
+
+    def raise_for_status(self) -> None:
+        self._response.raise_for_status()
+
+    async def aiter_lines(self) -> AsyncGenerator[str, None]:
+        async for line in self._response.aiter_lines():
+            text = line.decode("utf-8") if isinstance(line, bytes) else line
+            if self._accumulate is not None:
+                self._accumulate.append(text)
+            yield text
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._on_close is not None:
+            await self._on_close()
+        await self._response.aclose()
 
 
 class _LoggedStreamResponse:
@@ -76,7 +141,7 @@ class _LoggedStreamResponse:
         async for line in self._response.aiter_lines():
             text = line.decode("utf-8") if isinstance(line, bytes) else line
             self._accumulator.append(text)
-            yield text
+            yield line and text
 
 
 class AsyncSession:
@@ -243,6 +308,94 @@ class AsyncSession:
                     image_name=capture_ctx.image_name,
                 )
             await response.aclose()
+
+    async def open_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        capture_ctx: AsyncCaptureContext | None = None,
+        **kwargs: Any,
+    ) -> AsyncStreamHandle:
+        """Send a request with the retry policy and return the OPEN streaming response.
+
+        Unlike :meth:`request` with ``stream=True`` (which reads the entire
+        response body eagerly and then iterates buffered lines), this sends
+        the request via ``client.send(request, stream=True)`` so bytes are
+        pulled from the network only as the caller iterates
+        :meth:`AsyncStreamHandle.aiter_lines`. This is what makes mid-stream
+        cancellation meaningful (the connection is genuinely still open) and
+        is required for true token-by-token streaming.
+
+        The retry policy (``status_forcelist`` + transport exceptions with
+        exponential backoff) applies to establishing the stream; a
+        retryable status closes the partial response and re-issues. The
+        caller owns the response lifecycle: it must :meth:`AsyncStreamHandle.aclose`
+        when done (the handle is idempotent, so cancel + natural exhaustion
+        can both close).
+        """
+        headers: dict[str, Any] = kwargs.pop("headers", {})
+        assert isinstance(headers, dict)
+
+        url = self._create_url(path)
+
+        _logger.debug("HTTP Request: %s %s", method, url)
+
+        headers.update(self.headers)
+
+        should_log = capture_ctx is not None and self._response_logger is not None
+        debug_body: Any = kwargs.get("json") if should_log else None
+
+        request = self._client.build_request(method, url, headers=headers, **kwargs)
+
+        response: httpx.Response | None = None
+        for attempt in range(self._max_retries + 1):
+            if response is not None:
+                await response.aclose()
+                response = None
+            try:
+                response = await self._client.send(request, stream=True)
+            except (httpx.ConnectError, httpx.ReadError, httpx.WriteError, httpx.TimeoutException) as exc:
+                if attempt < self._max_retries:
+                    wait = self._backoff_factor * (2**attempt)
+                    _logger.debug("HTTP retry in %.1fs after %s: %s %s", wait, type(exc).__name__, method, url)
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+
+            if response.status_code not in self._status_forcelist or attempt == self._max_retries:
+                break
+
+            wait = self._backoff_factor * (2**attempt)
+            _logger.debug("HTTP retry in %.1fs after %d: %s %s", wait, response.status_code, method, url)
+            await asyncio.sleep(wait)
+
+        assert response is not None
+
+        _logger.debug("HTTP Response: %s %s: %d", method, url, response.status_code)
+        _logger.debug("HTTP Response headers: %s %s: %s", method, url, response.headers)
+        _logger.debug("HTTP Response Body: %s %s: (streamed)", method, url)
+
+        accumulate: list[str] | None = [] if should_log else None
+
+        async def _on_close() -> None:
+            if should_log:
+                assert self._response_logger is not None
+                assert capture_ctx is not None
+                body = "\n".join(accumulate) if accumulate is not None else ""
+                self._response_logger.log(
+                    method=method,
+                    url=url,
+                    request_headers=headers,
+                    request_body=debug_body,
+                    response_status=response.status_code,
+                    response_headers=dict(response.headers),
+                    response_body=body,
+                    stream=True,
+                    image_name=capture_ctx.image_name,
+                )
+
+        return AsyncStreamHandle(response, accumulate=accumulate, on_close=_on_close)
 
     @asynccontextmanager
     async def get(self, path: str, cache_ttl: float | None = None, **kwargs: Any):

@@ -8,12 +8,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tests.captioners.api.conftest import MockAsyncSession
-from yadc.captioners.api.constants import (
-    DEFAULT_LIST_MODELS_TIMEOUT_SECONDS,
-    DEFAULT_MODELS_CACHE_TTL_SECONDS,
-)
+from yadc.captioners.api.constants import DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
 from yadc.cmd import envs as cmd_envs
 from yadc.cmd.envs import models as cmd_envs_models
+from yadc.llm.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 
 # Patch targets for the cmd module — single source of truth.
 _PATCH_LOAD_ENV = "yadc.cmd.envs.models.load_env"
@@ -145,10 +143,10 @@ class TestListModelsOrchestrator:
 
     @pytest.mark.asyncio
     async def test_raises_timeout_error_when_inner_hangs(self, patched_load_env, monkeypatch):
-        """A hung inner captioner surfaces ``asyncio.TimeoutError`` so the
-        controller can map it to 504. The timeout applies to the *entire*
-        operation (API-type inference + list_models), not just the list
-        call itself.
+        """A hung client surfaces ``asyncio.TimeoutError`` so the controller can
+        map it to 504. The timeout applies to the *entire* operation
+        (API-type inference inside ``create_client`` + ``list_models``), not
+        just the list call itself.
         """
         patched_load_env.return_value = _fake_config(url="http://api.openai.com/v1", token="t")
 
@@ -161,36 +159,33 @@ class TestListModelsOrchestrator:
             await _asyncio.sleep(60)
             return ["unreachable"]
 
-        monkeypatch.setattr(cmd_envs_models.APICaptioner, "create", staticmethod(_hang_forever))
+        monkeypatch.setattr(cmd_envs_models, "create_client", _hang_forever)
 
         with pytest.raises(TimeoutError):
             await cmd_envs.list_models("default", timeout=0.1)
 
     @pytest.mark.asyncio
     async def test_timeout_none_disables_wait_for(self, patched_load_env, monkeypatch):
-        """``timeout=None`` skips ``asyncio.wait_for`` entirely — a slow
-        inner call is allowed to take its natural time. Useful for
-        callers (e.g. CLI scripts) that don't want a hard cap.
+        """``timeout=None`` skips ``asyncio.wait_for`` entirely — a slow inner
+        call is allowed to take its natural time. Useful for callers (e.g.
+        CLI scripts) that don't want a hard cap.
         """
         patched_load_env.return_value = _fake_config(url="http://api.openai.com/v1", token="t")
 
         completed = []
 
-        async def _quick_coro(**_kwargs):
+        async def _quick_list_models(*args, **kwargs):
             completed.append(True)
             return []
 
-        # Use a real ``APICaptioner`` shim — we just need the call to
-        # complete without raising. We return a fake captioner with the
-        # only method the orchestrator calls.
-        class _FakeCaptioner:
-            async def list_models(self, cache_ttl=None):
-                return await _quick_coro()
+        # Fake client — the orchestrator only calls ``list_models`` on it.
+        class _FakeClient:
+            list_models = _quick_list_models
 
-        async def _create_captioner(**_kwargs):
-            return _FakeCaptioner()
+        async def _create_client(**_kwargs):
+            return _FakeClient()
 
-        monkeypatch.setattr(cmd_envs_models.APICaptioner, "create", staticmethod(_create_captioner))
+        monkeypatch.setattr(cmd_envs_models, "create_client", _create_client)
 
         # Should not raise despite the inner being slow (it's instant).
         result = await cmd_envs.list_models("default", timeout=None, async_session=MockAsyncSession())

@@ -1,6 +1,6 @@
-"""Pydantic models for OpenAI, Gemini, OpenRouter, KoboldCpp, and llama.cpp API response types.
+"""Pydantic models for OpenAI, Gemini, OpenRouter, and KoboldCpp API response types.
 
-The captioners use these to parse upstream responses in a uniform way
+The LLM clients use these to parse upstream responses in a uniform way
 rather than hand-rolling dict access. Most models are ``extra="allow"``
 so unknown fields don't fail parsing, and a handful expose ``usage``
 and ``usageMetadata`` as optional sub-models so token accounting is a
@@ -18,11 +18,12 @@ Grouped by backend:
   ``usageMetadata``; ``GeminiModelsResponse`` / ``GeminiModel`` for
   the paginated ``models.list``; ``GeminiErrorResponse``.
 - **OpenRouter** — ``OpenRouterModerationError`` and
-  ``OpenRouterCreditsResponse`` (used by ``OpenRouterCaptioner`` to log
+  ``OpenRouterCreditsResponse`` (used by ``OpenRouterLLMClient`` to log
   remaining credits after a successful ``load_model``).
 - **KoboldCpp** — admin endpoints: ``KoboldAdminCurrentModelResponse``,
   ``KoboldAdminReloadModelReponse``, ``KoboldAdminSettingsReponse``, and
-  ``KoboldServiceInfoResponse`` (used by ``APICaptioner._infer_api_type``).
+  ``KoboldServiceInfoResponse`` (used by ``_infer_api_type`` in
+  ``yadc/llm/factory.py``).
 """
 
 from typing import Any, ClassVar, Literal

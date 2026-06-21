@@ -2,9 +2,8 @@
 
 Configured by two constructor kwargs:
 ``reasoning_start_token`` (default :data:`DEFAULT_THINKING_START`) and
-``reasoning_end_token`` (default :data:`DEFAULT_THINKING_END`); the
-defaults live in ``yadc.captioners.api.constants`` as base64-decoded
-strings (deliberately encoded at rest so that agents reading the
+``reasoning_end_token`` (default :data:`DEFAULT_THINKING_END`); the defaults live in
+``yadc.core.constants`` as base64-decoded strings (deliberately encoded at rest so that agents reading the
 codebase aren't handed the tokens verbatim and reproduce them
 unintentionally). The mixin recognises the same block on different
 backends by setting those tokens to the provider's own delimiters

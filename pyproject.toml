@@ -36,6 +36,7 @@ test = [
     "pytest-asyncio>=0.26.0",
     "pytest-integration>=0.2.3",
     "pytest-timeout>=2.4.0",
+    "pytest-env>=1.1.5",
     "requests-mock>=1.12.1",
 ]
 dev = [
@@ -81,6 +82,7 @@ reportUnknownVariableType = "none"
 [tool.pytest.ini_options]
 timeout = 5
 addopts = "-m 'not integration_test'"
+env_files = ".env"
 markers = [
     "integration_test: marks tests as integration tests (slow, disabled by default)",
 ]

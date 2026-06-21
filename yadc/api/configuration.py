@@ -38,11 +38,9 @@ Grouped by subsystem:
 
 from dataclasses import dataclass, field
 
-from yadc.captioners.api.constants import (
-    DEFAULT_LIST_MODELS_TIMEOUT_SECONDS,
-    DEFAULT_MODELS_CACHE_TTL_SECONDS,
-)
+from yadc.captioners.api.constants import DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
 from yadc.cmd.app import CACHE_PATH, CONFIG_PATH, STATE_PATH
+from yadc.llm.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 
 
 @dataclass

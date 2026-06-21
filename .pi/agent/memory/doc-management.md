@@ -16,10 +16,10 @@ All reference docs live in **`.pi/agent/memory/docs/`** (often referenced as `.p
 
 | Doc | Description |
 |-----|-------------|
-| `backend/` | **Folder** of per-area structure files for the `yadc/` Python package. One file per area: `cli.md` (CLI entry points), `api.md` (Web UI backend), `cmd.md` (pure logic), `core.md` (business logic), `captioners.md` (API captioners). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
+| `backend/` | **Folder** of per-area structure files for the `yadc/` Python package. One file per area: `cli.md` (CLI entry points), `api.md` (Web UI backend), `cmd.md` (pure logic), `core.md` (business logic), `captioners.md` (API captioners), `llm.md` (backend-agnostic LLM client layer). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
 | `frontend/` | **Folder** of per-area structure files for `yadc/webui/src/`. One file per area: `lib.md` (lib/ root modules), `stores.md` (lib/stores/), `components-ui.md` (lib/components/ui/), `components-domain.md` (lib/components/<domain>/), `routes.md` (routes/). Each file has one-line summaries per file. Read the relevant area's doc on demand. |
 | [`api-di-system`](.pi/agent/memory/docs/api-di-system.md) | Web UI backend DI system — auto-discovery of services and controllers, injector binding lifecycle, and how to add new ones. |
-| [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Captioner hierarchy — `APICaptioner` auto-detection, inner captioner delegation, mixin pattern, streaming, stream error handling, and per-backend details. |
+| [`captioner-architecture`](.pi/agent/memory/docs/captioner-architecture.md) | Single `APICaptioner` composes a `BaseLLMClient`; mixin/helpers, conversation building, streaming error handling. |
 | [`dataset-watcher`](.pi/agent/memory/docs/dataset-watcher.md) | Filesystem watcher — inotify via watchdog, debouncing, expected-change tracking (`_expected_sources` + `_expected_files` + `_expected_patterns`), event dispatch, and frontend suppression. |
 | [`dataset-system`](.pi/agent/memory/docs/dataset-system.md) | Dataset subsystem end-to-end — Web UI dataset model, three creation flows, managed dataset layout, upload pipeline (create/append/commit), source-id propagation, diff-scan rescan, background refresh, DatasetImage persistence. |
 | [`captioning-workflow`](.pi/agent/memory/docs/captioning-workflow.md) | End-to-end captioning workflow — dataset loading, filtering, prediction loop, saving. |

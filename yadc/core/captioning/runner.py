@@ -15,13 +15,14 @@ from logging import Logger
 from typing import Any, Protocol, runtime_checkable
 
 from yadc.captioners.api import APICaptioner
-from yadc.captioners.api.async_session import AsyncSession
-from yadc.captioners.api.utils.cache import HTTPResponseCache
-from yadc.captioners.api.utils.response_logger import ResponseLogger
 from yadc.core.captioner import CaptionerRound, ReplyRound
 from yadc.core.config import Config
 from yadc.core.dataset import DatasetImage
 from yadc.core.prediction import PredictionContext
+from yadc.llm import create_client
+from yadc.llm.async_session import AsyncSession
+from yadc.llm.cache import HTTPResponseCache
+from yadc.llm.response_logger import ResponseLogger
 
 from .options import CaptionJobOptions
 
@@ -47,7 +48,7 @@ class BatchAbortedError(Exception):
 # batch once the threshold is reached.
 #
 # Note: we match by substring on the message returned from
-# ``ErrorNormalizationMixin._normalize_error`` (see
+# ``normalize_error()`` (see
 # ``yadc/captioners/api/utils/error_normalization.py``). The strings
 # are deliberately conservative — anything not in this list is treated
 # as image-attributable and does NOT count toward the abort threshold.
@@ -227,18 +228,20 @@ class CaptioningRunner:
             write_timeout=self._http_timeouts.write,
             pool_timeout=self._http_timeouts.pool,
         )
-        self._model = await APICaptioner.create(
-            api_url=self._config.api.url,
-            api_token=self._config.api.token,
+        self._model = APICaptioner(
+            client=await create_client(
+                api_url=self._config.api.url,
+                api_token=self._config.api.token,
+                cache=self._cache,
+                response_logger=self._response_logger,
+                async_session=self._async_session,
+            ),
             prompt_template=self._config.prompt.template,
             store_conversation=self._config.settings.store_conversation,
             image_quality=self._config.settings.image_quality,
             reasoning=self._config.reasoning.enable,
             reasoning_effort=self._config.reasoning.thinking_effort,
             reasoning_exclude_output=self._config.reasoning.exclude_from_output,
-            cache=self._cache,
-            response_logger=self._response_logger,
-            async_session=self._async_session,
         )
         await self._model.load_model(self._config.api.model_name)
         return self

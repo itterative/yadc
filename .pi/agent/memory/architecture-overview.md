@@ -18,7 +18,8 @@ Yet Another Dataset Captioner — a CLI tool for captioning image datasets using
 - `frontend/` — folder of per-area structure files for `yadc/webui/src/` (`lib/`, `styles/`, `stores/`, `components-ui/`, `components-domain/`, `routes/`)
 - `api-di-system` — Quart + injector DI auto-discovery
 - `repository-pattern` — service/repo split for SQL
-- `captioner-architecture` — captioner hierarchy + mixin pattern
+- `captioner-architecture` — single `APICaptioner` composes a `BaseLLMClient`; mixin/helpers, conversation building, streaming error handling.
+- `backend/llm` (in `docs/backend/`) — backend-agnostic LLM client layer (`yadc/llm/`); self-contained (shared HTTP infra lives here); composed by the captioner and used directly by the prompt generator
 - `dataset-watcher` — inotify watcher + expected-change tracking + event suppression
 - `dataset-system` — dataset model, creation flows, upload pipeline, rescan, persistence
 - `paths-and-storage` — platformdirs paths + DatasetImage file conventions

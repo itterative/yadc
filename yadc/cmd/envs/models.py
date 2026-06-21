@@ -1,24 +1,22 @@
-"""``list_models`` for environments — decrypt the env's token, probe the
-upstream ``/models`` endpoint, and return a sorted list of model IDs.
+"""``list_models`` for environments — decrypt the env's token, build the
+LLM client for the env's API URL, and return a sorted list of model IDs.
 
-The env-resolution half lives here. The HTTP/parsing half lives in
-``yadc.captioners.api`` — per-backend ``list_models()`` methods on
-``OpenAICaptioner`` / ``GeminiCaptioner`` / ``KoboldcppCaptioner`` (and
-the OpenAI-compatible backends that inherit from ``OpenAICaptioner``).
+The env-resolution half lives here. The HTTP/parsing half lives on the
+LLM clients in ``yadc.llm`` (selected by :func:`yadc.llm.create_client`):
+OpenAI-compatible ``/models``, Gemini's paginated list, Koboldcpp's
+admin endpoint.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from yadc.captioners.api import APICaptioner
-from yadc.captioners.api.async_session import AsyncSession
-from yadc.captioners.api.constants import (
-    DEFAULT_LIST_MODELS_TIMEOUT_SECONDS,
-    DEFAULT_MODELS_CACHE_TTL_SECONDS,
-)
-from yadc.captioners.api.utils.cache import HTTPResponseCache
+from yadc.captioners.api.constants import DEFAULT_LIST_MODELS_TIMEOUT_SECONDS
 from yadc.core import logging
+from yadc.llm import create_client
+from yadc.llm.async_session import AsyncSession
+from yadc.llm.cache import HTTPResponseCache
+from yadc.llm.constants import DEFAULT_MODELS_CACHE_TTL_SECONDS
 
 from .envs import load_env
 
@@ -91,13 +89,12 @@ async def list_models(
         # inner task; the ``finally`` block below still runs and closes
         # the session, so we don't leak sockets.
         async def _do_list() -> list[str]:
-            captioner = await APICaptioner.create(
+            client = await create_client(
                 api_url=config.api.url,
                 api_token=config.api.token,
                 async_session=async_session,
-                _warnings=False,
             )
-            return await captioner.list_models(cache_ttl=cache_ttl)
+            return await client.list_models(cache_ttl=cache_ttl)
 
         if timeout is None:
             models = await _do_list()

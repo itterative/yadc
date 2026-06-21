@@ -16,20 +16,24 @@ Captioner (abc)                        # core/captioner.py
   ├─ prompts_from_image()              # Jinja2 template rendering
   └─ _encode_image()                   # base64 with auto-resize/quality degradation
 
-BaseAPICaptioner (abc)                 # captioners/api/base.py
-  └─ Sets up Session, HTTPResponseCache, ResponseLogger
-  └─ _before_predict() resets PredictionContext
-
-APICaptioner                          # captioners/api/api_captioner.py
-  └─ Auto-detects API type → delegates to inner_captioner
-
-OpenAICaptioner / GeminiCaptioner / etc.  # per-backend
-  └─ BaseAPICaptioner + ErrorNormalizationMixin + ThinkingMixin
+APICaptioner(Captioner, ThinkingMixin)  # captioners/api/api_captioner.py
+  └─ Composes a BaseLLMClient (yadc/llm/) — the only API captioner class left
+  └─ Owns captioning glue: prompts, image encode, conversation_overrides,
+     assistant_prefill, extra_messages, ThinkingMixin, PredictionContext
+  └─ load_model/unload_model/offload_model/log_usage/list_models proxy to the client
+  └─ predict()/predict_stream() build list[Message], call client.predict_next_message_stream,
+     adapt StreamChunk → token stream (strip inline <think>, fold native reasoning into ctx)
 ```
 
-## API Type Auto-Detection (`_infer_api_type_async()` in `api_captioner.py`)
+The per-backend wire-format logic lives on the LLM clients in `yadc/llm/`
+(see `backend/llm`). Construction: `client = await create_client(...)`
+then `APICaptioner(client=client, ...)`.
 
-`_infer_api_type_async(session, api_url)` is a module-level async function (not a method on `APICaptioner`) that the `APICaptioner.create()` factory calls once before constructing the inner captioner:
+## API Type Inference (`_infer_api_type()` in `yadc/llm/factory.py`)
+
+`create_client(api_url, api_token, ...)` calls the module-level
+`_infer_api_type(session, api_url)` once, then constructs the matching
+`BaseLLMClient` subclass:
 
 1. **URL domain check**: `api.openai.com` → OPENAI, `openrouter.ai` → OPENROUTER, `generativelanguage.googleapis.com` → GEMINI, `*-aiplatform.googleapis.com` → GEMINI
 2. **Models endpoint**: `owned_by` field — "llamacpp", "koboldcpp", "vllm"
@@ -49,16 +53,22 @@ OpenAICaptioner / GeminiCaptioner / etc.  # per-backend
 
 `cmd_envs.list_models()` (and the controller's `/api/envs/<name>/models` endpoint) bounds the entire operation — API-type inference probes + the per-backend list call — with `asyncio.wait_for` using `Configuration.list_models_timeout` (default `DEFAULT_LIST_MODELS_TIMEOUT_SECONDS = 10.0`, in `captioners/api/constants.py`). On timeout the controller returns HTTP 504 `GATEWAY_TIMEOUT` so a dead/slow env can't leave the WebUI model picker spinning forever. `timeout=None` disables the cap (used by CLI scripts that don't need a hard bound).
 
-## Mixin Pattern
+## Mixins and Helpers
 
-- **ErrorNormalizationMixin**: `_normalize_error(error)` — handles HTTPError, GenerationError, Pydantic response objects. Parses OpenAI/Gemini error JSON, OpenRouter moderation errors. Falls back to HTTP status code messages.
-- **ThinkingMixin**: `_handle_thinking(content)` / `_handle_thinking_streaming(stream)` — strips `<thinking_start>...<thinking_end>` tokens from output, logs thinking content with `> ` prefix.
+- **ThinkingMixin** (mixin, on `APICaptioner`): `_handle_thinking(content)` / `_handle_thinking_streaming_async(stream)` — strips `<think>...</think>` blocks from output, logs thinking content with `> ` prefix. Only fires for *inline* reasoning (llama.cpp `<think>` embedded in content); *native* reasoning (OpenAI `reasoning_details`, Gemini `thought:true`) is already separated by the client into `chunk.reasoning`, which `APICaptioner` folds straight into the `PredictionContext` — so it never reaches the visible caption and isn't routed through ThinkingMixin.
+- **`normalize_error(error)`** (module-level helper, `yadc/llm/error_normalization.py`): shared by `APICaptioner` and the `yadc/llm/` clients. Not a mixin.
 
 ## Conversation Building
 
-Each backend builds an API-specific conversation dict from `prompts_from_image()` + `_encode_image()`:
-- **OpenAI**: `chat/completions` with messages array (system, user with image_url + text, optional assistant prefill, extra_messages as ReplyRounds)
-- **Gemini**: `models/{model}:generateContent` with system_instruction, contents, generationConfig, optional thinkingConfig and safetySettings
+`APICaptioner._build_messages(image)` renders prompts + encodes the
+image into `list[Message]`
+(system + user[image] + reply history + optional assistant prefill). The
+client translates to each backend's wire shape (OpenAI `chat/completions`
+with `image_url` parts; Gemini `system_instruction` + `contents` +
+`generationConfig`). Advanced-settings `conversation_overrides` (role
+overrides, `assistant_prefill`, `extra_messages`, arbitrary body keys,
+Gemini `safety_settings`/`generation_config`) are parsed here and flow to
+the client as messages + `**opts`.
 
 ## PredictionContext
 

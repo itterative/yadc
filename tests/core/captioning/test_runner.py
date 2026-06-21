@@ -29,7 +29,8 @@ from yadc.core.dataset import DatasetImage
 from yadc.core.prediction import PredictionContext
 
 # Patch target paths centralized so renames only need updates here.
-_PATCH_APICAPTIONER_CREATE = "yadc.core.captioning.runner.APICaptioner.create"
+_PATCH_APICAPTIONER = "yadc.core.captioning.runner.APICaptioner"
+_PATCH_CREATE_CLIENT = "yadc.core.captioning.runner.create_client"
 _PATCH_ASYNC_SESSION = "yadc.core.captioning.runner.AsyncSession"
 
 
@@ -160,9 +161,13 @@ def patched_async_session():
 @pytest.fixture
 def patched_model():
     """Mock model with a default ``predict_stream`` yielding ``"hello world"``."""
-    with patch(_PATCH_APICAPTIONER_CREATE, new_callable=AsyncMock) as mock_create:
+    with (
+        patch(_PATCH_CREATE_CLIENT, new_callable=AsyncMock) as mock_create_client,
+        patch(_PATCH_APICAPTIONER) as mock_captioner_cls,
+    ):
         model = _model_yielding("hello world")
-        mock_create.return_value = model
+        mock_captioner_cls.return_value = model
+        mock_create_client.return_value = MagicMock()  # the composed client is opaque to the runner
         yield model
 
 
@@ -218,8 +223,8 @@ class TestContextManager:
 
     @pytest.mark.asyncio
     async def test_aenter_propagates_value_error_from_model_creation(self, patched_async_session):
-        with patch(_PATCH_APICAPTIONER_CREATE, new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = ValueError("bad config")
+        with patch(_PATCH_CREATE_CLIENT, new_callable=AsyncMock) as mock_create_client:
+            mock_create_client.side_effect = ValueError("bad config")
             with pytest.raises(ValueError, match="bad config"):
                 async with _make_runner():
                     pass
