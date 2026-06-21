@@ -27,7 +27,9 @@ OpenAICaptioner / GeminiCaptioner / etc.  # per-backend
   └─ BaseAPICaptioner + ErrorNormalizationMixin + ThinkingMixin
 ```
 
-## API Type Auto-Detection (`APICaptioner._infer_api_type()`)
+## API Type Auto-Detection (`_infer_api_type_async()` in `api_captioner.py`)
+
+`_infer_api_type_async(session, api_url)` is a module-level async function (not a method on `APICaptioner`) that the `APICaptioner.create()` factory calls once before constructing the inner captioner:
 
 1. **URL domain check**: `api.openai.com` → OPENAI, `openrouter.ai` → OPENROUTER, `generativelanguage.googleapis.com` → GEMINI, `*-aiplatform.googleapis.com` → GEMINI
 2. **Models endpoint**: `owned_by` field — "llamacpp", "koboldcpp", "vllm"
