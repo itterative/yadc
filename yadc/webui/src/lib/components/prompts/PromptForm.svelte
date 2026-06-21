@@ -13,8 +13,8 @@
     import ExamplesPanel from './ExamplesPanel.svelte';
 
     interface Props {
-        /** Generate vs refine mode. Read-only — the host owns the
-         *  state and passes it down. */
+        /** Generate vs refine mode. Bindable — the inline New/Refine
+         *  pills update it; the host persists it. */
         mode: PromptGenMode;
         env: string;
         apiUrl: string;
@@ -32,7 +32,7 @@
     }
 
     let {
-        mode,
+        mode = $bindable('generate'),
         env = $bindable('default'),
         apiUrl = $bindable(''),
         apiToken = $bindable(''),
@@ -81,15 +81,9 @@
         return () => abort.abort();
     });
 
-    // Pre-fill fields and reset models when env changes. Re-runs on
-    // every mount of this component (so also when the host re-mounts
-    // the form by switching to the other tab). The field reset is the
-    // same values the user already sees in the other tab (both forms
-    // share state via bind), so the reset is effectively a no-op
-    // except on the very first mount of the very first time the page
-    // is opened — which is exactly when the env defaults should be
-    // applied. (The user accepted the double-mount trade-off; see
-    // the Phase 6b history entry.)
+    // Pre-fill apiUrl / apiToken / apiModelName from the selected env
+    // and fetch its model list. Runs on first mount (applies the env
+    // defaults) and whenever the env selection changes.
     $effect(() => {
         const current = env;
         if (!current) {
@@ -313,6 +307,83 @@
         </div>
     </div>
 
+    <!-- Intent -->
+    <div>
+        <label class="label" for="prompts-intent">
+            {mode === 'refine' ? 'Refinement intent' : 'Intent'}
+        </label>
+        <p class="mb-1 text-xs text-gray-500">
+            {#if mode === 'refine'}
+                What should change in the existing template? Be specific about which blocks to add,
+                remove, or keep.
+            {:else}
+                What should the generated template do? Be specific about tone, length, and
+                structure.
+            {/if}
+        </p>
+        <textarea
+            id="prompts-intent"
+            bind:value={intent}
+            onchange={() => onchange('intent', intent)}
+            class="input h-28 resize-y"
+            placeholder={mode === 'refine'
+                ? 'e.g. Add a "trigger_warning" user block and make the system prompt more concise.'
+                : 'e.g. Caption each image as a single concise sentence in the style of a museum wall label. Focus on the subject and the action, avoid adjectives.'}
+            disabled={isStreaming}
+        ></textarea>
+    </div>
+
+    <!-- Focus -->
+    <div>
+        <span class="label">Focus</span>
+        <p class="mb-1 text-xs text-gray-500">
+            Which blocks should the model generate? The other block is filled with a minimal
+            placeholder.
+        </p>
+        <div class="flex gap-2">
+            {#each ['both', 'system', 'user'] as const as f (f)}
+                <button
+                    class="cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors {focus ===
+                    f
+                        ? 'border-accent bg-accent/10 text-accent'
+                        : 'border-border bg-bg text-gray-400 hover:border-gray-500 hover:text-white'}"
+                    onclick={() => {
+                        focus = f;
+                        onchange('focus', f);
+                    }}
+                    disabled={isStreaming}
+                >
+                    {f}
+                </button>
+            {/each}
+        </div>
+    </div>
+
+    <!-- Mode (new vs refine) -->
+    <div>
+        <span class="label">Mode</span>
+        <p class="mb-1 text-xs text-gray-500">
+            Start from scratch, or refine an existing template.
+        </p>
+        <div class="flex gap-2">
+            {#each ['generate', 'refine'] as const as m (m)}
+                <button
+                    class="cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors {mode ===
+                    m
+                        ? 'border-accent bg-accent/10 text-accent'
+                        : 'border-border bg-bg text-gray-400 hover:border-gray-500 hover:text-white'}"
+                    onclick={() => {
+                        mode = m;
+                        onchange('mode', m);
+                    }}
+                    disabled={isStreaming}
+                >
+                    {m === 'refine' ? 'Refine' : 'New'}
+                </button>
+            {/each}
+        </div>
+    </div>
+
     <!-- Template (refine mode only) -->
     {#if mode === 'refine'}
         <div>
@@ -366,58 +437,6 @@
             </div>
         </div>
     {/if}
-
-    <!-- Intent -->
-    <div>
-        <label class="label" for="prompts-intent">
-            {mode === 'refine' ? 'Refinement intent' : 'Intent'}
-        </label>
-        <p class="mb-1 text-xs text-gray-500">
-            {#if mode === 'refine'}
-                What should change in the existing template? Be specific about which blocks to add,
-                remove, or keep.
-            {:else}
-                What should the generated template do? Be specific about tone, length, and
-                structure.
-            {/if}
-        </p>
-        <textarea
-            id="prompts-intent"
-            bind:value={intent}
-            onchange={() => onchange('intent', intent)}
-            class="input h-28 resize-y"
-            placeholder={mode === 'refine'
-                ? 'e.g. Add a "trigger_warning" user block and make the system prompt more concise.'
-                : 'e.g. Caption each image as a single concise sentence in the style of a museum wall label. Focus on the subject and the action, avoid adjectives.'}
-            disabled={isStreaming}
-        ></textarea>
-    </div>
-
-    <!-- Focus -->
-    <div>
-        <span class="label">Focus</span>
-        <p class="mb-1 text-xs text-gray-500">
-            Which blocks should the model generate? The other block is filled with a minimal
-            placeholder.
-        </p>
-        <div class="flex gap-2">
-            {#each ['both', 'system', 'user'] as const as f (f)}
-                <button
-                    class="cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors {focus ===
-                    f
-                        ? 'border-accent bg-accent/10 text-accent'
-                        : 'border-border bg-bg text-gray-400 hover:border-gray-500 hover:text-white'}"
-                    onclick={() => {
-                        focus = f;
-                        onchange('focus', f);
-                    }}
-                    disabled={isStreaming}
-                >
-                    {f}
-                </button>
-            {/each}
-        </div>
-    </div>
 
     <!-- Examples -->
     <div>

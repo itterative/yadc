@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 10
+last_history: 11
 ---
 
 # Prompt Generator Plan
@@ -1337,14 +1337,24 @@ implementation), and
 `history/prompt-generator-plan/008-phase-6b-implementation.md`
 for the Phase 6b (refine-mode frontend) implementation record
 (including the `storable.js` migrate-bug fix, the form-in-both-tabs
-trade-off, and the ESLint `argsIgnorePattern` config), and
+trade-off (later replaced — see `011-combined-form-mode-toggle.md`),
+and the ESLint `argsIgnorePattern` config), and
 `history/prompt-generator-plan/008-phase-7-design.md` /
 `009-phase-7-implementation.md` for the prompt-history
 persistence (server-side replacement for the deferred
 IndexedDB plan; the implementation entry covers the
 `activeTab`/`mode` split, the `untrack(() => mode)` init
-pattern, the save/restore flow, and the `mode + examples +
+pattern (removed in the combined-form revision — see `011-combined-form-mode-toggle.md`),
+the save/restore flow, and the `mode + examples +
 template_content` JSON contract).
+
+**Phase 6b revised (2026-06-20): the Generate/Refine tab switcher
+was replaced with a single combined form + inline New/Refine pill
+toggle.** The original form-in-both-tabs approach mounted the env
+selector (+ model/template fetches) twice and lost per-instance
+state on tab switch; the form is now rendered once, with the
+New/Refine mode as an inline pill toggle between Focus and the
+examples. See `history/prompt-generator-plan/011-combined-form-mode-toggle.md`.
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);

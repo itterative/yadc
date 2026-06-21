@@ -27,25 +27,16 @@ Patterns specific to the yadc webui frontend. For SvelteKit/Tailwind v4 setup se
 
 `value` is bindable and uses `id` (not `label`) for matching.
 
-### Content placement (form-in-both-tabs pattern)
-
-The tabs system is designed for **content-switching** — each `Tab`
-holds its own content and the inactive tab's content is `hidden` via
-CSS. All existing usages (`EditDatasetDialog`, `AddDatasetDialog`,
-`SettingsDialog`, `ImageDetail` via `CompactPillTabs`, `SidePanel`)
-put different content in each `Tab` child.
-
-For a **mode switcher with shared content** (e.g. the prompt
-generator's Generate/Refine tabs in `PromptGenerator.svelte`), the
-form is rendered in BOTH tab children. Both forms mount; the
-inactive one is hidden but its effects still fire. State shared via
-`bind:value` (against the host's snapshot) is always in sync; per-
-instance internal state (loading flags, picker selection) re-
-initializes on tab switch. Store-backed fetches (envs, models,
-templates) dedupe via the debounce layer, so the double-fetch is a
-no-op in practice. The alternative (a custom pill bar) is simpler
-but loses the `PillTabs` accessibility wiring (role="tablist",
-aria-selected).
+All existing usages (`EditDatasetDialog`, `AddDatasetDialog`,
+`SettingsDialog`, `ImageDetail` via `CompactPillTabs`, `SidePanel`,
+and the prompt generator's Compose/History tabs) put **different
+content** in each `Tab` child — each `Tab` holds its own content and
+the inactive tab's content is `hidden` via CSS. Don't render the
+same component in two tab children as a mode switcher: both
+instances mount (the hidden one's effects still fire) and
+per-instance internal state resets on tab switch. Use an inline
+control (e.g. the prompt generator's New/Refine pills inside the
+single form) to switch modes within one mounted instance instead.
 
 ## Z-Index Layers
 

@@ -1,7 +1,6 @@
 <script lang="ts">
     import SvgSave from '$lib/icons/SvgSave.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
-    import { untrack } from 'svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import {
@@ -23,15 +22,12 @@
     import GenerationPreview from './GenerationPreview.svelte';
     import PromptHistoryPanel from './PromptHistoryPanel.svelte';
 
-    // The PillTabs have three children: Generate, Refine, History.
-    // ``mode`` is the form's mode (persisted, matches PromptGenMode);
-    // ``activeTab`` is the tab the user is currently viewing. When
-    // ``activeTab`` is 'history', the form is hidden and the history
-    // panel is shown. ``mode`` is derived from ``activeTab`` for
-    // the form tabs and left untouched when ``activeTab`` is
-    // 'history' (so a restore in history mode can set mode to the
-    // entry's mode without losing the user's last form mode).
-    type ActiveTab = 'generate' | 'refine' | 'history';
+    // Two tabs: Generate (the single form, hosting New/Refine via the
+    // inline mode pills) and History. ``mode`` is the form's mode
+    // (persisted, matches PromptGenMode), driven by the form's pills
+    // through ``bind:mode``. ``activeTab`` only switches between the
+    // form and the history panel.
+    type ActiveTab = 'generate' | 'history';
 
     // Few-shot examples live in memory only — the history is a
     // server-side persistent store (Phase 7), so saving and
@@ -63,11 +59,8 @@
     // ephemeral and lives inside the form.
     let templateContent = $state('');
 
-    // Start on the same tab as the persisted mode (so a returning
-    // user lands on Generate/Refine, never History). ``untrack``
-    // makes the read one-shot — we don't want a runtime effect to
-    // reset ``activeTab`` every time the user clicks a tab.
-    let activeTab: ActiveTab = $state<ActiveTab>(untrack(() => mode));
+    // Always land on the form; History is opt-in via its tab.
+    let activeTab: ActiveTab = $state<ActiveTab>('generate');
 
     $effect(() => {
         promptSettings.update((s) => ({
@@ -80,15 +73,6 @@
             intent,
             focus
         }));
-    });
-
-    // When the user picks a different form tab, sync ``mode`` so the
-    // form / button label / canGenerate check all agree. History tab
-    // doesn't touch ``mode`` (it stays at whatever the user left it).
-    $effect(() => {
-        if (activeTab === 'generate' || activeTab === 'refine') {
-            mode = activeTab;
-        }
     });
 
     let isStreaming = $derived(generation.status === 'streaming');
@@ -174,11 +158,8 @@
     }
 
     function handleRestore(entry: PromptHistoryEntry) {
-        // Switch the tab + form mode to match the entry. The order
-        // matters: setting ``activeTab`` first triggers the
-        // ``$effect`` that syncs ``mode``, which the form reads on
-        // its next render. Then we populate the form fields.
-        activeTab = entry.mode;
+        // Switch to the form and apply the entry's mode + fields.
+        activeTab = 'generate';
         mode = entry.mode;
         intent = entry.intent;
         focus = entry.focus;
@@ -189,37 +170,17 @@
 </script>
 
 <div class="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-    <!-- Form (left) — PillTabs host. The form is rendered in BOTH
-         tab children (same instance-via-bindings) so the user can
-         switch modes without losing their env / model / intent /
-         examples state. The forms' internal state (loading flags,
-         template picker selection, etc.) is per-instance — switching
-         to the other tab re-mounts the form and its effects re-run
-         (model/template fetches are debounced on the store side, so
-         the double-fetch is a no-op in practice). See the Phase 6b
-         history entry for the full reasoning. -->
+    <!-- Form (left) — a single PromptForm instance hosts both New
+         (generate) and Refine modes via the inline mode pills, so
+         env / model / intent / examples / template state all live
+         in one place and never reset on mode switch. History is the
+         second tab. -->
     <div class="card flex min-h-0 flex-col overflow-hidden">
         <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
             <Tab id="generate" label="Generate" class="h-full overflow-y-auto">
                 <div class="p-4">
                     <PromptForm
-                        mode="generate"
-                        bind:env
-                        bind:apiUrl
-                        bind:apiToken
-                        bind:apiModelName
-                        bind:intent
-                        bind:focus
-                        bind:examples
-                        bind:templateContent
-                        onchange={handleChange}
-                    />
-                </div>
-            </Tab>
-            <Tab id="refine" label="Refine" class="h-full overflow-y-auto">
-                <div class="p-4">
-                    <PromptForm
-                        mode="refine"
+                        bind:mode
                         bind:env
                         bind:apiUrl
                         bind:apiToken
