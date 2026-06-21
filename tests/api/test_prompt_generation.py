@@ -57,6 +57,8 @@ def _request(
     examples: list[ExamplePair] | None = None,
     focus: PromptGenerationFocus = "both",
     api_model_name: str | None = None,
+    max_tokens: int | None = None,
+    image_quality: str = "auto",
     template_content: str | None = None,
 ) -> PromptGenerationRequest:
     return PromptGenerationRequest(
@@ -65,6 +67,8 @@ def _request(
         examples=examples or [],
         focus=focus,
         api_model_name=api_model_name,
+        max_tokens=max_tokens if max_tokens is not None else 16384,
+        image_quality=image_quality,
         template_content=template_content,
     )
 
@@ -134,6 +138,8 @@ class TestPromptGenerationRequest:
         assert req.examples == []
         assert req.focus == "both"
         assert req.api_model_name is None
+        assert req.max_tokens == 16384
+        assert req.image_quality == "auto"
         assert req.template_content is None
 
     def test_extras_rejected(self):
@@ -143,6 +149,16 @@ class TestPromptGenerationRequest:
     def test_template_content_must_be_non_empty(self):
         with pytest.raises(ValueError, match="template_content"):
             PromptGenerationRequest(env="default", intent="x", template_content="")
+
+    def test_max_tokens_bounds(self):
+        with pytest.raises(ValueError):
+            PromptGenerationRequest(env="default", intent="x", max_tokens=99)
+        with pytest.raises(ValueError):
+            PromptGenerationRequest(env="default", intent="x", max_tokens=65537)
+
+    def test_image_quality_rejects_invalid(self):
+        with pytest.raises(ValueError):
+            PromptGenerationRequest(env="default", intent="x", image_quality="ultra")  # type: ignore[arg-type]
 
 
 class TestBuildMessages:
@@ -322,6 +338,44 @@ class TestGenerate:
 
         kwargs = client.predict_next_message_stream.call_args.kwargs
         assert kwargs.get("reasoning") is None
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_forwarded_to_client(self, service):
+        """The request's ``max_tokens`` reaches the client call (not the old hardcoded 25000)."""
+        client = _make_client([StreamChunk(text="x")])
+
+        with (
+            patch(_PATCH_CMD_ENVS) as patched_cmd_envs,
+            patch(_PATCH_CREATE_CLIENT, return_value=client),
+        ):
+            patched_cmd_envs.load_env.return_value = _user_config()
+
+            async for _ in service.generate(request=_request(max_tokens=8192)):
+                pass
+
+        kwargs = client.predict_next_message_stream.call_args.kwargs
+        assert kwargs.get("max_tokens") == 8192
+
+    @pytest.mark.asyncio
+    async def test_image_quality_forwarded_to_client_and_message(self, service):
+        """``image_quality`` reaches the client opts (Gemini) AND the example image part (OpenAI)."""
+        client = _make_client([StreamChunk(text="x")])
+        ex = _example(subject="a cat", caption="a small tabby")
+
+        with (
+            patch(_PATCH_CMD_ENVS) as patched_cmd_envs,
+            patch(_PATCH_CREATE_CLIENT, return_value=client),
+        ):
+            patched_cmd_envs.load_env.return_value = _user_config()
+
+            async for _ in service.generate(request=_request(examples=[ex], image_quality="high")):
+                pass
+
+        kwargs = client.predict_next_message_stream.call_args.kwargs
+        assert kwargs.get("image_quality") == "high"
+        messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
+        image_turns = [p for m in messages if m.role == "user" and isinstance(m.content, list) for p in m.content if isinstance(p, ImageUrlPart)]
+        assert image_turns and all(p.image_url.detail == "high" for p in image_turns)
 
     @pytest.mark.asyncio
     async def test_client_aclosed_even_when_stream_raises(self, service):

@@ -1,5 +1,5 @@
 import storable from '$lib/storable.js';
-import type { PromptGenFocus } from './types';
+import type { PromptGenFocus, PromptImageQuality } from './types';
 
 /**
  * Persisted form settings for the prompt generator.
@@ -20,8 +20,11 @@ import type { PromptGenFocus } from './types';
  * Refine-mode-only fields (``templateContent``, the template picker
  * selection) are also NOT persisted — they're ephemeral local state in
  * the host. On reload, the user re-selects a template (or pastes) to
- * populate the editor. Only the ``mode`` switch itself is persisted so
- * the user comes back to the same tab.
+ * populate the editor. The ``mode`` switch (New/Refine, an inline
+ * toggle in the form) IS persisted so the user comes back to the same
+ * selection. The Settings-tab fields — env / apiUrl / apiToken /
+ * apiModelName plus the generation limits (``maxTokens``,
+ * ``imageQuality``) — are persisted here too.
  */
 
 export type PromptGenMode = 'generate' | 'refine';
@@ -35,42 +38,45 @@ export interface PromptFormSettings {
     apiModelName: string;
     intent: string;
     focus: PromptGenFocus;
+    /** Output token cap (client default of 4096 truncates longer templates). */
+    maxTokens: number;
+    /** Few-shot example image fidelity — OpenAI ``image_url.detail`` /
+     *  Gemini ``mediaResolution``. */
+    imageQuality: PromptImageQuality;
 }
 
 const DEFAULTS: PromptFormSettings = {
-    $version: 2,
+    $version: 3,
     mode: 'generate',
     env: 'default',
     apiUrl: '',
     apiToken: '',
     apiModelName: '',
     intent: '',
-    focus: 'both'
+    focus: 'both',
+    maxTokens: 16384,
+    imageQuality: 'auto'
 };
 
-/** Migrate a v1 stored object (no ``mode`` field) to v2.
+/** Migrate a stored object to the current shape (v3).
  *
  *  Re-applies the current defaults as the base, then overlays the
- *  stored fields so the user's existing env / apiUrl / apiToken /
- *  apiModelName / intent / focus are preserved. The ``mode`` defaults
- *  to ``'generate'`` (the v1 behaviour). Bumps ``$version`` to 2.
- *
- *  ``_version`` is unused but matches the ``migrate`` signature that
- *  ``storable`` calls. The function is shape-agnostic: if a future
- *  version (v0 or v3+) needs migration to v2, the same overlay
- *  strategy works — missing fields fall back to defaults, extra
- *  fields are dropped, and the version is forced to 2. */
-function migrateToV2(
+ *  stored fields so the user's existing settings are preserved.
+ *  Missing fields (e.g. ``maxTokens`` / ``imageQuality`` added in v3,
+ *  or ``mode`` added in v2) fall back to defaults; extra fields are
+ *  dropped; ``$version`` is forced to the current value. Shape-agnostic
+ *  so the same overlay works for any prior version. */
+function migrateToCurrent(
     stored: Partial<PromptFormSettings> & { $version: number },
     _version: number
 ): PromptFormSettings {
-    return { ...DEFAULTS, ...stored, $version: 2 };
+    return { ...DEFAULTS, ...stored, $version: DEFAULTS.$version };
 }
 
 export const promptSettings = storable<PromptFormSettings>(
     'yadc/prompts/formSettings',
     DEFAULTS,
-    migrateToV2
+    migrateToCurrent
 );
 
 /** Reset to defaults and clear the localStorage entry. */

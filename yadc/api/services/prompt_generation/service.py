@@ -63,6 +63,13 @@ class PromptGenerationRequest(pydantic.BaseModel):
     examples: list[ExamplePair] = pydantic.Field(default_factory=list)
     focus: PromptGenerationFocus = "both"
     api_model_name: str | None = None
+    # Generation limits. ``max_tokens`` is the output cap sent to the
+    # model (the client default of 4096 truncates longer templates);
+    # ``image_quality`` is the few-shot example image fidelity — it
+    # maps to OpenAI's ``image_url.detail`` and Gemini's
+    # ``mediaResolution`` (see ``PromptGenerationService.generate``).
+    max_tokens: int = pydantic.Field(default=16384, ge=100, le=65536)
+    image_quality: Literal["auto", "low", "high"] = "auto"
     # When set, runs in refine mode: the model applies the requested
     # changes to this existing template instead of inventing a new one
     # from scratch. No separate ``mode`` field — presence is the signal.
@@ -141,8 +148,18 @@ class PromptGenerationService(Service):
                 request,
                 system_prompt=_GENERATE_SYSTEM_PROMPT,
                 refine_system_prompt=_REFINE_SYSTEM_PROMPT,
+                image_quality=request.image_quality,
             )
-            stream = await client.predict_next_message_stream(messages, reasoning=None, max_tokens=25000)
+            stream = await client.predict_next_message_stream(
+                messages,
+                reasoning=None,
+                max_tokens=request.max_tokens,
+                # Gemini reads ``image_quality`` from opts and maps it to
+                # ``mediaResolution``; OpenAI-compatible clients pick it up
+                # from the message's ``image_url.detail`` instead. Passing
+                # it here too covers both backends (mirrors the captioner).
+                image_quality=request.image_quality,
+            )
             async for chunk in stream:
                 yield chunk
         finally:
@@ -175,6 +192,7 @@ def _build_messages(
     *,
     system_prompt: str,
     refine_system_prompt: str,
+    image_quality: Literal["auto", "low", "high"] = "auto",
 ) -> list[Message]:
     """Build the multi-turn meta-conversation for the template-generation LLM call.
 
@@ -304,7 +322,7 @@ def _build_messages(
                 role="user",
                 content=[
                     TextPart(text=f"Example {i + 1}/{n}: {ex.subject}\n{ex.caption}"),
-                    ImageUrlPart(image_url=ImageUrl(url=ex.image_data_url, detail="auto")),
+                    ImageUrlPart(image_url=ImageUrl(url=ex.image_data_url, detail=image_quality)),
                 ],
             )
         )

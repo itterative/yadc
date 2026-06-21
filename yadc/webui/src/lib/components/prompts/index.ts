@@ -1,5 +1,6 @@
 export { default as PromptGenerator } from './PromptGenerator.svelte';
 export { default as PromptForm } from './PromptForm.svelte';
+export { default as PromptSettings } from './PromptSettings.svelte';
 export { default as ExamplesPanel } from './ExamplesPanel.svelte';
 export { default as GenerationPreview } from './GenerationPreview.svelte';
 export { default as PromptHistoryPanel } from './PromptHistoryPanel.svelte';

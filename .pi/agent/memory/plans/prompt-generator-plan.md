@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 11
+last_history: 12
 ---
 
 # Prompt Generator Plan
@@ -1355,6 +1355,16 @@ selector (+ model/template fetches) twice and lost per-instance
 state on tab switch; the form is now rendered once, with the
 New/Refine mode as an inline pill toggle between Focus and the
 examples. See `history/prompt-generator-plan/011-combined-form-mode-toggle.md`.
+
+**2026-06-20 — Settings tab + configurable max_tokens / image_quality.**
+The env selector moved out of the Generate form into a dedicated
+**Settings tab** (Generate / Settings / History), which also adds two
+previously-missing generation knobs: `max_tokens` (was hardcoded to
+25000 in `service.py`; client default of 4096 truncated templates) and
+`image_quality` (wasn't plumbed in at all). Both are full-stack
+(`image_quality` is FE+BE — OpenAI reads it from `image_url.detail`,
+Gemini from a client opt). `promptSettings` → `$version: 3`. See
+`history/prompt-generator-plan/012-settings-tab-max-tokens-image-quality.md`.
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);

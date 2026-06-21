@@ -9,12 +9,20 @@ export interface ExamplePair {
 
 export type PromptGenFocus = 'system' | 'user' | 'both';
 
+export type PromptImageQuality = 'auto' | 'low' | 'high';
+
 export interface PromptGenRequest {
     env: string;
     intent: string;
     examples: ExamplePair[];
     focus: PromptGenFocus;
     api_model_name?: string | null;
+    /** Output token cap for the generation call (client default of 4096
+     *  truncates longer templates). Defaults to 16384 if omitted. */
+    max_tokens?: number;
+    /** Few-shot example image fidelity — maps to OpenAI ``image_url.detail``
+     *  and Gemini ``mediaResolution``. Defaults to ``'auto'``. */
+    image_quality?: PromptImageQuality;
     /** When set, runs in refine mode: the model applies the user's
      *  intent to this existing template instead of inventing a new
      *  one from scratch. ``null``/omitted → generate mode. */

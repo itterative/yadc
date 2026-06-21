@@ -13,21 +13,25 @@
         ExamplePair,
         PromptGenFocus,
         PromptGenMode,
-        PromptHistoryEntry
+        PromptHistoryEntry,
+        PromptImageQuality
     } from '$lib/stores/prompts';
     import { friendlyErrorMessage } from '$lib/api';
     import { toast } from '$lib/stores/toasts';
     import { EditTemplateDialog } from '$lib/components/templates';
     import PromptForm from './PromptForm.svelte';
+    import PromptSettings from './PromptSettings.svelte';
     import GenerationPreview from './GenerationPreview.svelte';
     import PromptHistoryPanel from './PromptHistoryPanel.svelte';
 
-    // Two tabs: Generate (the single form, hosting New/Refine via the
-    // inline mode pills) and History. ``mode`` is the form's mode
-    // (persisted, matches PromptGenMode), driven by the form's pills
-    // through ``bind:mode``. ``activeTab`` only switches between the
-    // form and the history panel.
-    type ActiveTab = 'generate' | 'history';
+    // Three tabs: Generate (the single form, hosting New/Refine via
+    // the inline mode pills), Settings (env/model + generation
+    // limits), and History. Each tab holds genuinely different
+    // content. ``mode`` is the form's mode (persisted, matches
+    // PromptGenMode), driven by the form's pills through
+    // ``bind:mode``. ``activeTab`` only switches between the three
+    // panels.
+    type ActiveTab = 'generate' | 'settings' | 'history';
 
     // Few-shot examples live in memory only — the history is a
     // server-side persistent store (Phase 7), so saving and
@@ -53,6 +57,8 @@
     let apiModelName = $state(_initial.apiModelName);
     let intent = $state(_initial.intent);
     let focus = $state<PromptGenFocus>(_initial.focus);
+    let maxTokens = $state(_initial.maxTokens);
+    let imageQuality = $state<PromptImageQuality>(_initial.imageQuality);
 
     // Refine-mode-only. NOT persisted — on reload the user re-selects
     // a template (or pastes their own). The picker selection is also
@@ -71,7 +77,9 @@
             apiToken,
             apiModelName,
             intent,
-            focus
+            focus,
+            maxTokens,
+            imageQuality
         }));
     });
 
@@ -117,6 +125,8 @@
             examples: examples.map((e) => ({ ...e })),
             focus,
             apiModelName: apiModelName || null,
+            maxTokens,
+            imageQuality,
             templateContent: mode === 'refine' ? templateContent : null
         });
     }
@@ -170,25 +180,35 @@
 </script>
 
 <div class="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-    <!-- Form (left) — a single PromptForm instance hosts both New
-         (generate) and Refine modes via the inline mode pills, so
-         env / model / intent / examples / template state all live
-         in one place and never reset on mode switch. History is the
-         second tab. -->
+    <!-- Form (left) — three tabs with genuinely different content:
+         Generate (the prompt artifact form, hosting New/Refine via
+         the inline mode pills), Settings (env/model + generation
+         limits), and History. The form, settings, and examples /
+         template state all live in the host as bound ``$state``, so
+         switching tabs never loses anything. -->
     <div class="card flex min-h-0 flex-col overflow-hidden">
         <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
             <Tab id="generate" label="Generate" class="h-full overflow-y-auto">
                 <div class="p-4">
                     <PromptForm
                         bind:mode
-                        bind:env
-                        bind:apiUrl
-                        bind:apiToken
-                        bind:apiModelName
                         bind:intent
                         bind:focus
                         bind:examples
                         bind:templateContent
+                        onchange={handleChange}
+                    />
+                </div>
+            </Tab>
+            <Tab id="settings" label="Settings" class="h-full overflow-y-auto">
+                <div class="p-4">
+                    <PromptSettings
+                        bind:env
+                        bind:apiUrl
+                        bind:apiToken
+                        bind:apiModelName
+                        bind:maxTokens
+                        bind:imageQuality
                         onchange={handleChange}
                     />
                 </div>
@@ -203,6 +223,8 @@
             <p class="text-xs text-gray-500">
                 {#if activeTab === 'history'}
                     {examples.length} example{examples.length === 1 ? '' : 's'} ready to save
+                {:else if activeTab === 'settings'}
+                    Environment &amp; generation limits
                 {:else if examples.length > 0}
                     {examples.length} example{examples.length === 1 ? '' : 's'}
                 {:else}
@@ -210,7 +232,7 @@
                 {/if}
             </p>
             <div class="flex items-center gap-2">
-                {#if activeTab !== 'history'}
+                {#if activeTab === 'generate'}
                     <button
                         class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                         onclick={handleSaveToHistory}

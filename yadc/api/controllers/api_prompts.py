@@ -24,7 +24,7 @@ closes the underlying ``MessageStream`` and the upstream HTTP response.
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import pydantic
 from quart import Response, request
@@ -48,6 +48,9 @@ class GeneratePromptBody(pydantic.BaseModel):
     examples: list[ExamplePair] = pydantic.Field(default_factory=list)
     focus: PromptGenerationFocus = "both"
     api_model_name: str | None = None
+    # Generation limits — see ``PromptGenerationRequest``.
+    max_tokens: int = pydantic.Field(default=16384, ge=100, le=65536)
+    image_quality: Literal["auto", "low", "high"] = "auto"
     # When set, runs in refine mode: the model applies the requested
     # changes to this existing template instead of inventing a new one.
     # See ``PromptGenerationRequest.template_content``.
@@ -128,6 +131,8 @@ def api_prompts(app: ApiBlueprint, logging: LoggingFactory, prompt_generation: P
             examples=body.examples,
             focus=body.focus,
             api_model_name=body.api_model_name,
+            max_tokens=body.max_tokens,
+            image_quality=body.image_quality,
             template_content=body.template_content,
         )
 

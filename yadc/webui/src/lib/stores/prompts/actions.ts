@@ -20,7 +20,7 @@ import {
 } from './store.svelte';
 import { toast } from '$lib/stores/toasts';
 import { friendlyErrorMessage } from '$lib/api';
-import type { ExamplePair, PromptGenFocus, PromptGenRequest } from './types';
+import type { ExamplePair, PromptGenFocus, PromptImageQuality, PromptGenRequest } from './types';
 
 export interface StartGenerationArgs {
     env: string;
@@ -28,6 +28,10 @@ export interface StartGenerationArgs {
     examples: ExamplePair[];
     focus: PromptGenFocus;
     apiModelName?: string | null;
+    /** Output token cap for the generation call. */
+    maxTokens?: number;
+    /** Few-shot example image fidelity. */
+    imageQuality?: PromptImageQuality;
     /** Existing template body for refine mode. ``null``/omitted → generate mode. */
     templateContent?: string | null;
 }
@@ -42,6 +46,8 @@ export async function startGeneration(args: StartGenerationArgs): Promise<void> 
         examples: args.examples,
         focus: args.focus,
         api_model_name: args.apiModelName ?? null,
+        max_tokens: args.maxTokens,
+        image_quality: args.imageQuality,
         template_content: args.templateContent ?? null
     };
 
