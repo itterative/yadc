@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
-description: Meta-prompting feature — generate high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 3
+description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
+last_history: 6
 ---
 
 # Prompt Generator Plan
@@ -9,10 +9,22 @@ last_history: 3
 ## Goal
 
 Add a new yadc feature that uses an existing env's model to **generate
-high-quality Jinja2 prompt templates** from a user-stated intent and
-optional few-shot examples. The output is a Jinja2 template (with
-`system_prompt` + `user_prompt` blocks) that can be saved via the
-existing `/api/templates` endpoint and immediately used for captioning.
+or refine high-quality Jinja2 prompt templates** from a user-stated
+intent and optional few-shot examples. The output is a Jinja2
+template (with `system_prompt` + `user_prompt` blocks) that can be
+saved via the existing `/api/templates` endpoint and immediately
+used for captioning.
+
+The generator runs in one of two modes:
+
+- **Generate** (Phase 2/3) — produce a new template from a stated
+  intent and optional style-reference examples. The model invents
+  the `system_prompt` + `user_prompt` content from scratch.
+- **Refine** (Phase 6, planned) — the user picks an existing
+  template, edits it in the form, and the LLM applies the user's
+  refinement intent to it. Few-shot examples still work as a
+  style reference. The mode is selected at the top of the form
+  via a pill tab; the streaming preview + save flow are shared.
 
 The prompt generator also pulls a **LLM client layer** (`yadc/llm/`)
 out of the existing captioners, so the chat-completion mechanics
@@ -81,6 +93,16 @@ captioners.
 - **UX**: newline-delimited JSON streaming response (fetch +
   `ReadableStream` + `AbortController` on the frontend) with
   mid-stream cancel via `controller.abort()`.
+- **Refine mode (Phase 6)**: a second tab in the prompt generator
+  ("Generate" / "Refine") that takes an existing template (user-
+  picked + user-editable in the form), a refinement intent, and
+  optional few-shot examples, and asks the LLM to apply the
+  refinement. The backend switches modes via an optional
+  `template_content` field on `PromptGenerationRequest` — no
+  separate `mode` flag needed; the presence of the field is the
+  signal. System prompt, message structure, and (lightly) the final
+  "go" message differ between modes; everything else (controller,
+  streaming, preview, save flow) is shared. See Phase 6 below.
 
 ## Architecture Sketch
 
@@ -636,6 +658,332 @@ anytime.**
   provenance for re-fetch. See
   `history/prompt-generator-plan/003-prompt-form-settings-persistence.md`.
 
+### Phase 5b — Backend cleanup (done, prerequisite for Phase 6a)
+
+**Goal**: small backend cleanup that lands **before** Phase 6a so
+the refine mode work has a clean foundation. Three pieces, all
+local to `yadc/api/services/prompt_generation.py`:
+
+1. **Refactor file → package** (no behaviour change). Convert
+   the single `prompt_generation.py` module into a `prompt_generation/`
+   package. Same import path (`yadc.api.services.prompt_generation`)
+   so blast radius is minimal — only the on-disk shape changes:
+
+   ```
+   yadc/api/services/prompt_generation/
+     __init__.py         # Re-exports the public surface. Also
+                          # re-exports ``cmd_envs`` + ``create_client``
+                          # at the package level so the existing test
+                          # patches keep resolving.
+     service.py          # ``PromptGenerationService`` +
+                          # ``_build_messages`` + ``_EXAMPLE_ACK``
+                          # (everything currently in the .py file).
+                          # Also loads the system prompt .txt files
+                          # via :mod:`importlib.resources` and
+                          # defines ``_GENERATE_SYSTEM_PROMPT`` (see
+                          # point 2).
+     prompts/            # Data directory (no __init__.py).
+       generate.txt      # Current system prompt text.
+       refine.txt        # Refine-mode system prompt text (staged for
+                          # Phase 6a, file exists but is NOT loaded
+                          # in Phase 5b — the loading line is added
+                          # in Phase 6a when the constant is actually
+                          # used).
+   ```
+
+   Test patches target the **package** path
+   (`yadc.api.services.prompt_generation.cmd_envs`,
+   `yadc.api.services.prompt_generation.create_client`), which the
+   `__init__.py` re-exports explicitly so they keep working.
+
+2. **System prompts as `.txt` files, loaded as package
+   resources in `service.py`** (no behaviour change for now —
+   just data → file). The actual prompt text moves from the
+   module-level `_SYSTEM_PROMPT` Python string into
+   `prompts/generate.txt`, loaded **once at import time inside
+   `service.py`** (the file that uses the constant — no separate
+   loader module, no `__init__.py` involvement, no import cycle):
+
+   ```python
+   # yadc/api/services/prompt_generation/service.py (top of file)
+   from importlib.resources import files
+
+   _GENERATE_SYSTEM_PROMPT: str = (
+       files("yadc.api.services.prompt_generation")
+       .joinpath("prompts")
+       .joinpath("generate.txt")
+       .read_text(encoding="utf-8")
+       .strip()
+   )
+   ```
+
+   `service.py` is the right home for the constant because it's
+   the only consumer — putting the constant in `__init__.py`
+   (or a separate `_prompts.py`) would force `service.py` to
+   import the package back, which creates a circular import
+   (`__init__.py` imports from `service.py` to re-export
+   `PromptGenerationService`; `service.py` importing from the
+   package re-enters `__init__.py` mid-execution).
+
+   `prompts/refine.txt` is created as part of this cleanup (the
+   structure is set up) but the constant + loading line are
+   **deferred to Phase 6a** — that file is only meaningful once
+   the refine-mode branching in `_build_messages` exists, and
+   loading a file that nothing references would be dead code at
+   import time. Reasons for `txt` over a Python constant:
+   - No multi-line string quoting / indentation hazards.
+   - Easy to diff in code review when we tune wording.
+   - Easy to add new modes later (just add a new file + a new
+     constant in `service.py`).
+   - `importlib.resources` makes the prompts part of the
+     package distribution — works the same in dev (uv editable
+     install), wheel installs, and zip-imports. The
+     `__file__`-relative approach would break in the latter
+     two.
+
+3. **Wire the system prompt into the message list** (bug fix).
+   The current `_SYSTEM_PROMPT` is **dead code** — defined at the
+   bottom of `prompt_generation.py` but never referenced anywhere.
+   `_build_messages` returns a list of user/assistant turns only;
+   the system prompt never reaches the LLM. Phase 5b fixes this
+   by prepending `Message(role="system", content=system_prompt)`
+   to the list returned by `_build_messages`. The function gains
+   a `system_prompt: str` keyword-only parameter (so the
+   constant in `service.py` can be injected without a global
+   lookup) and `PromptGenerationService.generate` passes
+   `_GENERATE_SYSTEM_PROMPT` (and, after Phase 6a,
+   `_REFINE_SYSTEM_PROMPT` when `request.template_content` is
+   set). The LLM client layer already maps `role="system"` to
+   the native shape (OpenAI's `system` message, Gemini's
+   `system_instruction`), so no client changes are needed.
+
+**Test impact**: the existing 5 `TestBuildMessages` tests that
+assert message indices (`messages[0]`, `messages[1]`, etc.)
+**all shift by 1** because the system message now occupies
+index 0. `test_final_user_turn_says_go` uses `messages[-1]` so
+it's index-agnostic. One new test
+(`test_system_message_is_first`) verifies the system message is
+at index 0 and its content matches `_GENERATE_SYSTEM_PROMPT` as
+loaded by `service.py` (which loads it from `prompts/generate.txt`
+via `importlib.resources`) — keeps the test honest about the
+txt-file indirection so a future refactor can't silently drop
+the loading code.
+
+**Out of scope for Phase 5b** (deferred to Phase 6a proper):
+
+- The `template_content` field on `PromptGenerationRequest`.
+- Branching in `_build_messages` on `request.template_content is not None`.
+- Picking the refine system prompt vs the generate system prompt
+  based on mode.
+- New tests for the refine-mode message structure.
+
+Phase 5b just sets up the structure; Phase 6a adds the
+generate-vs-refine branching on top.
+
+### Phase 6 — Refine mode (planned, not yet implemented)
+
+**Goal**: a second mode of the prompt generator that takes an
+existing template (user-picked, user-editable in the form) and
+asks the LLM to apply a refinement intent to it. Few-shot
+examples still work as a style reference. Reuses the existing
+streaming preview and the "Save as template" save flow.
+
+**Split**: Phase 6a (backend) + Phase 6b (frontend), matching the
+Phase 2 + Phase 3 pattern.
+
+#### Phase 6a — Backend (done)
+
+1. `PromptGenerationRequest.template_content: str | None = None`
+   — optional. When provided, the service runs in refine mode.
+   Pydantic validator: if provided, must be a non-empty string.
+   No separate `mode` field — the presence of `template_content`
+   is the signal (keeps the API surface small and avoids a
+   generate/refine flag mismatch).
+2. `GeneratePromptBody` in the controller picks up the same field
+   (it's a mirror of the request, `extra="forbid"`, so the Pydantic
+   pass-through handles it for free).
+3. `PromptGenerationService._build_messages` branches on
+   `request.template_content is not None`:
+   - **Refine mode, 0 examples** — fold the existing template
+     content + intent into a single user message (A-style). No
+     priming, no separate template message. The 0-example case
+     doesn't have a "before the examples" slot to insert into,
+     so the template naturally lives in the first user message.
+   - **Refine mode, N ≥ 1 examples** — reframe the existing
+     first user message to mention "refine an existing template";
+     then insert a new user message with the existing template
+     content + a new fake assistant ack (`"Got it. Send the next
+     item."`), positioned right after the priming and before
+     the first example. The rest of the structure (examples,
+     final "go" message) is unchanged but with "refined" wording
+     in the final "go" message.
+   - **Generate mode** — unchanged. Preserves the existing
+     multi-turn priming pattern verbatim, so Phase 2/3 tests
+     keep passing without modification.
+4. New `_REFINE_SYSTEM_PROMPT` constant. Loaded from
+   `prompts/refine.txt` via `importlib.resources` in
+   `service.py`, following the same loading pattern as
+   `_GENERATE_SYSTEM_PROMPT` from Phase 5b (the `refine.txt`
+   file itself was created in Phase 5b so the on-disk
+   structure is already in place — Phase 6a just adds the
+   loading line + the constant next to its consumer to
+   avoid an import cycle via `__init__.py`). Emphasises:
+   - The user has provided an existing template — apply the
+     requested changes to it (don't invent a new one from
+     scratch).
+   - Preserve parts of the template that work and don't need
+     to change.
+   - Output the full refined template (not a diff). The model
+     produces a complete, save-ready template.
+   - Same Jinja2 structure rules as the generate system prompt
+     (`{% set system_prompt %}` + `{% set user_prompt %}` blocks,
+     variable defaults, etc.).
+5. Streaming response, error handling, and empty-stream
+   detection are unchanged.
+6. Tests: 2-3 new service tests covering refine mode for
+   0 / 1 / N examples + the `template_content` validation.
+   Controller tests pick up the new field automatically (the
+   Pydantic body is a mirror).
+
+**Refine mode message structure** (for reference, will be
+implemented in code):
+
+- 0 examples, refine:
+  ```
+  User: "Refine my existing Jinja2 prompt template for image
+         captioning.\n\nMy current template:\n<content>\n\n
+         Intent for refinement:\n<user_intent>\n\n
+         <focus-specific format hints>.\n\n
+         Output only the template, without any markdown..."
+  ```
+- N ≥ 1 examples, refine:
+  ```
+  User:      "I need to refine my existing Jinja2 prompt template
+              for image captioning. Intent: <user_intent>. I'll
+              send you N example(s) — each as a subject + caption
+              + image — plus my current template, then ask you to
+              generate. Briefly acknowledge each item. When I say
+              'now generate', emit the refined Jinja2 template."
+  Assistant: "Understood. Send your items."        (fake priming)
+  User:      "My current template (please refine it according
+              to the intent):\n\n<content>"
+  Assistant: "Got it. Send the next item."        (new fake ack)
+  User:      example 1
+  Assistant: "Got it. Send the next example."     (existing ack)
+  User:      example 2
+  ... (existing pattern continues) ...
+  User:      "Now generate the refined Jinja2 template. Output
+              only the template, without any markdown..."
+  ```
+
+#### Phase 6b — Frontend
+
+1. `PromptFormSettings` (in `stores/prompts/settings.ts`):
+   - Add `mode: 'generate' | 'refine'` (default `'generate'`).
+   - Bump `$version` to 2. Migration: if the stored `$version` is
+     1, the existing `storable(...)` factory will fall back to
+     defaults on a version mismatch (it's the documented failure
+     path). To avoid losing the user's existing env / apiUrl /
+     intent / focus settings on upgrade, ship a small
+     `migrate(v1) → v2` helper in the `storable(...)` call that
+     re-adds the new `mode: 'generate'` field on top of the v1
+     object. The same `migrate` argument pattern is already
+     supported by `storable` (see `storable.js`); just unused
+     in the current settings stores.
+2. `PromptGenerator.svelte`:
+   - Add a `PillTabs` at the top of the form column with two
+     tabs: "Generate" and "Refine". Binds `mode` via the
+     controlled-component pattern (local `mode = $state(s.mode)`
+     initialised from `$promptSettings`, single `$effect` to
+     sync back via `promptSettings.update`). Avoid
+     `bind:mode={$promptSettings.mode}` (the `$store` write
+     doesn't propagate — see the rule of thumb in
+     `003-prompt-form-settings-persistence.md`).
+   - Switching tabs changes the form content but preserves
+     the env / model / focus / examples / intent state.
+   - The preview stays on the right (always visible, always
+     streaming). Tabs do not affect the preview.
+3. `PromptForm.svelte`:
+   - Add `mode: 'generate' | 'refine'` prop (default
+     `'generate'`).
+   - Add `templateContent: string` `$bindable` prop (default
+     `''`).
+   - In refine mode, render a "Template" section between
+     Environment and Intent:
+     - **Template picker** — `<select>` of `$templates.items`
+       (already maintained by the templates store). On change,
+       fetch the selected template's content via
+       `fetchTemplate(name)` and write it into the bound
+       `templateContent`. Show a loading spinner while
+       fetching; show an inline error on failure. An empty
+       option at the top is the default (user can paste their
+       own content without picking from the list).
+     - **`JinjaEditor`** — bound to `templateContent` (with
+       its `variables` bindable for a chip strip below the
+       editor, matching the preview's variable chip styling).
+   - The "Intent" label becomes "Refinement intent" in refine
+     mode. The underlying `intent` field is the same
+     persisted `promptSettings.intent` — we just relabel.
+   - The button label in the host becomes "Refine" in refine
+     mode (host-owned, so this is in `PromptGenerator.svelte`).
+4. `PromptGenRequest` (in `stores/prompts/types.ts`):
+   - Add `template_content?: string | null` (matches the
+     backend field name; the frontend's camelCase state maps
+     to this snake_case wire field via the existing
+     `startGeneration` mapping in `actions.ts`).
+5. `startGeneration` in `actions.ts`:
+   - Pass `template_content: s.templateContent || null` (the
+     `s` snapshot is the controlled-component's local form
+     values, same as the current `intent` / `focus` mapping).
+6. `PromptGenerator.handleGenerate` (in
+   `PromptGenerator.svelte`):
+   - Validates `templateContent.trim().length > 0` when
+     `mode === 'refine'` (in addition to the existing env +
+     intent checks). Frontend validation is in addition to
+     the backend Pydantic validator — the backend is the
+     source of truth, but a friendly client-side error
+     avoids an unnecessary round-trip.
+7. No new files in `lib/components/prompts/` (everything
+   slots into the existing files).
+8. Tests: no new vitest tests for Phase 6b. The streaming
+   reader tests already cover the wire surface; the
+   `template_content` field doesn't change the streaming
+   protocol. UI tests are deferred to a future pass (matches
+   the existing pattern — none of the Phase 3 components
+   have vitest coverage either).
+
+**Persistence summary** for the refine fields:
+
+- `mode` — persisted in `promptSettings` ($version 2).
+- `templateContent` — NOT persisted. Ephemeral local state in
+  the host. On reload, the user re-selects a template (or
+  pastes) to populate the editor.
+- Template picker selection — NOT persisted. On reload, the
+  picker is empty.
+- User's edits to the source template — NOT persisted.
+  Ephemeral local state.
+
+**Out of scope (deferred)**:
+
+- "Save over original" flow for the refined output — uses
+  the current "Save as new" flow. The user can manually
+  overwrite via `/templates` if they want to replace the
+  source. Adding an "Overwrite original" option to the
+  `EditTemplateDialog` is a separate cross-cutting change
+  (would apply to both generate and refine modes), not a
+  Phase 6 deliverable.
+- Persisting the user's edits to the source template
+  (similar to the deferred IndexedDB follow-up for
+  examples).
+- Persisting `lastTemplateName` (so the user comes back to
+  the same selection).
+- UI tests for the new form (matches the existing
+  pattern — Phase 3 components have no vitest coverage).
+- CLI parity for refine mode (defer until Phase 4 lands
+  for the base generate flow, then add `--refine <name>` +
+  `--template-content <file>` flags mirroring the
+  `dataset:<name>:<n>` examples flag).
+
 ## Key Files Touched
 
 ### New
@@ -690,6 +1038,73 @@ anytime.**
   relocates to the client), plan memories. Frontend docs under
   `.pi/agent/memory/docs/frontend/` were updated for Phase 3
   (`stores.md`, `components-domain.md`, `routes.md`).
+
+### Phase 6 (refine mode, planned)
+
+- `yadc/api/services/prompt_generation.py` — add
+  `template_content` field + branch in `_build_messages` + new
+  `_REFINE_SYSTEM_PROMPT` constant.
+- `yadc/api/controllers/api_prompts.py` — `GeneratePromptBody`
+  picks up the new field via the existing Pydantic body
+  pattern (no body-side changes needed beyond the field
+  being added to the inner `PromptGenerationRequest`).
+- `tests/api/test_prompt_generation.py` — new tests for refine
+  mode (0 / 1 / N examples + `template_content` validation).
+- `yadc/webui/src/lib/stores/prompts/types.ts` — add
+  `template_content` to `PromptGenRequest`.
+- `yadc/webui/src/lib/stores/prompts/settings.ts` — add
+  `mode` to `PromptFormSettings`, bump `$version` to 2 with a
+  `migrate` helper.
+- `yadc/webui/src/lib/components/prompts/PromptGenerator.svelte` —
+  add `PillTabs` host + `mode` controlled-component wiring.
+- `yadc/webui/src/lib/components/prompts/PromptForm.svelte` —
+  add `mode` + `templateContent` props, render the template
+  section (picker + `JinjaEditor`) in refine mode, relabel
+  the intent textarea.
+- `yadc/webui/src/lib/stores/prompts/actions.ts` — pass
+  `template_content` in `startGeneration`.
+- Memory docs (after impl): `docs/frontend/stores.md`,
+  `docs/frontend/components-domain.md`,
+  `docs/frontend/components-ui.md` (PillTabs mention in
+  PromptGenerator), `docs/backend/api.md` (refine endpoint
+  field).
+
+### Phase 5b (backend cleanup, planned)
+
+Refactor + bug fix, all in `yadc/api/services/prompt_generation/`.
+
+- Delete `yadc/api/services/prompt_generation.py`.
+- Create the `yadc/api/services/prompt_generation/` package:
+  - `__init__.py` (re-exports the public surface; also re-exports
+    `cmd_envs` + `create_client` at the package level for the
+    existing test patches — nothing else, to avoid an import
+    cycle with `service.py`).
+  - `service.py` (extracted `PromptGenerationService` +
+    `_build_messages` + `_EXAMPLE_ACK`; new `system_prompt` kwarg
+    on `_build_messages`; prepends `Message(role="system", ...)`
+    to the returned list; loads `prompts/generate.txt` via
+    `importlib.resources` and defines `_GENERATE_SYSTEM_PROMPT` at
+    module level — the constant lives next to its only consumer
+    to avoid an import cycle via `__init__.py`).
+  - `prompts/generate.txt` (current `_SYSTEM_PROMPT` text).
+  - `prompts/refine.txt` (refine system prompt text — file is
+    created in Phase 5b so the structure is set up, but the
+    constant + loading line are **added in Phase 6a** when
+    `_build_messages` actually branches on it).
+- `tests/api/test_prompt_generation.py`:
+  - Shift `messages[i]` index assertions in 5 tests by 1 (the
+    system message now occupies index 0).
+  - New `test_system_message_is_first` verifying the system
+    message is at index 0 and its content matches the loaded
+    `_GENERATE_SYSTEM_PROMPT` (the test exercises the same
+    loading path as production by reading the constant directly
+    from `service.py`).
+  - `_PATCH_CMD_ENVS` + `_PATCH_CREATE_CLIENT` paths unchanged
+    (the `__init__.py` re-export keeps them resolving).
+- Memory docs (after impl): `docs/backend/services.md` (or
+  whichever doc covers the services tree) needs the file → package
+  update; `docs/backend/api.md` may want a note about the
+  system-prompt wire-up if it discusses the message shape.
 
 ## Open Questions
 
@@ -769,9 +1184,24 @@ end-to-end:
   total all passing. Backend 726 tests still pass. svelte-check,
   eslint, prettier, ruff, basedpyright, build all clean.
 
-Phase 4 (CLI parity) and Phase 5 (meta-prompt tuning) remain.
-See `history/prompt-generator-plan/002-phase-3-frontend.md` for
-the detailed Phase 3 record.
+Phase 4 (CLI parity), Phase 5 (meta-prompt tuning),
+**Phase 5b (backend cleanup, DONE)**,
+**Phase 6a (refine-mode backend, DONE)** remain, plus
+**Phase 6b (refine-mode frontend, PLANNED)**. See
+`history/prompt-generator-plan/002-phase-3-frontend.md` for the
+detailed Phase 3 record,
+`history/prompt-generator-plan/004-refine-mode-design.md` for the
+Phase 6 design rationale,
+`history/prompt-generator-plan/005-backend-cleanup-design.md`
+for the Phase 5b design rationale,
+`history/prompt-generator-plan/006-phase-5b-implementation.md`
+for the Phase 5b implementation record (including the
+constant-location and test-patch-path corrections that
+happened during the work), and
+`history/prompt-generator-plan/007-phase-6a-implementation.md`
+for the Phase 6a (refine-mode backend) implementation record
+(including the wording decisions that came up during
+implementation).
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);
@@ -793,3 +1223,51 @@ Proposed — design refined after review:
 
 ## User feedback
 * several docstrings reference the current plan; long-term, these docstrings are not relevant and should be focused on the current state of the files rather than on the referencing the refactoring done in this plan
+* 2026-06-20 — after testing the MVP (Phases 1–3), the user
+  asked to add a "refine" mode: take an existing template, edit
+  it in the form, and ask the LLM to apply a refinement intent.
+  LLM-side: insert a new user message with the existing template
+  + a fake assistant ack, before the example images (0-example
+  case folds into the first user message). Frontend: pill tabs
+  at the top of the form column for "Generate" / "Refine",
+  reusing the existing `PillTabs` component. Editing of the
+* 2026-06-20 — during Phase 5b implementation, the user
+  corrected the constant location: `importlib.resources`
+  loading goes in `service.py` (next to its only consumer),
+  NOT in `__init__.py` or a separate `_prompts.py` loader
+  module. Putting it in the package would create a circular
+  import (`__init__.py` imports from `service.py` to
+  re-export; `service.py` importing the package back re-enters
+  `__init__.py` mid-execution). Same argument rules out a
+  dedicated `_prompts.py` re-export through `__init__.py`.
+  Kept simple: one `_GENERATE_SYSTEM_PROMPT` private
+  constant in `service.py`, loaded at import time. Also
+  the user said: "don't rewrite the service and just use
+  mkdir and mv" for the file → package refactor (i.e. don't
+  try to retype the whole file, just move it and make
+  targeted edits on top). And switched the `..modules.*`
+  relative imports in `service.py` to absolute `yadc.api.modules.*`
+  imports (matching the convention in the other
+  `services/*.py` files).
+  source template happens in the form (via `JinjaEditor`), not
+  in the backend. Captured as **Phase 6** in this plan; see
+  `history/prompt-generator-plan/004-refine-mode-design.md` for
+  the design rationale and the deferred items.
+* 2026-06-20 — in the same session, the user asked to "start
+  cleaning up the backend" before adding the refine system
+  prompt. Concrete asks: convert the single
+  `prompt_generation.py` into a `prompt_generation/` package
+  (same import path → reduce blast radius) and move the system
+  prompts out of the Python file into `.txt` files. While
+  planning this, we also discovered that the existing
+  `_SYSTEM_PROMPT` constant is **dead code** — defined at the
+  bottom of the file but never referenced by `_build_messages`
+  (which only returns user/assistant turns). The cleanup phase
+  wires the system prompt back in as a `Message(role="system",
+  ...)` prepended to the returned list, which is a real
+  behaviour change (the LLM client already maps `role="system"`
+  to its native shape — OpenAI `system`, Gemini
+  `system_instruction` — so no client changes are needed).
+  Captured as **Phase 5b** in this plan; see
+  `history/prompt-generator-plan/005-backend-cleanup-design.md`
+  for the full design rationale.

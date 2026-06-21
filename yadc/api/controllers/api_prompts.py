@@ -48,6 +48,10 @@ class GeneratePromptBody(pydantic.BaseModel):
     examples: list[ExamplePair] = pydantic.Field(default_factory=list)
     focus: PromptGenerationFocus = "both"
     api_model_name: str | None = None
+    # When set, runs in refine mode: the model applies the requested
+    # changes to this existing template instead of inventing a new one.
+    # See ``PromptGenerationRequest.template_content``.
+    template_content: str | None = None
 
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
@@ -78,6 +82,10 @@ def api_prompts(app: ApiBlueprint, logging: LoggingFactory, prompt_generation: P
             examples (ExamplePair[]):  Optional few-shot examples (subject → caption).
             focus ("system" | "user" | "both"): Which template blocks to populate.
             api_model_name (str|null): Override the env's default model.
+            template_content (str|null): If set, runs in refine mode — the model
+                                         applies the requested changes to this
+                                         existing template instead of inventing
+                                         a new one from scratch.
 
         Returns a streaming NDJSON response — see the module docstring for
         the wire format. The decryption password is read from the
@@ -120,6 +128,7 @@ def api_prompts(app: ApiBlueprint, logging: LoggingFactory, prompt_generation: P
             examples=body.examples,
             focus=body.focus,
             api_model_name=body.api_model_name,
+            template_content=body.template_content,
         )
 
         async def _stream() -> AsyncIterator[str]:

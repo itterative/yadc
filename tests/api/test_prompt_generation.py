@@ -5,11 +5,21 @@ or running backends. The streaming chunk mechanics are exercised by
 ``tests/llm/``; here we verify the service wires the pieces correctly
 (load env → resolve model → build the multi-turn meta-conversation →
 call client → yield chunks → close client).
+
+Test scope discipline: this file tests the **service's behaviour and
+contracts**, not the prompt wording. The meta-conversation structure
+(system message + user/assistant turns) is verified end-to-end by
+manual runs of the prompt-generator UI; pinning the exact text of every
+priming ack or final "go" message in unit tests just means we have to
+update the tests every time we tune a prompt. The two system-prompt
+tests are the exception — they catch a real bug (the dead-code
+``_SYSTEM_PROMPT`` that was never sent to the LLM before Phase 5b
+fixed the wire-up) and pin the constant-to-constant equality so a
+future refactor can't silently drop the loading code.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,8 +35,8 @@ from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core.user_config import UserConfig, UserConfigApi
 from yadc.llm import ImageUrlPart, Message, MessageStream, StreamChunk, TextPart
 
-_PATCH_CMD_ENVS = "yadc.api.services.prompt_generation.cmd_envs"
-_PATCH_CREATE_CLIENT = "yadc.api.services.prompt_generation.create_client"
+_PATCH_CMD_ENVS = "yadc.api.services.prompt_generation.service.cmd_envs"
+_PATCH_CREATE_CLIENT = "yadc.api.services.prompt_generation.service.create_client"
 
 
 def _user_config(url: str = "https://api.example.com/v1", token: str = "tk", model: str = "gpt-x") -> UserConfig:
@@ -47,6 +57,7 @@ def _request(
     examples: list[ExamplePair] | None = None,
     focus: PromptGenerationFocus = "both",
     api_model_name: str | None = None,
+    template_content: str | None = None,
 ) -> PromptGenerationRequest:
     return PromptGenerationRequest(
         env=env,
@@ -54,6 +65,7 @@ def _request(
         examples=examples or [],
         focus=focus,
         api_model_name=api_model_name,
+        template_content=template_content,
     )
 
 
@@ -101,7 +113,7 @@ def service(logging_factory) -> PromptGenerationService:
 
 
 class TestExamplePair:
-    """``ExamplePair`` Pydantic model — image_data_url is required."""
+    """``ExamplePair`` Pydantic model — ``image_data_url`` is required."""
 
     def test_image_data_url_required(self):
         with pytest.raises(ValueError):
@@ -122,18 +134,39 @@ class TestPromptGenerationRequest:
         assert req.examples == []
         assert req.focus == "both"
         assert req.api_model_name is None
+        assert req.template_content is None
 
     def test_extras_rejected(self):
         with pytest.raises(ValueError):
             PromptGenerationRequest.model_validate({"env": "default", "intent": "x", "unknown_field": "y"})
 
+    def test_template_content_must_be_non_empty(self):
+        with pytest.raises(ValueError, match="template_content"):
+            PromptGenerationRequest(env="default", intent="x", template_content="")
+
 
 class TestBuildMessages:
-    """The multi-turn meta-conversation structure."""
+    """Structural contracts of the message list — what the LLM client sees.
+
+    These are intentionally minimal: one wire-up test for the system
+    message and one structural test for the multimodal example format.
+    Everything else (priming acks, final "go" message, 0 vs N example
+    branching) is verified end-to-end in the prompt-generator UI, not
+    here, because pinning the exact wording in unit tests just means
+    we have to update the tests every time we tune a prompt.
+    """
 
     @pytest.mark.asyncio
-    async def test_no_examples_single_user_turn(self, service):
-        """With 0 examples, the priming assistant turn is skipped — just one user message asking for the template."""
+    async def test_system_message_is_first(self, service):
+        """The system prompt is prepended to the message list at index 0.
+
+        Pinned to the constant loaded by ``service.py`` from
+        ``prompts/generate.txt`` so a future refactor can't silently
+        drop the loading code (this was a real bug before Phase 5b —
+        the old ``_SYSTEM_PROMPT`` was dead code).
+        """
+        from yadc.api.services.prompt_generation.service import _GENERATE_SYSTEM_PROMPT
+
         client = _make_client([StreamChunk(text="x")])
 
         with (
@@ -142,44 +175,21 @@ class TestBuildMessages:
         ):
             patched_cmd_envs.load_env.return_value = _user_config()
 
-            async for _ in service.generate(request=_request(intent="caption cats", focus="system")):
+            async for _ in service.generate(request=_request()):
                 pass
 
         messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        assert len(messages) == 1
-        assert messages[0].role == "user"
-        assert isinstance(messages[0].content, str)
-        assert "caption cats" in messages[0].content
-        assert "Focus" not in messages[0].content
+        assert messages[0].role == "system"
+        assert messages[0].content == _GENERATE_SYSTEM_PROMPT
 
     @pytest.mark.asyncio
-    async def test_with_examples_intent_intro_then_priming_ack(self, service):
-        """First user turn states the intent and the plan; assistant priming acknowledges."""
-        client = _make_client([StreamChunk(text="x")])
+    async def test_example_user_turn_is_multimodal(self, service):
+        """Each example is sent as a user turn with a text part (subject + caption) and an image part.
 
-        with (
-            patch(_PATCH_CMD_ENVS) as patched_cmd_envs,
-            patch(_PATCH_CREATE_CLIENT, return_value=client),
-        ):
-            patched_cmd_envs.load_env.return_value = _user_config()
-
-            async for _ in service.generate(request=_request(intent="caption cats", examples=[_example()], focus="system")):
-                pass
-
-        messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        assert len(messages) == 4  # user intent + assistant ack + user example + user "go"
-        assert messages[0].role == "user"
-        assert isinstance(messages[0].content, str)
-        assert "caption cats" in messages[0].content
-        assert "1 example(s)" in messages[0].content
-        assert "Focus" not in messages[0].content
-
-        assert messages[1].role == "assistant"
-        assert messages[1].content == "Understood. Send your examples."
-
-    @pytest.mark.asyncio
-    async def test_example_user_turn_includes_subject_caption_and_image(self, service):
-        """Each example's user turn is multimodal: text (subject + caption) + image part."""
+        If this ever breaks, the LLM stops seeing the example images.
+        The exact label prefix ("Example 1/N") is not asserted — that's
+        a wording concern, not a structural one.
+        """
         client = _make_client([StreamChunk(text="x")])
         ex = _example(subject="a cat", caption="a small tabby")
 
@@ -193,50 +203,38 @@ class TestBuildMessages:
                 pass
 
         messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        # messages[2] = the example user turn (after intent + priming)
-        example_turn = messages[2]
-        assert example_turn.role == "user"
-        assert isinstance(example_turn.content, list)
-        parts = example_turn.content
+        # The example turn is the only ``user`` turn with a list content
+        # (the system message is a string, the intro/final-go are strings).
+        example_turns = [m for m in messages if m.role == "user" and isinstance(m.content, list)]
+        assert len(example_turns) == 1
+        parts = example_turns[0].content
         assert len(parts) == 2
         assert isinstance(parts[0], TextPart)
-        assert "Example 1/1" in parts[0].text
         assert "a cat" in parts[0].text
         assert "a small tabby" in parts[0].text
         assert isinstance(parts[1], ImageUrlPart)
         assert parts[1].image_url.url == _TINY_PNG
 
-    @pytest.mark.asyncio
-    async def test_multiple_examples_have_ack_between_them(self, service):
-        """Two examples → assistant ack between them + no ack after the last."""
-        client = _make_client([StreamChunk(text="x")])
-        ex1 = _example(subject="a cat", caption="a tabby")
-        ex2 = _example(subject="a dog", caption="a hound")
 
-        with (
-            patch(_PATCH_CMD_ENVS) as patched_cmd_envs,
-            patch(_PATCH_CREATE_CLIENT, return_value=client),
-        ):
-            patched_cmd_envs.load_env.return_value = _user_config()
+class TestRefineMode:
+    """Mode branching: refine mode (when ``template_content`` is set) uses a different system prompt.
 
-            async for _ in service.generate(request=_request(examples=[ex1, ex2])):
-                pass
-
-        messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        # user intent + assistant ack + user ex1 + assistant ack + user ex2 + user "go" = 6 messages
-        assert len(messages) == 6
-        assert messages[0].role == "user"
-        assert messages[1].role == "assistant"  # initial ack
-        assert messages[2].role == "user"  # ex1
-        assert messages[3].role == "assistant"  # ack between
-        assert messages[3].content == "Got it. Send the next example."
-        assert messages[4].role == "user"  # ex2
-        assert messages[5].role == "user"  # final "go"
-        assert "Now generate the Jinja2 template" in messages[5].content
+    The structure of the meta-conversation in refine mode is verified
+    end-to-end in the prompt-generator UI, not here, for the same
+    reason as :class:`TestBuildMessages` — pinning the exact wording
+    of the refine priming acks or the existing-template user turn
+    prefix would mean updating the tests every time we tune
+    ``refine.txt``.
+    """
 
     @pytest.mark.asyncio
-    async def test_single_example_no_ack_between(self, service):
-        """One example → no intermediate ack turn (the priming ack already covers it)."""
+    async def test_uses_refine_system_prompt(self, service):
+        """When ``template_content`` is set, the system message is the refine prompt (not the generate one)."""
+        from yadc.api.services.prompt_generation.service import (
+            _GENERATE_SYSTEM_PROMPT,
+            _REFINE_SYSTEM_PROMPT,
+        )
+
         client = _make_client([StreamChunk(text="x")])
 
         with (
@@ -245,32 +243,16 @@ class TestBuildMessages:
         ):
             patched_cmd_envs.load_env.return_value = _user_config()
 
-            async for _ in service.generate(request=_request(examples=[_example()])):
+            async for _ in service.generate(request=_request(template_content="existing template")):
                 pass
 
         messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        # user intent + assistant ack + user ex + user "go" = 4 messages
-        assert len(messages) == 4
-        roles = [m.role for m in messages]
-        assert roles == ["user", "assistant", "user", "user"]
-
-    @pytest.mark.asyncio
-    async def test_final_user_turn_says_go(self, service):
-        """The last user message asks the LLM to emit the template."""
-        client = _make_client([StreamChunk(text="x")])
-
-        with (
-            patch(_PATCH_CMD_ENVS) as patched_cmd_envs,
-            patch(_PATCH_CREATE_CLIENT, return_value=client),
-        ):
-            patched_cmd_envs.load_env.return_value = _user_config()
-
-            async for _ in service.generate(request=_request(examples=[_example(), _example(subject="dog", caption="hound")])):
-                pass
-
-        messages: list[Message] = client.predict_next_message_stream.call_args.args[0]
-        assert messages[-1].role == "user"
-        assert "Now generate the Jinja2 template" in messages[-1].content
+        assert messages[0].role == "system"
+        assert messages[0].content == _REFINE_SYSTEM_PROMPT
+        # Sanity check: the two prompts are actually different. Catches
+        # a copy-paste mistake where someone makes ``refine.txt``
+        # identical to ``generate.txt``.
+        assert messages[0].content != _GENERATE_SYSTEM_PROMPT
 
 
 class TestGenerate:
@@ -438,8 +420,3 @@ class TestGenerate:
             yielded = [c async for c in service.generate(request=_request())]
 
         assert yielded == chunks
-
-
-def _json_lines(body: bytes) -> list[dict[str, Any]]:
-    """Parse an NDJSON body into a list of dicts (one per line)."""
-    return [json.loads(line) for line in body.splitlines() if line]

@@ -49,6 +49,7 @@ yadc = "yadc.cli:cli"
 [tool.setuptools.package-data]
 "yadc.api" = ["banner.txt"]
 "yadc.api.migrations" = ["*.sql"]
+"yadc.api.services.prompt_generation.prompts" = ["*.txt"]
 "yadc.templates.jinja" = ["*"]
 "yadc.webui" = ["build/**/*"]
 
