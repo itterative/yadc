@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 9
+last_history: 10
 ---
 
 # Prompt Generator Plan
@@ -1128,7 +1128,11 @@ Refactor + bug fix, all in `yadc/api/services/prompt_generation/`.
    should be able to drop it cleanly. Phase 1 verification.
 4. **Meta-prompt stability**: The system prompt that instructs the
    model to emit Jinja2 templates is itself a critical piece of UX.
-   Worth tuning — defer to Phase 5.
+   Worth tuning — defer to Phase 5. Complementary: Phase 8 would
+   externalize the meta-prompt scaffolding (the inlined user/assistant
+   turns in `_build_messages`) into a `messages.jinja` so the wording
+   is maintainable and (later) user-overridable — separate from tuning
+   the content itself.
 
 ## Resolved Decisions (from design discussion)
 
@@ -1309,6 +1313,9 @@ end-to-end:
   eslint, prettier, ruff, basedpyright, build all clean.
 
 Phase 4 (CLI parity) and Phase 5 (meta-prompt tuning) remain.
+**Phase 8 (meta-prompt Jinja templating) — proposed, awaiting a
+go/no-go** (see the Phase 8 section above +
+`010-meta-prompt-jinja-templating.md`).
 **Phase 5b (backend cleanup, DONE)**,
 **Phase 6a (refine-mode backend, DONE)**,
 **Phase 6b (refine-mode frontend, DONE)**,
