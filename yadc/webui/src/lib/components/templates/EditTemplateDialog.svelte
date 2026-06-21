@@ -11,12 +11,19 @@
         open: boolean;
         /** Existing template name, or null to create a new template. */
         templateName: string | null;
+        /**
+         * Pre-fill the editor for new templates. Useful when the
+         * caller has content the user should start from (e.g. a
+         * generated template body). Ignored when editing an existing
+         * template.
+         */
+        initialContent?: string;
         onclose: () => void;
         /** Called after save with the template name. */
         onsaved: (name: string) => void;
     }
 
-    let { open, templateName, onclose, onsaved }: Props = $props();
+    let { open, templateName, initialContent, onclose, onsaved }: Props = $props();
 
     // Parent abort context — read at init time, used in effects.
     const parentSignal = getAbortContext();
@@ -42,7 +49,7 @@
         isSaving = false;
         newName = '';
         templateSource = '';
-        content = isNew ? NEW_TEMPLATE_STUB : '';
+        content = isNew ? (initialContent ?? NEW_TEMPLATE_STUB) : '';
 
         if (isNew) {
             return;

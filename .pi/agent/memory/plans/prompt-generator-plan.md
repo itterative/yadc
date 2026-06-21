@@ -1,6 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
+last_history: 3
 ---
 
 # Prompt Generator Plan
@@ -629,6 +630,11 @@ anytime.**
 - Copy-to-clipboard for the generated template body.
 - Show extracted Jinja variables inline as chips.
 - A/B test variations of the meta-system-prompt.
+- IndexedDB-backed persistence for the few-shot examples
+  (image data URLs) — currently dropped on page reload because
+  they don't fit in localStorage and we don't track per-example
+  provenance for re-fetch. See
+  `history/prompt-generator-plan/003-prompt-form-settings-persistence.md`.
 
 ## Key Files Touched
 
@@ -668,13 +674,22 @@ anytime.**
   is the chosen transport, no SSE event bus).
 
 ### Updated
-- `yadc/cli.py` → register `prompts` subcommand.
-- `yadc/webui/src/routes/+layout.svelte` → nav item.
+- `yadc/cli.py` → register `prompts` subcommand. *(Phase 4)*
+- `yadc/webui/src/routes/+layout.svelte` → nav item (added in
+  Phase 3).
+- `yadc/webui/src/lib/components/dataset/detail/Preview.svelte`
+  → expanded (absorbed the old `ui/PromptPreview` body in
+  Phase 3).
+- `yadc/webui/src/lib/components/templates/EditTemplateDialog.svelte`
+  → gained `initialContent?` prop (Phase 3).
+- `yadc/webui/src/lib/icons/SvgSave.svelte` → new icon (Phase 3).
 - Documentation: `.pi/agent/memory/docs/backend/captioners.md`
   (clients live in `yadc/llm/` now), `.pi/agent/memory/docs/backend/api.md`
   (new controller), `.pi/agent/memory/docs/captioner-architecture.md`
   (hierarchy collapses; auto-detect facade gone; mixin pattern
-  relocates to the client), plan memories.
+  relocates to the client), plan memories. Frontend docs under
+  `.pi/agent/memory/docs/frontend/` were updated for Phase 3
+  (`stores.md`, `components-domain.md`, `routes.md`).
 
 ## Open Questions
 
@@ -734,26 +749,29 @@ anytime.**
 
 ## Status
 
-**Phase 1a + 1b + 2 COMPLETE.** The captioner layer is now a single
-`APICaptioner` that composes a `BaseLLMClient` from `yadc/llm/`, and
-`yadc/llm/` is fully self-contained — the shared HTTP infra
-(`async_session.py`, `cache.py`, `response_logger.py`,
-`error_normalization.py`, `response_models.py`, `units.py`,
-`DEFAULT_MODELS_CACHE_TTL_SECONDS`) lives there, and the
-`captioners.api → llm` direction is unidirectional. Phase 2 lands
-the backend prompt-generation plumbing (see
-`history/prompt-generator-plan/001-phase-2-backend.md`):
+**Phase 1a + 1b + 2 + 3 COMPLETE.** Phase 3 lands the web UI
+end-to-end:
 
-- `yadc/api/services/prompt_generation.py` — `PromptGenerationService`
-  calls `yadc.llm.create_client` directly (no captioner) and yields
-  `StreamChunk`s from `predict_next_message_stream(messages,
-  reasoning=None)`.
-- `yadc/api/controllers/api_prompts.py` — `POST /api/prompts/generate`
-  streaming NDJSON response (one `{"type": "token"}` line per chunk +
-  `{"type": "done"}` / `{"type": "error"}`).
-- Tests at the service and controller levels (33 new tests, all
-  passing). Phase 3 (frontend stores/components/route) builds on
-  this endpoint.
+- `lib/stores/prompts/` (types, streaming api, runes-based state,
+  high-level actions, vitest tests for the streaming reader)
+- `lib/components/prompts/` feature folder (PromptGenerator host,
+  PromptForm, ExamplesPanel with manual + from-dataset modes,
+  GenerationPreview with streaming/copy/save)
+- `routes/prompts/+page.svelte` and a new "Prompts" nav entry
+  in `routes/+layout.svelte` (between Datasets and Templates)
+- The pre-existing `lib/components/ui/PromptPreview.svelte`
+  (one-use wrapper around the dataset image prompt preview) was
+  inlined into `dataset/detail/Preview.svelte` and deleted, freeing
+  the name for the new `prompts/GenerationPreview` (no collision).
+- `EditTemplateDialog` got an `initialContent?` prop so the
+  generator's "Save as template" button pre-fills the editor.
+- 13 new vitest tests for the streaming reader, 50 frontend tests
+  total all passing. Backend 726 tests still pass. svelte-check,
+  eslint, prettier, ruff, basedpyright, build all clean.
+
+Phase 4 (CLI parity) and Phase 5 (meta-prompt tuning) remain.
+See `history/prompt-generator-plan/002-phase-3-frontend.md` for
+the detailed Phase 3 record.
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);

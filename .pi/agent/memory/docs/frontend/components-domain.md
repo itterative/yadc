@@ -24,7 +24,7 @@ yadc/webui/src/lib/components/dataset/
     ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
     Caption.svelte              # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
     RefineDialog.svelte         # Dialog for caption refinement — editable caption + feedback input, sends to model as conversation, shows result with Accept/Retry
-    Preview.svelte              # Thin wrapper around PromptPreview
+    Preview.svelte              # Inlines what used to be the now-deleted `ui/PromptPreview.svelte` (14-line wrapper was promoted to host; the name `PromptPreview` was freed up for the unrelated `prompts/GenerationPreview`).
     Extras.svelte               # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
   config/                       # Dataset config editor (tab host + tabs + helpers)
     DatasetConfig.svelte        # Tab system host (Form / Advanced / History) + data fetching + save orchestration
@@ -63,8 +63,20 @@ yadc/webui/src/lib/components/dataset/
 
 ```
   templates/                      # Templates domain
-    EditTemplateDialog.svelte     # Reusable create/edit template dialog. `templateName=null` for new; otherwise edits the named template. Used by both the `/templates` route and `caption/TemplateSection.svelte`.
+    EditTemplateDialog.svelte     # Reusable create/edit template dialog. `templateName=null` for new; otherwise edits the named template. Used by both the `/templates` route and `caption/TemplateSection.svelte`. `initialContent?` pre-fills the editor for new templates — used by the prompt generator to save a generated body.
     index.ts                      # Barrel re-export (`$lib/components/templates`)
+```
+
+## prompts/
+
+```
+  prompts/                        # Prompt-generator domain — feature folder
+    PromptGenerator.svelte        # Host: two-column layout (form on left, streaming preview on right). Owns the form bindings + the Save-as-template dialog.
+    PromptForm.svelte             # Env selector (with auto model fetch), model picker, intent textarea, focus toggle, examples section, Generate button. Mirrors `caption/EnvSelector` but bindable + reacts to streaming status.
+    ExamplesPanel.svelte          # Few-shot examples list with thumbnail + subject/caption fields. Two add modes: `+ Manual` (file picker → FileReader → data URL) and `+ From dataset` (inline picker with dataset selector + image grid; auto-fills subject=file_stem, caption=dataset caption).
+    GenerationPreview.svelte      # Streaming monospace preview with blinking caret, copy-to-clipboard, Save-as-template button, extracted Jinja variables as chips, status badge + Cancel button in footer. Mounts `ReasoningCard` at the top of the body so the reasoning lives inside the preview, above where the template text starts streaming.
+    ReasoningCard.svelte          # Collapsible card that appears inside `GenerationPreview` when `generation.reasoning` is non-empty. Collapsed: chevron + 'Reasoning:' + last non-empty line truncated with ellipsis. Expanded: scrollable `<pre>` that auto-follows streaming (only if user is within 50px of the bottom — leaves them alone if they scrolled up to read).
+    index.ts                      # Barrel re-export (`$lib/components/prompts`)
 ```
 
 ## export/
@@ -97,5 +109,5 @@ yadc/webui/src/lib/components/dataset/
 The icons live at `yadc/webui/src/lib/icons/` (sibling of `lib/components/`, not under it).
 
 ```
-  icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop.
+  icons/             # SVG icon components (Svg* prefix). Added manually from Material Symbols; standard viewBox `0 -960 960 960`. Sizing/color come from Tailwind classes via the `class` prop. Includes `SvgChevronDown`/`SvgChevronUp` pair for collapse indicators.
 ```

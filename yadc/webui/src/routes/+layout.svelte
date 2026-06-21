@@ -8,6 +8,7 @@
     import SvgMenu from '$lib/icons/SvgMenu.svelte';
     import SvgImage from '$lib/icons/SvgImage.svelte';
     import SvgFile from '$lib/icons/SvgFile.svelte';
+    import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import SvgUpload from '$lib/icons/SvgUpload.svelte';
     import SvgSettings from '$lib/icons/SvgSettings.svelte';
     import Tooltip from '$lib/components/ui/Tooltip.svelte';
@@ -31,6 +32,7 @@
 
     let currentHash = $derived($page.url.hash);
     let isDatasetPage = $derived(currentHash === '#/' || currentHash.startsWith('#/datasets/'));
+    let isPromptsPage = $derived(currentHash.startsWith('#/prompts'));
     let isTemplatesPage = $derived(currentHash.startsWith('#/templates'));
 
     // Root abort context — never aborted itself, but provides the top of
@@ -149,6 +151,18 @@
                     <SvgImage class="h-6 w-6 shrink-0" />
                 </Tooltip>
                 <span class="text-lg md:hidden">Datasets</span>
+            </a>
+            <a
+                href="#/prompts"
+                class="flex items-center gap-3 rounded-md p-2 no-underline transition-colors duration-200 {isPromptsPage
+                    ? 'bg-bg text-fg'
+                    : 'text-muted hover:bg-bg hover:text-fg'}"
+                onclick={() => (sidebarOpen = false)}
+            >
+                <Tooltip label="Prompts" class="z-50" direction="right">
+                    <SvgSparkle class="h-6 w-6 shrink-0" />
+                </Tooltip>
+                <span class="text-lg md:hidden">Prompts</span>
             </a>
             <a
                 href="#/templates"
