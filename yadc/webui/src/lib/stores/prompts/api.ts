@@ -20,7 +20,13 @@
  */
 
 import { API_BASE, apiErrorMessage } from '$lib/api';
-import type { PromptGenRequest, StreamEvent } from './types';
+import type {
+    PromptGenRequest,
+    PromptHistoryEntry,
+    PromptHistoryListItem,
+    SaveHistoryArgs,
+    StreamEvent
+} from './types';
 
 export interface StreamCallbacks {
     onToken?: (text: string) => void;
@@ -189,5 +195,57 @@ function dispatch(event: StreamEvent, callbacks: StreamCallbacks): void {
         case 'error':
             callbacks.onError?.(event.message);
             break;
+    }
+}
+
+// --- Prompt history (Phase 7) ---
+
+/** GET /api/prompts/history — list summary rows (newest first). */
+export async function fetchHistoryList(signal?: AbortSignal): Promise<PromptHistoryListItem[]> {
+    const res = await fetch(`${API_BASE}/api/prompts/history`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    const data = await res.json();
+    return data.entries ?? [];
+}
+
+/** GET /api/prompts/history/<id> — full entry with examples + template content (for restore). */
+export async function fetchHistoryEntry(
+    id: number,
+    signal?: AbortSignal
+): Promise<PromptHistoryEntry> {
+    const res = await fetch(`${API_BASE}/api/prompts/history/${id}`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+/** POST /api/prompts/history — save the current form state as a history entry. */
+export async function saveHistoryEntry(
+    args: SaveHistoryArgs,
+    signal?: AbortSignal
+): Promise<PromptHistoryEntry> {
+    const res = await fetch(`${API_BASE}/api/prompts/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(args),
+        signal
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return res.json();
+}
+
+/** DELETE /api/prompts/history/<id> — remove a single history entry. */
+export async function deleteHistoryEntry(id: number, signal?: AbortSignal): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/prompts/history/${id}`, {
+        method: 'DELETE',
+        signal
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
     }
 }

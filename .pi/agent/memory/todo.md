@@ -7,33 +7,6 @@ priority: 3
 
 # TODO
 
-## IndexedDB for prompt-generator few-shot examples
-
-The prompt generator (`/prompts`) currently persists the form
-settings (mode, env, api url/token/model, intent, focus) to
-localStorage in `lib/stores/prompts/settings.ts`, but **drops the
-few-shot examples** on page reload — their `image_data_url` payloads
-are too large for localStorage's ~5–10MB quota and there's no
-per-example provenance to re-fetch dataset images on load.
-
-The right fix is IndexedDB: async, orders-of-magnitude more
-capacity, and the natural place for arbitrary blobs. Migration
-shape:
-- Add a `source` field to `ExamplePair`:
-  `{type: "manual"}` or `{type: "dataset", dataset: string, imageId: string}`.
-- Persist everything (settings + examples) in IndexedDB; settings
-  can stay in localStorage if size isn't a concern, but IDB is fine
-  for both.
-- On page load, re-fetch dataset-sourced examples via
-  `GET /datasets/<name>/images/<id>/image`; manual uploads still
-  need to be re-added (or also stored in IDB as a Blob).
-- Update `ExamplesPanel` to show a placeholder chip for
-  re-fetch-in-progress or unrecoverable examples.
-
-Tracked in the prompt-generator plan history
-(`history/prompt-generator-plan/003-prompt-form-settings-persistence.md`)
-under "Deferred".
-
 ## Test cleanup
 
 Several test files need structural cleanup:

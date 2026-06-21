@@ -10,6 +10,14 @@ from .dataset_upload import DatasetUploadResult, DatasetUploadService, UploadPro
 from .datasets import DatasetService
 from .managed_datasets import ManagedDatasetsService
 from .prompt_generation import ExamplePair, PromptGenerationFocus, PromptGenerationRequest, PromptGenerationService
+from .prompt_history import (
+    PROMPT_HISTORY_MAX_ENTRIES,
+    PromptHistoryListItem,
+    PromptHistoryPage,
+    PromptHistorySaveRequest,
+    PromptHistoryService,
+)
+from .prompt_history_repository import PromptExample, PromptHistoryEntry, PromptHistoryRepository
 from .settings import SettingsService
 from .settings_repository import SettingsRepository
 
@@ -25,10 +33,18 @@ __all__ = [
     "DatasetUploadService",
     "ExamplePair",
     "ManagedDatasetsService",
+    "PROMPT_HISTORY_MAX_ENTRIES",
     "PromptGenerationFocus",
     "PromptGenerationRequest",
     "PromptGenerationService",
+    "PromptExample",
+    "PromptHistoryEntry",
+    "PromptHistoryListItem",
+    "PromptHistoryPage",
+    "PromptHistoryRepository",
+    "PromptHistorySaveRequest",
+    "PromptHistoryService",
     "SettingsRepository",
-    "UploadProgressEvent",
     "SettingsService",
+    "UploadProgressEvent",
 ]

@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 7
+last_history: 9
 ---
 
 # Prompt Generator Plan
@@ -1162,6 +1162,130 @@ Refactor + bug fix, all in `yadc/api/services/prompt_generation/`.
   safe default because some backends (notably llama.cpp) don't
   cleanly stop decoding in non-streaming mode.
 
+### Phase 7 — Prompt-history persistence (planned)
+
+Server-side persistence of the artifact (intent + focus + examples
++ mode + template content) so the user can save and restore the
+full prompt across sessions/machines. Defers / supersedes the
+IndexedDB TODO entry.
+
+- **DB migration `0008_prompt_history_{up,down}.sql`**: two tables —
+  `prompt_history` (mode, intent, focus, template_content, created_t)
+  and `prompt_example_images` (raw image BLOBs, one row per example
+  image, FK to the parent with `ON DELETE CASCADE`). The DB stores
+  uncompressed bytes — the service base64-translates at the wire
+  boundary (see the design history entry for the full schema +
+  `CHECK` constraints).
+- **`yadc/api/services/prompt_history_repository.py`**:
+  `PromptHistoryEntry` (entry-level row) + `PromptExample`
+  (per-image child row) dataclasses + all SQL for both tables.
+  `list_entries_with_counts` is a single `LEFT JOIN ... GROUP BY`
+  so `example_count` comes back attached (no per-row JSON parse).
+  `get_entry_with_examples` returns `(entry, examples)` from one
+  connection. `insert_entry` + `insert_examples` + `prune_old`
+  run inside one transaction for save atomicity; `delete_entry`
+  cascades to image rows via the FK — no service-level cleanup.
+  Inline row→dataclass construction per the repo convention.
+- **`yadc/api/services/prompt_history.py`**: `PromptHistoryService`
+  with `save_entry` (insert entry + insert examples + prune to 20
+  inside one transaction, matching `ConfigHistoryService.save_snapshot`'s
+  pattern), `list_history` (opaque `next` cursor), `get_entry`,
+  `delete_entry`. The service owns the **base64 ↔ BLOB translation
+  at the wire boundary**: `ExamplePair.image_data_url` is the wire
+  format; the repo stores raw bytes (decode on save, re-encode on
+  get). Malformed data URLs are silently skipped on save.
+- **`yadc/api/controllers/api_prompts_history.py`**: four
+  endpoints (`POST` / `GET` list / `GET` id / `DELETE` id).
+  Pydantic body model for save reuses the existing
+  `ExamplePair` from the `prompt_generation` service.
+  List response includes server-derived `intent_preview`
+  (first 2 lines) + `example_count` + `had_template` so the
+  frontend doesn't have to compute them.
+- **`yadc/webui/src/lib/stores/prompts/{types,api,index}.ts`**:
+  `PromptHistoryListItem` + `PromptHistoryEntry` types; four
+  API helpers (`fetchHistoryList`, `fetchHistoryEntry`,
+  `saveHistoryEntry`, `deleteHistoryEntry`).
+- **`yadc/webui/src/lib/components/prompts/PromptHistoryPanel.svelte`**:
+  list view with the user-specified layout (intent preview,
+  badges for focus / example count / mode / "with template",
+  relative timestamp, restore + delete actions, confirm
+  dialog for delete).
+- **`yadc/webui/src/lib/components/prompts/PromptGenerator.svelte`**:
+  third tab in the form-card `PillTabs`
+  (`Generate | Refine | History`), "Save to history" button
+  in the form footer, restore handler that switches tab +
+  populates `mode` / `intent` / `focus` / `examples` /
+  `templateContent` from the entry + toasts confirmation.
+- Tests: `tests/api/test_prompt_history_repository.py` +
+  `tests/api/test_prompt_history_service.py` +
+  `tests/api/test_api_prompts_history.py`.
+- Doc updates: `backend/api.md`, `frontend/components-domain.md`,
+  `frontend/stores.md`, `todo.md` (remove the superseded
+  IndexedDB entry).
+- **Out of scope**: env / model / template picker selection
+  (workspace-level, not part of the artifact); per-entry
+  pin/favorite; search/filter; CLI parity (wait for Phase 4).
+
+See `history/prompt-generator-plan/008-phase-7-design.md` for
+the full design rationale (scope decisions, prune policy,
+schema, API surface, list-item layout).
+
+### Phase 8 — Meta-prompt Jinja templating (proposed, not yet implemented)
+
+**Goal**: move the meta-prompt **scaffolding** — the inlined
+user/assistant message bodies in `_build_messages` (priming acks,
+intro turns, the final "go" message, the per-example label, the focus
+format hints) and the `_EXAMPLE_ACK` / `_REFINE_TEMPLATE_ACK`
+constants — out of `service.py` into a Jinja2 template, so the wording
+lives in data, not Python. Motivation: maintainability + enabling a
+later feature where users override these instructions with their own
+(via a `ChoiceLoader` resolution chain mirroring caption templates).
+That override UX is a separate later feature — Phase 8 only does the
+externalization.
+
+**Decisions (from the design pass)**:
+
+- **Macros throughout** (`{% macro x(args) %}`), not `{% set %}`
+  blocks. The per-example label varies inside the example loop, and
+  `{% set %}` blocks evaluate once with the call's globals (can't
+  vary per iteration), so a macro is forced there; uniformity then
+  favours macros for the rest. (The captioner uses `{% set %}` blocks
+  because its templates are user-authored output blocks, not
+  per-call-arg scaffolding.)
+- **Loading**: one module-level `Environment`
+  (`trim_blocks`/`lstrip_blocks` matching `PromptRenderer`);
+  `get_template("messages.jinja").module` cached once; macros called
+  with explicit args. Verified that `get_template(name, globals=…)`
+  on a cached template **sticks** globals from the first call, so the
+  globals-based form is avoided in favour of explicit-arg macros.
+- **Focus hints**: live in `messages.jinja` as a `focus_hints(focus)`
+  macro. They contain literal `{% set … %}` example text, so those
+  passages are wrapped in `{% raw %}…{% endraw %}`. (Two existing
+  `"block.Use"` typos in `_format_hints` get fixed in the move.)
+- **System prompts stay as `.txt`**: `generate.txt` / `refine.txt`
+  are unchanged (no variables → nothing to gain from Jinja). Phase 8
+  moves only the scaffolding.
+
+**File layout**: new
+`yadc/api/services/prompt_generation/prompts/messages.jinja` (~12
+macros + shared `focus_hints`); `service.py` `_build_messages` becomes
+pure orchestration (every `Message(...)` body is a `_MSGS.<macro>(…)`
+call; the example turn wraps `_MSGS.example_label(…)` in a `TextPart`
++ `ImageUrlPart`). `_format_hints`, `_EXAMPLE_ACK`,
+`_REFINE_TEMPLATE_ACK` are deleted.
+
+**Test impact**: `tests/api/test_prompt_generation.py` deliberately
+doesn't pin scaffolding wording (only the two system-prompt constants
++ the example structure), so the refactor is low-risk. Add one smoke
+test asserting `_build_messages` yields the right roles/turn-count per
+scenario so a future template edit can't silently drop a turn.
+
+**Status**: proposed — awaiting a go/no-go. See
+`history/prompt-generator-plan/010-meta-prompt-jinja-templating.md`
+for the full design (incl. the Jinja-mechanics findings that drove the
+macro choice, and the full `messages.jinja` + slimmed `_build_messages`
+sketches).
+
 ## Status
 
 **Phase 1a + 1b + 2 + 3 COMPLETE.** Phase 3 lands the web UI
@@ -1187,7 +1311,8 @@ end-to-end:
 Phase 4 (CLI parity) and Phase 5 (meta-prompt tuning) remain.
 **Phase 5b (backend cleanup, DONE)**,
 **Phase 6a (refine-mode backend, DONE)**,
-**Phase 6b (refine-mode frontend, DONE)**. See
+**Phase 6b (refine-mode frontend, DONE)**,
+**Phase 7 (prompt-history persistence, DONE)**. See
 `history/prompt-generator-plan/002-phase-3-frontend.md` for the
 detailed Phase 3 record,
 `history/prompt-generator-plan/004-refine-mode-design.md` for the
@@ -1205,7 +1330,14 @@ implementation), and
 `history/prompt-generator-plan/008-phase-6b-implementation.md`
 for the Phase 6b (refine-mode frontend) implementation record
 (including the `storable.js` migrate-bug fix, the form-in-both-tabs
-trade-off, and the ESLint `argsIgnorePattern` config).
+trade-off, and the ESLint `argsIgnorePattern` config), and
+`history/prompt-generator-plan/008-phase-7-design.md` /
+`009-phase-7-implementation.md` for the prompt-history
+persistence (server-side replacement for the deferred
+IndexedDB plan; the implementation entry covers the
+`activeTab`/`mode` split, the `untrack(() => mode)` init
+pattern, the save/restore flow, and the `mode + examples +
+template_content` JSON contract).
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);
