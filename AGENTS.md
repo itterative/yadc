@@ -64,6 +64,15 @@ Comments are long-lived artifacts — calibrate them to long-term value, not the
 - **`__init__.py` re-exports**: use `__all__` lists to avoid ruff F401 false positives
 - **Conventional commits**: `type: subject` or `type(scope): subject` (feat, fix, refactor, docs)
 
+## Memories
+
+Agent memories live under `.pi/agent/memory/`. Keep the two kinds separate:
+
+- **Reference docs** (`docs/`, root-level reference memories like `architecture-overview`, and the plan index in `plan-management.md`) describe the **current** architecture in **present tense** and are long-term. Do **not** put phase/step markers ("Phase 7", "added in Phase 5b") or other transient implementation-tracking in them — update the description in place when things change. The plan index's Status column is the one exception: it is intentionally current-state, but keep it concise and high-level (e.g. "In Progress"), not a phase-by-phase enumeration.
+- **Plans** (`plans/<plan>.md` + `plans/history/<plan>/`) are the **only** place for phased implementation tracking, design history, and done/remaining status. That churn belongs here, not in reference docs.
+
+Rule of thumb: if a note will go stale after the next phase, it belongs in a plan, not a reference doc.
+
 ## Key Paths
 
 - **Python package**: `yadc/` (CLI, core logic, API backend, webui build output)
