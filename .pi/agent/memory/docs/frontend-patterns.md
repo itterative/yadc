@@ -27,6 +27,26 @@ Patterns specific to the yadc webui frontend. For SvelteKit/Tailwind v4 setup se
 
 `value` is bindable and uses `id` (not `label`) for matching.
 
+### Content placement (form-in-both-tabs pattern)
+
+The tabs system is designed for **content-switching** — each `Tab`
+holds its own content and the inactive tab's content is `hidden` via
+CSS. All existing usages (`EditDatasetDialog`, `AddDatasetDialog`,
+`SettingsDialog`, `ImageDetail` via `CompactPillTabs`, `SidePanel`)
+put different content in each `Tab` child.
+
+For a **mode switcher with shared content** (e.g. the prompt
+generator's Generate/Refine tabs in `PromptGenerator.svelte`), the
+form is rendered in BOTH tab children. Both forms mount; the
+inactive one is hidden but its effects still fire. State shared via
+`bind:value` (against the host's snapshot) is always in sync; per-
+instance internal state (loading flags, picker selection) re-
+initializes on tab switch. Store-backed fetches (envs, models,
+templates) dedupe via the debounce layer, so the double-fetch is a
+no-op in practice. The alternative (a custom pill bar) is simpler
+but loses the `PillTabs` accessibility wiring (role="tablist",
+aria-selected).
+
 ## Z-Index Layers
 
 Fixed-position elements use a consistent z-index stack:

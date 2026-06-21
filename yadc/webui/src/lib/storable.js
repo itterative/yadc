@@ -61,6 +61,10 @@ export default function storable(key, data, migrate = null) {
                 store.set(storedDataObj);
             } else if (migrate !== null) {
                 storedDataObj = migrate(storedDataObj, storedDataObj['$version']);
+                // Write the migrated data to the store. The subscribe
+                // handler picks this up and persists it to localStorage,
+                // so subsequent loads skip the migration.
+                store.set(storedDataObj);
             }
         } catch (error) {
             console.error('storable failed to initialize (will use defaults)', { key, error });

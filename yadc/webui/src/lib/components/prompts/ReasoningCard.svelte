@@ -55,7 +55,7 @@
 </script>
 
 {#if visible}
-    <div class="rounded-lg bg-gray-800 flex flex-col overflow-hidden mb-4">
+    <div class="mb-4 flex flex-col overflow-hidden rounded-lg bg-gray-800">
         <button
             type="button"
             class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-400"

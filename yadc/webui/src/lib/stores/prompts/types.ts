@@ -15,6 +15,10 @@ export interface PromptGenRequest {
     examples: ExamplePair[];
     focus: PromptGenFocus;
     api_model_name?: string | null;
+    /** When set, runs in refine mode: the model applies the user's
+     *  intent to this existing template instead of inventing a new
+     *  one from scratch. ``null``/omitted → generate mode. */
+    template_content?: string | null;
 }
 
 /** NDJSON streaming events from POST /api/prompts/generate. */

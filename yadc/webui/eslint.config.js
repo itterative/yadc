@@ -25,7 +25,11 @@ export default defineConfig(
             // see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
             curly: ['error', 'all'],
             'no-undef': 'off',
-            'svelte/valid-compile': ['error', { ignoreWarnings: true }]
+            'svelte/valid-compile': ['error', { ignoreWarnings: true }],
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+            ]
         }
     },
     {

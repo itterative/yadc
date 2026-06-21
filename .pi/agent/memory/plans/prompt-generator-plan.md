@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate (or refine) high-quality Jinja2 prompt templates from an intent (and optional few-shot examples) using any configured env's model, with streaming + cancel. Extracts a generic LLM client layer (yadc/llm/) from the existing captioners so captioners delegate and the new prompt generator uses the client directly.
-last_history: 6
+last_history: 7
 ---
 
 # Prompt Generator Plan
@@ -1184,10 +1184,10 @@ end-to-end:
   total all passing. Backend 726 tests still pass. svelte-check,
   eslint, prettier, ruff, basedpyright, build all clean.
 
-Phase 4 (CLI parity), Phase 5 (meta-prompt tuning),
+Phase 4 (CLI parity) and Phase 5 (meta-prompt tuning) remain.
 **Phase 5b (backend cleanup, DONE)**,
-**Phase 6a (refine-mode backend, DONE)** remain, plus
-**Phase 6b (refine-mode frontend, PLANNED)**. See
+**Phase 6a (refine-mode backend, DONE)**,
+**Phase 6b (refine-mode frontend, DONE)**. See
 `history/prompt-generator-plan/002-phase-3-frontend.md` for the
 detailed Phase 3 record,
 `history/prompt-generator-plan/004-refine-mode-design.md` for the
@@ -1201,7 +1201,11 @@ happened during the work), and
 `history/prompt-generator-plan/007-phase-6a-implementation.md`
 for the Phase 6a (refine-mode backend) implementation record
 (including the wording decisions that came up during
-implementation).
+implementation), and
+`history/prompt-generator-plan/008-phase-6b-implementation.md`
+for the Phase 6b (refine-mode frontend) implementation record
+(including the `storable.js` migrate-bug fix, the form-in-both-tabs
+trade-off, and the ESLint `argsIgnorePattern` config).
 
 Proposed — design refined after review:
 - `predict_next_message_stream` is `async def` (caller awaits);

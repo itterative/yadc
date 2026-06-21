@@ -10,8 +10,8 @@ priority: 3
 ## IndexedDB for prompt-generator few-shot examples
 
 The prompt generator (`/prompts`) currently persists the form
-settings (env, api url/token/model, intent, focus) to localStorage
-in `lib/stores/prompts/settings.svelte.ts`, but **drops the
+settings (mode, env, api url/token/model, intent, focus) to
+localStorage in `lib/stores/prompts/settings.ts`, but **drops the
 few-shot examples** on page reload — their `image_data_url` payloads
 are too large for localStorage's ~5–10MB quota and there's no
 per-example provenance to re-fetch dataset images on load.

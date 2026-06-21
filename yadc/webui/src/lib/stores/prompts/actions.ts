@@ -28,6 +28,8 @@ export interface StartGenerationArgs {
     examples: ExamplePair[];
     focus: PromptGenFocus;
     apiModelName?: string | null;
+    /** Existing template body for refine mode. ``null``/omitted → generate mode. */
+    templateContent?: string | null;
 }
 
 /** Start a streaming generation. Resolves when the stream ends. */
@@ -39,7 +41,8 @@ export async function startGeneration(args: StartGenerationArgs): Promise<void> 
         intent: args.intent,
         examples: args.examples,
         focus: args.focus,
-        api_model_name: args.apiModelName ?? null
+        api_model_name: args.apiModelName ?? null,
+        template_content: args.templateContent ?? null
     };
 
     try {
