@@ -5,6 +5,15 @@ The factory is constructed once per app from ``Configuration.db_path``,
 throwaway connection and runs any pending migrations synchronously so
 the first request doesn't pay the migration cost.
 
+The constructor also opens one idle **keep-alive connection** that stays
+open for the app's lifetime (closed on ``ShutdownEvent``). SQLite keeps
+the WAL/SHM sidecar files only while at least one connection is open, so
+this means they are created once at startup and reused by every
+short-lived per-request connection instead of being created and deleted
+on each operation — which on a copy-on-write filesystem is constant
+metadata churn. The keep-alive holds no read lock, so it blocks neither
+readers, writers, nor checkpointing.
+
 ``_connection()`` opens a fresh ``sqlite3.Connection`` with
 ``pragma journal_mode=wal``, ``pragma foreign_keys=on``,
 ``pragma busy_timeout=5000``, and a custom ``uuid()`` SQL function
@@ -34,7 +43,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 from ..configuration import Configuration
+from ..events import ShutdownEvent
 from .db_migrations import DBMigrations
+from .event_dispatcher import event_handler
 from .logging_factory import LoggingFactory
 from .service import Service
 
@@ -80,6 +91,13 @@ class DBConnectionFactory(Service):
         self.path: str = configuration.db_path
         self._logger: logging.Logger = logging.get_logger(__name__)
         self._active_transaction: ContextVar[_Transaction | None] = ContextVar("_active_transaction", default=None)
+
+        # Hold one persistent idle connection so the WAL/SHM sidecar files are
+        # created once and reused by every short-lived connection, instead of
+        # being created+deleted per operation (constant metadata churn on the
+        # CoW filesystem). An idle connection holds no read lock, so it blocks
+        # neither readers, writers, nor checkpointing.
+        self._keepalive: sqlite3.Connection = self._connection()
 
         self._init_db(migrations)
 
@@ -171,3 +189,17 @@ class DBConnectionFactory(Service):
         finally:
             self._active_transaction.reset(token)
             txn.close()
+
+    def close(self) -> None:
+        """Close the keep-alive connection, checkpointing pending WAL frames into the main DB.
+
+        SQLite doesn't reliably delete the WAL/SHM sidecar files on the last
+        close (and not at all in multi-connection setups), so they may persist
+        on disk — harmless, they're reused on the next open. This just releases
+        the fd and folds the WAL into the DB.
+        """
+        self._keepalive.close()
+
+    @event_handler(ShutdownEvent)
+    def on_shutdown(self, event: ShutdownEvent) -> None:  # pyright: ignore[reportUnusedParameter]
+        self.close()

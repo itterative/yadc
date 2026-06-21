@@ -47,4 +47,6 @@ def db_connection_factory(
 ) -> Iterator[DBConnectionFactory]:
     """A real DBConnectionFactory with a temp-file DB. Migrations run synchronously."""
     migrations = DBMigrations(logging_factory)
-    yield DBConnectionFactory(test_configuration, logging_factory, migrations)
+    factory = DBConnectionFactory(test_configuration, logging_factory, migrations)
+    yield factory
+    factory.close()
