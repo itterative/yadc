@@ -59,3 +59,35 @@ callback in a local `handleGenerateClick` that sets
 
 **Files touched:**
 - `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
+
+## GenerationPreview: inline status below the stream
+
+The "Generating…" footer row moved inline, right under the `<pre>`,
+where it actually describes what's being watched. Other terminal
+states got the same treatment.
+
+- `<pre>` wrapped in `{#if generation.body}` with a comment
+  explaining why ("a bit ugly, but necessary to keep the
+  whitespace of the template") — without the wrapper, an empty
+  `<pre>` rendered awkwardly in some status transitions. Earlier
+  tried `<p>` (no wrapper needed) but reverted to `<pre>` for
+  semantic / a11y reasons (screen readers announce `<pre>` as
+  preformatted text and respect whitespace).
+- Caret uses `class:hidden={generation.status !== 'streaming'}`
+  instead of `{#if}` — same result, more idiomatic.
+- Inline status row (`mt-2 flex justify-center gap-1.5 text-sm`):
+  - `streaming && !generation.body` → spinner + "Generating…"
+    (only before the first token — once text streams in, the
+    caret is the in-progress signal and a redundant label would
+    compete with it).
+  - `cancelled` → close + "Cancelled" (`text-warning` —
+    user-initiated, so warning instead of error red).
+  - **No "Done" indicator** — body being complete + Copy/Save
+    buttons appearing in the header is enough.
+- Error state unchanged — its full empty-state UI already
+  displays text.
+- Footer now variables-only; hidden entirely when
+  `variables.length === 0`.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`

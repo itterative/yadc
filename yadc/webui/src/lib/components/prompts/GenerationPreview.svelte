@@ -81,36 +81,40 @@
                 </p>
             </div>
         {:else}
-            <pre
-                class="w-full font-mono text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-200">{generation.body}{#if generation.status === 'streaming'}<span
-                        class="animate-pulse text-accent">▍</span
-                    >{/if}</pre>
+            {#if generation.body}
+                <!-- NOTE: a bit ugly, but necessary to keep the whitespace of the template -->
+                <pre
+                    class="w-full font-mono text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-200">{generation.body}<span
+                        class="animate-pulse text-accent"
+                        class:hidden={generation.status !== 'streaming'}>▍</span
+                    ></pre>
+            {/if}
+
+            <!-- Inline status, right under the stream. Same shape for
+                 all terminal / in-progress states; error has its own
+                 full-state UI above. -->
+            <div class="mt-2 flex items-center justify-center gap-1.5 text-sm">
+                {#if generation.status === 'streaming' && !generation.body}
+                    <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
+                    <span class="text-accent">Generating…</span>
+                {:else if generation.status === 'cancelled'}
+                    <SvgClose class="h-3.5 w-3.5 text-warning" />
+                    <span class="text-warning">Cancelled</span>
+                {/if}
+            </div>
         {/if}
     </div>
 
-    <!-- Footer: status + cancel + variables -->
-    {#if generation.status !== 'idle' || variables.length > 0}
-        <div class="space-y-2 border-t border-border bg-surface/50 px-4 py-2 text-xs">
-            {#if variables.length > 0}
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="text-gray-500">Variables:</span>
-                    {#each variables as v (v)}
-                        <code class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent"
-                            >{v}</code
-                        >
-                    {/each}
-                </div>
-            {/if}
-            {#if generation.status === 'streaming' || generation.status === 'error'}
-                <div class="flex items-center gap-1.5 text-gray-400">
-                    {#if generation.status === 'streaming'}
-                        <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
-                        <span class="text-accent">Generating…</span>
-                    {:else}
-                        <span class="text-error">Error</span>
-                    {/if}
-                </div>
-            {/if}
+    <!-- Footer: variables only (hidden when none). -->
+    {#if variables.length > 0}
+        <div class="border-t border-border bg-surface/50 px-4 py-2 text-xs">
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-gray-500">Variables:</span>
+                {#each variables as v (v)}
+                    <code class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent">{v}</code
+                    >
+                {/each}
+            </div>
         </div>
     {/if}
 </div>
