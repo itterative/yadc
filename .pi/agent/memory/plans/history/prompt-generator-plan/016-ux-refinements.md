@@ -91,3 +91,64 @@ states got the same treatment.
 
 **Files touched:**
 - `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`
+
+## Streaming auto-scroll action
+
+The "follow the stream + jump to bottom on open" logic that
+lived in `ReasoningCard.svelte` (two `$effect` blocks + a
+`scrollEl` ref + a `tick()` defer) is now a reusable Svelte
+action in `lib/actions/autoscroll.ts` — same pattern as the
+existing `autosize.ts`. Applied to both the reasoning card
+`<pre>` and `GenerationPreview`'s body `<pre>` so the streamed
+template follows the same auto-follow behaviour.
+
+API:
+```ts
+use:autoscroll                              // defaults: scrollOnMount true
+use:autoscroll={{ scrollOnMount: false }}   // don't jump on mount
+```
+
+Internals: a `MutationObserver` with `childList` + `characterData`
++ `subtree` options, so it catches both new child nodes and
+text-content updates (which is what Svelte does when re-rendering
+`{text}` bindings). On mount, a `requestAnimationFrame` callback
+sets `scrollTop = scrollHeight` if `scrollOnMount` is true (defer
+to next frame so the freshly-rendered DOM has its layout
+computed).
+
+Pause/resume: the original design used a position threshold
+(`distFromBottom < 50` → auto-scroll), which meant small scroll
+gestures within the threshold didn't disable it — users had to
+scroll "aggressively" up to escape auto-follow. Replaced with
+gesture-based detection: a `scroll` event listener compares
+`scrollTop` against the previous value. Since our own
+programmatic scroll only ever sets `scrollTop = scrollHeight`
+(max position), any *decrease* in `scrollTop` between events is
+unambiguously user-initiated (mouse wheel, touch drag, or
+keyboard) and pauses auto-scroll. Resume happens only when the
+user scrolls back to within 5px of the bottom.
+
+Where to attach it: an earlier attempt put `use:autoscroll` on
+`GenerationPreview`'s `<pre>`, but that didn't work because the
+`<pre>` itself wasn't the scroll container (the body `<div>`
+was, via `overflow-auto`) — `scrollTop` on the `<pre>` was a
+no-op. Moved the action to the parent `<div>`.
+
+The MutationObserver is disconnected in `destroy()`, so the
+action is safe to attach to conditionally-rendered elements
+(ReasoningCard's `<pre>` only exists when the card is expanded).
+
+**Files touched:**
+- `yadc/webui/src/lib/actions/autoscroll.ts` (new)
+- `yadc/webui/src/lib/components/prompts/ReasoningCard.svelte`
+  (dropped two `$effect`s + `scrollEl` ref + `tick` import;
+  added `use:autoscroll`)
+- `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`
+  (added `use:autoscroll` on the body scroll container, not
+  the `<pre>`)
+- `.pi/agent/memory/frontend-architecture.md` (`lib/actions/`
+  folder added to the current-layout one-liner, alongside
+  `autosize.ts`)
+- `.pi/agent/memory/docs/frontend/components-domain.md`
+  (`ReasoningCard` + `GenerationPreview` entries mention
+  `use:autoscroll`)

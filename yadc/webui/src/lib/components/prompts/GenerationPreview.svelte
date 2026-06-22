@@ -3,6 +3,7 @@
     import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgSave from '$lib/icons/SvgSave.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import { autoscroll } from '$lib/actions/autoscroll';
     import { extractVariables } from '$lib/stores/templates';
     import { generation, reset } from '$lib/stores/prompts';
     import { toast } from '$lib/stores/toasts';
@@ -67,7 +68,7 @@
     </div>
 
     <!-- Body -->
-    <div class="min-h-0 flex-1 overflow-auto bg-gray-900/40 p-4">
+    <div class="min-h-0 flex-1 overflow-auto bg-gray-900/40 p-4" use:autoscroll>
         <ReasoningCard />
         {#if generation.status === 'idle' && !generation.body}
             <div class="flex h-full items-center justify-center text-sm text-gray-500">

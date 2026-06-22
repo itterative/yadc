@@ -1,11 +1,10 @@
 <script lang="ts">
-    import { tick } from 'svelte';
     import SvgChevronDown from '$lib/icons/SvgChevronDown.svelte';
     import SvgChevronUp from '$lib/icons/SvgChevronUp.svelte';
     import { generation } from '$lib/stores/prompts';
+    import { autoscroll } from '$lib/actions/autoscroll';
 
     let expanded = $state(false);
-    let scrollEl: HTMLPreElement | undefined = $state();
 
     // The card only appears once the model has produced any reasoning.
     let visible = $derived(generation.reasoning.length > 0);
@@ -23,34 +22,6 @@
             }
         }
         return r;
-    });
-
-    // Jump to the bottom when the card is opened (or re-opened) so the
-    // user lands on the freshest content. Deferred to the next tick so
-    // the freshly-rendered <pre> has its layout computed.
-    $effect(() => {
-        if (expanded) {
-            tick().then(() => {
-                if (scrollEl) {
-                    scrollEl.scrollTop = scrollEl.scrollHeight;
-                }
-            });
-        }
-    });
-
-    // Follow the stream while the user is near the bottom. If they've
-    // scrolled up to read, leave them alone.
-    $effect(() => {
-        // Track the reasoning so this re-runs on every chunk.
-        const _reasoning = generation.reasoning;
-        void _reasoning;
-        if (!expanded || !scrollEl) {
-            return;
-        }
-        const distFromBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-        if (distFromBottom < 50) {
-            scrollEl.scrollTop = scrollEl.scrollHeight;
-        }
     });
 </script>
 
@@ -74,7 +45,7 @@
         </button>
         {#if expanded}
             <pre
-                bind:this={scrollEl}
+                use:autoscroll
                 class="max-h-48 overflow-y-auto px-3 py-2 font-mono text-sm break-words whitespace-pre-wrap text-gray-400">{generation.reasoning}</pre>
         {/if}
     </div>

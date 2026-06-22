@@ -55,6 +55,7 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 - `lib/components/templates/` — `EditTemplateDialog` (used by both the `/templates` route and the caption tab sidebar).
 - `lib/components/dialogs/` — only `PasswordPromptDialog` (global utility).
 - `lib/icons/` — `Svg*` SVG components (`viewBox="0 -960 960 960"`, sized/colored via Tailwind)
+- `lib/actions/` — Svelte actions. `autosize.ts` (textarea auto-resize, capped at `maxHeight`) and `autoscroll.ts` (follow streaming content — scrolls to bottom on mount, then on every content change until the user scrolls up; auto-scroll resumes only when the user scrolls back to the bottom. `scrollOnMount` option. Replaces an earlier position-threshold model that required users to scroll aggressively up to disable).
 
 Note: `lib/components/dialogs/` and `lib/icons/` are pragmatic exceptions to the Scope rule above — `dialogs/` holds global utilities (not a domain) and `icons/` lives outside `lib/components/` entirely.
 
