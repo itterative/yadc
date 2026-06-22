@@ -3,9 +3,10 @@
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import SidePanel from '$lib/components/ui/SidePanel.svelte';
     import FabButton from '$lib/components/ui/FabButton.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
-    import SvgSave from '$lib/icons/SvgSave.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import PromptForm from './PromptForm.svelte';
     import PromptHistoryPanel from './PromptHistoryPanel.svelte';
@@ -20,6 +21,7 @@
     } from '$lib/stores/prompts';
     import { friendlyErrorMessage } from '$lib/api';
     import { toast } from '$lib/stores/toasts';
+    import SvgHistory from '$lib/icons/SvgHistory.svelte';
 
     type ActiveTab = 'generate' | 'settings' | 'history';
 
@@ -186,45 +188,37 @@
                 />
             </div>
 
-            <!-- Footer action bar (Generate tab only). The primary CTA
-                 is Cancel during streaming (so the user can stop the
-                 in-flight call from inside the panel — the FAB provides
-                 the same on mobile while the panel is closed),
-                 otherwise Generate / Refine. Save-to-history is always
-                 available so the user can stash the form mid-stream or
-                 after a partial response. -->
-            <div
-                class="flex items-center justify-end gap-2 border-t border-border bg-surface/50 px-4 py-2"
-            >
-                <button
-                    class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={handleSaveToHistory}
-                    disabled={!canSave || isSaving}
-                    title="Save current prompt to history"
-                >
-                    <SvgSave class="h-3.5 w-3.5" />
-                    Save to history
-                </button>
-                {#if isStreaming}
-                    <button
-                        class="btn-danger flex cursor-pointer items-center gap-1.5 px-4 py-2"
-                        onclick={cancelGenerationState}
-                        title="Cancel generation"
-                        aria-label="Cancel generation"
-                    >
-                        <SvgClose class="h-4 w-4" />
-                        Cancel
-                    </button>
-                {:else}
-                    <button
-                        class="btn-primary flex cursor-pointer items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-                        onclick={handleGenerateClick}
-                        disabled={!canGenerate}
-                    >
-                        <SvgSparkle class="h-4 w-4" />
-                        {mode === 'refine' ? 'Refine' : 'Generate'}
-                    </button>
-                {/if}
+            <!-- Footer action bar (Generate tab only). Save-to-history
+                 (secondary) sits beside the primary Generate / Refine —
+                 both are form-state actions that belong on this tab.
+                 During streaming the primary swaps to Cancel (danger)
+                 and Save is hidden so the in-flight state is a single,
+                 unambiguous stop action (the FAB mirrors it on mobile
+                 while the panel is closed). -->
+            <div class="border-t border-border">
+                <ActionBar>
+                    {#if isStreaming}
+                        <ActionBarItem
+                            onclick={cancelGenerationState}
+                            icon={SvgClose}
+                            variant="danger">Cancel</ActionBarItem
+                        >
+                    {:else}
+                        <ActionBarItem
+                            onclick={handleSaveToHistory}
+                            disabled={!canSave || isSaving}
+                            icon={SvgHistory}
+                            variant="secondary">Save</ActionBarItem
+                        >
+                        <ActionBarItem
+                            onclick={handleGenerateClick}
+                            disabled={!canGenerate}
+                            icon={SvgSparkle}
+                            variant="primary"
+                            >{mode === 'refine' ? 'Refine' : 'Generate'}</ActionBarItem
+                        >
+                    {/if}
+                </ActionBar>
             </div>
         </Tab>
         <Tab id="settings" label="Settings" class="h-full overflow-y-auto">

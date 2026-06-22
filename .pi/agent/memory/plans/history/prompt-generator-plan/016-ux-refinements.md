@@ -426,3 +426,38 @@ relied on a definite parent height, which the mobile flow (no
 - `.pi/agent/memory/frontend-architecture.md` (`autoscroll`
   description)
 - `docs/frontend/components-domain.md` (`GenerationPreview` entry)
+
+## Generate-tab footer: ActionBar (Save + Generate, Cancel-only mid-stream)
+
+The Generate-tab footer had two raw buttons (btn-secondary
+Save-to-history + btn-primary Generate/Refine, swapping to
+btn-danger Cancel mid-stream) in a plain flex row. Swapped them
+for the `ActionBar` / `ActionBarItem` primitives — same pattern
+as `GenerationPreview`'s footer and `caption/TemplateSection`,
+giving equal-width flex targets with variant colors carrying the
+hierarchy (Save secondary / Generate primary / Cancel danger).
+
+One adjustment to the mid-stream state: Save-to-history is now
+**hidden while streaming**, so the in-flight state is a single
+full-width Cancel (the FAB mirrors it on mobile while the panel
+is closed). Previously Save stayed available mid-stream (it
+stashes the pre-edit form values since the form is snapshotted
+into the in-flight call), but a single unambiguous stop action
+reads cleaner than a Cancel-with-Save-beside-it.
+
+A `border-t border-border` wrapper above the ActionBar keeps the
+form/footer separation (the ActionBar's own `bg-black/15` is the
+footer's fill).
+
+Considered splitting by tab (Generate on the Generate tab, Save
+on the History tab) to mirror the dataset panel's single-button
+tabs, but Save-to-history persists **form state** (intent /
+focus / examples / template) — a Generate-tab concern — so moving
+it to the History tab would disconnect it from the form it
+saves (the form is hidden on other tabs).
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
+  (ActionBar + ActionBarItem imports; footer → ActionBar;
+  Save hidden during streaming)
+- `docs/frontend/components-domain.md` (`PromptSidePanel` entry)

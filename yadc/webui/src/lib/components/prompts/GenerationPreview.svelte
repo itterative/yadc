@@ -120,7 +120,7 @@
                     onclick={() => onsavetemplate(generation.body)}
                     disabled={!canSave}
                     icon={SvgSave}
-                    variant="primary">Save as template</ActionBarItem
+                    variant="primary">Save</ActionBarItem
                 >
                 <ActionBarItem onclick={copyBody} icon={SvgCopy} variant="secondary">
                     {copied ? 'Copied' : 'Copy'}
