@@ -199,44 +199,44 @@
             </Tab>
         </PillTabs>
 
-        <!-- Footer action bar. Generate / Refine is the primary CTA;
+        <!-- Footer action bar. The primary CTA is Cancel during
+             streaming (so the user can stop the in-flight call from
+             inside the panel — the FAB provides the same on mobile
+             while the panel is closed), otherwise Generate / Refine.
              Save-to-history is always available so the user can stash
-             the form even mid-stream or after a partial response.
-             Contextual status text on the left summarises the current
-             tab. -->
+             the form mid-stream or after a partial response. -->
         <div
-            class="flex items-center justify-between border-t border-border bg-surface/50 px-4 py-2"
+            class="flex items-center justify-end gap-2 border-t border-border bg-surface/50 px-4 py-2"
         >
-            <p class="text-xs text-gray-500">
-                {#if activeTab === 'history'}
-                    {examples.length} example{examples.length === 1 ? '' : 's'} ready to save
-                {:else if activeTab === 'settings'}
-                    Environment &amp; generation limits
-                {:else if examples.length > 0}
-                    {examples.length} example{examples.length === 1 ? '' : 's'}
-                {:else}
-                    No examples — model will infer style from intent alone
-                {/if}
-            </p>
-            <div class="flex items-center gap-2">
+            <button
+                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                onclick={handleSaveToHistory}
+                disabled={!canSave || isSaving}
+                title="Save current prompt to history"
+            >
+                <SvgSave class="h-3.5 w-3.5" />
+                Save to history
+            </button>
+            {#if isStreaming}
                 <button
-                    class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={handleSaveToHistory}
-                    disabled={!canSave || isSaving}
-                    title="Save current prompt to history"
+                    class="btn-danger flex cursor-pointer items-center gap-1.5 px-4 py-2"
+                    onclick={cancelGenerationState}
+                    title="Cancel generation"
+                    aria-label="Cancel generation"
                 >
-                    <SvgSave class="h-3.5 w-3.5" />
-                    Save to history
+                    <SvgClose class="h-4 w-4" />
+                    Cancel
                 </button>
+            {:else}
                 <button
                     class="btn-primary flex cursor-pointer items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                     onclick={ongenerate}
                     disabled={!canGenerate}
                 >
                     <SvgSparkle class="h-4 w-4" />
-                    {isStreaming ? 'Streaming…' : mode === 'refine' ? 'Refine' : 'Generate'}
+                    {mode === 'refine' ? 'Refine' : 'Generate'}
                 </button>
-            </div>
+            {/if}
         </div>
     </div>
 </SidePanel>

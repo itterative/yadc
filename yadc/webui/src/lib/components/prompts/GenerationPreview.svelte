@@ -5,7 +5,6 @@
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import { extractVariables } from '$lib/stores/templates';
     import { generation, reset } from '$lib/stores/prompts';
-    import { cancelGenerationState } from '$lib/stores/prompts';
     import { toast } from '$lib/stores/toasts';
     import ReasoningCard from './ReasoningCard.svelte';
 
@@ -102,32 +101,16 @@
                     {/each}
                 </div>
             {/if}
-            <div class="flex items-center justify-between">
-                <span class="flex items-center gap-1.5 text-gray-400">
+            {#if generation.status === 'streaming' || generation.status === 'error'}
+                <div class="flex items-center gap-1.5 text-gray-400">
                     {#if generation.status === 'streaming'}
                         <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
                         <span class="text-accent">Generating…</span>
-                    {:else if generation.status === 'error'}
+                    {:else}
                         <span class="text-error">Error</span>
                     {/if}
-                </span>
-                {#if generation.status === 'streaming'}
-                    <!-- Desktop-only cancel. On mobile the side panel's
-                         FAB doubles as the cancel button (see the
-                         ``fab`` snippet + ``<FabButton>`` on
-                         ``ui/SidePanel.svelte`` / ``PromptSidePanel``).
-                         The FAB sits on top of this footer (``z-20``
-                         vs. no z-index), so showing both would just
-                         be dead code hidden behind the FAB. -->
-                    <button
-                        class="hidden cursor-pointer items-center gap-1.5 rounded-md bg-error/10 px-2.5 py-1 text-xs text-error transition-colors hover:bg-error/20 lg:flex"
-                        onclick={cancelGenerationState}
-                    >
-                        <SvgClose class="h-3 w-3" />
-                        Cancel
-                    </button>
-                {/if}
-            </div>
+                </div>
+            {/if}
         </div>
     {/if}
 </div>

@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate/refine Jinja2 prompt templates from an intent + optional few-shot examples using any configured env's model, with streaming + cancel + server-side prompt history. Built on a generic LLM client layer (yadc/llm/) extracted from the captioners.
-last_history: 15
+last_history: 16
 ---
 
 # Prompt Generator Plan
