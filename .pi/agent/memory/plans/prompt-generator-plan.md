@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate/refine Jinja2 prompt templates from an intent + optional few-shot examples using any configured env's model, with streaming + cancel + server-side prompt history. Built on a generic LLM client layer (yadc/llm/) extracted from the captioners.
-last_history: 13
+last_history: 14
 ---
 
 # Prompt Generator Plan
@@ -172,6 +172,28 @@ through two previously-missing knobs: `max_tokens` (was hardcoded to
 25000; client default 4096 truncated templates) and `image_quality`
 (FE+BE — OpenAI reads it from `image_url.detail`, Gemini from a
 client opt). `promptSettings` → `$version: 3`.
+
+### UI side panel + two fixes (2026-06-22)
+
+The dataset route's `SidePanel.svelte` was hoisted into a reusable
+**generic `ui/SidePanel.svelte`** primitive (`children` snippet +
+`bind:open` + `class` + `onclose`, FAB toggle built in, mobile
+drawer). The dataset's wrapper became `DatasetSidePanel.svelte`. A
+new `PromptSidePanel.svelte` wraps the primitive and hosts the three
+tabs + footer actions; `PromptGenerator.svelte` flipped to a
+full-page `GenerationPreview` + side-panel layout (form state stays
+in the host; `startGeneration` is called with a snapshot of form
+values so mid-stream edits don't leak). Two latent bugs were fixed
+in the process: the outside-click-to-close check moved from
+`panelRef.contains(target)` to `e.composedPath().includes(panelRef)`
+(Svelte 5 flushes `$state` synchronously inside click handlers, so
+the target can be detached by the time the bubble-phase listener
+runs) and the preview wrapper gained `min-w-0` so unbreakable
+content (long reasoning lines) can no longer push the panel
+rightward. ReasoningCard's expanded `<pre>` also gained
+`break-words`. See
+[`history/prompt-generator-plan/014-prompt-ui-side-panel-and-fixes.md`](history/prompt-generator-plan/014-prompt-ui-side-panel-and-fixes.md)
+for the full record.
 
 ## Phases
 

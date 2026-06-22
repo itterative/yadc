@@ -25,7 +25,7 @@ yadc/webui/src/routes/
     +page.svelte              # Template listing (grid cards with edit/duplicate/delete, add-template dashed card) — mirrors dataset listing. Create/edit dialog lives at `$lib/components/templates/EditTemplateDialog.svelte` (reused by the caption tab sidebar). Duplicate flow is a thin frontend wrapper that GETs the source content + PUTs it under the new name — no backend endpoint, since templates are a single file.
     DuplicateTemplateDialog.svelte   # Co-located: prompt for a new template name when duplicating. Warns on name collision (PUT would overwrite).
   prompts/
-    +page.svelte              # Prompt generator — hosts `prompts/PromptGenerator.svelte`. Topbar with the page title, full-height two-column layout.
+    +page.svelte              # Prompt generator — hosts `prompts/PromptGenerator.svelte`. Topbar with the page title, full-height layout with a side panel (form / settings / history tabs + Generate / Save-to-history actions) on the right and the streaming `GenerationPreview` taking the remaining space on the left.
   datasets/[name]/
     +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line + topbar upload icon)
     DatasetSidePanel.svelte   # Co-located: tabbed side panel (caption/details/config) with mobile drawer, built on the generic `ui/SidePanel.svelte` primitive. Minimal prop threading — captioning actions handled by components via stores. The mobile X close lives inside the tab bar's `end` snippet and mutates `open` via `bind:open`.

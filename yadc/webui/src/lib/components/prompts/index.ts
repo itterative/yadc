@@ -4,4 +4,5 @@ export { default as PromptSettings } from './PromptSettings.svelte';
 export { default as ExamplesPanel } from './ExamplesPanel.svelte';
 export { default as GenerationPreview } from './GenerationPreview.svelte';
 export { default as PromptHistoryPanel } from './PromptHistoryPanel.svelte';
+export { default as PromptSidePanel } from './PromptSidePanel.svelte';
 export { default as ReasoningCard } from './ReasoningCard.svelte';

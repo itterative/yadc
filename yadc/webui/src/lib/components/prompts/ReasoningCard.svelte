@@ -75,7 +75,7 @@
         {#if expanded}
             <pre
                 bind:this={scrollEl}
-                class="max-h-48 overflow-y-auto px-3 py-2 font-mono text-sm whitespace-pre-wrap text-gray-400">{generation.reasoning}</pre>
+                class="max-h-48 overflow-y-auto px-3 py-2 font-mono text-sm break-words whitespace-pre-wrap text-gray-400">{generation.reasoning}</pre>
         {/if}
     </div>
 {/if}
