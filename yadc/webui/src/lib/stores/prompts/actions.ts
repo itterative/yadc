@@ -48,7 +48,7 @@ export async function startGeneration(args: StartGenerationArgs): Promise<void> 
         api_model_name: args.apiModelName ?? null,
         max_tokens: args.maxTokens,
         image_quality: args.imageQuality,
-        template_content: args.templateContent ?? null
+        template_content: args.templateContent || null
     };
 
     try {

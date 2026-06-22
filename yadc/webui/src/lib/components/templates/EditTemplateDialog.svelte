@@ -21,9 +21,24 @@
         onclose: () => void;
         /** Called after save with the template name. */
         onsaved: (name: string) => void;
+        /** Run in ephemeral mode: the editor content is returned via
+         *  ``onapply`` instead of being saved to the backend. Hides the
+         *  name field and rebrands Save → Apply. Used by the prompt-refine
+         *  flow to compose a one-off template without persisting it. */
+        ephemeral?: boolean;
+        /** Ephemeral-mode handler — receives the editor content on apply. */
+        onapply?: (content: string) => void;
     }
 
-    let { open, templateName, initialContent, onclose, onsaved }: Props = $props();
+    let {
+        open,
+        templateName,
+        initialContent,
+        onclose,
+        onsaved,
+        ephemeral = false,
+        onapply
+    }: Props = $props();
 
     // Parent abort context — read at init time, used in effects.
     const parentSignal = getAbortContext();
@@ -84,6 +99,11 @@
     });
 
     async function handleSave() {
+        if (ephemeral) {
+            // No backend persistence — hand the content back to the caller.
+            onapply?.(content);
+            return;
+        }
         const name = isNew ? newName.trim() : templateName!;
         if (!name) {
             error = 'Template name is required';
@@ -107,7 +127,9 @@
     <div class="flex h-full flex-col p-5">
         <!-- Header -->
         <div class="dialog-header">
-            <h2 class="dialog-title">{isNew ? 'New Template' : `Edit ${templateName}`}</h2>
+            <h2 class="dialog-title">
+                {ephemeral ? 'Template Content' : isNew ? 'New Template' : `Edit ${templateName}`}
+            </h2>
             <button class="btn-close" onclick={onclose}>
                 <SvgClose class="h-5 w-5" />
             </button>
@@ -117,7 +139,7 @@
             <div class="alert-error mb-4">{error}</div>
         {/if}
 
-        {#if isNew}
+        {#if isNew && !ephemeral}
             <div class="mb-3">
                 <label class="label" for="template-name">Template Name</label>
                 <input
@@ -160,7 +182,7 @@
         <div class="btn-bar mt-4">
             <button class="btn-secondary" onclick={onclose} disabled={isSaving}>Cancel</button>
             <button class="btn-primary" onclick={handleSave} disabled={isSaving}>
-                {isSaving ? 'Saving...' : isNew ? 'Create' : 'Save'}
+                {isSaving ? 'Saving...' : ephemeral ? 'Apply' : isNew ? 'Create' : 'Save'}
             </button>
         </div>
     </div>

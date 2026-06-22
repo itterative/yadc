@@ -138,6 +138,9 @@
                 </p>
             </div>
         {:else}
+            <p class="mb-3 px-1 text-center text-xs text-amber-400 italic">
+                Restoring replaces your current form values.
+            </p>
             <ul class="space-y-2">
                 {#each entries as item (item.id)}
                     <li>

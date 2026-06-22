@@ -6,6 +6,11 @@
     import type { ExamplePair, PromptGenFocus, PromptGenMode } from '$lib/stores/prompts';
     import JinjaEditor from '$lib/components/ui/JinjaEditor.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
+    import Card from '$lib/components/ui/Card.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
+    import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import { EditTemplateDialog } from '$lib/components/templates';
     import ExamplesPanel from './ExamplesPanel.svelte';
 
     interface Props {
@@ -45,6 +50,17 @@
     let templateListError: string | null = $state(null);
     let selectedTemplateName = $state('');
     let templateVariables: string[] = $state([]);
+    let editDialogOpen = $state(false);
+    let ephemeralDialogOpen = $state(false);
+
+    // Preserves custom-template edits across picker switches. The
+    // ``(custom)`` picker option has no backend identity, so without
+    // this its content would be lost whenever the user picks an
+    // existing template and switches back. ``templateContent`` (the
+    // bindable prop) stays the *effective* content — what the host
+    // snapshots for generation / history — while this holds the
+    // custom draft so the ``!name`` branch below can restore it.
+    let customTemplateContent = $state('');
 
     $effect(() => {
         // Only fetch the template list in refine mode. Generate
@@ -75,6 +91,12 @@
     $effect(() => {
         const name = selectedTemplateName;
         if (!name) {
+            // ``(custom)`` picker option — restore the preserved
+            // custom draft (empty → the card shows the placeholder).
+            // Switching to an existing template doesn't touch
+            // ``customTemplateContent``, so coming back to custom
+            // recovers the user's edits.
+            templateContent = customTemplateContent;
             return;
         }
         const controller = linkedController(parentSignal);
@@ -102,6 +124,36 @@
             controller.abort();
         };
     });
+
+    // The JinjaEditor (which extracts variables via its own effect) only
+    // mounts when there's content, so clearing the content elsewhere
+    // (picker → (custom), or applying an empty ephemeral template)
+    // would leave stale variable chips. Clear them here for any path.
+    $effect(() => {
+        if (!templateContent) {
+            templateVariables = [];
+        }
+    });
+
+    function handleEditSaved() {
+        editDialogOpen = false;
+        // Force the content-load effect to refetch the (now-updated)
+        // template — same toggle trick caption/TemplateSection uses.
+        const name = selectedTemplateName;
+        selectedTemplateName = '';
+        selectedTemplateName = name;
+    }
+
+    export function restoreTemplate(content: string) {
+        // History entries carry content, not a template name, so restore
+        // always lands on the (custom) picker with the content seeded
+        // into the preserved draft. This keeps the restored content
+        // consistent with the picker selection (so Edit does the right
+        // thing) and lets it survive picker round-trips.
+        selectedTemplateName = '';
+        customTemplateContent = content;
+        templateContent = content;
+    }
 </script>
 
 <section class="space-y-4">
@@ -184,28 +236,38 @@
 
     <!-- Template (refine mode only) -->
     {#if mode === 'refine'}
-        <div>
-            <h3 class="section-heading mb-2">Template</h3>
-            <p class="mb-2 text-xs text-gray-500">
-                Pick the template to refine, or leave blank and paste your own content below.
-            </p>
+        <div class="space-y-2">
+            <div>
+                <h3 class="section-heading mb-1">Template</h3>
+                <p class="text-xs text-gray-500">
+                    Pick a template to refine, or leave unset to generate a new one.
+                </p>
+            </div>
             {#if templateListError}
-                <p class="mb-2 text-xs text-error">{templateListError}</p>
+                <p class="text-xs text-error">{templateListError}</p>
             {/if}
-            <div class="space-y-2">
-                <select
-                    class="input cursor-pointer"
-                    bind:value={selectedTemplateName}
-                    disabled={isLoadingTemplates}
-                >
-                    <option value="">(no template — paste your own)</option>
-                    {#each $templates.items as t (t.name)}
-                        <option value={t.name}>
-                            {t.name}{#if t.source === 'builtin'}
-                                (built-in){/if}
-                        </option>
-                    {/each}
-                </select>
+            <select
+                class="input cursor-pointer"
+                bind:value={selectedTemplateName}
+                disabled={isLoadingTemplates}
+            >
+                <option value="">(custom)</option>
+                {#each $templates.items as t (t.name)}
+                    <option value={t.name}>
+                        {t.name}{#if t.source === 'builtin'}
+                            (built-in){/if}
+                    </option>
+                {/each}
+            </select>
+            <!-- Card mirrors caption/TemplateSection. The editor is never
+                 inline-editable — changes go through the dialog. Three
+                 states: an existing template is picked (read-only editor,
+                 Edit → saves back to the backend), an ephemeral template
+                 is set via the dialog (read-only editor, Edit → reopens
+                 the dialog without persisting), or nothing is set
+                 (placeholder warning that refining now generates a new
+                 template instead of refining an existing one). -->
+            <Card>
                 <div class="relative h-64">
                     {#if isLoadingTemplateContent}
                         <SpinnerBlock class="py-8" size="h-4 w-4" label="Loading template…" />
@@ -213,27 +275,69 @@
                         <div class="flex h-full items-center justify-center p-4 text-sm text-error">
                             {templateContentError}
                         </div>
-                    {:else}
+                    {:else if templateContent}
                         <JinjaEditor
                             class="h-full rounded-md border border-border bg-surface text-sm"
-                            bind:value={templateContent}
+                            editable={false}
+                            value={templateContent}
                             bind:variables={templateVariables}
                         />
+                    {:else}
+                        <div
+                            class="flex h-full items-center justify-center p-4 text-center text-sm text-gray-500"
+                        >
+                            No template set. Refining will generate a new template instead of
+                            refining an existing one.
+                        </div>
                     {/if}
                 </div>
-                {#if templateVariables.length > 0}
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-xs text-gray-500">Variables:</span>
-                        {#each templateVariables as v (v)}
-                            <code
-                                class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent"
-                                >{v}</code
-                            >
-                        {/each}
-                    </div>
-                {/if}
-            </div>
+                <ActionBar>
+                    <ActionBarItem
+                        onclick={() =>
+                            selectedTemplateName
+                                ? (editDialogOpen = true)
+                                : (ephemeralDialogOpen = true)}
+                        icon={SvgEdit}
+                        variant="primary">Edit</ActionBarItem
+                    >
+                </ActionBar>
+            </Card>
+            {#if templateVariables.length > 0}
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-xs text-gray-500">Variables:</span>
+                    {#each templateVariables as v (v)}
+                        <code
+                            class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent"
+                            >{v}</code
+                        >
+                    {/each}
+                </div>
+            {/if}
         </div>
+
+        <!-- Edit an existing template — saves back to the backend. -->
+        <EditTemplateDialog
+            open={editDialogOpen}
+            templateName={selectedTemplateName}
+            onclose={() => (editDialogOpen = false)}
+            onsaved={handleEditSaved}
+        />
+
+        <!-- Compose / edit an ephemeral template — not persisted; the
+             content is applied directly to the form's templateContent. -->
+        <EditTemplateDialog
+            ephemeral
+            open={ephemeralDialogOpen}
+            templateName={null}
+            initialContent={templateContent}
+            onclose={() => (ephemeralDialogOpen = false)}
+            onapply={(content) => {
+                customTemplateContent = content;
+                templateContent = content;
+                ephemeralDialogOpen = false;
+            }}
+            onsaved={() => {}}
+        />
     {/if}
 
     <!-- Examples -->

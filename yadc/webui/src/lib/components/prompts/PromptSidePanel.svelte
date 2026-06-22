@@ -76,24 +76,19 @@
     // Save-to-history button and the history list are both inside
     // this panel.
     let historyPanel: PromptHistoryPanel | undefined = $state();
+    let promptForm: PromptForm | undefined = $state();
     let isSaving = $state(false);
 
     // Derive streaming / validity state directly from the store so
     // the button disable logic doesn't need a round-trip through
     // the host.
     let isStreaming = $derived(generation.status === 'streaming');
-    let canGenerate = $derived.by(() => {
-        if (isStreaming || env.trim().length === 0 || intent.trim().length === 0) {
-            return false;
-        }
-        if (mode === 'refine' && templateContent.trim().length === 0) {
-            return false;
-        }
-        return true;
-    });
-    let canSave = $derived(
-        intent.trim().length > 0 && (mode === 'generate' || templateContent.trim().length > 0)
-    );
+    // Refine mode no longer *requires* a template: with none set the
+    // backend runs its generate branch and emits a new template (the
+    // form's placeholder warns the user). So generation/save are gated
+    // only by env + intent.
+    let canGenerate = $derived(!isStreaming && env.trim().length > 0 && intent.trim().length > 0);
+    let canSave = $derived(intent.trim().length > 0);
 
     function handleCloseClick() {
         // Mobile-only X inside the tab bar. Mutating ``open`` propagates
@@ -118,7 +113,7 @@
                 intent,
                 focus,
                 examples: examples.map((e) => ({ ...e })),
-                template_content: mode === 'refine' ? templateContent : null
+                template_content: mode === 'refine' ? templateContent || null : null
             });
             toast.success('Saved to history');
             // Refresh the history panel so the new entry shows up
@@ -139,7 +134,11 @@
         intent = entry.intent;
         focus = entry.focus;
         examples = entry.examples.map((e) => ({ ...e }));
-        templateContent = entry.template_content ?? '';
+        // ``restoreTemplate`` resets the picker to (custom) and seeds the
+        // preserved draft — history entries carry content, not a name, so
+        // restoring as custom is the faithful choice (and keeps the
+        // restored content consistent with the picker / Edit action).
+        promptForm?.restoreTemplate(entry.template_content ?? '');
         toast.success('Restored from history');
     }
 </script>
@@ -163,86 +162,86 @@
             <FabButton icon={SvgMenuLeft} label="Toggle panel" onclick={() => (open = !open)} />
         {/if}
     {/snippet}
-    <div class="flex h-full min-h-0 flex-col">
-        <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
-            {#snippet end()}
-                <button
-                    class="cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"
-                    onclick={handleCloseClick}
-                    title="Close panel"
-                    aria-label="Close panel"
-                >
-                    <SvgClose class="h-5 w-5" />
-                </button>
-            {/snippet}
-            <Tab id="generate" label="Generate" class="h-full overflow-y-auto">
-                <div class="p-4">
-                    <PromptForm
-                        bind:mode
-                        bind:intent
-                        bind:focus
-                        bind:examples
-                        bind:templateContent
-                        {onchange}
-                    />
-                </div>
-            </Tab>
-            <Tab id="settings" label="Settings" class="h-full overflow-y-auto">
-                <div class="p-4">
-                    <PromptSettings
-                        bind:env
-                        bind:apiUrl
-                        bind:apiToken
-                        bind:apiModelName
-                        bind:maxTokens
-                        bind:imageQuality
-                        {onchange}
-                    />
-                </div>
-            </Tab>
-            <Tab id="history" label="History" class="h-full overflow-y-auto">
-                <PromptHistoryPanel bind:this={historyPanel} onrestore={handleRestore} />
-            </Tab>
-        </PillTabs>
-
-        <!-- Footer action bar. The primary CTA is Cancel during
-             streaming (so the user can stop the in-flight call from
-             inside the panel — the FAB provides the same on mobile
-             while the panel is closed), otherwise Generate / Refine.
-             Save-to-history is always available so the user can stash
-             the form mid-stream or after a partial response. -->
-        <div
-            class="flex items-center justify-end gap-2 border-t border-border bg-surface/50 px-4 py-2"
-        >
+    <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
+        {#snippet end()}
             <button
-                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                onclick={handleSaveToHistory}
-                disabled={!canSave || isSaving}
-                title="Save current prompt to history"
+                class="cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"
+                onclick={handleCloseClick}
+                title="Close panel"
+                aria-label="Close panel"
             >
-                <SvgSave class="h-3.5 w-3.5" />
-                Save to history
+                <SvgClose class="h-5 w-5" />
             </button>
-            {#if isStreaming}
+        {/snippet}
+        <Tab id="generate" label="Generate" class="flex h-full flex-col overflow-hidden">
+            <div class="min-h-0 flex-1 overflow-y-auto p-4">
+                <PromptForm
+                    bind:this={promptForm}
+                    bind:mode
+                    bind:intent
+                    bind:focus
+                    bind:examples
+                    bind:templateContent
+                    {onchange}
+                />
+            </div>
+
+            <!-- Footer action bar (Generate tab only). The primary CTA
+                 is Cancel during streaming (so the user can stop the
+                 in-flight call from inside the panel — the FAB provides
+                 the same on mobile while the panel is closed),
+                 otherwise Generate / Refine. Save-to-history is always
+                 available so the user can stash the form mid-stream or
+                 after a partial response. -->
+            <div
+                class="flex items-center justify-end gap-2 border-t border-border bg-surface/50 px-4 py-2"
+            >
                 <button
-                    class="btn-danger flex cursor-pointer items-center gap-1.5 px-4 py-2"
-                    onclick={cancelGenerationState}
-                    title="Cancel generation"
-                    aria-label="Cancel generation"
+                    class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    onclick={handleSaveToHistory}
+                    disabled={!canSave || isSaving}
+                    title="Save current prompt to history"
                 >
-                    <SvgClose class="h-4 w-4" />
-                    Cancel
+                    <SvgSave class="h-3.5 w-3.5" />
+                    Save to history
                 </button>
-            {:else}
-                <button
-                    class="btn-primary flex cursor-pointer items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={handleGenerateClick}
-                    disabled={!canGenerate}
-                >
-                    <SvgSparkle class="h-4 w-4" />
-                    {mode === 'refine' ? 'Refine' : 'Generate'}
-                </button>
-            {/if}
-        </div>
-    </div>
+                {#if isStreaming}
+                    <button
+                        class="btn-danger flex cursor-pointer items-center gap-1.5 px-4 py-2"
+                        onclick={cancelGenerationState}
+                        title="Cancel generation"
+                        aria-label="Cancel generation"
+                    >
+                        <SvgClose class="h-4 w-4" />
+                        Cancel
+                    </button>
+                {:else}
+                    <button
+                        class="btn-primary flex cursor-pointer items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                        onclick={handleGenerateClick}
+                        disabled={!canGenerate}
+                    >
+                        <SvgSparkle class="h-4 w-4" />
+                        {mode === 'refine' ? 'Refine' : 'Generate'}
+                    </button>
+                {/if}
+            </div>
+        </Tab>
+        <Tab id="settings" label="Settings" class="h-full overflow-y-auto">
+            <div class="p-4">
+                <PromptSettings
+                    bind:env
+                    bind:apiUrl
+                    bind:apiToken
+                    bind:apiModelName
+                    bind:maxTokens
+                    bind:imageQuality
+                    {onchange}
+                />
+            </div>
+        </Tab>
+        <Tab id="history" label="History" class="h-full overflow-y-auto">
+            <PromptHistoryPanel bind:this={historyPanel} onrestore={handleRestore} />
+        </Tab>
+    </PillTabs>
 </SidePanel>

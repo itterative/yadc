@@ -152,3 +152,184 @@ action is safe to attach to conditionally-rendered elements
 - `.pi/agent/memory/docs/frontend/components-domain.md`
   (`ReasoningCard` + `GenerationPreview` entries mention
   `use:autoscroll`)
+
+## Footer moved onto the Generate tab
+
+The footer action bar (Save-to-history + Generate/Refine, or
+Cancel while streaming) was a sibling of `PillTabs` at the panel
+level, so it showed on all three tabs. Moved it inside the
+Generate tab: that tab is now a flex column (`flex h-full
+flex-col overflow-hidden`) with the form in a scrollable area
+(`min-h-0 flex-1 overflow-y-auto p-4`) above a pinned footer.
+The panel-level wrapper `<div class="flex h-full min-h-0
+flex-col">` around `PillTabs` is now redundant (PillTabs is the
+only child) and was dropped. The Settings / History tabs are
+unchanged (self-scrolling `h-full overflow-y-auto`).
+
+The footer is a Generate-tab concern — Save / Generate / Refine
+all operate on the form state, which lives on that tab — so the
+other tabs no longer carry an unrelated action bar.
+
+Behavioural note: the in-panel Cancel now only renders on the
+Generate tab. Since Generate is only clickable from that tab, a
+stream always starts with `activeTab === 'generate'`, so
+reopening the panel mid-stream still shows the Cancel; only a
+manual switch to Settings / History mid-stream hides it (the FAB
+Cancel is still reachable by closing the panel). Narrow enough
+not to special-case.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
+- `docs/frontend/components-domain.md` (`PromptSidePanel` +
+  `PromptGenerator` entries)
+
+## Refine template: card with read-only editor + Edit dialog
+
+The refine-mode Template section in `PromptForm.svelte` was a
+bare `<select>` + a full-height editable `JinjaEditor` + a
+variables strip. Wrapped the editor in a `Card` (mirrors
+`caption/TemplateSection`) so the template reads like the rest
+of the app's template surfaces.
+
+The card is **never inline-editable** — all edits go through
+`EditTemplateDialog`. The picker's empty option is `(custom)`;
+states:
+
+- **Existing template selected** → read-only editor + `ActionBar`
+  "Edit" → `EditTemplateDialog` (edit mode) → saves back to the
+  backend; `handleEditSaved` toggles `selectedTemplateName`
+  ('' → name) to force the content-load effect to refetch.
+- **`(custom)` with ephemeral content set** (from the dialog, or
+  from a history restore) → read-only editor + "Edit" →
+  `EditTemplateDialog` in **ephemeral mode** (seeded via
+  `initialContent`); the content comes back via `onapply`, **not**
+  persisted.
+- **`(custom)` with nothing set** → a placeholder ("No template
+  set. Refining will generate a new template instead of refining
+  an existing one.") + "Edit" → ephemeral dialog (empty).
+
+The single ActionBar button always says "Edit" (no "Create" /
+"Generate-new" wording); its `onclick` opens the backend-edit
+dialog when an existing template is picked, the ephemeral dialog
+otherwise.
+
+`EditTemplateDialog` gained an **additive** `ephemeral` mode
+(`ephemeral?: boolean` + `onapply?: (content: string) => void`):
+hides the name field, skips `saveTemplate`, rebrands the header
+→ "Template Content" and Save → "Apply". None of the 5 existing
+call sites are affected.
+
+Picker → `(custom)` clears `templateContent` (the content-load
+effect's `!name` branch now sets it to `''`) so stale content
+from a previously-picked template can't masquerade as ephemeral.
+Ephemeral edits set `templateContent` without touching
+`selectedTemplateName`, so they survive (the effect doesn't
+re-run).
+
+### Backend + validation follow-ons
+
+The backend already does the right thing: `_build_messages`
+decides generate-vs-refine purely on `template_content is not
+None` (no `mode` flag), and the request validator rejects
+empty-string `template_content` (must be `None` or non-empty).
+So refine mode with no template → the generate branch runs → a
+new template is emitted. That made the placeholder wording
+accurate, and meant two frontend changes:
+
+- **`PromptSidePanel`**: `canGenerate` / `canSave` no longer
+  require a template in refine mode — gated only by env + intent.
+  `handleSaveToHistory` coalesces empty `templateContent` →
+  `null`.
+- **`stores/prompts/actions.ts`**: `template_content:
+  args.templateContent ?? null` → `|| null` — `??` left an empty
+  string, which the backend validator would 422 on.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptForm.svelte`
+  (Card + ActionBar + placeholder; two `EditTemplateDialog`
+  instances; `ephemeralDialogOpen`; picker clear-on-`!name`;
+  variables-clear-on-empty effect — the `JinjaEditor` only mounts
+  when there's content so nothing else cleared `templateVariables`
+  when the template became empty)
+- `yadc/webui/src/lib/components/templates/EditTemplateDialog.svelte`
+  (`ephemeral` mode + `onapply`)
+- `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
+  (`canGenerate` / `canSave` relaxed; history template_content
+  coalesced)
+- `yadc/webui/src/lib/stores/prompts/actions.ts` (empty → null)
+- `docs/frontend/components-domain.md` (`PromptForm`,
+  `PromptSidePanel`, `EditTemplateDialog` entries)
+
+## Custom template content preserved across picker switches
+
+Refine's `(custom)` picker option had no backend identity, so
+its content lived in the single bindable `templateContent`.
+Switching to an existing template overwrote `templateContent`
+with the loaded body; switching back to `(custom)` cleared it
+(the `!name` branch set it to `''`). Result: any custom edits
+were lost the moment you browsed another template.
+
+A confirmation dialog before the overwrite was the alternative,
+but that's friction for something the user shouldn't have to
+justify keeping. Instead, added an internal
+`customTemplateContent` state to `PromptForm` that holds the
+custom draft independently of the picker:
+
+- The load effect's `!name` branch now sets
+  `templateContent = customTemplateContent` (restore) instead of
+  `''` (clear). Empty custom draft → placeholder shows, as
+  before.
+- The ephemeral dialog's `onapply` writes both
+  `customTemplateContent` and `templateContent`.
+- `templateContent` (bound to host, snapshotted for generation /
+  history) remains the *effective* content — what would be sent
+  right now. `customTemplateContent` is purely a "remember this
+  across picker switches" concern, so it stays internal (the
+  host has no reason to own it — custom content isn't
+  persisted).
+
+Switching to an existing template doesn't touch
+`customTemplateContent`, so round-tripping back to `(custom)`
+recovers the draft.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptForm.svelte`
+- `docs/frontend/components-domain.md` (`PromptForm` entry)
+
+## History restore lands on (custom) + seeds the draft
+
+`handleRestore` (in `PromptSidePanel`) set the bindable
+`templateContent` from the entry but couldn't reach
+`selectedTemplateName` or `customTemplateContent` (both internal
+to `PromptForm`). Since history entries carry content, not a
+template name, this left the picker selection stale relative to
+the restored content: an existing template still picked meant
+the card showed the restored body but Edit opened the backend
+editor for the picked (wrong) template, and switching the picker
+away-and-back replaced the restored content with the old
+`customTemplateContent` draft (which was never seeded).
+
+Fix: exposed `PromptForm.restoreTemplate(content)` (exported
+method, reached via `bind:this` — same pattern as
+`historyPanel?.refresh()` in the same file). It resets the
+picker to `(custom)` and seeds both `customTemplateContent` and
+`templateContent`, so restore always lands as a custom template
+with the content preserved. `handleRestore` calls it instead of
+setting `templateContent` directly. Generate-mode entries pass
+`''` → harmless reset.
+
+Restore overwrites the current custom draft (and the rest of
+the form) by design — that's what "restore" means. Added a
+small muted note above the history list ("Restoring replaces
+your current form values.") so the overwrite isn't surprising,
+rather than a per-restore confirmation (friction).
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptForm.svelte`
+  (`restoreTemplate` exported method)
+- `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
+  (`promptForm` ref + `bind:this`; `handleRestore` calls
+  `restoreTemplate`)
+- `yadc/webui/src/lib/components/prompts/PromptHistoryPanel.svelte`
+  (restore-overwrites note above the list)
+- `docs/frontend/components-domain.md` (`PromptHistoryPanel` entry)
