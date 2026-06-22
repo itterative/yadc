@@ -101,6 +101,12 @@
         open = false;
     }
 
+    function handleGenerateClick() {
+        // Close the panel so the preview streams full-width.
+        open = false;
+        ongenerate?.();
+    }
+
     async function handleSaveToHistory() {
         if (!canSave || isSaving) {
             return;
@@ -230,7 +236,7 @@
             {:else}
                 <button
                     class="btn-primary flex cursor-pointer items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-                    onclick={ongenerate}
+                    onclick={handleGenerateClick}
                     disabled={!canGenerate}
                 >
                     <SvgSparkle class="h-4 w-4" />

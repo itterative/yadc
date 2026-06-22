@@ -47,3 +47,15 @@ delete was unreachable there).
 - `yadc/webui/src/lib/components/prompts/PromptHistoryPanel.svelte`
 - `docs/frontend/components-domain.md` (`PromptHistoryPanel`
   entry)
+
+## Generate/Refine closes the panel
+
+PromptSidePanel's Generate/Refine primary CTA now closes the
+panel before calling `ongenerate`. Initially scoped to refine,
+expanded to both modes (no good reason to leave the panel open
+when the preview starts streaming). Done by wrapping the
+callback in a local `handleGenerateClick` that sets
+`open = false` first.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
