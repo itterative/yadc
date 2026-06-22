@@ -1,8 +1,12 @@
 <script lang="ts">
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgCopy from '$lib/icons/SvgCopy.svelte';
+    import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgSave from '$lib/icons/SvgSave.svelte';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
+    import Card from '$lib/components/ui/Card.svelte';
     import { autoscroll } from '$lib/actions/autoscroll';
     import { extractVariables } from '$lib/stores/templates';
     import { generation, reset } from '$lib/stores/prompts';
@@ -34,48 +38,34 @@
     }
 </script>
 
-<div class="card flex h-full min-h-0 flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between border-b border-border px-4 py-2">
-        <h3 class="text-sm font-medium text-gray-300">Generated template</h3>
-        {#if generation.body && generation.status !== 'streaming'}
-            <div class="flex items-center gap-1">
-                <button
-                    class="flex cursor-pointer items-center gap-1.5 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-bg hover:text-white"
-                    onclick={copyBody}
-                    title={copied ? 'Copied!' : 'Copy to clipboard'}
-                >
-                    <SvgCopy class="h-4 w-4" />
-                </button>
-                <button
-                    class="btn-primary flex cursor-pointer items-center gap-1.5 px-2.5 py-1 text-xs"
-                    onclick={() => onsavetemplate(generation.body)}
-                    disabled={!canSave}
-                    title="Save as template"
-                >
-                    <SvgSave class="h-3.5 w-3.5" />
-                    Save as template
-                </button>
-                <button
-                    class="flex cursor-pointer items-center gap-1.5 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-bg hover:text-white"
-                    onclick={reset}
-                    title="Clear preview"
-                >
-                    <SvgClose class="h-4 w-4" />
-                </button>
-            </div>
-        {/if}
-    </div>
+<!-- No card chrome on the panel itself — the streamed text is full-bleed
+     and the footer (variables + actions) is the only framed element.
 
+     Responsive scroll model: on mobile the OUTER container is the scroll
+     area (block flow, body + footer scroll together as one content area —
+     no inner "box" scroll now that the panel has no frame); on desktop the
+     body is the inner scroll container and the footer is pinned below it
+     (flex column). The ``use:autoscroll`` action resolves its target
+     (self if scrollable, else nearest scrollable ancestor) so it follows
+     the stream in both layouts. ``pb-24 lg:pb-0`` keeps the footer above
+     the side-panel FAB on mobile (it floats ``bottom-6 right-6``); no
+     padding on desktop (the FAB is ``lg:hidden``). -->
+<div
+    class="h-full overflow-y-auto pb-24 lg:flex lg:min-h-0 lg:flex-col lg:overflow-visible lg:pb-0"
+>
     <!-- Body -->
-    <div class="min-h-0 flex-1 overflow-auto bg-gray-900/40 p-4" use:autoscroll>
+    <div class="mb-4 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:p-4" use:autoscroll>
         <ReasoningCard />
         {#if generation.status === 'idle' && !generation.body}
-            <div class="flex h-full items-center justify-center text-sm text-gray-500">
+            <div
+                class="flex min-h-[50vh] items-center justify-center text-sm text-gray-500 lg:h-full"
+            >
                 <p>The generated template will stream here.</p>
             </div>
         {:else if generation.status === 'error'}
-            <div class="flex h-full flex-col items-center justify-center gap-2 text-sm text-error">
+            <div
+                class="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-sm text-error lg:h-full"
+            >
                 <p class="font-medium">Generation failed</p>
                 <p class="text-center text-xs text-gray-400">
                     {generation.error ?? 'Unknown error'}
@@ -85,7 +75,7 @@
             {#if generation.body}
                 <!-- NOTE: a bit ugly, but necessary to keep the whitespace of the template -->
                 <pre
-                    class="w-full font-mono text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-200">{generation.body}<span
+                    class="w-full font-mono text-sm leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-200 lg:p-2">{generation.body}<span
                         class="animate-pulse text-accent"
                         class:hidden={generation.status !== 'streaming'}>▍</span
                     ></pre>
@@ -106,16 +96,39 @@
         {/if}
     </div>
 
-    <!-- Footer: variables only (hidden when none). -->
-    {#if variables.length > 0}
-        <div class="border-t border-border bg-surface/50 px-4 py-2 text-xs">
-            <div class="flex flex-wrap items-center gap-1.5">
-                <span class="text-gray-500">Variables:</span>
-                {#each variables as v (v)}
-                    <code class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent">{v}</code
-                    >
-                {/each}
-            </div>
-        </div>
+    <!-- Footer card (terminal state only — body present and stream not
+         live): variables chip strip + actions. The only framed element
+         in the panel; full-width labeled tap targets. ``SvgDelete`` +
+         "Clear" replaces the old ``SvgClose`` (which read as "close
+         panel", not "clear"). -->
+    {#if generation.body && generation.status !== 'streaming'}
+        <Card class="mx-4 lg:mx-auto lg:w-full lg:max-w-xl">
+            {#if variables.length > 0}
+                <div class="px-3 pt-2.5 pb-1.5 text-xs">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-gray-500">Variables:</span>
+                        {#each variables as v (v)}
+                            <code class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent"
+                                >{v}</code
+                            >
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+            <ActionBar>
+                <ActionBarItem
+                    onclick={() => onsavetemplate(generation.body)}
+                    disabled={!canSave}
+                    icon={SvgSave}
+                    variant="primary">Save as template</ActionBarItem
+                >
+                <ActionBarItem onclick={copyBody} icon={SvgCopy} variant="secondary">
+                    {copied ? 'Copied' : 'Copy'}
+                </ActionBarItem>
+                <ActionBarItem onclick={reset} icon={SvgDelete} variant="danger"
+                    >Clear</ActionBarItem
+                >
+            </ActionBar>
+        </Card>
     {/if}
 </div>

@@ -206,7 +206,7 @@
                                          semantic match for "restore from history"). -->
                                     <button
                                         type="button"
-                                        class="rounded p-1 text-gray-400 cursor-pointer transition-colors hover:bg-bg hover:text-accent focus:text-accent focus:outline-none disabled:cursor-wait disabled:opacity-50"
+                                        class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-bg hover:text-accent focus:text-accent focus:outline-none disabled:cursor-wait disabled:opacity-50"
                                         onclick={() => handleRestore(item)}
                                         disabled={isRestoringId !== null}
                                         title="Restore"
@@ -223,7 +223,7 @@
                                          reasoning as restore (mobile has no hover). -->
                                     <button
                                         type="button"
-                                        class="rounded p-1 text-gray-400 cursor-pointer transition-colors hover:bg-bg hover:text-error focus:text-error focus:outline-none"
+                                        class="cursor-pointer rounded p-1 text-gray-400 transition-colors hover:bg-bg hover:text-error focus:text-error focus:outline-none"
                                         onclick={(e) => handleDelete(item, e)}
                                         title="Delete entry"
                                         data-testid="history-delete"

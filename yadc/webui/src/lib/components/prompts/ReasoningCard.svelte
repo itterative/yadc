@@ -29,7 +29,7 @@
     <div class="mb-4 flex flex-col overflow-hidden rounded-lg bg-gray-800">
         <button
             type="button"
-            class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-400"
+            class="flex w-full cursor-pointer items-center gap-2 p-4 text-left text-sm text-gray-400"
             onclick={() => (expanded = !expanded)}
             aria-expanded={expanded}
         >
@@ -46,7 +46,7 @@
         {#if expanded}
             <pre
                 use:autoscroll
-                class="max-h-48 overflow-y-auto px-3 py-2 font-mono text-sm break-words whitespace-pre-wrap text-gray-400">{generation.reasoning}</pre>
+                class="max-h-48 overflow-y-auto px-3 py-2 font-mono text-sm wrap-break-word whitespace-pre-wrap text-gray-400">{generation.reasoning}</pre>
         {/if}
     </div>
 {/if}

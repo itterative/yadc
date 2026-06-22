@@ -333,3 +333,96 @@ rather than a per-restore confirmation (friction).
 - `yadc/webui/src/lib/components/prompts/PromptHistoryPanel.svelte`
   (restore-overwrites note above the list)
 - `docs/frontend/components-domain.md` (`PromptHistoryPanel` entry)
+
+## GenerationPreview: actions → bottom ActionBar, then chromeless panel
+
+The terminal-state actions (Copy / Save as template / Clear) were
+three small buttons crammed into the preview header next to the
+title — poor tap targets on mobile, and Save (the primary
+action) was demoted to `text-xs`. Clear used `SvgClose` (an ✕),
+which read as "close panel" rather than "clear preview".
+
+First pass moved them to a bottom `ActionBar` reusing the
+`Card` + `ActionBar` / `ActionBarItem` primitives (same pattern
+as `caption/TemplateSection` and the `Caption` drafts). But the
+`pb-24 lg:pb-0` that lifts the bar above the mobile FAB was put
+on the panel's own `card` wrapper — so the reserved space read
+as a large framed gap inside the bordered panel rather than
+open space below it.
+
+Refined to a chromeless panel: dropped the title **and** the
+outer `card` (bg + border + rounded + `overflow-hidden`) and
+the body's `bg-gray-900/40` tint — the streamed text is now
+full-bleed, and the **footer is the only framed element**. The
+footer is a `Card` (shown on terminal state) that stacks the
+variables chip strip (hidden when none) above the `ActionBar`:
+
+- **Save as template** (`SvgSave`, `primary`, disabled unless
+  `status === 'done'`)
+- **Copy** (`SvgCopy`, `secondary`; label flips to "Copied" for
+  1.5s)
+- **Clear** (`SvgDelete`, `danger` — replaces `SvgClose`)
+
+The `pb-24 lg:pb-0` moved onto the now-chromeless outer flex
+container, so on mobile the footer card (and the streaming
+body's tail) sits above the side-panel FAB's `bottom-6` + `h-16`
+band with open page bg below it (not a framed gap); no padding
+on desktop (`lg:pb-0`, FAB is `lg:hidden`). During streaming
+there's no footer, so the body fills down to the padding edge —
+the caret stays visible above the FAB.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`
+- `docs/frontend/components-domain.md` (`GenerationPreview` entry)
+
+## Mobile: area-level scroll (no inner "box" scroll)
+
+With the panel chromeless, the inner `overflow-auto` on the body
+felt like a disconnected scroll box on mobile. Switched to a
+responsive scroll model — on mobile the OUTER container scrolls
+(block flow, body + footer together as one content area); on
+desktop (`lg:`) the body is the inner scroll container and the
+footer is pinned below (flex column), as before.
+
+Classes: outer `h-full overflow-y-auto pb-24 lg:flex lg:min-h-0
+lg:flex-col lg:overflow-visible lg:pb-0`; body `p-4 lg:min-h-0
+lg:flex-1 lg:overflow-auto`; footer `Card class="mx-4 lg:mx-0"`
+(aligns with the body's `p-4` on mobile, full-width pinned on
+desktop). `pb-24 lg:pb-0` unchanged (FAB clearance on mobile).
+The change is localized to `GenerationPreview` — the
+`h-[calc(100dvh-7.5rem)]` page box and `PromptGenerator` layout
+are untouched (the scroll stays inside that box, so the topbar
+stays fixed).
+
+### `autoscroll` resolves its scroll target
+
+For this to work, `autoscroll` had to scroll whatever element
+actually scrolls `node`'s content, not always `node` itself.
+The action now resolves its target: `node` if it's a scroll
+container, else the nearest scrollable ancestor, else the page
+(`document.scrollingElement`). It reads/writes `target.scrollTop`
+and attaches the `scroll` listener to the target (or `window`
+when the target is the page, since `scroll` doesn't bubble).
+Re-resolves on viewport `resize`, because a responsive layout
+can move which element scrolls (inner container desktop ↔
+content area mobile); the listener follows if the target
+changed.
+
+`ReasoningCard`'s `<pre>` is itself a scroll container (`overflow-
+y-auto`) → the action resolves to self there → behavior
+unchanged. The only other user is the preview body, which now
+drives the outer on mobile and itself on desktop.
+
+Small fixup: the idle/error empty-state wrappers changed from
+`h-full` to `min-h-[50vh] lg:h-full` — their vertical centering
+relied on a definite parent height, which the mobile flow (no
+`flex-1`) doesn't provide.
+
+**Files touched:**
+- `yadc/webui/src/lib/actions/autoscroll.ts` (scroll-target
+  resolution + resize re-resolve)
+- `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`
+  (responsive scroll model + empty-state `min-h` + footer `mx-4`)
+- `.pi/agent/memory/frontend-architecture.md` (`autoscroll`
+  description)
+- `docs/frontend/components-domain.md` (`GenerationPreview` entry)
