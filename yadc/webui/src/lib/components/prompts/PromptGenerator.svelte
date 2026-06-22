@@ -71,9 +71,6 @@
         if (isStreaming || env.trim().length === 0 || intent.trim().length === 0) {
             return false;
         }
-        if (mode === 'refine' && templateContent.trim().length === 0) {
-            return false;
-        }
         return true;
     });
 

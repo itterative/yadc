@@ -1,21 +1,17 @@
 <script lang="ts">
-    import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgPhoto from '$lib/icons/SvgPhoto.svelte';
-    import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgUpload from '$lib/icons/SvgUpload.svelte';
-    import SvgWarning from '$lib/icons/SvgWarning.svelte';
-    import {
-        fetchDatasets,
-        fetchImages,
-        fetchCaption,
-        thumbnailUrl,
-        type DatasetInfo,
-        type ImageInfo
-    } from '$lib/stores/dataset';
-    import { fetchImageAsDataUrl, readFileAsDataUrl } from '$lib/stores/prompts';
+    import SvgPlus from '$lib/icons/SvgPlus.svelte';
+    import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import SvgDelete from '$lib/icons/SvgDelete.svelte';
+    import { readFileAsDataUrl } from '$lib/stores/prompts';
     import type { ExamplePair } from '$lib/stores/prompts';
     import { friendlyErrorMessage } from '$lib/api';
-    import { createAbortContext, linkedController } from '$lib/abort';
+    import Card from '$lib/components/ui/Card.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
+    import EditExampleDialog from './EditExampleDialog.svelte';
+    import DatasetPickerDialog from './DatasetPickerDialog.svelte';
 
     interface Props {
         examples: ExamplePair[];
@@ -24,325 +20,180 @@
 
     let { examples = $bindable([]), disabled = false }: Props = $props();
 
-    const abort = createAbortContext();
-
-    let pickerOpen = $state(false);
-    let pickerError: string | null = $state(null);
-    let isAddingFromPicker = $state(false);
-    let datasets: DatasetInfo[] = $state([]);
-    let selectedDataset: string = $state('');
-    let datasetImages: ImageInfo[] = $state([]);
-    let isLoadingImages = $state(false);
-
     let fileInput: HTMLInputElement | null = $state(null);
     let fileError: string | null = $state(null);
 
-    $effect(() => {
-        return () => abort.abort();
-    });
+    // EditExampleDialog state. ``editIndex`` is null when composing a new
+    // example (manual add) and an index when editing an existing one —
+    // the dialog itself is identical either way; the index only decides
+    // append vs update on save.
+    let editDialogOpen = $state(false);
+    let editIndex: number | null = $state(null);
+    let editImage = $state('');
+    let editSubject = $state('');
+    let editCaption = $state('');
 
-    function addExample(ex: ExamplePair) {
-        examples = [...examples, ex];
+    let pickerOpen = $state(false);
+
+    function openEditExisting(i: number) {
+        const ex = examples[i];
+        editIndex = i;
+        editImage = ex.image_data_url;
+        editSubject = ex.subject;
+        editCaption = ex.caption;
+        editDialogOpen = true;
     }
 
-    function removeExample(index: number) {
-        examples = examples.filter((_, i) => i !== index);
+    function handleEditSave(patch: { subject: string; caption: string }) {
+        if (editIndex === null) {
+            examples = [...examples, { ...patch, image_data_url: editImage }];
+        } else {
+            examples = examples.map((ex, i) => (i === editIndex ? { ...ex, ...patch } : ex));
+        }
+        editDialogOpen = false;
     }
 
-    function updateExample(index: number, patch: Partial<ExamplePair>) {
-        examples = examples.map((ex, i) => (i === index ? { ...ex, ...patch } : ex));
+    function deleteExample(i: number) {
+        examples = examples.filter((_, idx) => idx !== i);
     }
 
-    async function pickFiles() {
+    function pickFiles() {
         fileError = null;
         fileInput?.click();
     }
 
     async function handleFiles(event: Event) {
         const input = event.target as HTMLInputElement;
-        const files = Array.from(input.files ?? []);
-        if (files.length === 0) {
-            return;
-        }
-        for (const file of files) {
-            try {
-                const { dataUrl, mime } = await readFileAsDataUrl(file);
-                if (!mime.startsWith('image/')) {
-                    fileError = `${file.name}: not an image file`;
-                    continue;
-                }
-                const stem = file.name.replace(/\.[^.]+$/, '');
-                addExample({ subject: stem, caption: '', image_data_url: dataUrl });
-            } catch (e) {
-                fileError = friendlyErrorMessage(e, `Failed to read ${file.name}`);
-            }
-        }
+        const file = input.files?.[0];
         // Reset so the same file can be re-selected.
         input.value = '';
-    }
-
-    async function openPicker() {
-        pickerOpen = true;
-        pickerError = null;
-        datasetImages = [];
-        selectedDataset = '';
+        if (!file) {
+            return;
+        }
         try {
-            datasets = await fetchDatasets(abort.signal);
-            if (datasets.length > 0) {
-                selectedDataset = datasets[0].name;
-                await loadDatasetImages();
-            }
-        } catch (e) {
-            if (abort.signal.aborted) {
+            const { dataUrl, mime } = await readFileAsDataUrl(file);
+            if (!mime.startsWith('image/')) {
+                fileError = `${file.name}: not an image file`;
                 return;
             }
-            pickerError = friendlyErrorMessage(e, 'Failed to load datasets');
+            // Seed the edit dialog with the filename stem as the subject;
+            // the user adjusts subject + caption before the example is
+            // committed. ``editIndex = null`` → append on save.
+            editIndex = null;
+            editImage = dataUrl;
+            editSubject = file.name.replace(/\.[^.]+$/, '');
+            editCaption = '';
+            editDialogOpen = true;
+        } catch (e) {
+            fileError = friendlyErrorMessage(e, `Failed to read ${file.name}`);
         }
     }
 
-    function closePicker() {
+    function handleDatasetAdd(newExamples: ExamplePair[]) {
+        examples = [...examples, ...newExamples];
         pickerOpen = false;
-        datasetImages = [];
     }
-
-    async function loadDatasetImages() {
-        if (!selectedDataset) {
-            return;
-        }
-        isLoadingImages = true;
-        const controller = linkedController(abort.signal);
-        try {
-            const page = await fetchImages(selectedDataset, { limit: 24 }, controller.signal);
-            if (controller.signal.aborted) {
-                return;
-            }
-            datasetImages = page.images;
-        } catch (e) {
-            if (controller.signal.aborted) {
-                return;
-            }
-            pickerError = friendlyErrorMessage(e, 'Failed to load images');
-        } finally {
-            if (!controller.signal.aborted) {
-                isLoadingImages = false;
-            }
-        }
-    }
-
-    async function addImageFromDataset(image: ImageInfo) {
-        if (!selectedDataset || isAddingFromPicker) {
-            return;
-        }
-        isAddingFromPicker = true;
-        pickerError = null;
-        try {
-            const { dataUrl } = await fetchImageAsDataUrl(selectedDataset, image.id);
-            // Best-effort caption fetch — if the image has no caption
-            // yet, the user fills it in manually below.
-            let caption = '';
-            try {
-                const cap = await fetchCaption(selectedDataset, image.id);
-                caption = cap.caption;
-            } catch {
-                /* no caption — leave empty for the user */
-            }
-            addExample({
-                subject: image.file_name.replace(/\.[^.]+$/, ''),
-                caption,
-                image_data_url: dataUrl
-            });
-        } catch (e) {
-            pickerError = friendlyErrorMessage(e, `Failed to add ${image.file_name}`);
-        } finally {
-            isAddingFromPicker = false;
-        }
-    }
-
-    $effect(() => {
-        if (pickerOpen && selectedDataset) {
-            loadDatasetImages();
-        }
-    });
 </script>
 
-<input
-    bind:this={fileInput}
-    type="file"
-    accept="image/*"
-    multiple
-    class="hidden"
-    onchange={handleFiles}
-/>
+<input bind:this={fileInput} type="file" accept="image/*" class="hidden" onchange={handleFiles} />
 
-{#if examples.length === 0 && !pickerOpen}
-    <div
-        class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 bg-bg/30 px-4 py-6 text-center"
-    >
-        <SvgPhoto class="h-6 w-6 text-muted" />
-        <p class="text-sm text-gray-400">No examples yet — add a few to improve style transfer.</p>
-        <div class="flex gap-2">
-            <button
-                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm"
-                onclick={pickFiles}
-                {disabled}
-            >
-                <SvgUpload class="h-3.5 w-3.5" />
-                Add manual
-            </button>
-            <button
-                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm"
-                onclick={openPicker}
-                {disabled}
-            >
-                <SvgPlus class="h-3.5 w-3.5" />
-                From dataset
-            </button>
+<div class="space-y-2">
+    {#if examples.length === 0}
+        <div
+            class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 bg-bg/30 px-4 py-6 text-center"
+        >
+            <SvgPhoto class="h-6 w-6 text-muted" />
+            <p class="text-sm text-gray-400">
+                No examples yet — add a few to improve style transfer.
+            </p>
         </div>
-        {#if fileError}
-            <p class="text-xs text-error">{fileError}</p>
-        {/if}
-    </div>
-{:else}
-    <div class="space-y-2">
+    {:else}
         <ul class="space-y-2">
             {#each examples as ex, i (i)}
-                <li
-                    class="flex gap-3 rounded-lg border border-border bg-bg/40 p-2"
-                    data-testid="example-row"
-                >
-                    <!-- Thumbnail -->
-                    <div
-                        class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-800"
-                    >
-                        <img
-                            src={ex.image_data_url}
-                            alt={ex.subject}
-                            class="h-full w-full object-cover"
-                        />
-                    </div>
-                    <!-- Fields -->
-                    <div class="flex min-w-0 flex-1 flex-col gap-1">
-                        <input
-                            class="input text-sm"
-                            type="text"
-                            placeholder="Subject"
-                            value={ex.subject}
-                            oninput={(e) =>
-                                updateExample(i, { subject: (e.target as HTMLInputElement).value })}
-                            {disabled}
-                        />
-                        <textarea
-                            class="input h-14 resize-y text-sm"
-                            placeholder="Caption"
-                            value={ex.caption}
-                            oninput={(e) =>
-                                updateExample(i, {
-                                    caption: (e.target as HTMLTextAreaElement).value
-                                })}
-                            {disabled}
-                        ></textarea>
-                    </div>
-                    <!-- Remove -->
-                    <button
-                        class="self-start rounded-md p-1 text-gray-400 transition-colors hover:bg-bg hover:text-error"
-                        onclick={() => removeExample(i)}
-                        title="Remove example"
-                        {disabled}
-                    >
-                        <SvgClose class="h-4 w-4" />
-                    </button>
+                <li data-testid="example-row">
+                    <Card class="group relative">
+                        <div class="flex gap-3 p-2">
+                            <div
+                                class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-900"
+                            >
+                                <img
+                                    src={ex.image_data_url}
+                                    alt={ex.subject}
+                                    class="h-full w-full object-cover"
+                                />
+                            </div>
+                            <div class="flex min-w-0 flex-1 flex-col justify-center gap-0.5 pr-10">
+                                <p class="truncate text-sm font-medium text-gray-200">
+                                    {ex.subject || '(no subject)'}
+                                </p>
+                                <p class="line-clamp-2 text-xs text-gray-400">
+                                    {ex.caption || '(no caption)'}
+                                </p>
+                            </div>
+                        </div>
+                        <!-- Corner actions (templates-page pattern):
+                             hover-revealed on desktop, always visible on
+                             touch via max-lg:opacity-100. The bg-black/60
+                             chips stay legible over any thumbnail. -->
+                        <div
+                            class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-lg:opacity-100"
+                        >
+                            <button
+                                class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 transition-colors hover:bg-black/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Edit example"
+                                aria-label="Edit example"
+                                onclick={() => openEditExisting(i)}
+                                {disabled}
+                            >
+                                <SvgEdit class="h-4 w-4" />
+                            </button>
+                            <button
+                                class="cursor-pointer rounded-md bg-black/60 p-1.5 text-gray-300 transition-colors hover:bg-black/80 hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Delete example"
+                                aria-label="Delete example"
+                                onclick={() => deleteExample(i)}
+                                {disabled}
+                            >
+                                <SvgDelete class="h-4 w-4" />
+                            </button>
+                        </div>
+                    </Card>
                 </li>
             {/each}
         </ul>
+    {/if}
 
-        <div class="flex flex-wrap gap-2">
-            <button
-                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm"
-                onclick={pickFiles}
+    {#if fileError}
+        <p class="text-xs text-error">{fileError}</p>
+    {/if}
+
+    <div class="overflow-hidden rounded-lg">
+        <ActionBar>
+            <ActionBarItem onclick={pickFiles} {disabled} icon={SvgUpload} variant="secondary"
+                >Add manual</ActionBarItem
+            >
+            <ActionBarItem
+                onclick={() => (pickerOpen = true)}
                 {disabled}
+                icon={SvgPlus}
+                variant="secondary">From dataset</ActionBarItem
             >
-                <SvgUpload class="h-3.5 w-3.5" />
-                Add manual
-            </button>
-            <button
-                class="btn-secondary flex cursor-pointer items-center gap-1.5 text-sm"
-                onclick={openPicker}
-                {disabled}
-            >
-                <SvgPlus class="h-3.5 w-3.5" />
-                From dataset
-            </button>
-        </div>
-
-        {#if fileError}
-            <p class="text-xs text-error">{fileError}</p>
-        {/if}
-
-        {#if pickerOpen}
-            <div
-                class="mt-2 rounded-lg border border-border bg-surface p-3"
-                data-testid="dataset-picker"
-            >
-                <div class="mb-2 flex items-center justify-between">
-                    <h4 class="text-sm font-medium text-gray-300">Pick from dataset</h4>
-                    <button
-                        class="rounded-md p-1 text-gray-400 transition-colors hover:bg-bg hover:text-white"
-                        onclick={closePicker}
-                        title="Close picker"
-                    >
-                        <SvgClose class="h-4 w-4" />
-                    </button>
-                </div>
-
-                {#if datasets.length === 0}
-                    <p class="text-sm text-gray-500">No datasets available.</p>
-                {:else}
-                    <div class="mb-2 flex gap-2">
-                        <select
-                            class="input cursor-pointer text-sm"
-                            bind:value={selectedDataset}
-                            disabled={isLoadingImages}
-                        >
-                            {#each datasets as ds (ds.name)}
-                                <option value={ds.name}>{ds.name} ({ds.image_count})</option>
-                            {/each}
-                        </select>
-                    </div>
-                {/if}
-
-                {#if isLoadingImages}
-                    <p class="text-sm text-gray-500">Loading images…</p>
-                {:else if datasetImages.length === 0 && selectedDataset}
-                    <p class="text-sm text-gray-500">No images in this dataset.</p>
-                {:else}
-                    <div
-                        class="grid max-h-80 grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1.5 overflow-y-auto"
-                    >
-                        {#each datasetImages as img (img.id)}
-                            <button
-                                class="group relative aspect-square cursor-pointer overflow-hidden rounded-md border border-border bg-gray-800 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-                                onclick={() => addImageFromDataset(img)}
-                                disabled={isAddingFromPicker}
-                                title={img.file_name}
-                            >
-                                <img
-                                    src={thumbnailUrl(selectedDataset, img.id, 128)}
-                                    alt={img.file_name}
-                                    class="h-full w-full object-cover"
-                                    loading="lazy"
-                                />
-                            </button>
-                        {/each}
-                    </div>
-                {/if}
-
-                {#if pickerError}
-                    <p class="mt-2 flex items-center gap-1 text-xs text-error">
-                        <SvgWarning class="h-3.5 w-3.5" />
-                        {pickerError}
-                    </p>
-                {/if}
-            </div>
-        {/if}
+        </ActionBar>
     </div>
-{/if}
+</div>
+
+<EditExampleDialog
+    open={editDialogOpen}
+    title={editIndex === null ? 'Add example' : 'Edit example'}
+    imageDataUrl={editImage}
+    initialSubject={editSubject}
+    initialCaption={editCaption}
+    onsave={handleEditSave}
+    onclose={() => (editDialogOpen = false)}
+/>
+
+<DatasetPickerDialog
+    open={pickerOpen}
+    onadd={handleDatasetAdd}
+    onclose={() => (pickerOpen = false)}
+/>

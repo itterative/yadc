@@ -461,3 +461,147 @@ saves (the form is hidden on other tabs).
   (ActionBar + ActionBarItem imports; footer → ActionBar;
   Save hidden during streaming)
 - `docs/frontend/components-domain.md` (`PromptSidePanel` entry)
+
+## Few-shot examples: card list + two dialogs
+
+The examples UI was a flat inline-editable list (thumbnail +
+subject/caption inputs + remove button per row) with two add
+modes baked into the panel (manual file multi-upload, and an
+inline dataset picker that added one image per click). Moved
+to a read-only **card list** with two dedicated dialogs:
+
+- **Sidebar (`ExamplesPanel`)** — each example is a `Card`
+  (thumbnail + subject + caption, truncated) with hover-revealed
+  corner Edit/Delete **icon buttons** (templates-page pattern:
+  `max-lg:opacity-100` so they're always visible on touch). A
+  single bottom `ActionBar` (Add manual / From dataset) is the
+  one add entry point, shown in both empty and non-empty states.
+  The card is never inline-editable — editing always goes through
+  the dialog (same convention as the refine template card).
+- **`EditExampleDialog`** — edits one example's subject + caption
+  with a read-only image preview. Used for both add-manual
+  (seeded from the picked file: subject=file_stem, caption="")
+  and edit-existing. Mirrors `EditTemplateDialog`'s shell.
+- **`DatasetPickerDialog`** — multi-select image grid (click
+  toggles a `SvelteSet<number>` of ids; selected → border-accent
+  + checkmark) → "Add N" batch-appends. Each added example gets
+  subject=file_stem + best-effort fetched caption (refined
+  individually afterward via Edit). Sequential media fetches to
+  avoid hammering the server; progress label tracks it.
+
+Decisions:
+- **Corner icon buttons** (not per-card ActionBar) — lighter for
+  a list; matches the `/templates` route. Chosen over the
+  Card+ActionBar pattern used elsewhere this session.
+- **Single-file manual add** — the dialog edits one example at a
+  time; bulk comes from the dataset picker. Drops the old
+  `multiple` file upload.
+- **Multi-select + batch-add** for the dataset picker (was:
+  one-click-add-one). Selection clears on dataset switch (image
+  ids are per-dataset).
+- **Image not replaceable** in the edit dialog (read-only
+  preview) — change by delete + re-add.
+- **Direct delete** (no confirm) — examples aren't persisted.
+- **Labels stay Subject/Caption** (backend terms) despite the
+  user's title/description framing.
+
+Unchanged: data model (`ExamplePair`), persistence (still not
+saved to localStorage), `PromptForm`/`PromptSidePanel` wiring
+(`PromptForm` still renders `<ExamplesPanel bind:examples
+disabled={isStreaming} />` under the same heading). The two new
+dialogs are internal to the folder (relative imports in
+`ExamplesPanel`, not added to the barrel — one consumer).
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/ExamplesPanel.svelte`
+  (rewritten: card list + corner icons + add ActionBar + hosts
+  the two dialogs)
+- `yadc/webui/src/lib/components/prompts/EditExampleDialog.svelte`
+  (new)
+- `yadc/webui/src/lib/components/prompts/DatasetPickerDialog.svelte`
+  (new)
+- `docs/frontend/components-domain.md` (`ExamplesPanel` entry
+  rewritten; `EditExampleDialog` + `DatasetPickerDialog` entries
+  added)
+
+### EditExampleDialog: hero banner + lightbox
+
+The example image was a small centered preview (`max-h-48` ≈
+192px) — too small to caption against, and it didn't use the
+app's established image-display conventions. Switched to the
+**RefineDialog hero-banner pattern** (`-mx-5` breakout,
+`h-32 object-cover`, full-bleed under the header) for the
+in-dialog preview, and added a **lightbox** (second stacked
+`<Dialog>`, `object-contain`, `max-h-[90vh] max-w-[90vw]`)
+toggled by clicking the banner, since `object-cover` crops and
+the user needs to see the whole image at full detail.
+
+Using a second `<Dialog>` (not a plain `fixed inset-0` overlay):
+native modal dialogs stack in the top layer, so Escape closes
+the lightbox first (not the whole edit dialog), click-outside
+dismisses, and the backdrop dims the edit dialog behind it.
+Clicking the image itself doesn't dismiss (inspectable) — only
+the dark area or the X button. The banner carries `cursor-zoom-in`
++ `hover:opacity-90` to signal clickability.
+
+Known minor limitation: `Dialog` doesn't reference-count its
+`body.noscroll` lock, so closing the stacked lightbox removes
+`noscroll` even while the edit dialog is still open (body behind
+becomes scrollable). Pre-existing Dialog limitation, barely
+noticeable (the backdrop covers it); left for a future Dialog
+refcount fix rather than special-casing here.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/EditExampleDialog.svelte`
+  (small centered preview → hero banner + lightbox)
+- `docs/frontend/components-domain.md` (`EditExampleDialog` entry)
+
+### Lightbox consolidated into shared ``ImagePreviewDialog``
+
+The dataset browser already had an image lightbox
+(`dataset/browser/ImagePreviewDialog.svelte`) with proper
+aspect-ratio handling for wide AND tall images
+(`max-h-[inherit] w-full flex-1 object-contain` +
+`style:aspect-ratio`). The `EditExampleDialog` lightbox added
+above was a bespoke reimplementation. Consolidated onto one
+shared primitive.
+
+- **Generalized + promoted** `ImagePreviewDialog` from
+  `dataset/browser/` to `lib/components/ui/`. It now takes a raw
+  `src` string (URL or data URL) instead of `datasetName` +
+  `item: ImageInfo` + the `$lib/stores/dataset` import —
+  domain-agnostic, per the "promote on second use + strip domain"
+  rule. Optional `caption` and prev/next nav (gallery use) are
+  still supported; the dialog widens to `max-w-[90vw]` when
+  there's no nav (no need to reserve arrow space).
+- **Dataset browser** (`routes/datasets/[name]/+page.svelte`)
+  now computes `src = mediaUrl(...)`, `alt`, `aspectRatio`,
+  `width`/`height`, and `caption` from `previewItem` and passes
+  them in — behavior unchanged.
+- **`EditExampleDialog`** dropped its bespoke stacked-`<Dialog>`
+  lightbox and uses the shared one with `src={imageDataUrl}`
+  (a base64 data URL). No nav, no caption, no explicit
+  aspect-ratio (intrinsic dims on decode suffice for the
+  lightbox case).
+
+The hero banner in `EditExampleDialog` (RefineDialog pattern,
+object-cover, clickable) stays — it's the in-dialog thumbnail;
+the shared lightbox is the full-detail view it opens. A
+non-interactive `SvgFullscreen` chip (bottom-right, `bg-black/60`,
+`pointer-events-none`) was added as the enlarge affordance — the
+whole banner remains the click target.
+
+**Files touched:**
+- `yadc/webui/src/lib/components/ui/ImagePreviewDialog.svelte`
+  (new — generalized from the old dataset-domain version)
+- `yadc/webui/src/lib/components/dataset/browser/ImagePreviewDialog.svelte`
+  (deleted — superseded by the ui/ version)
+- `yadc/webui/src/routes/datasets/[name]/+page.svelte`
+  (import path + compute src/alt/aspect/caption/width/height
+  from previewItem)
+- `yadc/webui/src/lib/components/prompts/EditExampleDialog.svelte`
+  (bespoke lightbox → shared `ImagePreviewDialog`)
+- `.pi/agent/memory/frontend-architecture.md` (`ui/` one-liner —
+  added `ImagePreviewDialog`)
+- `docs/frontend/components-domain.md` (`EditExampleDialog`
+  entry — references shared lightbox)

@@ -5,7 +5,7 @@
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
-    import ImagePreviewDialog from '$lib/components/dataset/browser/ImagePreviewDialog.svelte';
+    import ImagePreviewDialog from '$lib/components/ui/ImagePreviewDialog.svelte';
     import DatasetSidePanel from './DatasetSidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
     import DropUploadZone from './DropUploadZone.svelte';
@@ -20,7 +20,11 @@
         currentlyCaptioning,
         lastStartedJobId
     } from '$lib/stores/caption';
-    import { pendingDatasetChanges, clearPendingDatasetChange } from '$lib/stores/dataset';
+    import {
+        pendingDatasetChanges,
+        clearPendingDatasetChange,
+        mediaUrl
+    } from '$lib/stores/dataset';
     import {
         resumptionFailed,
         clearResumptionFailed,
@@ -665,7 +669,13 @@
         canprev={canPreviewPrev}
         cannext={canPreviewNext}
         isloadingnext={isLoadingMore && previewIndex === images.length - 1}
-        {datasetName}
-        item={previewItem}
+        src={mediaUrl(datasetName, previewItem.id)}
+        alt={previewItem.file_name}
+        aspectRatio={previewItem.width && previewItem.height
+            ? `${previewItem.width} / ${previewItem.height}`
+            : undefined}
+        width={previewItem.width || undefined}
+        height={previewItem.height || undefined}
+        caption={previewItem.file_name}
     />
 {/if}
