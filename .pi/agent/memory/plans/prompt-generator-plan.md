@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate/refine Jinja2 prompt templates from an intent + optional few-shot examples using any configured env's model, with streaming + cancel + server-side prompt history. Built on a generic LLM client layer (yadc/llm/) extracted from the captioners.
-last_history: 14
+last_history: 15
 ---
 
 # Prompt Generator Plan
@@ -194,6 +194,31 @@ rightward. ReasoningCard's expanded `<pre>` also gained
 `break-words`. See
 [`history/prompt-generator-plan/014-prompt-ui-side-panel-and-fixes.md`](history/prompt-generator-plan/014-prompt-ui-side-panel-and-fixes.md)
 for the full record.
+
+### Context-sensitive FAB + `FabButton` primitive (2026-06-22)
+
+On mobile, the side panel's FAB was sitting on top of the
+streaming cancel button in `GenerationPreview`'s footer (`z-20` vs.
+no z-index). Since the form is snapshotted into the in-flight call,
+the only useful mid-stream action is cancel — so the FAB now
+swaps to a cancel button while streaming (via the `fab` snippet on
+`SidePanel`) and reverts to the default toggle otherwise. The
+`ui/FabButton.svelte` primitive was extracted to own the FAB
+shape (`h-16 w-16 rounded-full` + `h-6 w-6` icon), the
+`accent`/`error` color mapping, and the `label` → `title` +
+`aria-label` plumbing; the `SidePanel` default toggle is now a
+one-liner. `e.stopPropagation()` moved from the snippet's `onclick`
+to the positioning wrapper's `onclick` so callers no longer have
+to remember it (the wrapper is the common ancestor of the FAB and
+`<svelte:window>`, and the stopPropagation is load-bearing for the
+default toggle — without it, the opening click would re-close the
+panel via the bubble-phase outside-click listener). GenerationPreview's
+footer cancel is now `hidden lg:flex` (desktop-only); the FAB is
+the only cancel on mobile. Prompts page only — the dataset side
+panel stays alone for now. See
+[`history/prompt-generator-plan/015-fab-cancel-and-fab-button.md`](history/prompt-generator-plan/015-fab-cancel-and-fab-button.md)
+for the full record (including the open-panel-mid-stream edge case,
+which still requires a panel close before the FAB is reachable).
 
 ## Phases
 

@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
+    import FabButton from './FabButton.svelte';
     import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
 
     interface Props {
@@ -22,11 +23,28 @@
          * and should mutate `open` (via `bind:open`) directly.
          */
         onclose?: () => void;
+        /**
+         * Optional override for the mobile FAB. Render a
+         * ``<FabButton>`` inside — positioning (``fixed right-6
+         * bottom-6 z-20 lg:hidden``) and click-containment are
+         * owned by the wrapper here, so the snippet only chooses
+         * *what* the button is (icon/variant/label/action), not its
+         * shape. Use it to swap the FAB for a context action (e.g.
+         * a streaming cancel). The default (no snippet) is the
+         * panel toggle.
+         */
+        fab?: Snippet;
         /** Panel content. Typically a `PillTabs` host with tab children. */
         children: Snippet;
     }
 
-    let { open = $bindable(false), class: className = '', onclose, children }: Props = $props();
+    let {
+        open = $bindable(false),
+        class: className = '',
+        onclose,
+        children,
+        fab
+    }: Props = $props();
 
     let panelRef: HTMLElement | undefined = $state();
 
@@ -47,15 +65,6 @@
         }
         open = false;
         onclose?.();
-    }
-
-    function toggle(e: MouseEvent) {
-        // Stop the click from bubbling to ``<svelte:window>`` —
-        // otherwise the opening click would immediately satisfy
-        // the "outside click" condition above and close the panel
-        // it just opened.
-        e.stopPropagation();
-        open = !open;
     }
 </script>
 
@@ -95,16 +104,26 @@
     </div>
 </div>
 
-<!-- Mobile-only floating toggle button. Always rendered on mobile so
-     the user can re-open the drawer after closing it; the backdrop
+<!-- Mobile-only floating action button. Always rendered on mobile so
+     the user can interact while the panel is closed; the backdrop
      (``z-30``) and panel (``z-40``) sit above it, so it's hidden
-     while the drawer is open. -->
-<button
-    class="fixed right-6 bottom-6 z-20 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full
-         bg-accent text-white shadow-lg transition-colors hover:bg-accent-hover lg:hidden"
-    onclick={toggle}
-    title="Toggle panel"
-    aria-label="Toggle panel"
->
-    <SvgMenuLeft class="h-6 w-6" />
-</button>
+     while the drawer is open. The wrapper owns positioning AND
+     click-containment — its ``onclick`` stops propagation so a FAB
+     click never bubbles to ``<svelte:window>`` and re-closes the
+     panel via the outside-click listener. That stopPropagation is
+     load-bearing for the default toggle (it opens the panel on the
+     very click that would otherwise re-close it). Default content
+     is the toggle; provide the ``fab`` snippet to swap in a context
+     action (typically a ``<FabButton>``). The wrapper's ``onclick``
+     is a propagation guard, not an interaction — the actual control
+     is the ``<button>`` inside ``FabButton`` — so the a11y rules for
+     interactive elements don't apply. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="fixed right-6 bottom-6 z-20 lg:hidden" onclick={(e) => e.stopPropagation()}>
+    {#if fab}
+        {@render fab()}
+    {:else}
+        <FabButton icon={SvgMenuLeft} label="Toggle panel" onclick={() => (open = !open)} />
+    {/if}
+</div>

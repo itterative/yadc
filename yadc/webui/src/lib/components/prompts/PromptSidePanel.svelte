@@ -2,13 +2,15 @@
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import SidePanel from '$lib/components/ui/SidePanel.svelte';
+    import FabButton from '$lib/components/ui/FabButton.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
+    import SvgMenuLeft from '$lib/icons/SvgMenuLeft.svelte';
     import SvgSave from '$lib/icons/SvgSave.svelte';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import PromptForm from './PromptForm.svelte';
     import PromptHistoryPanel from './PromptHistoryPanel.svelte';
     import PromptSettings from './PromptSettings.svelte';
-    import { generation, saveHistoryEntry } from '$lib/stores/prompts';
+    import { generation, saveHistoryEntry, cancelGenerationState } from '$lib/stores/prompts';
     import type {
         ExamplePair,
         PromptGenFocus,
@@ -137,6 +139,24 @@
 </script>
 
 <SidePanel bind:open>
+    {#snippet fab()}
+        <!-- Context-sensitive FAB. While streaming, the only useful
+             action is cancel (the form is snapshotted into the
+             in-flight call, so opening the panel mid-stream is
+             pointless); otherwise it's the default panel toggle.
+             Shape, positioning, and click-containment come from
+             ``<FabButton>`` + the ``ui/SidePanel`` wrapper. -->
+        {#if isStreaming}
+            <FabButton
+                icon={SvgClose}
+                variant="error"
+                label="Cancel generation"
+                onclick={cancelGenerationState}
+            />
+        {:else}
+            <FabButton icon={SvgMenuLeft} label="Toggle panel" onclick={() => (open = !open)} />
+        {/if}
+    {/snippet}
     <div class="flex h-full min-h-0 flex-col">
         <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
             {#snippet end()}
