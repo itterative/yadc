@@ -28,7 +28,7 @@ yadc/webui/src/routes/
     +page.svelte              # Prompt generator — hosts `prompts/PromptGenerator.svelte`. Topbar with the page title, full-height two-column layout.
   datasets/[name]/
     +page.svelte              # Dataset browser (masonry grid + side panel + captioning progress in stats line + topbar upload icon)
-    SidePanel.svelte          # Co-located: tabbed side panel (caption/details/config) with mobile drawer. Minimal prop threading — captioning actions handled by components via stores.
+    DatasetSidePanel.svelte   # Co-located: tabbed side panel (caption/details/config) with mobile drawer, built on the generic `ui/SidePanel.svelte` primitive. Minimal prop threading — captioning actions handled by components via stores. The mobile X close lives inside the tab bar's `end` snippet and mutates `open` via `bind:open`.
     AddFilesDialog.svelte     # Co-located: dialog wrapping DatasetUploadPanel in `mode="append"` for adding files to an existing managed dataset. Pre-populates the file list from dropped files.
     DatasetTopbar.svelte      # Co-located: page-level topbar (title, dataset status, action buttons). Uses `SetTopbar` pattern.
     DropUploadZone.svelte     # Co-located: drop-target wrapper with a slot. Owns drag/drop state + `webkitGetAsEntry` file collection. Renders a full-area overlay (accent for allowed drops, warning for blocked). Emits `ondrop(files)` / `onblockeddrop(reason)`. Reused only here today — co-locate until a second consumer appears.

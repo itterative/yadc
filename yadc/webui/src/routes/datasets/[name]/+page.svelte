@@ -6,7 +6,7 @@
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
     import ImagePreviewDialog from '$lib/components/dataset/browser/ImagePreviewDialog.svelte';
-    import SidePanel from './SidePanel.svelte';
+    import DatasetSidePanel from './DatasetSidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
     import DropUploadZone from './DropUploadZone.svelte';
     import DatasetTopbar from './DatasetTopbar.svelte';
@@ -631,7 +631,7 @@
             </DropUploadZone>
         {/if}
 
-        <SidePanel
+        <DatasetSidePanel
             {datasetName}
             source={currentDataset?.source}
             {focusedItem}

@@ -102,6 +102,14 @@ See `dataset-watcher` for the backend ring buffer + suppression pattern.
 - No nested `<button>`. Use `<div role="button">` for clickable list items.
 - Shared state across components uses `$state` modules (`.svelte.ts` files) — see `topbar.svelte.ts` for the pattern.
 
+## Svelte 5 State Flushes Synchronously Inside Event Handlers
+
+State changes from `$state` runes are flushed **synchronously** after a DOM event handler returns, BEFORE the event continues to bubble to ancestors (including `<svelte:window>` listeners). This is the default behaviour in Svelte 5 — it's faster, but it has a footgun: any DOM you check from a bubble-phase listener may already reflect the post-flush state.
+
+Concrete trap: a `<svelte:window onclick>` "outside-click" check using `panelRef.contains(e.target)` will return `false` for clicks on a button inside the panel if that button's handler triggered a re-render that detached the button's containing `{#if}` block (e.g. opening a picker inside a side panel). The click WAS inside the panel at dispatch time, but by the time the bubble listener runs, the target has been removed from the DOM and `compareDocumentPosition` reports `DISCONNECTED`.
+
+Fix: check `e.composedPath().includes(panelRef)` instead of `panelRef.contains(e.target)`. `composedPath()` is captured at dispatch time and is unaffected by synchronous re-renders. See `ui/SidePanel.svelte` for the canonical implementation.
+
 ## Abort Contexts
 
 `yadc/webui/src/lib/abort.ts` provides a composable abort-context layer for cancelling in-flight fetches when components unmount or effects rerun.
