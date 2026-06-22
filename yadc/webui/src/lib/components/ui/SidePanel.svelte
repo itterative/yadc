@@ -18,7 +18,7 @@
          */
         class?: string;
         /**
-         * Fired when the panel is closed via an outside click.
+         * Fired when the panel is closed via a backdrop click.
          * The X-button inside `children` is the caller's responsibility
          * and should mutate `open` (via `bind:open`) directly.
          */
@@ -26,12 +26,11 @@
         /**
          * Optional override for the mobile FAB. Render a
          * ``<FabButton>`` inside — positioning (``fixed right-6
-         * bottom-6 z-20 lg:hidden``) and click-containment are
-         * owned by the wrapper here, so the snippet only chooses
-         * *what* the button is (icon/variant/label/action), not its
-         * shape. Use it to swap the FAB for a context action (e.g.
-         * a streaming cancel). The default (no snippet) is the
-         * panel toggle.
+         * bottom-6 z-20 lg:hidden``) is owned by the wrapper here,
+         * so the snippet only chooses *what* the button is
+         * (icon/variant/label/action), not its shape. Use it to swap
+         * the FAB for a context action (e.g. a streaming cancel).
+         * The default (no snippet) is the panel toggle.
          */
         fab?: Snippet;
         /** Panel content. Typically a `PillTabs` host with tab children. */
@@ -46,39 +45,24 @@
         fab
     }: Props = $props();
 
-    let panelRef: HTMLElement | undefined = $state();
-
-    function handleWindowClick(e: MouseEvent) {
-        if (!open || !panelRef) {
-            return;
-        }
-        // Use ``composedPath()`` rather than ``panelRef.contains(target)``.
-        // Svelte 5 flushes state changes synchronously after the click
-        // handler returns, which can detach (move out of the DOM tree)
-        // elements that the user just clicked — by the time this listener
-        // runs during the bubble phase, the click target may already be
-        // outside the panel's tree. ``composedPath()`` captures the path
-        // at dispatch time, before any re-renders, so it still reflects
-        // the DOM as it was when the user clicked.
-        if (e.composedPath().includes(panelRef)) {
-            return;
-        }
+    function handleBackdropClick() {
         open = false;
         onclose?.();
     }
 </script>
 
-<svelte:window onclick={handleWindowClick} />
-
-<!-- Visual dim backdrop. No click handler — closing on outside
-     click is handled by the ``<svelte:window>`` listener above so
-     the click doesn't have to land on the dimmed region specifically.
-     Marked ``role="presentation"`` so AT ignores it (it's purely
-     decorative). Hidden at ``lg+`` where the panel sits inline. -->
+<!-- Visual dim backdrop. Clicks on it close the panel — the standard
+     modal/drawer "click outside to close" pattern. On mobile the
+     backdrop is ``fixed inset-0`` (covers the entire viewport), so
+     any click not landing on the panel itself hits the backdrop.
+     Hidden at ``lg+`` where the panel sits inline. Marked
+     ``role="presentation"`` so AT ignores it; proper a11y for the
+     backdrop + ESC key are future work. -->
 {#if open}
     <div
         class="fixed inset-0 z-30 bg-black/50 transition-opacity lg:hidden"
         role="presentation"
+        onclick={handleBackdropClick}
     ></div>
 {/if}
 
@@ -92,7 +76,6 @@
     lg:static lg:w-120 lg:max-w-none lg:shrink-0 lg:shadow-none lg:transition-none
     {open ? '' : 'translate-x-full'} lg:translate-x-0
     {className}"
-    bind:this={panelRef}
 >
     <!-- Inner chrome — visual styling only. Callers put their content
          (typically a tab host) directly inside. ``h-full flex-col`` so
@@ -107,20 +90,10 @@
 <!-- Mobile-only floating action button. Always rendered on mobile so
      the user can interact while the panel is closed; the backdrop
      (``z-30``) and panel (``z-40``) sit above it, so it's hidden
-     while the drawer is open. The wrapper owns positioning AND
-     click-containment — its ``onclick`` stops propagation so a FAB
-     click never bubbles to ``<svelte:window>`` and re-closes the
-     panel via the outside-click listener. That stopPropagation is
-     load-bearing for the default toggle (it opens the panel on the
-     very click that would otherwise re-close it). Default content
-     is the toggle; provide the ``fab`` snippet to swap in a context
-     action (typically a ``<FabButton>``). The wrapper's ``onclick``
-     is a propagation guard, not an interaction — the actual control
-     is the ``<button>`` inside ``FabButton`` — so the a11y rules for
-     interactive elements don't apply. -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="fixed right-6 bottom-6 z-20 lg:hidden" onclick={(e) => e.stopPropagation()}>
+     while the drawer is open. Default content is the toggle;
+     provide the ``fab`` snippet to swap in a context action
+     (typically a ``<FabButton>``). -->
+<div class="fixed right-6 bottom-6 z-20 lg:hidden">
     {#if fab}
         {@render fab()}
     {:else}
