@@ -22,8 +22,28 @@ The FAB cancel and the footer cancel both call
 `cancelGenerationState`, so behaviour is the same regardless of
 which the user reaches for.
 
-**Files touched:**
+**Files touched (so far):**
 - `yadc/webui/src/lib/components/prompts/PromptSidePanel.svelte`
 - `yadc/webui/src/lib/components/prompts/GenerationPreview.svelte`
 - `docs/frontend/components-domain.md` (`PromptSidePanel` +
   `GenerationPreview` entries)
+
+## History: per-entry restore icon (no more click-anywhere)
+
+The whole entry was a `role="button"` that triggered restore on
+click. On mobile that's both undiscoverable (no hover to reveal
+the "Restore" label) and easy to fire by accident. Replaced with
+an always-visible `SvgHistory` icon button (the section header
+already uses `SvgHistory` — semantic match for "restore from
+history"). The card is no longer a button: `role`/`tabindex`/
+`onclick`/`onkeydown` removed, `cursor-pointer` and `focus:*`
+dropped, no `disabled:*` on the entry itself. Restore shows a
+spinner in place of the icon when this entry is restoring.
+Delete moved out of its hover-only wrapper to always-visible too
+— same discoverability reasoning (mobile has no hover, so the
+delete was unreachable there).
+
+**Files touched:**
+- `yadc/webui/src/lib/components/prompts/PromptHistoryPanel.svelte`
+- `docs/frontend/components-domain.md` (`PromptHistoryPanel`
+  entry)

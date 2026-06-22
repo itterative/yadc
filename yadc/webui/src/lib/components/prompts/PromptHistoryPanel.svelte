@@ -141,20 +141,12 @@
             <ul class="space-y-2">
                 {#each entries as item (item.id)}
                     <li>
-                        <!-- ``role="button"`` + ``tabindex="0"`` + keyboard handler make this
-                             keyboard-accessible without nesting a real <button> inside the
-                             delete button (HTML spec forbids nested <button> elements). -->
+                        <!-- Display-only card — actions live in the footer. The whole
+                             entry used to be a ``role="button"`` that restored on click;
+                             on mobile that was both undiscoverable (no hover to reveal
+                             the "Restore" label) and easy to fire by accident. -->
                         <div
-                            role="button"
-                            tabindex={isRestoringId !== null ? -1 : 0}
-                            class="group block w-full cursor-pointer rounded-lg border border-border bg-bg/40 p-3 text-left transition-colors hover:border-gray-500 hover:bg-bg/60 focus:border-accent focus:outline-none disabled:cursor-wait disabled:opacity-60"
-                            onclick={() => handleRestore(item)}
-                            onkeydown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    handleRestore(item);
-                                }
-                            }}
+                            class="group block w-full rounded-lg border border-border bg-bg/40 p-3 text-left transition-colors hover:border-gray-500 hover:bg-bg/60"
                             data-testid="history-entry"
                         >
                             <!-- Intent preview -->
@@ -206,27 +198,34 @@
                                 >
                                     {formatRelativeTime(item.created_t)}
                                 </span>
-                                <span
-                                    class="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-                                >
-                                    <span
-                                        class="rounded bg-bg/80 px-2 py-0.5 text-xs text-accent"
-                                        role="status"
-                                    >
-                                        {#if isRestoringId === item.id}
-                                            Restoring…
-                                        {:else}
-                                            Restore
-                                        {/if}
-                                    </span>
+                                <span class="flex items-center gap-2">
+                                    <!-- Restore — always visible (SvgHistory reused;
+                                         semantic match for "restore from history"). -->
                                     <button
                                         type="button"
-                                        class="rounded p-1 text-gray-400 transition-colors hover:bg-bg hover:text-error focus:text-error focus:outline-none"
+                                        class="rounded p-1 text-gray-400 cursor-pointer transition-colors hover:bg-bg hover:text-accent focus:text-accent focus:outline-none disabled:cursor-wait disabled:opacity-50"
+                                        onclick={() => handleRestore(item)}
+                                        disabled={isRestoringId !== null}
+                                        title="Restore"
+                                        aria-label="Restore"
+                                        data-testid="history-restore"
+                                    >
+                                        {#if isRestoringId === item.id}
+                                            <SvgSpinner class="h-4.5 w-4.5 animate-spin" />
+                                        {:else}
+                                            <SvgHistory class="h-4.5 w-4.5" />
+                                        {/if}
+                                    </button>
+                                    <!-- Delete — always visible, same discoverability
+                                         reasoning as restore (mobile has no hover). -->
+                                    <button
+                                        type="button"
+                                        class="rounded p-1 text-gray-400 cursor-pointer transition-colors hover:bg-bg hover:text-error focus:text-error focus:outline-none"
                                         onclick={(e) => handleDelete(item, e)}
                                         title="Delete entry"
                                         data-testid="history-delete"
                                     >
-                                        <SvgDelete class="h-3.5 w-3.5" />
+                                        <SvgDelete class="h-4.5 w-4.5" />
                                     </button>
                                 </span>
                             </div>
