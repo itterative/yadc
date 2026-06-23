@@ -54,6 +54,7 @@ cli.add_command(cli_<name>.<name>)
 | `cli_draft.py` | (uses core directly) | `draft` |
 | `cli_envs.py` | `cmd/envs/` | `envs` |
 | `cli_export.py` | (uses core directly) | `export` |
+| `cli_prompts.py` | `cmd/prompts/` | `prompts` |
 | `cli_templates.py` | `cmd/templates/` | `templates` |
 
 The `caption` command's pure logic lives in `yadc/core/captioning/` rather than a `cmd/caption/` package because the API also uses it (via `AsyncCaptionJob` and `CaptioningService`). See `captioning-runner` for the shared loop and `captioning-workflow` for the end-to-end flow.

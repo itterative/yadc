@@ -29,4 +29,6 @@ yadc/cmd/
     user_config.py  # UserConfig / UserConfigApi models (legacy)
   templates/        # user template CRUD in STATE_PATH/templates/
     templates.py     # load/save user template files
+  prompts/          # CLI-friendly wrapper over yadc.prompt_generation.stream_template_chunks
+    prompts.py       # generate() — on_chunk/on_reasoning callbacks, password resolution, typed exceptions
 ```

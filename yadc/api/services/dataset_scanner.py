@@ -29,9 +29,9 @@ from typing import Any
 from PIL import Image
 
 from yadc.core.config import Config
+from yadc.core.constants import IMAGE_EXTENSIONS
 
 from ..configuration import Configuration
-from ..constants import IMAGE_EXTENSIONS
 from ..modules.db_connection_factory import DBConnectionFactory
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service

@@ -35,8 +35,8 @@ from yadc.cmd.envs.keystorage_password import PasswordRequiredError
 from yadc.core.user_config import UserConfig, UserConfigApi
 from yadc.llm import ImageUrlPart, Message, MessageStream, StreamChunk, TextPart
 
-_PATCH_CMD_ENVS = "yadc.api.services.prompt_generation.service.cmd_envs"
-_PATCH_CREATE_CLIENT = "yadc.api.services.prompt_generation.service.create_client"
+_PATCH_CMD_ENVS = "yadc.prompt_generation.streaming.cmd_envs"
+_PATCH_CREATE_CLIENT = "yadc.prompt_generation.streaming.create_client"
 
 
 def _user_config(url: str = "https://api.example.com/v1", token: str = "tk", model: str = "gpt-x") -> UserConfig:
@@ -181,7 +181,7 @@ class TestBuildMessages:
         drop the loading code (this was a real bug before Phase 5b —
         the old ``_SYSTEM_PROMPT`` was dead code).
         """
-        from yadc.api.services.prompt_generation.service import _GENERATE_SYSTEM_PROMPT
+        from yadc.prompt_generation.messages import _GENERATE_SYSTEM_PROMPT
 
         client = _make_client([StreamChunk(text="x")])
 
@@ -246,7 +246,7 @@ class TestRefineMode:
     @pytest.mark.asyncio
     async def test_uses_refine_system_prompt(self, service):
         """When ``template_content`` is set, the system message is the refine prompt (not the generate one)."""
-        from yadc.api.services.prompt_generation.service import (
+        from yadc.prompt_generation.messages import (
             _GENERATE_SYSTEM_PROMPT,
             _REFINE_SYSTEM_PROMPT,
         )

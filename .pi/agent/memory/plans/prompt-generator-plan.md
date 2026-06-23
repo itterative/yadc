@@ -1,7 +1,7 @@
 ---
 name: prompt-generator-plan
 description: Meta-prompting feature — generate/refine Jinja2 prompt templates from an intent + optional few-shot examples using any configured env's model, with streaming + cancel + server-side prompt history. Built on a generic LLM client layer (yadc/llm/) extracted from the captioners.
-last_history: 16
+last_history: 17
 ---
 
 # Prompt Generator Plan
@@ -36,9 +36,7 @@ live in one place and image encoding stays in the captioners.
 
 Generation, refine mode, prompt-history persistence, and the settings
 tab (configurable `max_tokens` / `image_quality`) are all shipped
-end-to-end. **Remaining:** Phase 4 (CLI parity), Phase 5 (optional
-polish — partly superseded by Phase 7), and Phase 8 (meta-prompt
-Jinja templating, proposed — awaiting a go/no-go).
+end-to-end. **Remaining:** Phase 5 (optional polish — partly superseded by Phase 7), and Phase 8 (meta-prompt Jinja templating, proposed — awaiting a go/no-go).
 
 ## Architecture (what was built)
 
@@ -233,23 +231,11 @@ which still requires a panel close before the FAB is reachable).
 | **5b** | Backend cleanup (file→package, `.txt` system prompts, wire-the-system-prompt bug fix). | `005`, `006`, `013` |
 | **6** | Refine mode (6a backend `template_content` branching + `_REFINE_SYSTEM_PROMPT`; 6b frontend — later revised to a combined form + inline pill toggle). | `004`, `007`, `011`, `013` |
 | **7** | Prompt-history persistence (DB + repository + service + controller + History tab/panel). | `008`, `009`, `013` |
+| **4** | CLI parity (`cmd/prompts/` + `cli_prompts.py` — `generate` streams to stdout, `save` reads stdin). | `017` |
 
 Plus the 2026-06-20 settings-tab + `max_tokens`/`image_quality` work (`012`).
 
 ### Remaining
-
-#### Phase 4 — CLI parity
-
-1. `cmd/prompts/` pure logic.
-2. `cli_prompts.py` click commands.
-3. Register in the main group (`cli.py`).
-4. Tests.
-
-CLI `generate` writes the **template body to stdout** (progress /
-status / reasoning → stderr) so it pipes cleanly into `prompts save`.
-`prompts save <name>` reads the body from stdin and saves via
-`cmd_templates.save_user_template`. Mirror the cmd/cli split: click in
-`cli_prompts.py`, pure logic in `cmd/prompts/`.
 
 #### Phase 5 (optional) — Polish
 
@@ -315,10 +301,19 @@ for the full design (Jinja-mechanics findings + the full
 `openai_compatible.py`, `openai.py`, `openrouter.py`, `vllm.py`,
 `llamacpp.py`, `koboldcpp.py`, `ollama.py`, `gemini.py`, `factory.py`.
 
-**New (prompt generation)** — `yadc/api/services/prompt_generation/`
-(package: `__init__.py`, `service.py`, `prompts/{generate,refine}.txt`);
+**New (prompt generation)** — `yadc/prompt_generation/` (neutral
+domain package: `__init__.py`, `models.py` with Pydantic
+request/ExamplePair + `PromptGenerationConfigError`, `messages.py`
+with the system-prompt loading + `_build_messages` + priming acks,
+`streaming.py` with `stream_template_chunks` async iterator,
+`prompts/{generate,refine}.txt`); `yadc/api/services/prompt_generation/`
+(thin DI wrapper: `__init__.py` re-exports models from
+`yadc.prompt_generation`, `service.py` is a `PromptGenerationService`
+that delegates to `stream_template_chunks`);
 `yadc/api/controllers/api_prompts.py`; `yadc/cli_prompts.py` +
-`yadc/cmd/prompts/` *(Phase 4 — not yet)*.
+`yadc/cmd/prompts/` (CLI-friendly wrapper with `on_chunk` /
+`on_reasoning` callbacks, raises typed exceptions for the CLI to
+map to exit codes).
 
 **New (prompt history)** — DB migration `0008_prompt_history_*`;
 `yadc/api/services/prompt_history_repository.py`;

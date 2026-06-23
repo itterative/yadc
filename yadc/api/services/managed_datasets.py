@@ -26,9 +26,9 @@ from typing import Any, cast
 
 from tomlkit.toml_document import TOMLDocument
 
+from yadc.core.constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSION_GLOBS
 from yadc.utils.dict_utils import load_toml
 
-from ..constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSION_GLOBS
 from ..modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service

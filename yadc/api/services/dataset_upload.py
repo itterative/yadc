@@ -20,7 +20,6 @@ import tomlkit
 from tomlkit.toml_document import TOMLDocument
 
 from yadc.api.configuration import Configuration
-from yadc.api.constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSIONS
 from yadc.api.modules.dataset_watcher import DatasetWatcherService
 from yadc.api.modules.job_scheduler import JobScheduler
 from yadc.api.modules.logging_factory import LoggingFactory
@@ -39,6 +38,7 @@ from yadc.api.services.dataset_upload_validation import (
 )
 from yadc.api.services.datasets import DATASETS_DIR, DatasetService, _dataset_config_path
 from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
+from yadc.core.constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSIONS
 from yadc.utils.dict_utils import load_toml
 
 # Extensions allowed for uploaded files (images + sidecars).

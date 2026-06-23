@@ -1,25 +1,28 @@
 """``PromptGenerationService`` — package entry point.
 
-Re-exports the public surface and (for test-patch compatibility)
-``cmd_envs`` + ``create_client`` at the package level. The actual
-service + message-building logic lives in :mod:`.service`.
+Re-exports the public surface from :mod:`yadc.prompt_generation` for
+backward compatibility. The actual implementation lives in the
+neutral ``yadc.prompt_generation`` package; this module exists so the
+existing import path
+``from yadc.api.services.prompt_generation import PromptGenerationRequest``
+continues to work.
 """
 
-from yadc.cmd import envs as cmd_envs
-from yadc.llm import create_client
-
-from .service import (
+from yadc.prompt_generation import (
     ExamplePair,
+    PromptGenerationConfigError,
+    PromptGenerationError,
     PromptGenerationFocus,
     PromptGenerationRequest,
-    PromptGenerationService,
 )
+
+from .service import PromptGenerationService
 
 __all__ = [
     "ExamplePair",
+    "PromptGenerationConfigError",
+    "PromptGenerationError",
     "PromptGenerationFocus",
     "PromptGenerationRequest",
     "PromptGenerationService",
-    "cmd_envs",
-    "create_client",
 ]

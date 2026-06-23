@@ -18,8 +18,9 @@ from typing import Callable, NamedTuple, override
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers.api import BaseObserver, ObservedWatch
 
+from yadc.core.constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSIONS
+
 from ..configuration import Configuration
-from ..constants import IMAGE_EXTENSIONS, SIDECAR_EXTENSIONS
 from ..events import DatasetChangedEvent, ShutdownEvent, StartupEvent
 from .event_dispatcher import EventDispatcher, event_handler
 from .logging_factory import LoggingFactory

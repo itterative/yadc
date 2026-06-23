@@ -41,11 +41,11 @@ import tomlkit
 
 from yadc.cmd.app import STATE_PATH
 from yadc.core.config import Config, ConfigDatasetEntry
+from yadc.core.constants import IMAGE_EXTENSIONS
 from yadc.core.dataset import DatasetImage
 from yadc.utils.dict_utils import load_toml, toml_to_plain
 
 from ..configuration import Configuration
-from ..constants import IMAGE_EXTENSIONS
 from ..events import DatasetChangedEvent
 from ..modules.dataset_watcher import SELF_JOB_ID, DatasetWatcherService
 from ..modules.db_connection_factory import DBConnectionFactory

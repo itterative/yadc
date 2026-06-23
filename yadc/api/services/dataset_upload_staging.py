@@ -20,8 +20,8 @@ from logging import Logger
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
-from yadc.api.constants import IMAGE_EXTENSIONS
 from yadc.api.services.managed_paths import MANAGED_FOLDERS_PREFIX, MANAGED_IMAGES_PREFIX
+from yadc.core.constants import IMAGE_EXTENSIONS
 
 # Name of the staging directory under each dataset's base dir.
 STAGING_DIR_NAME: str = ".staging"
