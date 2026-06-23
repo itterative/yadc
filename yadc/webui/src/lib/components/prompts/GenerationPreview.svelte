@@ -51,7 +51,7 @@
      the side-panel FAB on mobile (it floats ``bottom-6 right-6``); no
      padding on desktop (the FAB is ``lg:hidden``). -->
 <div
-    class="h-full overflow-y-auto pb-24 lg:flex lg:min-h-0 lg:flex-col lg:overflow-visible lg:pb-0"
+    class="h-max pb-26 lg:h-full lg:flex lg:min-h-0 lg:flex-col lg:pb-0"
 >
     <!-- Body -->
     <div class="mb-4 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:p-4" use:autoscroll>
