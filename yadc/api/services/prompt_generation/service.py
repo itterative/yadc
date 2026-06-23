@@ -50,9 +50,8 @@ class PromptGenerationService(Service):
         uses the client's defaults. ``async_session`` is exposed for tests.
         """
         self._logger.info(
-            "Generating prompt template via env '%s' (intent=%s, focus=%s, examples=%d).",
+            "Generating prompt template via env '%s' (focus=%s, examples=%d).",
             request.env,
-            request.intent,
             request.focus,
             len(request.examples),
         )
