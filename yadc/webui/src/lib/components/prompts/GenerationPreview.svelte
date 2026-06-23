@@ -3,8 +3,8 @@
     import SvgCopy from '$lib/icons/SvgCopy.svelte';
     import SvgDelete from '$lib/icons/SvgDelete.svelte';
     import SvgSave from '$lib/icons/SvgSave.svelte';
-    import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
     import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import SparkleThinking from '$lib/components/ui/SparkleThinking.svelte';
     import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import Card from '$lib/components/ui/Card.svelte';
     import { autoscroll } from '$lib/actions/autoscroll';
@@ -58,13 +58,21 @@
         <ReasoningCard />
         {#if generation.status === 'idle' && !generation.body}
             <div
-                class="flex min-h-[50vh] items-center justify-center text-sm text-gray-500 lg:h-full"
+                class="flex min-h-96 flex-col items-center justify-center gap-3 text-sm text-gray-500"
             >
+                <SparkleThinking class="scale-125" />
                 <p>The generated template will stream here.</p>
+            </div>
+        {:else if generation.status === 'streaming' && !generation.body}
+            <div
+                class="flex min-h-96 flex-col items-center justify-center gap-3 text-accent"
+            >
+                <SparkleThinking class="scale-125" active />
+                <span class="text-sm">Thinking…</span>
             </div>
         {:else if generation.status === 'error'}
             <div
-                class="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-sm text-error lg:h-full"
+                class="flex min-h-96 flex-col items-center justify-center gap-2 text-sm text-error"
             >
                 <p class="font-medium">Generation failed</p>
                 <p class="text-center text-xs text-gray-400">
@@ -81,14 +89,11 @@
                     ></pre>
             {/if}
 
-            <!-- Inline status, right under the stream. Same shape for
-                 all terminal / in-progress states; error has its own
-                 full-state UI above. -->
+            <!-- Inline status, right under the stream. The pre-first-token
+                 "thinking" phase has its own full-state UI above; this only
+                 covers terminal states with a body present. -->
             <div class="mt-2 flex items-center justify-center gap-1.5 text-sm">
-                {#if generation.status === 'streaming' && !generation.body}
-                    <SvgSpinner class="h-3.5 w-3.5 animate-spin text-accent" />
-                    <span class="text-accent">Generating…</span>
-                {:else if generation.status === 'cancelled'}
+                {#if generation.status === 'cancelled'}
                     <SvgClose class="h-3.5 w-3.5 text-warning" />
                     <span class="text-warning">Cancelled</span>
                 {/if}

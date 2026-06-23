@@ -33,6 +33,7 @@ yadc/webui/src/lib/components/ui/
     TabsContext.svelte.ts      # Symbol key + state factory + typed helpers. TabItem has optional icon (Component).
   ConfirmDialog.svelte         # Global confirmation dialog (Promise-based, mounted in layout, supports string + snippet body, variant: danger/warning/info)
   SpinnerBlock.svelte          # Centered spinner with optional label and size
+  SparkleThinking.svelte       # Animated 3-sparkle "thinking" indicator (constellation drift — gentle wave + opacity pulse, staggered). Master toggle via `active` prop; color via `currentColor`.
   PromptPreview.svelte         # Self-contained prompt preview (template selector + system/user prompt display)
   Tooltip.svelte               # Pure-CSS hover tooltip (wraps a trigger, shows label to the right on hover)
   Topbar.svelte                # Sets the layout topbar snippet from a page component (lifecycle-managed via $effect)

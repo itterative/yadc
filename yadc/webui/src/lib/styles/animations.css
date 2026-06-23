@@ -23,6 +23,65 @@
         animation: tile-flash 0.8s ease-out;
     }
 
+    /* Constellation drift — gentle wave + opacity pulse around base
+       position. Drives `SparkleThinking.svelte`. Each sparkle is
+       centered via the baked-in ``translateX(-50%)`` so the inline base
+       transform matches the reduced-motion fallback. */
+    @keyframes sparkle-think {
+        0%,
+        100% {
+            opacity: 0.4;
+            transform: translate(-50%, 0) translate(0, 0) scale(0.93) rotate(-3deg);
+        }
+        25% {
+            opacity: 1;
+            transform: translate(-50%, -1px) translate(1px, 0) scale(0.98) rotate(1deg);
+        }
+        50% {
+            opacity: 0.5;
+            transform: translate(-50%, 1px) translate(-1px, 0) scale(0.95) rotate(-1deg);
+        }
+        75% {
+            opacity: 0.85;
+            transform: translate(-50%, 0) translate(1px, 0) scale(0.97) rotate(2deg);
+        }
+    }
+
+    .sparkle-think {
+        animation: sparkle-think 3s ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sparkle-think {
+            animation: none;
+            opacity: 0.85;
+        }
+    }
+
+    /* Subtle scale pulse — used by the large base sparkle in
+       `SparkleThinking.svelte` so it pulses independently of the
+       constellation drift on the smaller sparkles. */
+    @keyframes sparkle-pulse {
+        0%,
+        100% {
+            transform: translate(-50%, 0) scale(1);
+        }
+        50% {
+            transform: translate(-50%, 0) scale(1.2);
+        }
+    }
+
+    .sparkle-pulse {
+        animation: sparkle-pulse 2s ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sparkle-pulse {
+            animation: none;
+            opacity: 0.85;
+        }
+    }
+
     .shimmer-accent {
         position: relative;
     }

@@ -46,7 +46,7 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 
 ### Current layout (one-liner per folder)
 
-- `lib/components/ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`, `ContextMenu`, `ImagePreviewDialog`.
+- `lib/components/ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `SparkleThinking`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`, `ContextMenu`, `ImagePreviewDialog`.
 - `lib/components/dataset/` — dataset domain. Sub-folders per feature: `browser/`, `detail/`, `config/`, `upload/`, `manage/`.
 - `lib/components/caption/` — `CaptionSettingsPanel` (the batch-captioning side panel).
 - `lib/components/env/` — `EnvironmentSettings` (CRUD list), `EnvSelector` (caption-flow picker).
