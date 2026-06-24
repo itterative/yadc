@@ -879,6 +879,67 @@ class TestUpdateExtrasHistoryRoundTrip:
         assert "caption" not in parsed
 
 
+class TestLoadExtras(TestUpdateExtrasHistoryRoundTrip):
+    """``DatasetService.load_extras`` — generic TOML sidecar loader used by the tagger (and any future consumer that round-trips comments).
+
+    Reuses the real-``DatasetService`` fixture from the extras round-trip
+    suite; the only difference is that the sidecar is read, not written.
+    """
+
+    def _setup_with_sidecar(self, service: DatasetService, tmp_path: Path, sidecar_text: str | None) -> tuple[Path, str, int]:
+        """Register a dataset with one image and optionally write a TOML sidecar."""
+        img_path, ds_name = self._setup_dataset(service, tmp_path)
+        image_id = self._get_image_id(service, ds_name, img_path)
+        toml_path = img_path.with_suffix(".toml")
+        if sidecar_text is not None:
+            toml_path.write_text(sidecar_text)
+        return img_path, ds_name, image_id
+
+    def test_load_extras_returns_doc_with_keys(self, service: DatasetService, tmp_path: Path) -> None:
+        """A sidecar with comments parses to a doc that preserves the comments for round-trip."""
+        _, ds_name, image_id = self._setup_with_sidecar(
+            service,
+            tmp_path,
+            '# artist comment\nartist = "Monet"\n[tags]\ngeneral = ["1girl"]\n',
+        )
+
+        extras = service.load_extras(ds_name, image_id)
+        assert extras is not None
+        # Comments survive the round-trip (plain=False default).
+        assert "# artist comment" in tomlkit.dumps(extras)
+        # Values parse correctly.
+        assert extras["artist"] == "Monet"
+        assert extras["tags"]["general"] == ["1girl"]
+
+    def test_load_extras_plain_true_returns_plain_python_types(self, service: DatasetService, tmp_path: Path) -> None:
+        """``plain=True`` strips tomlkit wrappers for Pydantic / display callers."""
+        _, ds_name, image_id = self._setup_with_sidecar(
+            service,
+            tmp_path,
+            'artist = "Monet"\ntags = ["painting"]\n',
+        )
+
+        extras = service.load_extras(ds_name, image_id, plain=True)
+        assert extras is not None
+        # No tomlkit wrappers.
+        assert type(extras["artist"]) is str
+        assert type(extras["tags"]) is list
+        assert type(extras["tags"][0]) is str
+
+    def test_load_extras_returns_none_for_missing_image(self, service: DatasetService) -> None:
+        assert service.load_extras("test_ds", 99999) is None
+
+    def test_load_extras_returns_none_for_missing_sidecar(self, service: DatasetService, tmp_path: Path) -> None:
+        """An image exists but its TOML sidecar doesn't → ``None``."""
+        _, ds_name, image_id = self._setup_with_sidecar(service, tmp_path, None)
+        assert service.load_extras(ds_name, image_id) is None
+
+    def test_load_extras_returns_none_for_unparseable_sidecar(self, service: DatasetService, tmp_path: Path) -> None:
+        """A malformed sidecar → ``None`` (write path repairs it; skip path doesn't silently skip)."""
+        _, ds_name, image_id = self._setup_with_sidecar(service, tmp_path, "this is not valid TOML ===")
+        assert service.load_extras(ds_name, image_id) is None
+
+
 class TestProbeHardlinkInDir:
     """``DatasetService._probe_hardlink_in_dir`` — used to fail fast on filesystems
     that don't support hardlinks. Drops a small temp file in the target dir,

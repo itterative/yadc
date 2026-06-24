@@ -219,7 +219,7 @@
             {/if}
         </header>
 
-        <main class="min-h-0 flex-1 overflow-y-auto p-6 pt-2 mt-4">
+        <main class="mt-4 min-h-0 flex-1 overflow-y-auto p-6 pt-2">
             {@render children()}
         </main>
     </div>

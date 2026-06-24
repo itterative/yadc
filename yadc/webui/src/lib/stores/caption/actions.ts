@@ -49,8 +49,12 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
         lastStartedJobId.set(info.job_id);
         // Seed the status immediately so the progress bar / ETA appear without
         // waiting for the first SSE event. Fast completions may finish before
-        // the HTTP response, so only seed when the job is actually running.
-        if (info.status === 'running' || info.status === 'stopping') {
+        // the HTTP response, so only seed ``running``/``stopping`` (seeding a
+        // stale ``running`` would clobber a terminal SSE state). The ``done``
+        // branch is the no-op case (every image already captioned): it has no
+        // background task and thus no SSE event, so we must seed it here both
+        // to clear the optimistic ``starting`` seed and to surface feedback.
+        if (info.status === 'running' || info.status === 'stopping' || info.status === 'done') {
             setCaptioningStatus({
                 status: info.status,
                 dataset_name: info.dataset_name,
@@ -65,6 +69,9 @@ export async function startBatchCaptioning(datasetName: string): Promise<string>
                 elapsed: info.elapsed,
                 max_concurrent: info.max_concurrent
             });
+            if (info.status === 'done' && info.total > 0) {
+                toast.info(`All ${info.total} images already captioned — nothing to do`);
+            }
         }
         return info.job_id;
     } catch (e) {

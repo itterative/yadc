@@ -127,6 +127,72 @@ class Configuration:
     # Refine result cache
     refine_result_buffer_size: int = 100
 
+    # Tagger result cache (LRU; key includes model + threshold fingerprint
+    # so config changes naturally evict stale entries).
+    tagger_result_buffer_size: int = 500
+
+    # Tagger (ONNX)
+    # The tagger is enabled when EITHER a local model path OR a HF
+    # repo id is set (see ``TaggingService.is_configured``). With both
+    # empty the tagger endpoints return 503.
+    # Path to a local ONNX model file. The label file is auto-discovered
+    # as ``<model_dir>/selected_tags.csv`` when ``tagger_label_path``
+    # is empty. Ignored when ``tagger_repo_id`` is set.
+    tagger_model_path: str = ""
+    tagger_label_path: str = ""
+    # HuggingFace Hub repo to download the model from. When set, the
+    # worker downloads ``tagger_repo_model_filename`` and
+    # ``tagger_repo_label_filename`` from this repo on startup and
+    # uses the cached paths (``tagger_model_path`` /
+    # ``tagger_label_path`` are ignored). Defaults match the
+    # SmilingWolf / wd-tagger convention.
+    tagger_repo_id: str = "SmilingWolf/wd-eva02-large-tagger-v3"
+    tagger_repo_model_filename: str = "model.onnx"
+    tagger_repo_label_filename: str = "selected_tags.csv"
+    # Per-category score thresholds (SmilingWolf / WD defaults).
+    # Tags below the threshold for their category are dropped from the
+    # response. 0.0 keeps everything in that category.
+    tagger_rating_threshold: float = 0.0
+    tagger_general_threshold: float = 0.35
+    tagger_character_threshold: float = 0.85
+    # Turn underscored tag names (``long_hair``) into spaces (``long hair``).
+    # Kaomojis are always preserved. Applied post-threshold so only
+    # surviving tags are touched. Off by default to preserve raw model
+    # output; opt in per-request from the UI.
+    tagger_replace_underscores: bool = False
+    # Subprocess liveness knobs. The worker pushes a heartbeat while
+    # idle (``tagger_heartbeat_interval_seconds``); the main process
+    # polls the response queue at that granularity and checks
+    # ``is_alive()`` on each timeout so a dead worker is detected
+    # within ~one heartbeat. A wedged-but-alive worker is given up
+    # after ``tagger_response_timeout_seconds``. Lowering the heartbeat
+    # detects death faster at the cost of more idle chatter.
+    tagger_heartbeat_interval_seconds: float = 15.0
+    tagger_response_timeout_seconds: float = 120.0
+    # How often the parent polls the tagger response queue while waiting.
+    # Bounds how quickly a dead/killed worker is noticed and how fast a
+    # cancel/kill unwinds. Decoupled from the worker heartbeat above.
+    tagger_liveness_poll_seconds: float = 1.0
+    # Grace window before force-killing the subprocess on cancel. After
+    # setting a job's stop_event, cancel waits this long for an in-flight
+    # inference to finish on its own; only if it's still running does it
+    # terminate the process (ONNX inference can't be interrupted mid-call).
+    tagger_cancel_grace_seconds: float = 1.0
+    # How long the tagger subprocess is allowed to sit idle (no
+    # tagging requests) before the service tears it down. The next
+    # request after teardown respawns it. Set to 0 to disable idle
+    # teardown (the subprocess stays up forever once started).
+    tagger_idle_timeout_seconds: float = 900.0
+    # Grace window between a batch job ending and clearing its
+    # expected-changes source tag. Residual inotify events from the
+    # last writes land slightly after the loop exits (kernel buffering
+    # + the watcher debounce); clearing the tag too early lets them
+    # leak through re-tagged with the per-file ``source`` ("tagger")
+    # instead of the job_id, which the originating tab can't suppress.
+    # Mirrors captioning's deferred clear. Must exceed
+    # ``watcher_debounce_seconds`` + ``watcher_expected_file_ttl``.
+    tagger_expected_changes_grace_seconds: float = 5.0
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))

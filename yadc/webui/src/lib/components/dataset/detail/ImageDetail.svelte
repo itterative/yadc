@@ -26,6 +26,7 @@
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
     import SvgVisibility from '$lib/icons/SvgVisibility.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
+    import SvgTag from '$lib/icons/SvgTag.svelte';
     import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import { confirmDialog } from '$lib/stores/confirm';
@@ -35,6 +36,7 @@
     import Caption from './Caption.svelte';
     import Preview from './Preview.svelte';
     import ExtrasTab from './Extras.svelte';
+    import TagsTab from './Tags.svelte';
 
     interface Props {
         datasetName: string;
@@ -307,6 +309,24 @@
         }
     }
 
+    /** Refresh caption data after the Tags tab writes a draft / extras so the
+     *  Caption (drafts) and Extras tabs reflect the change. */
+    async function handleTagsSaved() {
+        if (item === null) {
+            return;
+        }
+        try {
+            const [data, hist] = await Promise.all([
+                fetchCaption(datasetName, item.id),
+                fetchHistory(datasetName, item.id)
+            ]);
+            captionData = data;
+            historyEntries = hist;
+        } catch {
+            // Non-fatal — the save itself succeeded; this is just a refresh.
+        }
+    }
+
     async function handleDeleteImage() {
         if (item === null || source !== 'upload' || !item.delete_path) {
             return;
@@ -430,6 +450,9 @@
         </Tab>
         <Tab id="extras" label="Extras" icon={SvgEdit} class="h-full overflow-y-auto pt-0">
             <ExtrasTab {item} {captionData} {isSavingExtras} onSaveExtras={handleSaveExtras} />
+        </Tab>
+        <Tab id="tags" label="Tags" icon={SvgTag} class="h-full overflow-y-auto">
+            <TagsTab {datasetName} {item} onTagsSaved={handleTagsSaved} />
         </Tab>
     </CompactPillTabs>
 </div>

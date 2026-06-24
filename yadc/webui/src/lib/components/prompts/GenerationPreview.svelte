@@ -50,9 +50,7 @@
      the stream in both layouts. ``pb-24 lg:pb-0`` keeps the footer above
      the side-panel FAB on mobile (it floats ``bottom-6 right-6``); no
      padding on desktop (the FAB is ``lg:hidden``). -->
-<div
-    class="h-max pb-26 lg:h-full lg:flex lg:min-h-0 lg:flex-col lg:pb-0"
->
+<div class="h-max pb-26 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pb-0">
     <!-- Body -->
     <div class="mb-4 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:p-4" use:autoscroll>
         <ReasoningCard />
@@ -64,9 +62,7 @@
                 <p>The generated template will stream here.</p>
             </div>
         {:else if generation.status === 'streaming' && !generation.body}
-            <div
-                class="flex min-h-96 flex-col items-center justify-center gap-3 text-accent"
-            >
+            <div class="flex min-h-96 flex-col items-center justify-center gap-3 text-accent">
                 <SparkleThinking class="scale-125" active />
                 <span class="text-sm">Thinking…</span>
             </div>

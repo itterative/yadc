@@ -21,11 +21,12 @@ yadc/webui/src/lib/components/dataset/
     DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
     DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
   detail/                       # Image detail (tab host + tabs)
-    ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Edit) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
+    ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Extras / Tags) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
     Caption.svelte              # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)
     RefineDialog.svelte         # Dialog for caption refinement — editable caption + feedback input, sends to model as conversation, shows result with Accept/Retry
     Preview.svelte              # Inlines the caption/template preview markup directly (the old `ui/PromptPreview.svelte` wrapper was deleted; the freed `PromptPreview` name was reused by the unrelated `prompts/GenerationPreview`).
     Extras.svelte               # Always-editable TOML editor for the image's extras_raw (ActionCard + ActionBar with Save/Cancel)
+    Tags.svelte                 # Interactive tag tab — Tag button (sync `tagImage`) → result grouped by category (rating/general/character) as toggle chips with confidence % (prune by clicking off) → save bar (mode draft/extras + format/name) → interactive `POST .../images/<id>/tags`. Reads `tagResults`/`currentlyTagging`/`taggerStatus` stores; `onTagsSaved` refreshes caption/history so Caption/Extras tabs reflect the write.
   config/                       # Dataset config editor (tab host + tabs + helpers)
     DatasetConfig.svelte        # Tab system host (Form / Advanced / History) + data fetching + save orchestration
     DatasetConfigForm.svelte    # Structured form view of the config — fields bound to `configState` Svelte 5 `$state` rune from `state.svelte.ts`
@@ -49,6 +50,13 @@ yadc/webui/src/lib/components/dataset/
     CaptionSettingsPanel.svelte   # The batch-captioning side panel. Derives isBatchCaptioning from store, shows Start/Stop button. Writes assembled options to captionActions store reactively. Fetches dataset config defaults, shows diff dots for overrides. Auto-saves overrides to `captionSettings` localStorage via `deferred()` on any field change; flushes pending save before starting captioning.
     OverridesSection.svelte       # Sub-section of the captioning panel: per-field reset/override UI for the localStorage-saved overrides
     TemplateSection.svelte        # Sub-section of the captioning panel: template dropdown + readonly `JinjaEditor` card with Edit/Delete action bar. Edit and `+` button open `EditTemplateDialog` (reused from `lib/components/templates/`); Delete uses `confirmDialog.danger(...)`. The "create new template" flow is dialog-based — no in-place editing of template content.
+```
+
+## tagging/
+
+```
+  tagging/                       # Tagger domain
+    TagSettingsPanel.svelte      # The batch-tagging side panel (mirrors caption/CaptionSettingsPanel but simpler — no env/template/concurrency). Threshold inputs (rating/general/character) with diff dots vs the canonical wd-tagger defaults + per-field reset; save-mode + draft-format + draft-name pickers; Start/Stop button. Thresholds default to null = server config (omitted from the request); the diff baseline is the canonical defaults (0.0/0.35/0.85) since the server's global tagger `Configuration` isn't exposed per-dataset. Persists to `yadc/tagSettings` localStorage. Auto-saves via `deferred()` on any field change; assembles options into the `tagOptions` store reactively.
 ```
 
 ## env/

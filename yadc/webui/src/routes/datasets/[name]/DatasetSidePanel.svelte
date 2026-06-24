@@ -1,5 +1,6 @@
 <script lang="ts">
     import CaptionSettingsPanel from '$lib/components/caption/CaptionSettingsPanel.svelte';
+    import TagSettingsPanel from '$lib/components/tagging/TagSettingsPanel.svelte';
     import DatasetConfig from '$lib/components/dataset/config/DatasetConfig.svelte';
     import ImageDetail from '$lib/components/dataset/detail/ImageDetail.svelte';
     import PillTabs from '$lib/components/ui/tabs/PillTabs.svelte';
@@ -8,7 +9,7 @@
     import type { ImageInfo } from '$lib/stores/dataset';
     import SvgClose from '$lib/icons/SvgClose.svelte';
 
-    type PanelTab = 'caption' | 'details' | 'config' | 'history';
+    type PanelTab = 'caption' | 'tags' | 'details' | 'config';
 
     interface Props {
         datasetName: string;
@@ -54,6 +55,14 @@
         {/snippet}
         <Tab id="caption" label="Caption" class="h-full overflow-y-auto">
             <CaptionSettingsPanel
+                {datasetName}
+                onclose={() => {
+                    open = false;
+                }}
+            />
+        </Tab>
+        <Tab id="tags" label="Tags" class="h-full overflow-y-auto">
+            <TagSettingsPanel
                 {datasetName}
                 onclose={() => {
                     open = false;

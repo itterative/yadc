@@ -25,6 +25,7 @@ from yadc.api.configuration import Configuration
 from yadc.api.events import ImageRefinedEvent, ShutdownEvent, StartupEvent
 from yadc.api.modules import DatasetWatcherService, EventDispatcher, LoggingFactory, Service
 from yadc.api.modules.event_dispatcher import event_handler
+from yadc.api.services.dataset_jobs import DatasetBusyError, DatasetJobService, JobClaim
 from yadc.api.services.datasets import DatasetService
 from yadc.core.captioning import (
     CaptionJobOptions,
@@ -46,15 +47,20 @@ class CaptioningService(Service):
         dataset_watcher: DatasetWatcherService,
         logging: LoggingFactory,
         configuration: Configuration,
+        dataset_jobs: DatasetJobService,
     ):
         self._dataset_service: DatasetService = dataset_service
         self._event_dispatcher: EventDispatcher = event_dispatcher
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._logger: Logger = logging.get_logger(__name__)
         self._configuration: Configuration = configuration
+        self._dataset_jobs: DatasetJobService = dataset_jobs
 
         self._async_lock: asyncio.Lock = asyncio.Lock()
         self._async_jobs: dict[str, AsyncCaptionJob] = {}
+        # Per-dataset coordinator claims, released in ``_cleanup_async``.
+        # Guarded by ``_async_lock`` alongside ``_async_jobs``.
+        self._job_claims: dict[str, JobClaim] = {}
 
         # Bounded LRU cache for dry-run refine results (key = "dataset/image_id/source_key").
         self._refine_lock: asyncio.Lock = asyncio.Lock()
@@ -168,6 +174,16 @@ class CaptioningService(Service):
             # ``set_preflight`` also seeds ``api_url``/``api_model_name``/
             # ``total``/``processed`` synchronously for the response below.
             job.set_preflight(config, to_do, skipped)
+            # Claim the dataset through the cross-service coordinator.
+            # Done after preflight so a no-op / 4xx start doesn't grab a
+            # claim it would only immediately release, and before
+            # ``job.start()`` so a failed claim (another job kind holds
+            # the dataset) surfaces as 409 without spawning a task.
+            try:
+                self._job_claims[dataset_name] = await self._dataset_jobs.try_acquire(dataset_name, "captioning", job_id)
+            except DatasetBusyError:
+                del self._async_jobs[dataset_name]
+                raise
             if refine is None:
                 self._mark_expected_changes(dataset_name, job_id)
             job.start()
@@ -254,6 +270,12 @@ class CaptioningService(Service):
         async with self._async_lock:
             job = self._async_jobs.get(dataset_name)
             job_id = (await job.snapshot()).job_id if job is not None else ""
+            # Free the dataset for other job kinds as soon as the task
+            # is done — before the status-visibility grace sleep — so a
+            # new job can start without waiting out the grace window.
+            claim = self._job_claims.pop(dataset_name, None)
+        if claim is not None:
+            await self._dataset_jobs.release(claim)
 
         await asyncio.sleep(sleep_time)
 

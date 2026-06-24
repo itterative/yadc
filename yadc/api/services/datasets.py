@@ -781,6 +781,32 @@ class DatasetService(Service):
         self._update_image_index(image_id, has_toml=bool(extras_raw.strip()))
         return True
 
+    def load_extras(self, dataset_name: str, image_id: int, *, plain: bool = False) -> dict[str, Any] | None:
+        """Load the image's TOML extras sidecar.
+
+        Returns ``None`` when the image is missing, the sidecar doesn't
+        exist, or the sidecar is unparseable.
+
+        By default (``plain=False``), returns the raw tomlkit
+        ``TOMLDocument`` so callers can mutate and round-trip through
+        :func:`tomlkit.dumps` while preserving comments and formatting on
+        untouched keys. Pass ``plain=True`` to get a plain Python dict
+        for non-round-tripping consumers (Pydantic validation, display,
+        etc.) — see :func:`yadc.utils.dict_utils.load_toml`.
+        """
+        info = self.get_image(dataset_name, image_id)
+        if info is None:
+            return None
+        toml_path = DatasetImage(path=str(Path(info.path))).toml_path
+        if not toml_path.exists():
+            return None
+        try:
+            return load_toml(toml_path.read_text(), plain=plain)
+        except Exception:  # noqa: BLE001
+            # Unparseable sidecar — return None so the caller treats it
+            # as no existing extras (write path can repair it).
+            return None
+
     # --- Dataset registration ---
 
     def import_dataset(self, name: str, toml_path: str) -> DatasetInfo:

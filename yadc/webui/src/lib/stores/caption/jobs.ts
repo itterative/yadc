@@ -1,10 +1,9 @@
 import { get, writable } from 'svelte/store';
 
-/** Job IDs of captioning operations initiated by this frontend
- *  (bounded ring). Used by the SSE ``dataset_changed`` handler to
- *  suppress ``dataset_changed`` events caused by our own captioning
- *  jobs (the backend tags the change with the job_id, and we filter
- *  it here). */
+/** Job IDs of operations (captioning, tagging, ...) initiated by this
+ *  frontend (bounded ring). Used by the SSE ``dataset_changed`` handler
+ *  to suppress ``dataset_changed`` events caused by our own jobs (the
+ *  backend tags the change with the job_id, and we filter it here). */
 const _activeJobIds = writable<string[]>([]);
 
 const MAX_ACTIVE_JOB_IDS = 16;

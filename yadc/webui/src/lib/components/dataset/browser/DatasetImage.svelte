@@ -7,7 +7,7 @@
         datasetName: string;
         item: ImageInfo;
         selected?: boolean;
-        captioning?: boolean;
+        active?: boolean;
         onclick: (item: ImageInfo) => void;
         ondblclick?: (item: ImageInfo) => void;
     }
@@ -17,7 +17,7 @@
         datasetName,
         item,
         selected = false,
-        captioning = false,
+        active = false,
         onclick,
         ondblclick
     }: Props = $props();
@@ -58,7 +58,7 @@
 <button
     class="{klazz} relative {selected
         ? 'outline-2 outline-offset-[-2px] outline-accent'
-        : ''} {captioning ? 'shimmer-accent animate-none' : ''} {flashing && !captioning
+        : ''} {active ? 'shimmer-accent animate-none' : ''} {flashing && !active
         ? 'animate-tile-flash'
         : ''}"
     onclick={() => onclick(item)}

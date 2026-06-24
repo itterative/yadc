@@ -140,7 +140,9 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `TemplateWatcherService` | `modules/` | watchdog-based watcher for `*.jinja` files, emits `TemplatesChangedEvent` with all template names |
 | `SettingsService` | `services/` | KV store over `settings` table (JSON values) |
 | `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
-| `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher` |
+| `DatasetJobService` | `services/` | Cross-service per-dataset job mutex — the single source of truth for "who holds a dataset". `try_acquire`/`release` enforce that at most one sidecar-writing job (captioning or tagging, batch or single-image) runs per dataset at a time. Raises `DatasetBusyError(ValueError → 409)` on conflict. |
+| `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher`. Acquires a dataset claim through `DatasetJobService` for each job. |
+| `TaggingService` | `services/` | ONNX tagger subprocess lifecycle (lazy spawn / idle teardown) + batch tagging jobs + single-image tag. Acquires a dataset claim through `DatasetJobService` for batch jobs and single-image tags. |
 
 ## App Lifecycle Events
 

@@ -46,9 +46,10 @@ Pure helpers used **outside** the folder stay in `lib/` proper.
 
 ### Current layout (one-liner per folder)
 
-- `lib/components/ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `SparkleThinking`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`, `ContextMenu`, `ImagePreviewDialog`.
+- `lib/components/ui/` — atomic primitives: `Dialog`, `Alert`, tabs system (`Tabs`/`Tab`/`PillTabs`/`CompactPillTabs`), `CodeMirror`, `SpinnerBlock`, `SparkleThinking`, `ToastContainer`/`ToastItem`, `Tooltip`, `FileDropZone`, `Checkbox`, `Slider` (native range input, themed via `accent-color`), `PromptPreview`, `Card`, `ActionBar`/`ActionBarItem`, `IntersectionObserverElement`, `ContextMenu`, `ImagePreviewDialog`.
 - `lib/components/dataset/` — dataset domain. Sub-folders per feature: `browser/`, `detail/`, `config/`, `upload/`, `manage/`.
 - `lib/components/caption/` — `CaptionSettingsPanel` (the batch-captioning side panel).
+- `lib/components/tagging/` — `TagSettingsPanel` (the batch-tagging side panel, mirrors `caption/CaptionSettingsPanel`).
 - `lib/components/env/` — `EnvironmentSettings` (CRUD list), `EnvSelector` (caption-flow picker).
 - `lib/components/export/` — `ExportDialog`.
 - `lib/components/settings/` — `SettingsDialog` (host) + tabs (`GeneralSettings`/`SecuritySettings`) + `CaptionOptionsFields` widget. `TemplateManager.svelte` is **marked LEGACY** — superseded by `/templates` route.
@@ -76,7 +77,7 @@ A domain gets its own sub-folder when it has ≥2 related files AND they all ser
 
 ### Current layout
 
-- 5 domain sub-folders: `dataset/` (4 files), `caption/` (9 files), `config/` (3 files), `env/` (3 files), `templates/` (4 files).
+- 6 domain sub-folders: `dataset/` (4 files), `caption/` (9 files), `tagging/` (9 files), `config/` (3 files), `env/` (3 files), `templates/` (4 files).
 - 7 top-level singletons: `events.ts`, `toasts.ts`, `confirm.ts`, `passwordPrompt.ts`, `sessionPassword.ts`, `settings.ts`, `topbar.svelte.ts`, `storageStore.ts`.
 
 Full per-file summary in `frontend/stores.md`.

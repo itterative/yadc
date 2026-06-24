@@ -72,7 +72,7 @@ def _make_job(runner: AsyncCaptionJobRunner, *, max_concurrent: int = 1) -> Asyn
 
 
 @pytest.fixture
-def captioning_service(test_configuration, logging_factory, tmp_path):
+def captioning_service(test_configuration, logging_factory, tmp_path, dataset_jobs):
     """CaptioningService with all DI collaborators mocked.
 
     Writes an empty config file under ``tmp_path`` and wires
@@ -92,6 +92,7 @@ def captioning_service(test_configuration, logging_factory, tmp_path):
         dataset_watcher=MagicMock(),
         logging=logging_factory,
         configuration=test_configuration,
+        dataset_jobs=dataset_jobs,
     )
 
 
@@ -764,7 +765,7 @@ class TestCaptioningServiceStartup:
     """
 
     @pytest.mark.asyncio
-    async def test_startup_starts_cleanup_task(self, test_configuration, logging_factory):
+    async def test_startup_starts_cleanup_task(self, test_configuration, logging_factory, dataset_jobs):
         """Dispatching StartupEvent with a running loop should start the periodic cleanup task."""
         event_dispatcher = EventDispatcher(logging_factory)
         event_dispatcher.set_loop(asyncio.get_running_loop())
@@ -777,6 +778,7 @@ class TestCaptioningServiceStartup:
             dataset_watcher=mock_watcher,
             logging=logging_factory,
             configuration=test_configuration,
+            dataset_jobs=dataset_jobs,
         )
         assert svc._cleanup_task is None
 

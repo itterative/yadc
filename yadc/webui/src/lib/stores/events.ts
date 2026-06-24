@@ -28,6 +28,14 @@ import {
     setImageRefined
 } from '$lib/stores/caption';
 import { addPendingDatasetChange } from '$lib/stores/dataset';
+import {
+    addCurrentlyTagging,
+    clearCurrentlyTagging,
+    dispatchImageTagged,
+    removeCurrentlyTagging,
+    setTaggerStatus,
+    setTaggingStatus
+} from '$lib/stores/tagging';
 import { refreshEnvs } from '$lib/stores/env';
 import { refreshTemplates } from '$lib/stores/templates';
 import { writable, readonly, type Readable } from 'svelte/store';
@@ -120,6 +128,52 @@ export const TemplatesChangedEventZ = z.object({
     templates: z.array(z.string())
 });
 
+// --- Tagger SSE schemas ---
+
+export const TaggerStatusEventZ = z.object({
+    state: z.enum(['starting', 'ready', 'stopping', 'stopped', 'failed']),
+    source: z.string().default(''),
+    error: z.string().nullable().default(null)
+});
+
+export const ImageTagStartedEventZ = z.object({
+    dataset_name: z.string(),
+    job_id: z.string(),
+    image_id: z.number(),
+    file_name: z.string()
+});
+
+export const ImageTaggedEventZ = z.object({
+    dataset_name: z.string(),
+    image_id: z.number(),
+    file_name: z.string(),
+    path: z.string(),
+    tags: z.record(z.string(), z.number()),
+    categories: z.record(z.string(), z.array(z.string())),
+    source: z.string().default(''),
+    duration_ms: z.number().default(0)
+});
+
+export const ImageTagErrorEventZ = z.object({
+    dataset_name: z.string(),
+    image_id: z.number(),
+    error: z.string(),
+    source: z.string().default(''),
+    duration_ms: z.number().default(0)
+});
+
+export const TagJobStatusEventZ = z.object({
+    status: z.enum(['idle', 'running', 'stopping', 'error', 'done', 'cancelled']),
+    dataset_name: z.string(),
+    processed: z.number(),
+    total: z.number(),
+    errors: z.number(),
+    job_id: z.string().default(''),
+    error: z.string().nullable().default(null),
+    source: z.string().default(''),
+    elapsed: z.number().default(0)
+});
+
 // --- Types ---
 
 export type CaptioningStatus = z.infer<typeof CaptioningStatusZ>;
@@ -129,6 +183,11 @@ export type ImageCaptionErrorEvent = z.infer<typeof ImageCaptionErrorEventZ>;
 export type ImageCaptionStartedEvent = z.infer<typeof ImageCaptionStartedEventZ>;
 export type EnvironmentsChangedEvent = z.infer<typeof EnvironmentsChangedEventZ>;
 export type TemplatesChangedEvent = z.infer<typeof TemplatesChangedEventZ>;
+export type TaggerStatusEvent = z.infer<typeof TaggerStatusEventZ>;
+export type ImageTaggedEvent = z.infer<typeof ImageTaggedEventZ>;
+export type ImageTagStartedEvent = z.infer<typeof ImageTagStartedEventZ>;
+export type ImageTagErrorEvent = z.infer<typeof ImageTagErrorEventZ>;
+export type TagJobStatusEvent = z.infer<typeof TagJobStatusEventZ>;
 export type ImageRefinedEvent = z.infer<typeof ImageRefinedEventZ>;
 
 // --- Internal writable stores (pure event mirrors) ---
@@ -267,6 +326,58 @@ function connect() {
 
     _eventSource.listen('templates_changed', TemplatesChangedEventZ, () => {
         refreshTemplates();
+    });
+
+    // --- Tagger events ---
+
+    _eventSource.listen('tagger_status', TaggerStatusEventZ, (data) => {
+        setTaggerStatus({
+            state: data.state,
+            source: data.source,
+            error: data.error
+        });
+    });
+
+    _eventSource.listen('image_tag_started', ImageTagStartedEventZ, (data) => {
+        addCurrentlyTagging(data.dataset_name, data.image_id);
+    });
+
+    _eventSource.listen('image_tagged', ImageTaggedEventZ, (data) => {
+        dispatchImageTagged(data.dataset_name, data.image_id, {
+            tags: data.tags,
+            categories: data.categories
+        });
+        removeCurrentlyTagging(data.dataset_name, data.image_id);
+    });
+
+    _eventSource.listen('image_tag_error', ImageTagErrorEventZ, (data) => {
+        removeCurrentlyTagging(data.dataset_name, data.image_id);
+    });
+
+    _eventSource.listen('tag_job_status', TagJobStatusEventZ, (data) => {
+        setTaggingStatus({
+            status: data.status,
+            dataset_name: data.dataset_name,
+            job_id: data.job_id,
+            processed: data.processed,
+            total: data.total,
+            errors: data.errors,
+            error: data.error,
+            error_messages: [],
+            source: data.source,
+            elapsed: data.elapsed
+        });
+        // Clear in-flight entries for the dataset when the job reaches a
+        // terminal state (catches cancelled images whose per-image events
+        // were never delivered).
+        if (
+            data.status === 'done' ||
+            data.status === 'error' ||
+            data.status === 'cancelled' ||
+            data.status === 'idle'
+        ) {
+            clearCurrentlyTagging(data.dataset_name);
+        }
     });
 
     // Let the browser handle reconnection automatically.  The server sends a

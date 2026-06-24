@@ -3,6 +3,7 @@
 from .captioning import CaptioningService
 from .config_history import ConfigHistoryService
 from .config_history_repository import ConfigHistoryRepository
+from .dataset_jobs import DatasetBusyError, DatasetJobService, JobClaim, JobKind
 from .dataset_loader import DatasetLoader
 from .dataset_repository import DatasetRepository
 from .dataset_scanner import DatasetScanner
@@ -20,15 +21,21 @@ from .prompt_history import (
 from .prompt_history_repository import PromptExample, PromptHistoryEntry, PromptHistoryRepository
 from .settings import SettingsService
 from .settings_repository import SettingsRepository
+from .tagging import TaggingService
 
 __all__ = [
     "CaptioningService",
+    "TaggingService",
     "ConfigHistoryRepository",
     "ConfigHistoryService",
     "DatasetLoader",
     "DatasetRepository",
     "DatasetScanner",
     "DatasetService",
+    "DatasetBusyError",
+    "DatasetJobService",
+    "JobClaim",
+    "JobKind",
     "DatasetUploadResult",
     "DatasetUploadService",
     "ExamplePair",

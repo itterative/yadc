@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createTabsState, setTabsContext } from './TabsContext.svelte';
+    import TabScroller from './TabScroller.svelte';
 
     interface Props {
         class?: string;
@@ -35,14 +36,14 @@
 <div class="flex flex-col {className}">
     <!-- Segmented control header -->
     {#if !(hideSingle && state.tabs.length <= 1)}
-        <div class="flex shrink-0 items-center gap-1 rounded-lg bg-gray-800/50 p-1" role="tablist">
+        <TabScroller class="relative shrink-0 overflow-hidden rounded-lg bg-gray-800/50 p-1">
             {#each state.tabs as t, i (t.id)}
                 {@const isActive = state.activeIndex === i}
                 <button
                     type="button"
                     role="tab"
                     aria-selected={isActive}
-                    class="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {isActive
+                    class="flex cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors max-md:shrink-0 md:flex-1 {isActive
                         ? 'bg-surface text-white shadow-sm'
                         : 'text-gray-400 hover:text-gray-200'}"
                     onclick={() => state.setActiveIndex(i)}
@@ -54,7 +55,7 @@
                     {t.label}
                 </button>
             {/each}
-        </div>
+        </TabScroller>
     {/if}
 
     <!-- Tab content -->

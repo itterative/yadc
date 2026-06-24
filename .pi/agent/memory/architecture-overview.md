@@ -27,6 +27,7 @@ Yet Another Dataset Captioner — a CLI tool for captioning image datasets using
 - `yadc-config-v2` — v2 dataset config format + strict/relaxed validation
 - `cli-cmd-structure` — Click CLI vs `cmd/` pure-logic split
 - `captioning-workflow` — end-to-end captioning flow
+- `dataset-job-coordinator-plan` — `DatasetJobService` cross-service per-dataset job mutex (captioning vs tagging)
 - `captioning-runner` — shared captioning runner (CLI + API)
 - `export-system` — export backends + format
 - `debug-api-logging` — `YADC_DEBUG_CAPTION_RESPONSES=1` debug logging

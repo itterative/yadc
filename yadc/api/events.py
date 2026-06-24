@@ -190,3 +190,101 @@ class ImageCaptionErrorEvent(SSEEvent):
     duration_ms: int = 0
     api_url: str = ""
     api_model_name: str = ""
+
+
+@dataclass
+class TaggerStatusEvent(SSEEvent):
+    """Lifecycle of the tagger subprocess.
+
+    Fired when the subprocess transitions state so the frontend can
+    surface a status indicator (e.g. "tagger warming up" during
+    lazy spawn, "tagger stopped" after idle teardown).
+
+    ``source`` describes where the model came from: ``"hf:<repo_id>"``
+    for HuggingFace Hub downloads, ``"local:<path>"`` for local files,
+    ``""`` when no model is configured.
+    """
+
+    TYPE: ClassVar[str] = "tagger_status"
+    state: Literal["starting", "ready", "stopping", "stopped", "failed"]
+    source: str = ""
+    error: str | None = None
+
+
+@dataclass
+class ImageTagStartedEvent(SSEEvent):
+    """Per-image start signal from the tagger batch runner.
+
+    Mirrors :class:`ImageCaptionStartedEvent` so the frontend can add the
+    tile to its in-flight set (and drive the shimmer indicator) before the
+    result arrives via :class:`ImageTaggedEvent`.
+    """
+
+    TYPE: ClassVar[str] = "image_tag_started"
+    dataset_name: str
+    job_id: str
+    image_id: int
+    file_name: str
+
+
+@dataclass
+class ImageTaggedEvent(SSEEvent):
+    """Per-image success from the tagger endpoint.
+
+    Carries the *thresholded* tag result so other tabs / clients that
+    didn't initiate the request see the same view the requester sees.
+    For SmilingWolf-style models, ``tags`` is ``{tag: score}`` and
+    ``categories`` groups tags by category (e.g.
+    ``{"rating": [...], "general": [...], "character": [...]}``).
+    """
+
+    TYPE: ClassVar[str] = "image_tagged"
+    dataset_name: str
+    image_id: int
+    file_name: str
+    path: str
+    tags: dict[str, float]
+    categories: dict[str, list[str]]
+    source: str = ""
+    duration_ms: int = 0
+
+
+@dataclass
+class ImageTagErrorEvent(SSEEvent):
+    """Per-image failure from the tagger endpoint.
+
+    Dispatched when the subprocess is reached but the tag call
+    itself fails (model inference error, subprocess crash, etc.).
+    404 ``FileNotFoundError`` from the controller is not surfaced
+    here — the HTTP response carries that.
+    """
+
+    TYPE: ClassVar[str] = "image_tag_error"
+    dataset_name: str
+    image_id: int
+    error: str
+    source: str = ""
+    duration_ms: int = 0
+
+
+@dataclass
+class TagJobStatusEvent(SSEEvent):
+    """Progress snapshot for a batch tagging job.
+
+    Mirrors :class:`CaptioningStatusEvent` for the tagger so the
+    frontend can drive a progress bar from a single streamed event.
+    Per-image success / failure still arrive via
+    :class:`ImageTaggedEvent` / :class:`ImageTagErrorEvent`; this event
+    carries the aggregate counts.
+    """
+
+    TYPE: ClassVar[str] = "tag_job_status"
+    status: Literal["idle", "running", "stopping", "error", "done", "cancelled"]
+    dataset_name: str
+    processed: int
+    total: int
+    errors: int
+    job_id: str = ""
+    error: str | None = None
+    source: str = ""
+    elapsed: float = 0.0

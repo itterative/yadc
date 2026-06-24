@@ -2,7 +2,7 @@
 
 import click
 
-from . import cli_cache, cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_prompts, cli_templates, cli_webui
+from . import cli_cache, cli_caption, cli_configs, cli_draft, cli_envs, cli_export, cli_logging, cli_prompts, cli_tagger, cli_templates, cli_webui
 
 
 @click.group(
@@ -19,6 +19,7 @@ cli.add_command(cli_cache.cache)
 cli.add_command(cli_caption.caption)
 cli.add_command(cli_draft.draft)
 cli.add_command(cli_export.export)
+cli.add_command(cli_tagger.tagger)
 cli.add_command(cli_envs.envs)
 cli.add_command(cli_configs.configs)
 cli.add_command(cli_prompts.prompts)

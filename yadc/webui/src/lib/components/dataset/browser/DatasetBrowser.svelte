@@ -12,9 +12,10 @@
         isLoading: boolean;
         isLoadingMore: boolean;
         selectedId?: number | null;
-        /** IDs of images currently being captioned (in this dataset).
-         *  Under ``max_concurrent > 1`` this can hold multiple IDs. */
-        captioningIds?: ReadonlySet<number>;
+        /** IDs of images currently being processed in this dataset
+         *  (captioning or tagging). Under ``max_concurrent > 1`` captioning
+         *  can contribute multiple ids. Drives the tile shimmer. */
+        activeIds?: ReadonlySet<number>;
         onclick: (item: ImageInfo) => void;
         ondblclick?: (item: ImageInfo) => void;
         onendreached: () => void;
@@ -27,7 +28,7 @@
         isLoading,
         isLoadingMore,
         selectedId = null,
-        captioningIds = new Set<number>(),
+        activeIds = new Set<number>(),
         onclick,
         ondblclick,
         onendreached
@@ -149,7 +150,7 @@
                         {datasetName}
                         {item}
                         selected={item.id === selectedId}
-                        captioning={captioningIds.has(item.id)}
+                        active={activeIds.has(item.id)}
                         onclick={() => onclick(item)}
                         ondblclick={ondblclick ? () => ondblclick(item) : undefined}
                     />

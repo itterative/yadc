@@ -1,12 +1,14 @@
 ---
 name: frontend/stores
-description: Frontend lib/stores/ — 5 domain sub-folders (dataset, caption, config, env, templates) + 7 top-level singletons (events, toasts, confirm, password, etc.).
+description: Frontend lib/stores/ — 6 domain sub-folders (dataset, caption, tagging, config, env, templates) + 7 top-level singletons (events, toasts, confirm, password, etc.).
 category: architecture
 ---
 
 # Frontend: `lib/stores/`
 
 5 domain sub-folders (each with a re-exporting `index.ts` so callers import from `$lib/stores/<domain>`) + 7 top-level singletons. The organization rules (when to introduce a sub-folder) are in `frontend-architecture`.
+
+`tagging/` is the newest domain — mirrors `caption/` (role-based) but for the tagger subsystem. Backed by `docs/tagger-architecture.md`.
 
 ## See also (in `.pi/agent/memory/docs/`)
 
@@ -36,6 +38,16 @@ yadc/webui/src/lib/stores/
     jobs.ts                      # _activeJobIds (bounded ring) + registerJobId + isOwnJobId. Used by the SSE `dataset_changed` handler to suppress events caused by our own jobs.
     refined.ts                   # imageRefined store + setImageRefined + consumeImageRefined (multi-key match by imageId/source/draftName)
     timing.ts                    # captionTimingRing (per-API+model, persisted to localStorage, cap=32 samples) + recordCaptionTiming
+  tagging/                       # Tagger domain — mirrors caption/ (role-based). Backed by the tagger subsystem (see `docs/tagger-architecture.md`).
+    index.ts                     # Re-exports for `$lib/stores/tagging`
+    types.ts                     # TaggerResult / TagJobInfo / TagSaveOptions / TaggerStatus + the 4 SSE event shapes + DEFAULT_SAVE
+    api.ts                       # tagImage (sync single-image), startTagJob / stopTagJob / fetchTagJobStatus (batch job), saveImageTags (interactive prune save). No `withPasswordRetry` — tagger endpoints don't require a password.
+    actions.ts                   # tagOptions (assembled) + tagSingleImage (sync, caches result + tracks inflight) + startBatchTagging (optimistic seed) + stopTagging (toast on fail) + saveImageTagsAction (defaults to persisted settings)
+    settings.ts                  # tagSettings storable (`yadc/tagSettings`, $version 1): threshold overrides (null=server default) + saveMode/draftName/draftFormat. CANONICAL_THRESHOLDS constant (wd-tagger 0.0/0.35/0.85) is the diff-dot baseline.
+    status.ts                    # taggingStatuses store (per-dataset Map) + setTaggingStatus/resetTaggingStatus — mirrors caption/status.ts
+    inflight.ts                  # currentlyTagging (per-image set) — mirrors caption/inflight.ts
+    taggerStatus.ts              # taggerStatus (single global subprocess-lifecycle slot) + setTaggerStatus. Display-only; configured-ness isn't observable pre-spawn, so the UI never gates on it — any error (incl. 503 not-configured) surfaces as a toast.
+    results.ts                   # tagResults (last TaggerResult per `dataset:image`, fed by both the sync tag response and the batch `image_tagged` SSE) + setTagResult/getTagResult/clearTagResult
   config/                        # Config domain — types + API split
     index.ts                     # Re-exports for `$lib/stores/config`
     types.ts                     # Config + ConfigApi/ConfigPrompt/ConfigSettings/ConfigReasoning/ConfigDatasetEntry + DatasetConfig/Detail + ExportBackend/Result + ConfigHistoryEntry

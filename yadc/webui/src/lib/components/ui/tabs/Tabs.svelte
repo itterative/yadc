@@ -2,6 +2,7 @@
     import type { Snippet } from 'svelte';
     import { createTabsState, setTabsContext } from './TabsContext.svelte';
     import type { TabItem } from './TabsContext.svelte';
+    import TabScroller from './TabScroller.svelte';
 
     interface Props {
         class?: string;
@@ -40,9 +41,8 @@
 
 <div class="flex flex-col {className}">
     {#if !(hideSingle && state.tabs.length <= 1)}
-        <div class="flex items-center border-b border-border px-2 py-2" role="tablist">
-            <div class="flex-1"></div>
-            <div class="flex flex-wrap justify-center gap-1">
+        <div class="relative flex items-center border-b border-border">
+            <TabScroller class="flex-1 px-2 py-2">
                 {#each state.tabs as t, i (t.id)}
                     {@const isActive = state.activeIndex === i}
                     {#if tab}
@@ -59,12 +59,12 @@
                         </button>
                     {/if}
                 {/each}
-            </div>
-            <div class="flex flex-1 justify-end">
-                {#if end}
+            </TabScroller>
+            {#if end}
+                <div class="flex shrink-0 items-center py-2 pr-2">
                     {@render end()}
-                {/if}
-            </div>
+                </div>
+            {/if}
         </div>
     {/if}
 

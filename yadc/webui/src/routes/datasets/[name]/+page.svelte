@@ -26,6 +26,12 @@
         mediaUrl
     } from '$lib/stores/dataset';
     import {
+        currentlyTagging,
+        fetchTagJobStatus,
+        setTaggingStatus,
+        taggingStatuses
+    } from '$lib/stores/tagging';
+    import {
         resumptionFailed,
         clearResumptionFailed,
         lastCaptionedImage,
@@ -80,14 +86,19 @@
             captionStatus?.status === 'stopping'
     );
 
-    // IDs of the images currently being captioned in this dataset
-    // (for pulsing animation).  Under ``max_concurrent > 1`` this can
-    // hold more than one entry.  Filtered to the current dataset so
-    // a different dataset's in-flight images don't bleed into the
-    // shimmer indicator.
-    let captioningImageIds = $derived.by(() => {
+    // IDs of images currently being processed in this dataset (captioning
+    // or tagging) — drives the shimmer on their tiles. Captioning under
+    // ``max_concurrent > 1`` can contribute multiple ids; tagging adds at
+    // most one. Filtered to the current dataset so another dataset's
+    // in-flight images don't bleed into the shimmer indicator.
+    let activeImageIds = $derived.by(() => {
         const ids = new SvelteSet<number>();
         for (const entry of $currentlyCaptioning) {
+            if (entry.dataset_name === datasetName) {
+                ids.add(entry.image_id);
+            }
+        }
+        for (const entry of $currentlyTagging) {
             if (entry.dataset_name === datasetName) {
                 ids.add(entry.image_id);
             }
@@ -95,22 +106,13 @@
         return ids;
     });
 
-    let isStopping = $derived(captionStatus?.status === 'stopping');
-
-    let captionPct = $derived(
-        captionStatus && captionStatus.total > 0
-            ? Math.round((captionStatus.processed / captionStatus.total) * 100)
-            : 0
-    );
+    let canUpload = $derived.by(() => currentDataset?.source === 'upload' && !isBatchCaptioning);
 
     // --- Drop-to-upload state (page-level) ---
 
     // Files captured by a drop event, used to pre-populate AddFilesDialog.
     let droppedFiles: File[] = $state([]);
     let addFilesDialogOpen = $state(false);
-
-    // Whether uploads are allowed for the current dataset state.
-    let canUpload = $derived.by(() => currentDataset?.source === 'upload' && !isBatchCaptioning);
 
     // Why uploads are blocked (drives the warning overlay text).
     let uploadBlockedReason = $derived.by(() => {
@@ -294,6 +296,21 @@
                     !get(captioningStatuses).has(name)
                 ) {
                     setCaptioningStatus(status);
+                }
+            } catch {
+                /* ignore — SSE will eventually provide status */
+            }
+        })();
+        // Same cold-load seed for tagging: handle mid-tag page loads.
+        (async () => {
+            try {
+                const status = await fetchTagJobStatus(name, abort.signal);
+                if (
+                    status.dataset_name === name &&
+                    status.status !== 'idle' &&
+                    !get(taggingStatuses).has(name)
+                ) {
+                    setTaggingStatus(status);
                 }
             } catch {
                 /* ignore — SSE will eventually provide status */
@@ -548,12 +565,6 @@
 <DatasetTopbar
     {datasetName}
     {currentDataset}
-    {isBatchCaptioning}
-    {isStopping}
-    {captionPct}
-    captionProcessed={captionStatus?.processed ?? 0}
-    captionTotal={captionStatus?.total ?? 0}
-    {captionStatus}
     {isRefreshing}
     {canUpload}
     onrefresh={handleManualRefresh}
@@ -604,7 +615,7 @@
                     {isLoading}
                     {isLoadingMore}
                     selectedId={focusedItem?.id ?? null}
-                    captioningIds={captioningImageIds}
+                    activeIds={activeImageIds}
                     onclick={handleItemClick}
                     ondblclick={handleItemDblClick}
                     onendreached={loadMore}

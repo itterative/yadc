@@ -26,9 +26,23 @@ dependencies = [
     "tomlkit>=0.15.0",
     "cryptography>=46.0.1",
     "stream-zip>=0.0.84",
+    "numpy>=2.0.0",
+    "onnxruntime>=1.20.0",
+    "huggingface-hub>=1.21.0",
 ]
 
 [project.optional-dependencies]
+gpu = [
+    "onnxruntime-gpu>=1.20.0",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.29.1",
+    "ruff>=0.15.13",
+    { include-group = "test" },
+]
+
 test = [
     "keyrings-alt>=5.0.2",
     "mock>=5.2.0",
@@ -38,9 +52,6 @@ test = [
     "pytest-timeout>=2.4.0",
     "pytest-env>=1.1.5",
     "requests-mock>=1.12.1",
-]
-dev = [
-    "basedpyright>=1.29.1",
 ]
 
 [project.scripts]
@@ -86,9 +97,4 @@ addopts = "-m 'not integration_test'"
 env_files = ".env"
 markers = [
     "integration_test: marks tests as integration tests (slow, disabled by default)",
-]
-
-[dependency-groups]
-dev = [
-    "ruff>=0.15.13",
 ]
