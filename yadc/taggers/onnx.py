@@ -42,11 +42,6 @@ DEFAULT_CATEGORY_NAMES: dict[int, str] = {
     CATEGORY_CHARACTER: "character",
 }
 
-try:
-    import onnxruntime as ort
-except ImportError:  # pragma: no cover
-    ort = None  # type: ignore[assignment,misc]
-
 
 def _load_labels_csv(path: Path) -> tuple[list[str], dict[str, list[str]]]:
     """Load a SmilingWolf-style ``selected_tags.csv`` and split it into categories.
@@ -142,9 +137,6 @@ class OnnxTagger(Tagger):
 
     @override
     def load_model(self, model_path: str, **kwargs: Any) -> None:  # noqa: ANN401
-        if ort is None:
-            raise ImportError("onnxruntime is required for OnnxTagger (pip install onnxruntime-gpu)")
-
         # If a HuggingFace repo is configured, download the model and
         # label file from it and use the cached paths. Done before
         # touching onnxruntime so a download failure surfaces a
@@ -164,7 +156,11 @@ class OnnxTagger(Tagger):
             self._labels, self._categories = load_labels(downloaded_label)
 
         # Build the ONNX session (extracted into a helper so tests
-        # can mock just this step).
+        # can mock just this step). ``onnxruntime`` is imported lazily
+        # here so the main API process — which imports this module to
+        # reference :class:`OnnxTagger` and ``apply_thresholds`` but
+        # never builds a session itself — doesn't pay the import cost
+        # (and the dependency) until the worker process actually needs it.
         self._create_session(model_path, **kwargs)
 
         # Load labels from a local file (only when we didn't already
@@ -173,9 +169,17 @@ class OnnxTagger(Tagger):
             self._labels, self._categories = load_labels(self._label_path)
 
     def _create_session(self, model_path: str, **kwargs: Any) -> None:  # noqa: ANN401
-        """Build the ONNX InferenceSession. Extracted so tests can mock the ORT call."""
-        if ort is None:
-            raise ImportError("onnxruntime is required for OnnxTagger (pip install onnxruntime-gpu)")
+        """Build the ONNX InferenceSession. Extracted so tests can mock the ORT call.
+
+        ``onnxruntime`` is imported lazily so the module can be imported
+        in the main API process (e.g. to reference :class:`OnnxTagger`
+        or ``apply_thresholds``) without paying the dependency cost;
+        only the worker that actually runs inference needs the package.
+        """
+        try:
+            import onnxruntime as ort
+        except ImportError as exc:
+            raise ImportError("onnxruntime is required for OnnxTagger (pip install onnxruntime-gpu)") from exc
 
         # Determine execution provider — GPU preferred.
         providers: list[str] = []
