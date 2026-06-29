@@ -19,6 +19,7 @@
     import { toast } from '$lib/stores/toasts';
     import { setAbortContext } from '$lib/abort';
     import { captioningStatuses } from '$lib/stores/caption';
+    import { taggingStatuses } from '$lib/stores/tagging';
     import { resumptionFailed } from '$lib/stores/events';
     import { sendNotification } from '$lib/notifications';
     import { settingsDialog } from '$lib/stores/settings';
@@ -110,6 +111,50 @@
         // Reassigning (rather than mutating) drops entries for datasets whose
         // status was evicted, keeping this map from growing unbounded.
         prevActiveByDataset = nextActive;
+    });
+
+    // Global browser notifications for tagging completion. Mirrors the
+    // captioning effect above. Especially important for all-cache-hit
+    // batches: the model isn't actually running, so the per-tile
+    // shimmer never appears and a user on another tab would otherwise
+    // have no visible signal that the action took effect.
+    let prevTaggingActiveByDataset: Record<string, boolean> = {};
+    $effect(() => {
+        const statuses = $taggingStatuses;
+        const nextActive: Record<string, boolean> = {};
+        for (const [name, s] of statuses) {
+            const isActive = s.status === 'running';
+            nextActive[name] = isActive;
+            const wasActive = prevTaggingActiveByDataset[name] ?? false;
+            if (wasActive && !isActive) {
+                if (s.status === 'cancelled') {
+                    sendNotification({
+                        title: `Tagging cancelled: ${name}`,
+                        body: `${s.processed}/${s.total} processed before stop`,
+                        tag: `tag-${name}`
+                    });
+                } else if (s.status === 'error') {
+                    sendNotification({
+                        title: `Tagging failed: ${name}`,
+                        body: s.error ?? 'Unknown error',
+                        tag: `tag-${name}`
+                    });
+                } else if (s.errors > 0) {
+                    sendNotification({
+                        title: `Tagging complete with errors: ${name}`,
+                        body: `${s.processed}/${s.total} done, ${s.errors} errors`,
+                        tag: `tag-${name}`
+                    });
+                } else {
+                    sendNotification({
+                        title: `Tagging complete: ${name}`,
+                        body: `${s.processed}/${s.total} images tagged`,
+                        tag: `tag-${name}`
+                    });
+                }
+            }
+        }
+        prevTaggingActiveByDataset = nextActive;
     });
 </script>
 

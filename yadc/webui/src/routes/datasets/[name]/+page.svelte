@@ -28,6 +28,7 @@
     import {
         currentlyTagging,
         fetchTagJobStatus,
+        lastStartedTagJobId,
         setTaggingStatus,
         taggingStatuses
     } from '$lib/stores/tagging';
@@ -85,6 +86,10 @@
             captionStatus?.status === 'running' ||
             captionStatus?.status === 'stopping'
     );
+
+    // Per-dataset tagging status (mirrors ``captionStatus``). Drives
+    // the batch progress bar and the completion-toast effect below.
+    let tagStatus = $derived($taggingStatuses.get(datasetName));
 
     // IDs of images currently being processed in this dataset (captioning
     // or tagging) — drives the shimmer on their tiles. Captioning under
@@ -154,6 +159,27 @@
         // does not re-trigger the toast.
         lastStartedJobId.set('');
         handleCaptioningDone();
+    });
+
+    // Fire a toast when the tagging job we started reaches a terminal
+    // state. Tracking by job_id (mirrors the captioning effect above)
+    // avoids racing with stale jobs on page load. All-cache-hit batches
+    // complete in microseconds, so this is the only visible signal the
+    // user gets that the action took effect — without it the UI
+    // silently flips from 'running' to 'done' with no acknowledgement.
+    $effect(() => {
+        const s = tagStatus;
+        if (!s) {
+            return;
+        }
+        if (s.status !== 'error' && s.status !== 'done' && s.status !== 'cancelled') {
+            return;
+        }
+        if (s.job_id !== $lastStartedTagJobId) {
+            return;
+        }
+        lastStartedTagJobId.set('');
+        handleTaggingDone();
     });
 
     // --- Filesystem watcher state ---
@@ -468,6 +494,58 @@
                 `Captioning finished with ${status.errors} error${status.errors === 1 ? '' : 's'} (${status.processed}/${status.total} processed)`,
                 { details }
             );
+        }
+    }
+
+    function handleTaggingDone() {
+        const status = get(taggingStatuses).get(datasetName);
+        if (!status) {
+            return;
+        }
+
+        // Refresh the dataset list so any tag-derived metadata (e.g.
+        // tagged counts on the dataset card) stays current. The image
+        // grid doesn't show per-tile tag data, so we don't reload
+        // individual images — per-image tag refresh happens on focus
+        // via ``fetchCachedTagResult`` (Tags tab) and via the dataset
+        // metadata refresh here.
+        if (browser && datasetName && (status.processed > 0 || status.errors > 0)) {
+            (async () => {
+                try {
+                    datasets = await fetchDatasets(abort.signal);
+                } catch {
+                    /* ignore */
+                }
+            })();
+        }
+
+        if (status.status === 'cancelled') {
+            toast.info(`Tagging cancelled (${status.processed}/${status.total} processed)`);
+        } else if (status.status === 'error') {
+            const details =
+                status.error_messages.length > 0
+                    ? status.error_messages
+                    : [status.error ?? 'Unknown error'];
+            toast.error('Tagging failed', { details });
+        } else if (status.errors > 0) {
+            const details = status.error_messages.slice(0, 2);
+            toast.warning(
+                `Tagging finished with ${status.errors} error${status.errors === 1 ? '' : 's'} (${status.processed}/${status.total} processed)`,
+                { details }
+            );
+        } else if (status.total > 0) {
+            // Clean 'done' — mirror captioning's silence for cold
+            // batches, but toast when the job finished fast enough
+            // that the progress bar didn't have time to register
+            // motion (all-cache-hit). Without this, an instant-finish
+            // run flips the UI from 'running' to 'done' with no
+            // acknowledgement; the browser notification covers the
+            // background-tab case, the in-page toast covers the
+            // foreground case (and users without notification
+            // permission).
+            if (status.elapsed < 1.0) {
+                toast.info(`Tagged ${status.processed} image${status.processed === 1 ? '' : 's'}`);
+            }
         }
     }
 

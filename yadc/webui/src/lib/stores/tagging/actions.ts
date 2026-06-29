@@ -29,6 +29,11 @@ export interface TagOptions {
 
 export const tagOptions: Writable<TagOptions> = writable({});
 
+/** Job ID of the last tagging job started by this tab. Used by
+ *  +page.svelte to fire completion toasts only for jobs this tab
+ *  started, not for stale jobs on page load. */
+export const lastStartedTagJobId: Writable<string> = writable('');
+
 // --- Actions ---
 
 /** Tag a single image synchronously and return the result. Used by the
@@ -95,6 +100,11 @@ export async function startBatchTagging(datasetName: string): Promise<string> {
         // tagging writes are suppressed on this tab (the backend tags the
         // watcher events with the job_id via expect_changes).
         registerJobId(info.job_id);
+        // Track for the page-level completion-toast effect (mirrors
+        // captioning's ``lastStartedJobId``). The +page.svelte effect
+        // matches this id against incoming ``tag_job_status`` events and
+        // fires a toast when the job reaches a terminal state.
+        lastStartedTagJobId.set(info.job_id);
         return info.job_id;
     } catch (e) {
         resetTaggingStatus(datasetName);
