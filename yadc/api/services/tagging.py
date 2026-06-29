@@ -53,7 +53,7 @@ from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags
 from yadc.taggers.base import tamer_result_size
 from yadc.taggers.client import TaggerClient
 from yadc.taggers.postprocessing import replace_underscores as replace_underscores_in
-from yadc.utils import MemoryLRU
+from yadc.utils import MemoryLRU, size_units
 
 # How often the idle-check job wakes up. Worst-case shutdown latency
 # after the timeout elapses is one interval (e.g. 30s for a 15min
@@ -1176,12 +1176,27 @@ class TaggingService(Service):
         """Background task: iterate images, tag each, optionally save, emit status."""
         state.started_at = time.monotonic()
         await self._emit_tag_status(dataset_name, state)
+        self._logger.info(
+            "Tagger job starting. [dataset=%s, job_id=%s, images=%d, save_mode=%s]",
+            dataset_name,
+            state.job_id,
+            len(images),
+            state.save.mode,
+        )
 
         try:
             for image_info in images:
                 if state.stop_event.is_set():
                     break
 
+                self._logger.debug(
+                    "Tagger processing image. [dataset=%s, job_id=%s, image_id=%d, file_name=%s]",
+                    dataset_name,
+                    state.job_id,
+                    image_info.id,
+                    image_info.file_name,
+                )
+                image_start = time.monotonic()
                 try:
                     result = await self.tag_image(
                         dataset_name,
@@ -1199,11 +1214,27 @@ class TaggingService(Service):
                             # Saving is best-effort per image — a failed write
                             # shouldn't abort the run.
                             self._logger.exception("Failed to save tags for image. [dataset=%s, image_id=%s]", dataset_name, image_info.id)
-                except Exception:
+                except Exception as exc:
+                    self._logger.debug(
+                        "Tagger image failed. [dataset=%s, job_id=%s, image_id=%d, error=%s]",
+                        dataset_name,
+                        state.job_id,
+                        image_info.id,
+                        exc,
+                    )
                     async with state.lock:
                         state.errors += 1
-                        state.error_messages.append(f"image {image_info.id}: tag failed")
+                        state.error_messages.append(f"image {image_info.id}: tag failed: {exc}")
                     continue
+                self._logger.debug(
+                    "Tagger image done. [dataset=%s, job_id=%s, image_id=%d, tags=%d, saved=%s, duration_ms=%d]",
+                    dataset_name,
+                    state.job_id,
+                    image_info.id,
+                    len(result.tags),
+                    state.save.mode != "none",
+                    int((time.monotonic() - image_start) * 1000),
+                )
                 async with state.lock:
                     state.processed += 1
                 await self._emit_tag_status(dataset_name, state)
@@ -1226,6 +1257,31 @@ class TaggingService(Service):
                 state.error_messages.append(str(exc))
         finally:
             await self._dataset_jobs.release(state.claim)
+            self._logger.info(
+                "Tagger job finished. [dataset=%s, job_id=%s, status=%s, processed=%d, errors=%d, elapsed=%.1fs]",
+                dataset_name,
+                state.job_id,
+                state.status,
+                state.processed,
+                state.errors,
+                time.monotonic() - state.started_at,
+            )
+            if state.errors > 0:
+                self._logger.warning(
+                    "Tagger job had %d error(s). [dataset=%s, job_id=%s, messages=%s]",
+                    state.errors,
+                    dataset_name,
+                    state.job_id,
+                    "; ".join(state.error_messages),
+                )
+            self._logger.info(
+                "Tagger result cache at end of job. [dataset=%s, job_id=%s, entries=%d, size=%s/%s]",
+                dataset_name,
+                state.job_id,
+                len(self._tag_results),
+                size_units(self._tag_results.total_bytes),
+                size_units(self._tag_results.max_bytes),
+            )
             # Defer clearing the expected-changes tag: residual inotify
             # events from the last writes land after the loop exits, and
             # the watcher would re-tag them with the per-file ``source``
