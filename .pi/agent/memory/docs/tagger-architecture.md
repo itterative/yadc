@@ -193,10 +193,16 @@ The service dispatches four SSE events via `EventDispatcher`:
     teardown, app shutdown), and on startup failure.
 
 - **`ImageTagStartedEvent`** (`type="image_tag_started"`) — per-image start
-  signal from the batch runner (mirrors `ImageCaptionStartedEvent`).
-  `dataset_name`, `job_id`, `image_id`, `file_name`. Drives the tile
-  shimmer: the frontend adds the image to `currentlyTagging` on this
-  event and removes it on `image_tagged` / `image_tag_error`.
+  signal. Dispatched from inside `tag_image`'s cold path (cache miss
+  + spawn subprocess), so it's paired with `ImageTaggedEvent` on the
+  cold path only. `dataset_name`, `job_id`, `image_id`, `file_name`.
+  Drives the tile shimmer: the frontend adds the image to
+  `currentlyTagging` on this event and removes it on `image_tagged` /
+  `image_tag_error` (or via the job terminal state's
+  `clearCurrentlyTagging`). Cache hits skip both events — the data
+  is unchanged from the cold-path write that first populated the
+  cache, and a batch of all-cache-hit re-tags would otherwise flood
+  the SSE queue at the rate the loop can produce results.
 
 - **`ImageTaggedEvent`** (`type="image_tagged"`) — per-image success.
   - `dataset_name`, `image_id`, `file_name`, `path`, `tags`, `categories`
@@ -206,6 +212,10 @@ The service dispatches four SSE events via `EventDispatcher`:
   - `source` is **frontend-supplied** via the API body (e.g. a model
     name from a dropdown). Falls back to the server-configured model
     when not provided.
+  - **Not dispatched on cache hits**: the result is identical to
+    what was originally dispatched on the cold-path write that
+    populated the cache. The frontend updates via the HTTP response
+    or `fetchCachedTagResult`, not via SSE.
 
 - **`ImageTagErrorEvent`** (`type="image_tag_error"`) — per-image failure.
   - `dataset_name`, `image_id`, `error`, `source`, `duration_ms`
@@ -358,7 +368,7 @@ the run); tag failures increment `errors` but the run continues.
 | `tagger_general_threshold` | `0.35` | Drop general tags below this. |
 | `tagger_character_threshold` | `0.85` | Drop character tags below this. |
 | `tagger_replace_underscores` | `False` | Turn underscored tag names (`long_hair`) into spaces (`long hair`) before the result is dispatched/returned/saved. Kaomojis are always preserved. Off by default to preserve raw model output; opt in per-request from the UI (the request option, also `replace_underscores`, overrides this when set). |
-| `tagger_result_max_memory_bytes` | `128 * 1024 * 1024` (128 MiB) | Byte budget for the `MemoryLRU` cache of recent `(image + model + bucketed thresholds)` results. Size per entry is computed by `tamer_result_size` (recursive `sys.getsizeof` walk). `tag_image` is read-through on this cache: a hit short-circuits the model run (no subprocess spawn, no idle-timer reset) and returns the cached value re-applied at the request's effective thresholds + `replace_underscores` with `ImageTaggedEvent` dispatched (`duration_ms=0`). Eviction is LRU; no explicit invalidation needed when settings change (different fingerprints hash to different buckets). Values larger than the budget are silently skipped. |
+| `tagger_result_max_memory_bytes` | `128 * 1024 * 1024` (128 MiB) | Byte budget for the `MemoryLRU` cache of recent `(image + model + bucketed thresholds)` results. Size per entry is computed by `tamer_result_size` (recursive `sys.getsizeof` walk). `tag_image` is read-through on this cache: a hit short-circuits the model run (no subprocess spawn, no idle-timer reset) and returns the cached value re-applied at the request's effective thresholds + `replace_underscores`. Cache hits do NOT dispatch `ImageTagStartedEvent` / `ImageTaggedEvent` (the data is unchanged from the cold-path write); only cold paths emit the started/tagged pair. Eviction is LRU; no explicit invalidation needed when settings change (different fingerprints hash to different buckets). Values larger than the budget are silently skipped. |
 | `tagger_idle_timeout_seconds` | `900.0` | Tear down the subprocess after this many idle seconds. `0` disables teardown (subprocess stays up once started). |
 | `tagger_heartbeat_interval_seconds` | `15.0` | Worker pushes a heartbeat while idle at this interval. (Liveness signal only — death detection granularity is `tagger_liveness_poll_seconds`.) |
 | `tagger_response_timeout_seconds` | `120.0` | Give up on a wedged-but-alive worker after this many seconds. |

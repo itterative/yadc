@@ -1385,17 +1385,25 @@ class TestTaggerReadThroughCache:
         assert service._last_used_t == baseline_idle_t  # noqa: SLF001
         assert time.monotonic() - before >= 0.05
 
-    def test_cache_hit_dispatches_image_tagged_event(
+    def test_cache_hit_does_not_dispatch_image_tagged_event(
         self,
         service: TaggingService,
         image_info: ImageInfo,
     ) -> None:
-        """``ImageTaggedEvent`` is still emitted on a hit so SSE clients see success."""
-        from yadc.api.events import ImageTaggedEvent
+        """``ImageTaggedEvent`` is NOT dispatched on a cache hit.
+
+        Cache-hit data is identical to what was already dispatched on
+        the cold-path write that populated the cache, so per-image
+        events on hits would only flood the SSE queue at the rate the
+        loop can produce results (microseconds per hit). The frontend
+        updates via the HTTP response (``tagSingleImage``) or
+        ``fetchCachedTagResult``; per-image events stay on the cold path.
+        """
+        from yadc.api.events import ImageTaggedEvent, ImageTagStartedEvent
 
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            # Cold call to populate the cache and prime the event log.
+            # Cold call to populate the cache; may dispatch events.
             asyncio.run(service.tag_image("ds", image_info))
 
             # Spy on dispatch for the warm call.
@@ -1408,12 +1416,10 @@ class TestTaggerReadThroughCache:
                 service._event_dispatcher.dispatch = original_dispatch  # type: ignore[method-assign]  # noqa: SLF001
 
         tagged = [c.args[0] for c in dispatch_spy.call_args_list if isinstance(c.args[0], ImageTaggedEvent)]
-        assert len(tagged) == 1
-        assert tagged[0].dataset_name == "ds"
-        assert tagged[0].image_id == image_info.id
-        # Cache hits are instantaneous — ``duration_ms=0`` marks "no
-        # real model run" for downstream consumers (e.g. timing stats).
-        assert tagged[0].duration_ms == 0
+        started = [c.args[0] for c in dispatch_spy.call_args_list if isinstance(c.args[0], ImageTagStartedEvent)]
+        assert tagged == []
+        assert started == []
+        assert dispatch_spy.call_count == 0  # nothing else either
 
     def test_cache_miss_under_different_thresholds_runs_the_model(
         self,
@@ -1444,6 +1450,44 @@ class TestTaggerReadThroughCache:
                 )
             )
             assert client.tag.await_count == 2
+
+    def test_cache_hit_does_not_dispatch_inflight_events(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """A cache hit dispatches no per-image events at all (neither started nor tagged).
+
+        Verifies the contract end-to-end: a second ``tag_image`` call
+        on the same image under the same bucketed fingerprint must not
+        produce any ``ImageTagStartedEvent`` / ``ImageTaggedEvent``
+        dispatched. Run twice (cold call to populate, warm call to spy)
+        so the assertion is on the *change* in dispatch count, not on
+        a magic constant.
+        """
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            # Cold call — may dispatch events; we just want the cache populated.
+            cold_dispatches = MagicMock()
+            original = service._event_dispatcher.dispatch  # noqa: SLF001
+            service._event_dispatcher.dispatch = cold_dispatches  # type: ignore[method-assign]  # noqa: SLF001
+            try:
+                asyncio.run(service.tag_image("ds", image_info))
+            finally:
+                service._event_dispatcher.dispatch = original  # type: ignore[method-assign]  # noqa: SLF001
+            cold_count = cold_dispatches.call_count
+
+            # Warm call — the cache-hit branch must dispatch zero events.
+            warm_dispatches = MagicMock()
+            service._event_dispatcher.dispatch = warm_dispatches  # type: ignore[method-assign]  # noqa: SLF001
+            try:
+                asyncio.run(service.tag_image("ds", image_info))
+            finally:
+                service._event_dispatcher.dispatch = original  # type: ignore[method-assign]  # noqa: SLF001
+
+        assert warm_dispatches.call_count == 0, (
+            f"cache hit dispatched {warm_dispatches.call_count} events (expected 0); cold call dispatched {cold_count} for comparison"
+        )
 
     def test_warm_cache_writes_under_independent_fingerprint(
         self,

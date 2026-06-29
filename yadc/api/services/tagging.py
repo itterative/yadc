@@ -473,6 +473,7 @@ class TaggingService(Service):
         thresholds: TaggingThresholds | None = None,
         replace_underscores: bool | None = None,
         source: str | None = None,
+        job_id: str | None = None,
     ) -> TaggerResult:
         """Tag a single image.
 
@@ -483,13 +484,17 @@ class TaggingService(Service):
         result, the LRU hit short-circuits the model run (no subprocess
         spawn, no byte read, no idle-timer reset) and returns the
         cached value re-applied at the request's effective thresholds
-        and ``replace_underscores`` (``ImageTaggedEvent`` dispatched
-        with ``duration_ms=0``).
+        and ``replace_underscores``.
 
-        Dispatches ``ImageTaggedEvent`` on success and
-        ``ImageTagErrorEvent`` on failure (via ``EventDispatcher``)
-        so SSE clients can react to per-image results. The HTTP
-        response carries the same data for the initiating request.
+        Per-image SSE events are paired with the actual model run on
+        the cold path only — ``ImageTagStartedEvent`` before the
+        subprocess call and ``ImageTaggedEvent`` after. Cache hits
+        dispatch neither (the data is unchanged from the cold-path
+        write that populated the cache; firing them would flood the
+        SSE queue at the rate the loop can produce results for an
+        all-cache-hit batch). The HTTP response carries the
+        (effective-filtered) result for the initiating request, and
+        ``ImageTagErrorEvent`` still fires on cold-path failure.
 
         The caller is responsible for resolving ``image_info`` (e.g.
         via ``DatasetService.get_image``) and verifying the on-disk
@@ -503,6 +508,10 @@ class TaggingService(Service):
                 tabs / clients can display what the requester used.
                 Falls back to the server's configured model when not
                 provided.
+            job_id: Optional batch-job id carried into
+                ``ImageTagStartedEvent`` so the frontend can
+                correlate per-image events with the originating job.
+                ``None`` (default) for single-image callers.
 
         Raises:
             RuntimeError: If the tagger is not configured, or the
@@ -536,24 +545,20 @@ class TaggingService(Service):
         if cached is not None:
             re_filtered = self._refilter(cached, eff_thresholds, eff_replace)
             # Yield once so the event loop can run other ready tasks
-            # (SSE dispatch, idle check, in-flight cancellations) between
-            # back-to-back cache hits in a batch. ``_refilter`` is the
-            # closest thing we do to CPU-blocking when the model isn't
-            # running — for animetimm-sized caches it's milliseconds per
-            # call, which compounds across a batch of all-hit images.
+            # (idle check, in-flight cancellations) between back-to-back
+            # cache hits in a batch. ``_refilter`` is the closest thing
+            # we do to CPU-blocking when the model isn't running — for
+            # animetimm-sized caches it's milliseconds per call, which
+            # compounds across a batch of all-hit images.
             await asyncio.sleep(0)
-            self._event_dispatcher.dispatch(
-                ImageTaggedEvent(
-                    dataset_name=dataset_name,
-                    image_id=image_info.id,
-                    file_name=image_info.file_name,
-                    path=image_info.path,
-                    tags=re_filtered.tags,
-                    categories=re_filtered.categories,
-                    source=source if source else self._source_label(),
-                    duration_ms=0,
-                )
-            )
+            # No per-image SSE dispatch on hits: a burst of all-cache
+            # re-tags (e.g. 41 images in a few ms) would saturate
+            # per-client SSE queues at the rate the loop can produce
+            # results. Frontends consume the data through the HTTP
+            # response (single-image POST) or
+            # via ``fetchCachedTagResult`` (cold-mount on Tags tab); the
+            # job terminal state (``TagJobStatusEvent`` with terminal
+            # status) sweeps any leftover inflight per dataset.
             return re_filtered
 
         # The ``source`` label for SSE events. Frontend-supplied
@@ -574,6 +579,18 @@ class TaggingService(Service):
                 # Reset the idle timer while holding the lock so the
                 # periodic idle check sees an in-use server.
                 self._last_used_t = time.monotonic()
+                # Dispatch ``ImageTagStartedEvent`` only on the cold
+                # path so cache hits don't fire per-image events (which
+                # would flood the SSE queue at the rate the loop can
+                # produce results for an all-cache-hit batch).
+                self._event_dispatcher.dispatch(
+                    ImageTagStartedEvent(
+                        dataset_name=dataset_name,
+                        job_id=job_id or "",
+                        image_id=image_info.id,
+                        file_name=image_info.file_name,
+                    )
+                )
                 result = await client.tag(image_bytes)
             finally:
                 self._lifecycle_lock.release()
@@ -719,7 +736,7 @@ class TaggingService(Service):
         )
         try:
             await client.start()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._logger.exception("Failed to start tagger process.")
             self._emit_status("failed", error=str(exc))
             raise RuntimeError("Failed to start tagger process — check server logs") from None
@@ -746,7 +763,7 @@ class TaggingService(Service):
         self._last_used_t = None
         try:
             await client.stop()
-        except Exception:  # noqa: BLE001
+        except Exception:
             self._logger.exception("Error stopping tagger process.")
             self._emit_status("failed", error="stop failed")
         else:
@@ -776,7 +793,7 @@ class TaggingService(Service):
             # ``TaggerClient.stop``. This is safe here because we
             # are already in a non-event-loop thread.
             client._server.stop()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._logger.exception("Error stopping tagger process.")
             self._emit_status("failed", error=str(exc))
         else:
@@ -1159,18 +1176,12 @@ class TaggingService(Service):
         """Background task: iterate images, tag each, optionally save, emit status."""
         state.started_at = time.monotonic()
         await self._emit_tag_status(dataset_name, state)
+
         try:
             for image_info in images:
                 if state.stop_event.is_set():
                     break
-                self._event_dispatcher.dispatch(
-                    ImageTagStartedEvent(
-                        dataset_name=dataset_name,
-                        job_id=state.job_id,
-                        image_id=image_info.id,
-                        file_name=image_info.file_name,
-                    )
-                )
+
                 try:
                     result = await self.tag_image(
                         dataset_name,
@@ -1178,17 +1189,17 @@ class TaggingService(Service):
                         thresholds=state.thresholds,
                         replace_underscores=state.replace_underscores,
                         source=state.source,
+                        job_id=state.job_id,
                     )
+
                     if state.save.mode != "none":
                         try:
                             await self.save_tags(dataset_name, image_info, result, state.save, source=f"tagger:{state.job_id}")
-                        except Exception:  # noqa: BLE001
+                        except Exception:
                             # Saving is best-effort per image — a failed write
-                            # shouldn't abort the run. The tag itself already
-                            # succeeded and was surfaced via ImageTaggedEvent.
+                            # shouldn't abort the run.
                             self._logger.exception("Failed to save tags for image. [dataset=%s, image_id=%s]", dataset_name, image_info.id)
-                except Exception:  # noqa: BLE001
-                    # ``tag_image`` already dispatched ImageTagErrorEvent.
+                except Exception:
                     async with state.lock:
                         state.errors += 1
                         state.error_messages.append(f"image {image_info.id}: tag failed")
@@ -1208,7 +1219,7 @@ class TaggingService(Service):
             async with state.lock:
                 state.status = "cancelled"
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             async with state.lock:
                 state.status = "error"
                 state.error = str(exc)
