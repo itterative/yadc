@@ -535,6 +535,13 @@ class TaggingService(Service):
             cached = self._tag_results.get(cache_key)
         if cached is not None:
             re_filtered = self._refilter(cached, eff_thresholds, eff_replace)
+            # Yield once so the event loop can run other ready tasks
+            # (SSE dispatch, idle check, in-flight cancellations) between
+            # back-to-back cache hits in a batch. ``_refilter`` is the
+            # closest thing we do to CPU-blocking when the model isn't
+            # running — for animetimm-sized caches it's milliseconds per
+            # call, which compounds across a batch of all-hit images.
+            await asyncio.sleep(0)
             self._event_dispatcher.dispatch(
                 ImageTaggedEvent(
                     dataset_name=dataset_name,
