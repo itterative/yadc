@@ -11,22 +11,41 @@ When ``repo_id`` is set, the model and label file are downloaded from
 HuggingFace Hub via :func:`huggingface_hub.hf_hub_download` on
 ``load_model()``. The download happens in the worker process so the
 main API process doesn't need network access.
+
+The preprocessing pipeline (canvas → pad → resize → normalize → layout)
+lives in :mod:`yadc.taggers.onnx_preprocess` and is selectable via a
+:class:`PreprocProfile`. The default profile
+(:data:`WD_TAGGER_PROFILE`) matches the wd-tagger convention
+(NHWC + BGR, /255 baked into the graph). For PyTorch / timm exports
+(e.g. ``animetimm/convnextv2``), pass :data:`TIMM_PROFILE` (NCHW +
+RGB + ImageNet normalization) instead.
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import logging
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
 from typing_extensions import override
 
 from yadc.taggers.base import Tagger, TaggerResult
+from yadc.taggers.onnx_preprocess import (
+    TIMM_PROFILE,
+    WD_TAGGER_PROFILE,
+    Layout,
+    PreprocProfile,
+    log_profile_info,
+    prepare_image,
+    resolve_input,
+)
 
 BytesIO = io.BytesIO
+
+logger = logging.getLogger(__name__)
 
 # SmilingWolf / WD selected_tags.csv category codes.
 # See https://huggingface.co/SmilingWolf/wd-v1-4-vit-tagger-v2/blob/main/selected_tags.csv
@@ -96,23 +115,51 @@ def load_labels(path: str | Path) -> tuple[list[str], dict[str, list[str]]]:
     return _load_labels_txt(p)
 
 
+# Re-export so external callers that already imported from this module
+# (``from yadc.taggers.onnx import TIMM_PROFILE``) keep working.
+__all__ = [
+    "CATEGORY_CHARACTER",
+    "CATEGORY_GENERAL",
+    "CATEGORY_RATING",
+    "DEFAULT_CATEGORY_NAMES",
+    "OnnxTagger",
+    "PreprocProfile",
+    "TIMM_PROFILE",
+    "WD_TAGGER_PROFILE",
+    "apply_thresholds",
+    "load_labels",
+]
+
+
 class OnnxTagger(Tagger):
     """Image tagger backed by an ONNX Runtime model.
 
-    The preprocessing pipeline matches the wd-tagger convention used by
-    the SmilingWolf model family:
+    Preprocessing is delegated to :mod:`yadc.taggers.onnx_preprocess`
+    via a :class:`PreprocProfile`. The default
+    (:data:`WD_TAGGER_PROFILE`) matches the wd-tagger convention
+    (NHWC + BGR, /255 baked into the graph). Use
+    :data:`TIMM_PROFILE` for PyTorch / timm exports whose graphs run
+    on raw NCHW RGB ImageNet-normalized input (animetimm ConvNeXt
+    and friends).
 
-    1. White-canvas composite for RGBA / palette / transparency modes.
-    2. Pad to a square with white.
-    3. Resize to the model's expected input size (square, taken from
-       the ONNX graph).
-    4. Cast to ``float32`` (no explicit /255 — the model graph bakes
-       in its own normalization).
-    5. RGB → BGR channel flip (models are trained on BGR).
+    ``load_model`` logs the resolved preprocessing contract so the
+    user can verify the pipeline before the first inference.
 
-    GPU (CUDA) is used when available; otherwise the CPU provider is
-    used.  ``intra_op_num_threads`` / ``inter_op_num_threads`` are
-    exposed via ``load_model(..., intra_op_num_threads=N)``.
+    Args:
+        label_path: Local path to the labels file. Ignored when
+            ``repo_id`` is set.
+        repo_id: HuggingFace repo to download the model + labels
+            from. When set, the model + label files are fetched on
+            ``load_model`` and the ``model_path`` argument to
+            ``load_model`` is ignored.
+        repo_model_filename: Filename within the HF repo for the model.
+        repo_label_filename: Filename within the HF repo for the
+            labels.
+        preproc_profile: The preprocessing profile to use. ``None`` →
+            :data:`WD_TAGGER_PROFILE`.
+        default_size: Override ``profile.default_input_size`` when
+            the model's input shape has symbolic H/W dims. ``0`` →
+            inherit the profile's default.
     """
 
     def __init__(
@@ -121,6 +168,8 @@ class OnnxTagger(Tagger):
         repo_id: str | None = None,
         repo_model_filename: str = "model.onnx",
         repo_label_filename: str = "selected_tags.csv",
+        preproc_profile: PreprocProfile | None = None,
+        default_size: int = 0,
     ) -> None:
         self._label_path: str | Path | None = label_path
         # HuggingFace Hub download configuration. When ``repo_id`` is
@@ -129,9 +178,29 @@ class OnnxTagger(Tagger):
         self._repo_id: str | None = repo_id or None
         self._repo_model_filename: str = repo_model_filename
         self._repo_label_filename: str = repo_label_filename
+        # Preprocessing profile — applied in ``predict()`` to the
+        # input image. The default matches the wd-tagger convention;
+        # TIMM_PROFILE fits PyTorch / timm exports that don't bake
+        # preprocessing into the graph.
+        self._profile: PreprocProfile = preproc_profile or WD_TAGGER_PROFILE
+        # If a positive ``default_size`` was given, build a copy of the
+        # profile with the size override so callers can pass e.g.
+        # ``TIMM_PROFILE`` plus an explicit size without mutating the
+        # shared module-level constant.
+        if default_size > 0:
+            self._profile = self._profile._replace(default_input_size=default_size)
         self._session: Any = None
         self._labels: list[str] = []
         self._categories: dict[str, list[str]] = {}
+        # Resolved input height/width and layout — populated by
+        # ``load_model`` once the session is built, then read by every
+        # ``predict()`` call. Keeping these on the instance means the
+        # (slow) shape inspection runs once instead of per image.
+        self._input_height: int = 0
+        self._input_width: int = 0
+        self._layout: Layout = "nhwc"  # overwritten by load_model
+        self._input_name: str = ""
+        self._output_name: str = ""
 
     # ---- lifecycle --------------------------------------------------------
 
@@ -168,6 +237,15 @@ class OnnxTagger(Tagger):
         if self._repo_id is None and self._label_path is not None:
             self._labels, self._categories = load_labels(self._label_path)
 
+        # Resolve and cache the preprocessing contract once so
+        # ``predict()`` doesn't re-parse the shape on every image.
+        input_meta = self._session.get_inputs()[0]
+        self._input_height, self._input_width, self._layout = resolve_input(input_meta.shape, self._profile)
+        self._input_name = input_meta.name
+        self._output_name = self._session.get_outputs()[0].name
+
+        log_profile_info(self._profile, self._input_height, self._input_width, self._layout)
+
     def _create_session(self, model_path: str, **kwargs: Any) -> None:  # noqa: ANN401
         """Build the ONNX InferenceSession. Extracted so tests can mock the ORT call.
 
@@ -202,6 +280,8 @@ class OnnxTagger(Tagger):
         self._session = None
         self._labels = []
         self._categories = {}
+        self._input_height = 0
+        self._input_width = 0
 
     # ---- prediction -------------------------------------------------------
 
@@ -210,84 +290,29 @@ class OnnxTagger(Tagger):
         if self._session is None:
             raise RuntimeError("Model not loaded — call load_model() first")
 
-        # ONNX input shape: NHWC for wd-tagger models (or NCHW). We use
-        # the height/width from the graph, with a fallback to 448 if
-        # the shape is symbolic.
-        input_meta = self._session.get_inputs()[0]
-        height, width = self._resolve_input_hw(input_meta.shape)
-        if height <= 0 or width <= 0:
-            # Fall back to a sane default for SmilingWolf models.
-            height = width = 448
-
-        image = self._prepare_image(image_bytes, height, width)
-        input_name = input_meta.name
-        output_name = self._session.get_outputs()[0].name
-        preds = self._session.run([output_name], {input_name: image})[0]
+        tensor = prepare_image(
+            image_bytes,
+            self._input_height,
+            self._input_width,
+            self._layout,
+            self._profile,
+        )
+        logger.debug(
+            "Tagger preprocessed tensor: shape=%s dtype=%s min=%.4f max=%.4f mean=%.4f",
+            tuple(tensor.shape),
+            tensor.dtype,
+            float(tensor.min()),
+            float(tensor.max()),
+            float(tensor.mean()),
+        )
+        preds = self._session.run([self._output_name], {self._input_name: tensor})[0]
         scores = np.asarray(preds[0], dtype=np.float32)
+        if self._profile.apply_sigmoid:
+            scores = 1.0 / (1.0 + np.exp(-scores))
 
         return self._build_result(scores)
 
     # ---- helpers ----------------------------------------------------------
-
-    @staticmethod
-    def _resolve_input_hw(shape: Any) -> tuple[int, int]:
-        """Resolve (height, width) from an ONNX input shape.
-
-        wd-tagger models use NHWC shapes like ``['batch', 448, 448, 3]``;
-        other backbones use NCHW ``['batch', 3, H, W]``. We accept both
-        and return (h, w). Symbolic / None dims fall back to 0 so the
-        caller can pick a default.
-        """
-        if shape is None or len(shape) < 3:
-            return 0, 0
-        # NHWC
-        if len(shape) == 4 and shape[1] not in (None, "batch", "batch_size") and shape[3] in (1, 3, 4):
-            try:
-                return int(shape[1]), int(shape[2])
-            except (TypeError, ValueError):
-                return 0, 0
-        # NCHW
-        if len(shape) == 4 and shape[1] in (1, 3, 4):
-            try:
-                return int(shape[2]), int(shape[3])
-            except (TypeError, ValueError):
-                return 0, 0
-        return 0, 0
-
-    @staticmethod
-    def _prepare_image(image_bytes: bytes, height: int, width: int) -> np.ndarray:
-        """Apply wd-tagger-style preprocessing and return an NCHW float32 tensor.
-
-        Pipeline: white canvas for RGBA → pad to square → resize →
-        float32 → BGR → NHWC (wd-tagger convention; the graph does its
-        own NHWC→NCHW transpose if needed).
-        """
-        img = Image.open(BytesIO(image_bytes))
-
-        # White-canvas composite for non-RGB modes (RGBA, palette, LA).
-        # Mirrors the wd-tagger reference.
-        canvas = Image.new("RGBA", img.size, (255, 255, 255))
-        if img.mode != "RGBA":
-            img = img.convert("RGBA")
-        canvas.alpha_composite(img)
-        img = canvas.convert("RGB")
-
-        # Pad to a square with white.
-        max_dim = max(img.size)
-        pad_left = (max_dim - img.size[0]) // 2
-        pad_top = (max_dim - img.size[1]) // 2
-        padded = Image.new("RGB", (max_dim, max_dim), (255, 255, 255))
-        padded.paste(img, (pad_left, pad_top))
-
-        # Resize to the model's input size.
-        if max_dim != height or max_dim != width:
-            padded = padded.resize((width, height), Image.Resampling.BICUBIC)
-
-        # Cast to float32 and flip RGB → BGR. No explicit /255 — wd-tagger
-        # models include the 0-255 → 0-1 normalization in the graph.
-        arr = np.asarray(padded, dtype=np.float32)
-        arr = arr[:, :, ::-1]
-        return np.expand_dims(arr, axis=0)
 
     def _build_result(self, scores: np.ndarray) -> TaggerResult:
         """Map raw sigmoid/score outputs to a :class:`TaggerResult`.

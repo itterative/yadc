@@ -70,14 +70,47 @@ non-categorized models; detected by extension.
 
 ## OnnxTagger preprocessing
 
-The pipeline matches the wd-tagger convention used by SmilingWolf:
+The pipeline is parameterized by a `PreprocProfile` (`yadc/taggers/onnx_preprocess.py`)
+controlling channel order, normalization, and whether to apply sigmoid
+to the model output. Two built-in profiles:
+
+- `WD_TAGGER_PROFILE` (default) — NHWC + BGR + no normalization + no
+  sigmoid. Matches SmilingWolf's wd-tagger convention, which bakes
+  /255, NHWC→NCHW transpose, and sigmoid into the ONNX graph.
+
+- `TIMM_PROFILE` — NCHW + RGB + ImageNet normalization + sigmoid.
+  Standard PyTorch / timm convention; used by e.g.
+  `animetimm/convnextv2_huge.dbv4-full` and most classifier exports
+  that don't bake preprocessing in.
+
+The pipeline matches the active profile:
 
 1. White-canvas composite for RGBA / palette / LA modes.
-2. Pad to a square with white.
-3. Resize to the model's expected input size (taken from the ONNX graph, default 448).
-4. Cast to `float32` — **no explicit /255**: the model graph bakes in 0-255 → 0-1.
-5. RGB → BGR channel flip.
-6. `np.expand_dims` for the batch axis → NHWC `float32` tensor.
+2. Fit (preserve aspect ratio) then pad with white to the target size.
+   Square targets short-circuit the resize step.
+3. Resize to the model's expected input size (auto-resolved from
+   `input_meta.shape`; falls back to `profile.default_input_size` for
+   symbolic H/W dims).
+4. Cast to `float32`.
+5. Channel flip if `profile.channel_order == "bgr"`.
+6. Normalization if `profile.normalize == "imagenet"`:
+   /255 → subtract mean → divide by std with ImageNet statistics.
+7. Layout transpose: NCHW hosts get `(H, W, C) -> (C, H, W)`.
+   NHWC hosts stay as-is.
+8. `np.expand_dims` for the batch axis → batched `float32` tensor.
+
+Layout auto-detection: `resolve_input` parses `input_meta.shape` in
+three layers — concrete channel count (1/3/4 at dim 1 or 3), symbolic
+dim names (`"num_channels"` / `"channels"` at dim 1 vs dim 3, or
+`"height"` / `"width"` at dim 2/3), with concrete values winning over
+name hints when they disagree.
+
+Post-inference: if `profile.apply_sigmoid` is true, the raw model
+output is converted to probabilities via `1 / (1 + exp(-x))` before
+reaching `TaggerResult` (lets `apply_thresholds` work on the same
+range wd-tagger produces). `predict()` records
+`shape/dtype/min/max/mean` of the preprocessed tensor at DEBUG level
+so the host-side pipeline is observable in logs.
 
 Sigmoid is **not** applied: wd-tagger models return post-sigmoid probabilities.
 
@@ -247,6 +280,8 @@ the run); tag failures increment `errors` but the run continues.
 | `tagger_repo_id` | `"SmilingWolf/wd-eva02-large-tagger-v3"` | HuggingFace Hub repo to download the model + labels from. When set, the worker downloads both files from this repo (worker-side, cached by HF). The tagger is enabled when EITHER this OR `tagger_model_path` is set. |
 | `tagger_repo_model_filename` | `"model.onnx"` | Filename within the repo for the model. |
 | `tagger_repo_label_filename` | `"selected_tags.csv"` | Filename within the repo for the labels. |
+| `tagger_preproc_profile` | `"wd-tagger"` | Named preprocessing profile. `"wd-tagger"` (NHWC + BGR, no normalization — SmilingWolf convention that bakes /255 + NHWC→NCHW + sigmoid into the graph) or `"timm"` (NCHW + RGB + ImageNet normalization + sigmoid — standard PyTorch / timm convention used by e.g. animetimm ConvNeXt). Layout (NCHW vs NHWC) is always auto-detected from the model's input shape. Looked up by `yadc.taggers.onnx_preprocess.get_profile`. |
+| `tagger_default_input_size` | `0` | Override the profile's default input size when the model has symbolic H/W dims (e.g. `512` for `animetimm/convnextv2`). `0` → use the profile's built-in default (448 for wd-tagger, 512 for timm). |
 | `tagger_rating_threshold` | `0.0` | Drop rating tags below this. |
 | `tagger_general_threshold` | `0.35` | Drop general tags below this. |
 | `tagger_character_threshold` | `0.85` | Drop character tags below this. |

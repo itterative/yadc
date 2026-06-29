@@ -149,6 +149,22 @@ class Configuration:
     tagger_repo_id: str = "SmilingWolf/wd-eva02-large-tagger-v3"
     tagger_repo_model_filename: str = "model.onnx"
     tagger_repo_label_filename: str = "selected_tags.csv"
+    # Preprocessing profile. Controls how the host turns raw image bytes
+    # into the model's expected input tensor, and how the model output is
+    # post-processed. Two built-in profiles:
+    # ``"wd-tagger"`` (default; NHWC + BGR + no normalization + no sigmoid
+    # — the SmilingWolf convention that bakes /255 + NCHW transpose +
+    # sigmoid into the graph) and ``"timm"`` (NCHW + RGB + ImageNet
+    # normalization + sigmoid — standard PyTorch / timm convention, used
+    # by e.g. the animetimm ConvNeXt export). Layout (NCHW vs NHWC) is
+    # always auto-detected from the model's input shape; the profile
+    # supplies the channel order, normalization, and output sigmoid,
+    # which can't be inferred from the graph alone. See
+    # ``yadc.taggers.onnx_preprocess.list_profiles()`` for the full list;
+    # ``tagger_default_input_size`` overrides the profile's default
+    # fallback size when the model has symbolic H/W dims.
+    tagger_preproc_profile: str = "wd-tagger"
+    tagger_default_input_size: int = 0
     # Per-category score thresholds (SmilingWolf / WD defaults).
     # Tags below the threshold for their category are dropped from the
     # response. 0.0 keeps everything in that category.

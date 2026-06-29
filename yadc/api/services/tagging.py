@@ -526,6 +526,22 @@ class TaggingService(Service):
             if label_path:
                 tagger_kwargs["label_path"] = label_path
 
+        # Preprocessing profile: ``OnnxTagger.__init__`` validates the
+        # name and falls back to wd-tagger on an unknown value. We pre-
+        # validate here so a typo in the configuration fails fast at
+        # service construction rather than at the first tag request.
+        from yadc.taggers.onnx_preprocess import get_profile
+
+        try:
+            profile = get_profile(self._configuration.tagger_preproc_profile)
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid tagger_preproc_profile: {exc}") from None
+        tagger_kwargs["preproc_profile"] = profile
+
+        default_size = self._configuration.tagger_default_input_size
+        if default_size > 0:
+            tagger_kwargs["default_size"] = default_size
+
         self._emit_status("starting")
 
         client = TaggerClient(

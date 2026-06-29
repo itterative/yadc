@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 3
+last_history: 4
 ---
 
 # Tagger Plan
@@ -73,6 +73,14 @@ Design history lives in `history/tagger-plan/`:
     clear (`tagger_expected_changes_grace_seconds`) to stop the
     spurious post-job "files changed" toast; topbar progress bar with
     serial ETA for batch tagging jobs.
+13. **Phase E — Preprocessing profiles + sigmoid (animetimm ConvNeXt).**
+    New `yadc/taggers/onnx_preprocess.py` module with `PreprocProfile`
+    controlling channel order, normalization, default input size, and
+    output sigmoid. Two built-in profiles (`wd-tagger`, `timm`); layout
+    auto-detection through concrete dims + symbolic dim names
+    (`num_channels` / `channels` / `height` / `width`); configuration +
+    CLI plumbing; diagnostic logs at INFO (contract) and DEBUG (tensor
+    stats). See `history/tagger-plan/004`.
 
 ## Pending (future iterations)
 
