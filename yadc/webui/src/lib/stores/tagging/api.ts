@@ -1,6 +1,15 @@
 import { API_BASE, apiErrorMessage } from '$lib/api';
 import { clientId } from '../events';
-import type { CancelResult, TagJobInfo, TaggerResult, TagSaveOptions } from './types';
+import type {
+    ActiveTaggerResponse,
+    CancelResult,
+    SwapTaggerBody,
+    SwapTaggerResponse,
+    TagJobInfo,
+    TaggerModelSummary,
+    TaggerResult,
+    TagSaveOptions
+} from './types';
 
 // --- Tagging API helpers ---
 //
@@ -234,4 +243,79 @@ export async function previewTagFormats(
     }
     const data = (await res.json()) as { content: string };
     return data.content;
+}
+
+// --- Tagger model swap ---
+
+/** Fetch the persisted active tagger selection + subprocess liveness.
+ *  Used by the SettingsDialog picker to show "Currently running: …". */
+export async function fetchActiveTagger(signal?: AbortSignal): Promise<ActiveTaggerResponse> {
+    const res = await fetch(`${API_BASE}/api/tagger/active`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as ActiveTaggerResponse;
+}
+
+export interface TaggerModelsResponse {
+    models: TaggerModelSummary[];
+    local: TaggerModelSummary;
+    /** Names of supported preproc profiles (mirrors
+     *  ``yadc.taggers.onnx_preprocess.list_profiles``). Drives the
+     *  Profile dropdown in the picker. */
+    profiles: string[];
+}
+
+/** Fetch the curated model catalog (SmilingWolf HF repos + the local-file sentinel).
+ *  The picker dropdown renders from this; the user picks one and we POST to
+ *  ``swapTaggerModel`` with a fully-formed selection. */
+export async function listTaggerModels(signal?: AbortSignal): Promise<TaggerModelsResponse> {
+    const res = await fetch(`${API_BASE}/api/tagger/models`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as TaggerModelsResponse;
+}
+
+/** Discriminated result from :func:`swapTaggerModel`. The action layer
+ *  matches on ``status`` to pick the right toast (and never has to
+ *  re-parse the response body or distinguish 409 from 429). */
+export type SwapTaggerResult =
+    | { status: 'ok'; response: SwapTaggerResponse }
+    | { status: 'busy'; message: string }
+    | { status: 'in_progress'; message: string; retryAfterS: number }
+    | { status: 'error'; message: string };
+
+/** Swap the active tagger selection. Maps the backend's status codes into a
+ *  small set of variants the UI can switch on without re-parsing the body:
+ *  200 → ``ok``; 409 → ``busy`` (batch running); 429 → ``in_progress``
+ *  (concurrent swap, with retry hint); anything else → ``error``. */
+export async function swapTaggerModel(
+    body: SwapTaggerBody,
+    signal?: AbortSignal
+): Promise<SwapTaggerResult> {
+    const res = await fetch(`${API_BASE}/api/tagger/swap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal
+    });
+    if (res.ok) {
+        const response = (await res.json()) as SwapTaggerResponse;
+        return { status: 'ok', response };
+    }
+    let parsed: { error?: string; retry_after_s?: number } | null = null;
+    try {
+        parsed = (await res.json()) as { error?: string; retry_after_s?: number };
+    } catch {
+        /* non-JSON body */
+    }
+    const message = parsed?.error || `Swap failed (HTTP ${res.status})`;
+    if (res.status === 409) {
+        return { status: 'busy', message };
+    }
+    if (res.status === 429) {
+        return { status: 'in_progress', message, retryAfterS: parsed?.retry_after_s ?? 2 };
+    }
+    return { status: 'error', message };
 }

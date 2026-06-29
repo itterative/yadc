@@ -203,6 +203,14 @@ class Configuration:
     # request after teardown respawns it. Set to 0 to disable idle
     # teardown (the subprocess stays up forever once started).
     tagger_idle_timeout_seconds: float = 900.0
+    # Shorter idle timeout applied after a swap: if the user just
+    # swapped models but never actually tagged anything with the new
+    # one (the typical post-swap case — swap, verify, move on), the
+    # subprocess is torn down sooner than the normal idle timeout.
+    # Switches to ``tagger_idle_timeout_seconds`` the moment the first
+    # request uses the subprocess. Set to 0 to disable (the normal
+    # timeout applies regardless).
+    tagger_post_swap_idle_timeout_seconds: float = 60.0
     # Grace window between a batch job ending and clearing its
     # expected-changes source tag. Residual inotify events from the
     # last writes land slightly after the loop exits (kernel buffering

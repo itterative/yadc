@@ -2,10 +2,23 @@
     import Checkbox from '$lib/components/ui/Checkbox.svelte';
     import { settings } from '$lib/stores/settings';
     import {
+        fetchActiveTagger,
+        listTaggerModels,
+        swapActiveModelAction
+    } from '$lib/stores/tagging';
+    import { taggingStatuses } from '$lib/stores/tagging';
+    import type {
+        ActiveTaggerSelection,
+        SwapTaggerBody,
+        TaggerModelSummary
+    } from '$lib/stores/tagging';
+    import { LOCAL_FILE_ID } from '$lib/stores/tagging';
+    import {
         notificationsSupported,
         notificationPermission,
         requestNotificationPermission
     } from '$lib/notifications';
+    import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
 
     let permStatus = $state<NotificationPermission | 'unsupported'>('default');
     let notificationsOn = $state(false);
@@ -43,6 +56,186 @@
             settings.update((s) => ({ ...s, notifications: 'disabled' }));
         }
     });
+
+    // --- Tagger model picker ---
+    //
+    // The picker is a small composition of three things: the curated catalog
+    // (dropdown options + the local-file sentinel), the active selection
+    // (seeded from GET /api/tagger/active and pushed back on swap), and the
+    // subprocess liveness indicator (from ``taggerStatus`` SSE). On submit
+    // we call :func:`swapActiveModelAction` which toasts the outcome and
+    // returns the persisted selection so we can re-seed the form without
+    // a refetch.
+
+    let pickerLoaded = $state(false);
+    let catalog: TaggerModelSummary[] = $state([]);
+    let profiles: string[] = $state([]);
+    let active: ActiveTaggerSelection | null = $state(null);
+    let pickerSelectedId = $state('');
+    let localModelPath = $state('');
+    let localLabelPath = $state('');
+    let pickerProfile = $state('wd-tagger');
+    let pickerSize = $state(0);
+    let pickerError = $state<string | null>(null);
+    let isSwapping = $state(false);
+
+    // Build the dropdown options from the curated catalog + the local sentinel.
+    // The local sentinel inherits its profile / size from the active
+    // selection at swap time (see ``buildSelectionBody``), so the dropdown
+    // values here are placeholders only — they're never read.
+    let pickerOptions: TaggerModelSummary[] = $derived(
+        pickerLoaded
+            ? [
+                  ...catalog,
+                  {
+                      id: LOCAL_FILE_ID,
+                      display: 'Local file…',
+                      params: '',
+                      default_preproc_profile: 'wd-tagger',
+                      default_size: 0
+                  }
+              ]
+            : []
+    );
+
+    // Any running batch across all datasets disables the swap button — the
+    // backend would refuse with 409 anyway, but a disabled button makes the
+    // cause obvious before the round-trip.
+    let anyBatchRunning = $derived(
+        Array.from($taggingStatuses.values()).some(
+            (s) => s.status === 'running' || s.status === 'stopping'
+        )
+    );
+
+    $effect(() => {
+        if (pickerLoaded) {
+            return;
+        }
+        const controller = new AbortController();
+        void (async () => {
+            try {
+                const [a, m] = await Promise.all([
+                    fetchActiveTagger(controller.signal),
+                    listTaggerModels(controller.signal)
+                ]);
+                active = a.active;
+                catalog = m.models;
+                profiles = m.profiles;
+                // Seed the dropdown to the active selection, if any.
+                if (a.active) {
+                    pickerSelectedId = a.active.kind === 'hf' ? a.active.repo_id : LOCAL_FILE_ID;
+                    localModelPath = a.active.model_path;
+                    localLabelPath = a.active.label_path;
+                    // Preserve the active selection's profile / size so a
+                    // swap-with-different-model doesn't silently drop the
+                    // user's ``timm`` profile. Falls back to wd-tagger for
+                    // a fresh install.
+                    pickerProfile = a.active.preproc_profile || 'wd-tagger';
+                    pickerSize = a.active.default_size || 0;
+                }
+                pickerLoaded = true;
+            } catch (e) {
+                if ((e as Error).name !== 'AbortError') {
+                    pickerError = (e as Error).message;
+                    pickerLoaded = true;
+                }
+            }
+        })();
+        return () => controller.abort();
+    });
+
+    // The catalog row for the currently-selected option. Derived so the
+    // helper text + body builder + button gate all read the same value
+    // without each re-running the .find() lookup.
+    let selectedCatalog: TaggerModelSummary | null = $derived(
+        pickerOptions.find((m) => m.id === pickerSelectedId) ?? null
+    );
+
+    let isLocalSelected = $derived(pickerSelectedId === LOCAL_FILE_ID);
+
+    // Disable the Swap button when the form's effective body matches the
+    // active selection — the backend would treat that as a no-op (same
+    // identity), and the UI surfaces it as a disabled button so the user
+    // knows there's nothing to change. Compares every persisted field,
+    // not just the model path, so the user can freely edit Local fields
+    // (profile, size, label path) and the button stays disabled until
+    // any of them actually differ from the active selection.
+    let canSwap: boolean = $derived.by(() => {
+        if (!pickerLoaded || isSwapping || anyBatchRunning) {
+            return false;
+        }
+        const body = buildSelectionBody();
+        if (!body) {
+            return false;
+        }
+        if (!active) {
+            return true;
+        }
+        return body.kind === active.kind &&
+            body.repo_id === active.repo_id &&
+            body.model_path === active.model_path &&
+            body.label_path === active.label_path &&
+            body.preproc_profile === active.preproc_profile &&
+            body.default_size === active.default_size
+            ? false
+            : true;
+    });
+
+    function buildSelectionBody(): SwapTaggerBody | null {
+        if (!selectedCatalog) {
+            return null;
+        }
+        if (selectedCatalog.id === LOCAL_FILE_ID) {
+            if (!localModelPath.trim()) {
+                return null;
+            }
+            return {
+                kind: 'local',
+                repo_id: '',
+                repo_model_filename: 'model.onnx',
+                repo_label_filename: 'selected_tags.csv',
+                model_path: localModelPath.trim(),
+                label_path: localLabelPath.trim(),
+                preproc_profile: pickerProfile,
+                default_size: pickerSize
+            };
+        }
+        // Curated HF rows carry their own profile / size — the picker
+        // hides the controls for these so the user can't pick a
+        // mismatched combination. Local uses the editable controls
+        // (above).
+        return {
+            kind: 'hf',
+            repo_id: selectedCatalog.id,
+            repo_model_filename: 'model.onnx',
+            repo_label_filename: 'selected_tags.csv',
+            model_path: '',
+            label_path: '',
+            preproc_profile: selectedCatalog.default_preproc_profile,
+            default_size: selectedCatalog.default_size
+        };
+    }
+
+    async function handleSwap() {
+        const body = buildSelectionBody();
+        if (!body) {
+            return;
+        }
+        isSwapping = true;
+        try {
+            const next = await swapActiveModelAction(body);
+            if (next) {
+                // Re-seed form fields from the persisted selection without
+                // re-fetching — the action already returns the canonical row.
+                active = {
+                    ...next,
+                    source: next.kind === 'hf' ? `hf:${next.repo_id}` : `local:${next.model_path}`
+                };
+            }
+        } finally {
+            isSwapping = false;
+        }
+    }
 </script>
 
 <div class="space-y-4 p-5">
@@ -78,6 +271,173 @@
                     {/if}
                 </div>
             </div>
+        {/if}
+    </section>
+
+    <section class="space-y-3">
+        <h3 class="section-heading">Tagger model</h3>
+        <p class="text-xs text-gray-500">
+            Tags each image with general categories, characters, and a safety rating. Pick the model
+            to use here.
+        </p>
+
+        {#if pickerError}
+            <p class="text-sm text-yellow-400">Failed to load tagger catalog: {pickerError}</p>
+        {:else if !pickerLoaded}
+            <p class="text-xs text-gray-500">Loading…</p>
+        {:else}
+            <p class="text-xs text-gray-500">
+                {#if !active}
+                    No model selected.
+                {:else}
+                    Active:
+                    <code class="text-gray-300">
+                        {active.kind === 'hf' ? active.repo_id : active.model_path}
+                    </code>
+                    {#if active.preproc_profile}
+                        <span class="text-gray-500">
+                            (type <code class="text-gray-300">{active.preproc_profile}</code>)
+                        </span>
+                    {/if}
+                {/if}
+            </p>
+
+            {#if anyBatchRunning}
+                <div class="alert-warning">
+                    A batch tagging job is running — stop it from the dataset view before swapping
+                    the model.
+                </div>
+            {/if}
+
+            <div>
+                <label class="label mb-1 block" for="settings-tagger-model">Model</label>
+                <div class="flex items-start gap-2">
+                    <div class="min-w-0 flex-1">
+                        <select
+                            id="settings-tagger-model"
+                            class="input"
+                            bind:value={pickerSelectedId}
+                            disabled={isSwapping || anyBatchRunning}
+                        >
+                            {#each pickerOptions as option (option.id)}
+                                <option value={option.id}
+                                    >{option.id === LOCAL_FILE_ID
+                                        ? option.display
+                                        : option.id}</option
+                                >
+                            {/each}
+                        </select>
+                        {#if isLocalSelected}
+                            <p class="mx-2 mt-2 text-xs text-yellow-400">
+                                Local files are expect to be in ONNX format. Match the type to how
+                                the model was exported — wd-tagger for SmilingWolf-style, timm for
+                                animetimm models.
+                            </p>
+                        {:else if selectedCatalog}
+                            <p class="mx-2 mt-2 text-xs text-gray-500">
+                                {selectedCatalog.display}
+
+                                {#if selectedCatalog.params}
+                                    ({selectedCatalog.params})
+                                {/if}
+                            </p>
+                        {/if}
+                    </div>
+                    <button
+                        class="btn-primary shrink-0"
+                        onclick={handleSwap}
+                        disabled={!canSwap}
+                        title={anyBatchRunning
+                            ? 'A batch tagging job is running — stop it before swapping the model.'
+                            : undefined}
+                    >
+                        {#if !isSwapping}
+                            Swap
+                        {:else}
+                            <SvgSpinner class="animate-spin"></SvgSpinner>
+                        {/if}
+                    </button>
+                </div>
+            </div>
+
+            {#if isLocalSelected}
+                <div class="space-y-2">
+                    <div>
+                        <label class="label mb-1 block" for="settings-tagger-local-model"
+                            >Model path</label
+                        >
+                        <input
+                            id="settings-tagger-local-model"
+                            class="input"
+                            placeholder="/path/to/model.onnx"
+                            bind:value={localModelPath}
+                            disabled={isSwapping}
+                        />
+                    </div>
+                    <div>
+                        <label class="label mb-1 block" for="settings-tagger-local-label"
+                            >Label path (optional)</label
+                        >
+                        <input
+                            id="settings-tagger-local-label"
+                            class="input"
+                            placeholder="/path/to/selected_tags.csv"
+                            bind:value={localLabelPath}
+                            disabled={isSwapping}
+                        />
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="label mb-1 block" for="settings-tagger-profile"
+                                >Type</label
+                            >
+                            <select
+                                id="settings-tagger-profile"
+                                class="input"
+                                bind:value={pickerProfile}
+                                disabled={isSwapping}
+                            >
+                                {#each profiles as profile (profile)}
+                                    <option value={profile}>{profile}</option>
+                                {/each}
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                {#if pickerProfile === 'wd-tagger'}
+                                    Use <code class="text-gray-300">wd-tagger</code> when using a SmilingWolf
+                                    (or derived) model.
+                                {:else if pickerProfile === 'timm'}
+                                    Use <code class="text-gray-300">timm</code> when using a animetimm
+                                    (or derived) model.
+                                {:else}
+                                    Preprocessing pipeline must match how the model was exported.
+                                    <code>wd-tagger</code> for SmilingWolf exports,
+                                    <code>timm</code> for PyTorch-style exports.
+                                {/if}
+                            </p>
+                        </div>
+                        <div>
+                            <label class="label mb-1 block" for="settings-tagger-size"
+                                >Input size</label
+                            >
+                            <input
+                                id="settings-tagger-size"
+                                class="input"
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="auto"
+                                bind:value={pickerSize}
+                                disabled={isSwapping}
+                            />
+                            <p class="mt-1 text-xs text-gray-500">
+                                Set to the model's expected image size. Leave at 0 (auto) when
+                                unsure.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            {/if}
         {/if}
     </section>
 </div>

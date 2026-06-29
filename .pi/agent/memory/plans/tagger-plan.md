@@ -112,11 +112,13 @@ Design history lives in `history/tagger-plan/`:
 
 **Backend**
 
-- **User-configurable tagger model.** Let the user pick / swap the model
-  from the UI instead of only via `Configuration`. Needs a fair bit of
-  refactoring (the model identity is wired through startup) plus new
-  endpoints (list available models, get/set the active one, probably a
-  reload / respawn of the subprocess).
+- **User-configurable tagger model** — see
+  [`tagger-model-swap-plan`](./tagger-model-swap-plan.md). Drain
+  pending in-flight work, refuse swap during batch jobs, persist via
+  SQLite (`SettingsService`), ship SmilingWolf HF repos in v1.
+- **Clean up the new tests.** The tagger test suite grew fast during
+  this feature work; review for duplication, extract shared fixtures,
+  and trim over-specified assertions.
 
 **Frontend**
 

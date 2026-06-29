@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from yadc.api.configuration import Configuration
+from yadc.api.modules.db_connection_factory import DBConnectionFactory
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.services.dataset_jobs import (
     DatasetBusyError,
@@ -149,10 +150,19 @@ def shared_jobs(logging_factory: LoggingFactory) -> DatasetJobService:
     return DatasetJobService(logging=logging_factory)
 
 
-def _make_tagging(shared_jobs: DatasetJobService, test_configuration: Configuration) -> object:
+def _make_tagging(
+    shared_jobs: DatasetJobService,
+    test_configuration: Configuration,
+    db_connection_factory: DBConnectionFactory,
+    logging_factory: LoggingFactory,
+) -> object:
+    from yadc.api.services.settings import SettingsService
+    from yadc.api.services.settings_repository import SettingsRepository
     from yadc.api.services.tagging import TaggingService
 
     test_configuration.tagger_model_path = "/fake/model.onnx"
+    repo = SettingsRepository(db_connection_factory, logging_factory)
+    settings_service = SettingsService(db_connection_factory, logging_factory, repo)
     return TaggingService(
         configuration=test_configuration,
         logging=MagicMock(),
@@ -161,13 +171,20 @@ def _make_tagging(shared_jobs: DatasetJobService, test_configuration: Configurat
         dataset_watcher=MagicMock(),
         dataset_jobs=shared_jobs,
         job_scheduler=None,
+        settings_service=settings_service,
     )
 
 
 class TestCrossServiceExclusion:
-    def test_captioning_claim_blocks_tagging(self, shared_jobs: DatasetJobService, test_configuration: Configuration) -> None:
+    def test_captioning_claim_blocks_tagging(
+        self,
+        shared_jobs: DatasetJobService,
+        test_configuration: Configuration,
+        db_connection_factory: DBConnectionFactory,
+        logging_factory: LoggingFactory,
+    ) -> None:
         """If the coordinator already holds a captioning claim, a tagging job start raises."""
-        tagging = _make_tagging(shared_jobs, test_configuration)
+        tagging = _make_tagging(shared_jobs, test_configuration, db_connection_factory, logging_factory)
 
         async def run() -> None:
             await shared_jobs.try_acquire("ds", "captioning", "cap-1")
@@ -182,9 +199,15 @@ class TestCrossServiceExclusion:
         with pytest.raises(DatasetBusyError):
             asyncio.run(shared_jobs.try_acquire("ds", "captioning", "cap-1"))
 
-    def test_single_tag_releases_claim_on_success(self, shared_jobs: DatasetJobService, test_configuration: Configuration) -> None:
+    def test_single_tag_releases_claim_on_success(
+        self,
+        shared_jobs: DatasetJobService,
+        test_configuration: Configuration,
+        db_connection_factory: DBConnectionFactory,
+        logging_factory: LoggingFactory,
+    ) -> None:
         """The single-image tag wrapper releases its transient claim once done."""
-        tagging = _make_tagging(shared_jobs, test_configuration)
+        tagging = _make_tagging(shared_jobs, test_configuration, db_connection_factory, logging_factory)
         from yadc.api.services.dataset_repository import ImageInfo
         from yadc.taggers.base import TaggerResult
 
@@ -200,9 +223,15 @@ class TestCrossServiceExclusion:
 
         asyncio.run(run())
 
-    def test_single_tag_409_when_batch_holds(self, shared_jobs: DatasetJobService, test_configuration: Configuration) -> None:
+    def test_single_tag_409_when_batch_holds(
+        self,
+        shared_jobs: DatasetJobService,
+        test_configuration: Configuration,
+        db_connection_factory: DBConnectionFactory,
+        logging_factory: LoggingFactory,
+    ) -> None:
         """A held claim makes the single-image wrapper raise DatasetBusyError."""
-        tagging = _make_tagging(shared_jobs, test_configuration)
+        tagging = _make_tagging(shared_jobs, test_configuration, db_connection_factory, logging_factory)
         asyncio.run(shared_jobs.try_acquire("ds", "captioning", "cap-1"))
 
         async def run() -> None:

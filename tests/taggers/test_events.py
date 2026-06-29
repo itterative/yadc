@@ -17,6 +17,7 @@ from yadc.api.events import ImageTagErrorEvent, ImageTaggedEvent, TaggerStatusEv
 from yadc.api.modules import EventDispatcher, LoggingFactory
 from yadc.api.services.dataset_jobs import DatasetJobService
 from yadc.api.services.dataset_repository import ImageInfo
+from yadc.api.services.settings import SettingsService
 from yadc.api.services.tagging import TaggingService
 from yadc.taggers.base import TaggerResult
 
@@ -51,6 +52,7 @@ def service(
     dataset_service: MagicMock,
     dataset_watcher: MagicMock,
     dataset_jobs: DatasetJobService,
+    settings_service: SettingsService,
 ) -> TaggingService:
     test_configuration.tagger_model_path = "/fake/model.onnx"
     test_configuration.tagger_repo_id = ""
@@ -63,6 +65,7 @@ def service(
         dataset_watcher=dataset_watcher,
         job_scheduler=None,
         dataset_jobs=dataset_jobs,
+        settings_service=settings_service,
     )
 
 
@@ -283,6 +286,7 @@ class TestEvents:
         dataset_service: MagicMock,
         dataset_watcher: MagicMock,
         dataset_jobs: DatasetJobService,
+        settings_service: SettingsService,
         image_info: ImageInfo,
     ) -> None:
         """A request with no model configured raises ``RuntimeError`` without dispatching."""
@@ -297,6 +301,7 @@ class TestEvents:
             dataset_watcher=dataset_watcher,
             job_scheduler=None,
             dataset_jobs=dataset_jobs,
+            settings_service=settings_service,
         )
 
         with pytest.raises(RuntimeError, match="not configured"):
@@ -322,6 +327,7 @@ class TestSourceLabel:
         dataset_service: MagicMock,
         dataset_watcher: MagicMock,
         dataset_jobs: DatasetJobService,
+        settings_service: SettingsService,
     ) -> None:
         test_configuration.tagger_model_path = ""
         test_configuration.tagger_repo_id = "SmilingWolf/wd-v1-4-vit-tagger-v2"
@@ -333,6 +339,7 @@ class TestSourceLabel:
             dataset_watcher=dataset_watcher,
             job_scheduler=None,
             dataset_jobs=dataset_jobs,
+            settings_service=settings_service,
         )
         assert s._source_label() == "hf:SmilingWolf/wd-v1-4-vit-tagger-v2"
 
@@ -344,6 +351,7 @@ class TestSourceLabel:
         dataset_service: MagicMock,
         dataset_watcher: MagicMock,
         dataset_jobs: DatasetJobService,
+        settings_service: SettingsService,
     ) -> None:
         test_configuration.tagger_model_path = ""
         test_configuration.tagger_repo_id = ""
@@ -355,5 +363,6 @@ class TestSourceLabel:
             dataset_watcher=dataset_watcher,
             job_scheduler=None,
             dataset_jobs=dataset_jobs,
+            settings_service=settings_service,
         )
         assert s._source_label() == ""

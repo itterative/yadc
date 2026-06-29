@@ -3,6 +3,7 @@ import {
     cancelTagging as apiCancelTagging,
     saveImageTags as apiSaveImageTags,
     startTagJob as apiStartTagJob,
+    swapTaggerModel as apiSwapTaggerModel,
     tagImage as apiTagImage
 } from './api';
 import { addCurrentlyTagging, removeCurrentlyTagging } from './inflight';
@@ -11,7 +12,13 @@ import { tagSettings } from './settings';
 import { registerJobId } from '../caption/jobs';
 import { toast } from '../toasts';
 import { friendlyErrorMessage } from '$lib/api';
-import type { CancelResult, TagJobInfo, TaggerResult, TagSaveOptions } from './types';
+import type {
+    CancelResult,
+    SwapTaggerBody,
+    TagJobInfo,
+    TaggerResult,
+    TagSaveOptions
+} from './types';
 
 // --- Assembled options store ---
 
@@ -183,5 +190,46 @@ export async function saveImageTagsAction(
         await apiSaveImageTags(datasetName, imageId, result, resolvedSave);
     } catch (e) {
         throw new Error(friendlyErrorMessage(e, 'Failed to save tags'));
+    }
+}
+
+/** Swap the active tagger selection. Dispatches the right toast for each
+ *  outcome (success / batch running / concurrent swap / error) and returns
+ *  the new active payload on success, or ``null`` when the server refused
+ *  the swap. The caller decides what to do with ``null`` (typically: leave
+ *  the picker showing the prior value). */
+export async function swapActiveModelAction(body: SwapTaggerBody): Promise<SwapTaggerBody | null> {
+    const result = await apiSwapTaggerModel(body);
+    switch (result.status) {
+        case 'ok':
+            toast.info(`Tagger swapped to ${result.response.active?.source ?? body.repo_id}`);
+            return result.response.active
+                ? {
+                      kind: result.response.active.kind,
+                      repo_id: result.response.active.repo_id,
+                      repo_model_filename: result.response.active.repo_model_filename,
+                      repo_label_filename: result.response.active.repo_label_filename,
+                      model_path: result.response.active.model_path,
+                      label_path: result.response.active.label_path,
+                      preproc_profile: result.response.active.preproc_profile,
+                      default_size: result.response.active.default_size
+                  }
+                : null;
+        case 'busy':
+            toast.warning('A batch tagging job is running — stop it before swapping models', {
+                details: [result.message]
+            });
+            return null;
+        case 'in_progress':
+            toast.warning('Another swap is in progress', {
+                details: [
+                    result.message,
+                    `Retry in ~${Math.ceil(result.retryAfterS)}s — the previous swap is still draining.`
+                ]
+            });
+            return null;
+        case 'error':
+            toast.error('Failed to swap tagger model', { details: [result.message] });
+            return null;
     }
 }

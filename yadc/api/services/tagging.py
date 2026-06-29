@@ -46,9 +46,11 @@ from yadc.api.events import (
 from yadc.api.modules import DatasetWatcherService, EventDispatcher, JobScheduler, LoggingFactory, Service
 from yadc.api.modules.dataset_watcher import SELF_JOB_ID
 from yadc.api.modules.event_dispatcher import event_handler
+from yadc.api.modules.tagger_catalog import ActiveTagger
 from yadc.api.services.dataset_jobs import DatasetJobService, JobClaim
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
+from yadc.api.services.settings import SettingsService
 from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags, format_draft
 from yadc.taggers.base import tamer_result_size
 from yadc.taggers.client import TaggerClient
@@ -226,6 +228,32 @@ class CancelResult:
     job_id: str = ""
 
 
+class TaggerBusyError(Exception):
+    """Raised when a swap is attempted while a batch job is running. Maps to HTTP 409.
+
+    The UI surfaces the ``detail`` payload and points the user at the
+    stop button for the offending dataset(s).
+    """
+
+    def __init__(self, detail: str) -> None:
+        self.detail: str = detail
+        super().__init__(detail)
+
+
+class TaggerSwapInProgressError(Exception):
+    """Raised when a swap is attempted while another swap is already in flight. Maps to HTTP 429.
+
+    The optional ``retry_after_s`` hints at how long the second
+    caller should wait before retrying; the UI surfaces it as the
+    toast's retry guidance.
+    """
+
+    def __init__(self, detail: str, retry_after_s: float = 2.0) -> None:
+        self.detail: str = detail
+        self.retry_after_s: float = retry_after_s
+        super().__init__(detail)
+
+
 class TaggingService(Service):
     """Manages the tagger subprocess lifecycle and tagging requests.
 
@@ -243,6 +271,7 @@ class TaggingService(Service):
         dataset_service: DatasetService,
         dataset_watcher: DatasetWatcherService,
         dataset_jobs: DatasetJobService,
+        settings_service: SettingsService,
         job_scheduler: JobScheduler | None = None,
     ):
         self._configuration: Configuration = configuration
@@ -251,7 +280,18 @@ class TaggingService(Service):
         self._dataset_service: DatasetService = dataset_service
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._dataset_jobs: DatasetJobService = dataset_jobs
+        self._settings_service: SettingsService = settings_service
         self._job_scheduler: JobScheduler | None = job_scheduler
+
+        # The user's persisted active-tagger selection (set via the
+        # swap flow). Hydrated from ``SettingsService`` at construction
+        # so a running subprocess picks up the saved choice on the
+        # next spawn. ``None`` when no selection has been persisted
+        # (fresh install or after a corrupt-settings warning). Future
+        # phases wire this into ``_ensure_running_locked`` /
+        # ``_source_label``; the fallback to the flat ``Configuration``
+        # fields also lands in that phase.
+        self._active_tagger: ActiveTagger | None = None
 
         self._tagger_client: TaggerClient | None = None
         # ``threading.Lock`` (not ``asyncio.Lock``) so the sync idle
@@ -261,9 +301,20 @@ class TaggingService(Service):
         # tag inference happens off-thread via ``asyncio.to_thread``,
         # so the event loop stays free for non-locking work.
         self._lifecycle_lock: threading.Lock = threading.Lock()
+        # Atomic gate so concurrent swap requests don't both drain +
+        # respawn. Distinct from ``_lifecycle_lock`` because the swap
+        # holds the lifecycle lock for the full drain+spawn, while the
+        # swap-in-progress lock is only for the HTTP-visible window.
+        self._swap_in_progress_lock: threading.Lock = threading.Lock()
         # ``None`` until the first request arrives. Used as the
         # "last touched" timestamp by the idle-check job.
         self._last_used_t: float | None = None
+        # Monotonic timestamp set when a swap respawns the subprocess.
+        # ``_idle_check_tick`` uses it to apply the shorter post-swap
+        # timeout when no request has touched the subprocess yet
+        # (``last_used_t <= swapped_at``); the first request clears it
+        # so the normal idle timeout takes over.
+        self._swapped_at: float | None = None
 
         # Batch tagging jobs (one per dataset). ``asyncio.Lock`` guards
         # the dict; the jobs themselves run as ``asyncio.Task``s.
@@ -295,6 +346,14 @@ class TaggingService(Service):
             size_fn=tamer_result_size,
         )
 
+        # Hydrate the persisted active-tagger selection last so the
+        # LRU and other fields above are ready, and so a malformed
+        # row can't take the service down. Warnings are logged; on
+        # failure ``self._active_tagger`` stays ``None`` and the
+        # service still operates against the flat ``Configuration``
+        # fallback once Phase 2 wires that path.
+        self._hydrate_active_tagger()
+
     # --- event handlers ---------------------------------------------------
 
     @event_handler(StartupEvent)
@@ -316,7 +375,16 @@ class TaggingService(Service):
 
     @property
     def is_configured(self) -> bool:
-        """Whether the tagger has a model source configured (i.e. can serve requests at all)."""
+        """Whether the tagger has a model source configured (i.e. can serve requests at all).
+
+        True when either the persisted :class:`ActiveTagger` (whose
+        validators guarantee a non-empty ``repo_id`` / ``model_path``)
+        or the flat ``Configuration`` fallback fields provide a model.
+        The 503/ready split is driven by this property in the
+        controller.
+        """
+        if self._active_tagger is not None:
+            return True
         return bool(self._configuration.tagger_model_path.strip()) or bool(self._configuration.tagger_repo_id.strip())
 
     @property
@@ -324,12 +392,234 @@ class TaggingService(Service):
         """Whether the tagger subprocess is currently running."""
         return self._tagger_client is not None and self._tagger_client.is_alive
 
+    # --- persisted active-tagger selection --------------------------------
+
+    async def swap_active_model(self, selection: ActiveTagger) -> ActiveTagger:
+        """Swap the active tagger selection end-to-end (drain → respawn → persist).
+
+        The full flow:
+
+        1. Refuse with :class:`TaggerBusyError` (→ 409) if any batch
+           job is currently running on any dataset. The active
+           datasets are discovered via ``_tag_jobs``; a job is
+           "running" while its ``asyncio.Task`` is unfinished, matching
+           :meth:`is_tagging`.
+        2. Refuse with :class:`TaggerSwapInProgressError` (→ 429 with
+           a ``retry_after_s`` hint) if another swap is already in
+           flight. ``_swap_in_progress_lock`` is an atomic gate
+           distinct from ``_lifecycle_lock`` so a failing swap doesn't
+           hold the lifecycle lock open.
+        3. Drain any in-flight single-image call. Acquiring
+           ``_lifecycle_lock`` naturally waits for it to release;
+           ``_acquire_lifecycle`` polls with ``asyncio.sleep`` so the
+           loop keeps running. Worst-case drain time is
+           ``tagger_response_timeout_seconds`` (a wedged call).
+        4. Tear down the current subprocess via ``_stop_locked_async``,
+           which emits the stopping + stopped events with the **old**
+           source label.
+        5. Update ``_active_tagger`` in-memory; ``_ensure_running_locked``
+           reads from it on respawn.
+        6. Respawn. On failure the in-memory selection is rolled back
+           to the previous one and a best-effort rollback respawn runs
+           so the service stays operative. If the rollback respawn
+           also fails (``failed`` event is dispatched), the service
+           is degraded but not wedged.
+        7. Persist via ``SettingsService.set`` after a successful
+           respawn. A persist failure logs and continues — the
+           in-memory state is correct for this session; a restart
+           would re-load the old model. Per the plan we don't roll
+           back the swap on a persist failure (can revisit if the cost
+           proves painful in practice).
+
+        Returns the persisted :class:`ActiveTagger` (same instance).
+        The ``starting`` + ``ready`` SSE events emitted by step 6
+        carry the **new** source label because ``_active_tagger`` was
+        updated in step 5 before the respawn ran — other browser
+        tabs see the full transition (stopped → starting → ready) and
+        pick up the new label from those events.
+        """
+
+        if self._active_tagger is not None and self._active_tagger == selection:
+            self._logger.debug(
+                "Swap is a no-op; active selection already matches. [source=%s]",
+                selection.source_label,
+            )
+            return self._active_tagger
+
+        busy = [name for name, state in self._tag_jobs.items() if state.task is not None and not state.task.done()]
+        if busy:
+            raise TaggerBusyError(f"a batch tagging job is running on {busy!r}; stop it before swapping the model")
+        if not self._swap_in_progress_lock.acquire(blocking=False):
+            raise TaggerSwapInProgressError(
+                "another swap is already in progress",
+                retry_after_s=2.0,
+            )
+        try:
+            await self._acquire_lifecycle()
+            try:
+                old_active = self._active_tagger
+                if self._tagger_client is not None:
+                    await self._stop_locked_async()
+                self._active_tagger = selection
+                # Mark the spawn as post-swap so the idle check applies
+                # ``tagger_post_swap_idle_timeout_seconds`` until the first
+                # request uses the subprocess. Spawn does NOT reset
+                # ``_last_used_t`` — it keeps its prior value (``None`` on
+                # first swap, or an older timestamp otherwise), which is
+                # always ``<= swapped_at``, so the post-swap branch in
+                # ``_idle_reference`` matches until a request bumps
+                # ``_last_used_t`` past ``_swapped_at``.
+                self._swapped_at = time.monotonic()
+                try:
+                    await self._ensure_running_locked()
+                except Exception as exc:
+                    self._active_tagger = old_active
+                    self._swapped_at = None
+                    self._logger.exception("Respawn with new model failed; rolling back.")
+                    if old_active is not None:
+                        try:
+                            await self._ensure_running_locked()
+                        except Exception:
+                            self._logger.exception("Rollback respawn also failed.")
+                            self._emit_status("failed", error=str(exc))
+                    else:
+                        self._emit_status("failed", error=str(exc))
+                    raise
+                try:
+                    self._settings_service.set("tagger.active_model", selection.model_dump())
+                except Exception:
+                    self._logger.exception("Failed to persist active tagger; in-memory state retained.")
+                self._logger.info(
+                    "Active tagger swapped. [kind=%s, source=%s]",
+                    selection.kind,
+                    selection.source_label,
+                )
+                return selection
+            finally:
+                self._lifecycle_lock.release()
+        finally:
+            self._swap_in_progress_lock.release()
+
+    @property
+    def active_tagger(self) -> ActiveTagger | None:
+        """The user's persisted active-tagger selection, or ``None``.
+
+        ``None`` means no selection has been persisted yet (fresh
+        install, after a schema-mismatch warning, or after the
+        settings row was deleted). The SettingsDialog picker uses
+        :attr:`effective_active_tagger` instead so legacy
+        Configuration-only setups still see their model reflected.
+        """
+        return self._active_tagger
+
+    @property
+    def effective_active_tagger(self) -> ActiveTagger | None:
+        """The active selection the SettingsDialog picker should display.
+
+        Returns the persisted :class:`ActiveTagger` when one has been
+        written via :meth:`set_active_tagger`. Otherwise synthesizes
+        one from the flat ``Configuration`` fields so legacy setups
+        (e.g. ``tagger_model_path`` set with no prior swap) show the
+        right model in the picker without requiring the user to do a
+        no-op swap to "activate" it. Returns ``None`` only when
+        neither source is configured.
+        """
+        if self._active_tagger is not None:
+            return self._active_tagger
+        cfg = self._configuration
+        repo_id = cfg.tagger_repo_id.strip()
+        if repo_id:
+            return ActiveTagger(
+                kind="hf",
+                repo_id=repo_id,
+                repo_model_filename=cfg.tagger_repo_model_filename,
+                repo_label_filename=cfg.tagger_repo_label_filename,
+                preproc_profile=cfg.tagger_preproc_profile,
+                default_size=cfg.tagger_default_input_size,
+            )
+        path = cfg.tagger_model_path.strip()
+        if path:
+            return ActiveTagger(
+                kind="local",
+                model_path=path,
+                label_path=cfg.tagger_label_path,
+                preproc_profile=cfg.tagger_preproc_profile,
+                default_size=cfg.tagger_default_input_size,
+            )
+        return None
+
+    def set_active_tagger(self, selection: ActiveTagger) -> None:
+        """Persist the user's active-tagger selection.
+
+        Stores the JSON form of *selection* under the
+        ``tagger.active_model`` settings key, then updates the cached
+        model in-place. Future phases (swap infrastructure + endpoints)
+        drive this from ``POST /api/tagger/swap`` after draining any
+        in-flight single-image call and refusing concurrent swaps.
+
+        A subsequent ``TaggingService`` construction reads the same
+        key back via :meth:`_hydrate_active_tagger` so the selection
+        survives process restarts. The legacy flat ``Configuration``
+        fields are **not** modified — they remain the initial defaults
+        that this method overrides.
+        """
+        # Persist *first* so a crash mid-write doesn't leave the
+        # cached model ahead of the on-disk row. ``SettingsService``
+        # logs its own errors and returns silently on failure; we
+        # still update the cached model so the in-process state is
+        # usable, and log a warning so the cause is visible.
+        self._settings_service.set("tagger.active_model", selection.model_dump())
+        self._active_tagger = selection
+        self._logger.info(
+            "Active tagger persisted. [kind=%s, source=%s]",
+            selection.kind,
+            selection.source_label,
+        )
+
+    def _hydrate_active_tagger(self) -> None:
+        """Read the persisted active-tagger selection from ``SettingsService``.
+
+        Called at the end of :meth:`__init__`. Schema mismatches or
+        I/O errors leave ``self._active_tagger`` as ``None`` and log
+        a warning rather than aborting construction — the service can
+        still operate against the flat ``Configuration`` fallback in
+        later phases, and the user can re-save the selection from
+        the UI.
+        """
+        try:
+            raw = self._settings_service.get("tagger.active_model")
+        except Exception as exc:
+            self._logger.warning("Failed to read active tagger from settings: %s", exc)
+            return
+        if not isinstance(raw, dict):
+            return
+        try:
+            self._active_tagger = ActiveTagger.model_validate(raw)
+            self._logger.info(
+                "Hydrated active tagger from settings. [kind=%s, source=%s]",
+                self._active_tagger.kind,
+                self._active_tagger.source_label,
+            )
+        except pydantic.ValidationError as exc:
+            self._logger.warning(
+                "Discarding malformed active tagger from settings: %s. The legacy Configuration fields will be used until a new selection is saved.",
+                exc,
+            )
+
     def _source_label(self) -> str:
         """Describe the configured model source for diagnostics / SSE payloads.
+
+        Reads from the persisted :class:`ActiveTagger` selection when
+        present, so the SSE ``source`` reflects whatever the user
+        picked (and naturally updates when they swap). Falls back to
+        the flat ``Configuration`` fields so legacy setups without a
+        persisted selection keep emitting the standard format.
 
         Returns ``"hf:<repo_id>"`` for HuggingFace Hub downloads,
         ``"local:<path>"`` for local files, ``""`` when unconfigured.
         """
+        if self._active_tagger is not None:
+            return self._active_tagger.source_label
         repo_id = self._configuration.tagger_repo_id.strip()
         if repo_id:
             return f"hf:{repo_id}"
@@ -362,7 +652,15 @@ class TaggingService(Service):
         same model collide and reuse the slot.
         """
         cfg = self._configuration
-        model_id = cfg.tagger_repo_id.strip() or cfg.tagger_model_path.strip()
+        if self._active_tagger is not None:
+            # Same string the SSE event will carry (see
+            # :meth:`_source_label`); collapses to ``hf:<id>`` or
+            # ``local:<path>``. Swapping the model therefore
+            # invalidates existing cache slots naturally because the
+            # new selection hashes to a different bucket.
+            model_id = self._active_tagger.source_label
+        else:
+            model_id = cfg.tagger_repo_id.strip() or cfg.tagger_model_path.strip()
         return TaggerResultKey(
             dataset_name=dataset_name,
             image_id=image_id,
@@ -579,6 +877,14 @@ class TaggingService(Service):
                 # Reset the idle timer while holding the lock so the
                 # periodic idle check sees an in-use server.
                 self._last_used_t = time.monotonic()
+                # First request after a swap: drop the post-swap
+                # timestamp so the idle check uses the normal timeout
+                # from this point on. ``last_used_t`` is already
+                # past ``_swapped_at`` (the request happened after
+                # spawn), so the check would switch anyway — clearing
+                # keeps the state honest for future respawns.
+                if self._swapped_at is not None:
+                    self._swapped_at = None
                 # Dispatch ``ImageTagStartedEvent`` only on the cold
                 # path so cache hits don't fire per-image events (which
                 # would flood the SSE queue at the rate the loop can
@@ -684,8 +990,14 @@ class TaggingService(Service):
     async def _ensure_running_locked(self) -> None:
         """Spawn the tagger subprocess if not already running.
 
+        The subprocess kwargs are sourced from
+        :meth:`_subprocess_spawn_args`, which prefers the persisted
+        :class:`ActiveTagger` selection and falls back to the flat
+        ``Configuration`` fields.
+
         Raises:
-            RuntimeError: if the subprocess fails to start.
+            RuntimeError: if the subprocess fails to start, or if the
+                configured preproc profile name is not recognised.
         """
         if self._tagger_client is not None and self._tagger_client.is_alive:
             return
@@ -693,36 +1005,7 @@ class TaggingService(Service):
         # Either no client yet, or the previous one died. Build a
         # fresh client and start it. We do NOT reuse the dead client
         # — its multiprocessing queues are stale.
-        model_path = self._configuration.tagger_model_path
-        repo_id = self._configuration.tagger_repo_id.strip()
-        tagger_kwargs: dict[str, Any] = {}
-        label_path: str | None = None
-
-        if repo_id:
-            # Worker downloads from HuggingFace; local paths are ignored.
-            tagger_kwargs["repo_id"] = repo_id
-            tagger_kwargs["repo_model_filename"] = self._configuration.tagger_repo_model_filename
-            tagger_kwargs["repo_label_filename"] = self._configuration.tagger_repo_label_filename
-        else:
-            label_path = self._resolve_label_path(model_path)
-            if label_path:
-                tagger_kwargs["label_path"] = label_path
-
-        # Preprocessing profile: ``OnnxTagger.__init__`` validates the
-        # name and falls back to wd-tagger on an unknown value. We pre-
-        # validate here so a typo in the configuration fails fast at
-        # service construction rather than at the first tag request.
-        from yadc.taggers.onnx_preprocess import get_profile
-
-        try:
-            profile = get_profile(self._configuration.tagger_preproc_profile)
-        except ValueError as exc:
-            raise RuntimeError(f"Invalid tagger_preproc_profile: {exc}") from None
-        tagger_kwargs["preproc_profile"] = profile
-
-        default_size = self._configuration.tagger_default_input_size
-        if default_size > 0:
-            tagger_kwargs["default_size"] = default_size
+        tagger_kwargs, model_path = self._subprocess_spawn_args()
 
         self._emit_status("starting")
 
@@ -742,12 +1025,73 @@ class TaggingService(Service):
             raise RuntimeError("Failed to start tagger process — check server logs") from None
 
         self._tagger_client = client
+        labels_desc = tagger_kwargs.get("label_path") or ("<downloaded from HF>" if "repo_id" in tagger_kwargs else "<none>")
         self._logger.info(
             "Tagger process started. [source=%s, labels=%s]",
-            f"hf:{repo_id}" if repo_id else model_path,
-            label_path or ("<downloaded from HF>" if repo_id else "<none>"),
+            self._source_label(),
+            labels_desc,
         )
         self._emit_status("ready")
+
+    def _subprocess_spawn_args(self) -> tuple[dict[str, Any], str]:
+        """Build the spawn kwargs + ``model_path`` for ``_ensure_running_locked``.
+
+        Prefers the persisted :class:`ActiveTagger` selection when
+        one has been written via :meth:`set_active_tagger`. Falls
+        back to the flat ``Configuration`` fields so setups without a
+        persisted selection (fresh installs, after a corrupt-settings
+        warning) keep working until the user picks a model from the
+        UI.
+
+        Both paths resolve the preprocessing profile by name (raising
+        ``RuntimeError`` on an unknown name) and forward a positive
+        ``default_size`` override. The HF path leaves ``model_path``
+        empty — ``OnnxTagger.load_model`` ignores it once ``repo_id``
+        is set in kwargs.
+        """
+        from yadc.taggers.onnx_preprocess import get_profile
+
+        tagger_kwargs: dict[str, Any] = {}
+        model_path = ""
+        label_path: str | None = None
+        profile_name: str
+        default_size: int
+
+        if self._active_tagger is not None:
+            selection = self._active_tagger
+            profile_name = selection.preproc_profile
+            default_size = selection.default_size
+            if selection.kind == "hf":
+                tagger_kwargs["repo_id"] = selection.repo_id
+                tagger_kwargs["repo_model_filename"] = selection.repo_model_filename
+                tagger_kwargs["repo_label_filename"] = selection.repo_label_filename
+            else:
+                model_path = selection.model_path
+                explicit = selection.label_path.strip()
+                label_path = explicit or self._resolve_label_path(model_path)
+        else:
+            # Legacy fallback — flat Configuration fields. Kept
+            # verbatim so pre-swap installations behave identically.
+            model_path = self._configuration.tagger_model_path
+            profile_name = self._configuration.tagger_preproc_profile
+            default_size = self._configuration.tagger_default_input_size
+            repo_id = self._configuration.tagger_repo_id.strip()
+            if repo_id:
+                tagger_kwargs["repo_id"] = repo_id
+                tagger_kwargs["repo_model_filename"] = self._configuration.tagger_repo_model_filename
+                tagger_kwargs["repo_label_filename"] = self._configuration.tagger_repo_label_filename
+            else:
+                label_path = self._resolve_label_path(model_path)
+
+        if label_path:
+            tagger_kwargs["label_path"] = label_path
+        try:
+            tagger_kwargs["preproc_profile"] = get_profile(profile_name)
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid tagger_preproc_profile: {exc}") from None
+        if default_size > 0:
+            tagger_kwargs["default_size"] = default_size
+        return tagger_kwargs, model_path
 
     async def _stop_locked_async(self) -> None:
         """Stop the tagger subprocess (async). Used from ``on_shutdown``."""
@@ -761,6 +1105,7 @@ class TaggingService(Service):
         # a concurrent spawn from racing this stop.
         self._tagger_client = None
         self._last_used_t = None
+        self._swapped_at = None
         try:
             await client.stop()
         except Exception:
@@ -787,6 +1132,7 @@ class TaggingService(Service):
         client = self._tagger_client
         self._tagger_client = None
         self._last_used_t = None
+        self._swapped_at = None
         try:
             # ``TaggerServer.stop`` is sync; calling it via
             # ``client._server`` skips the ``asyncio.to_thread`` in
@@ -822,6 +1168,31 @@ class TaggingService(Service):
 
     # --- idle check (called by JobScheduler in a daemon thread) ----------
 
+    def _idle_reference(self) -> tuple[float, float] | None:
+        """Pick the reference timestamp + timeout for the idle check.
+
+        Returns ``(reference_timestamp, timeout_seconds)``, or ``None``
+        if there's nothing to time against (no request and no swap
+        since startup). The shorter ``tagger_post_swap_idle_timeout_seconds``
+        applies while a post-swap subprocess hasn't been touched by a
+        request yet — i.e. ``_last_used_t`` is ``None`` or still older
+        than ``_swapped_at``. The first request clears ``_swapped_at``,
+        after which the normal ``tagger_idle_timeout_seconds`` governs.
+        """
+        last_used = self._last_used_t
+        swapped_at = self._swapped_at
+        # Normal window: a request has bumped the idle timer past the
+        # swap point (or there was no swap). The ``is not None`` guard
+        # narrows ``last_used`` for the checker.
+        if last_used is not None and (swapped_at is None or last_used > swapped_at):
+            return last_used, self._configuration.tagger_idle_timeout_seconds
+        # Post-swap window: spawn happened but no request has used the
+        # subprocess yet (``_last_used_t`` is still ``None`` or predates
+        # the swap).
+        if swapped_at is not None:
+            return swapped_at, self._configuration.tagger_post_swap_idle_timeout_seconds
+        return None
+
     def _idle_check_tick(self) -> None:
         """Stop the subprocess if it has been idle longer than the configured timeout.
 
@@ -829,16 +1200,18 @@ class TaggingService(Service):
         so this never tears down a server that's actively serving.
         ``tagger_idle_timeout_seconds <= 0`` disables teardown
         entirely (the subprocess stays up once started).
+
+        After a swap, the shorter ``tagger_post_swap_idle_timeout_seconds``
+        applies — but only while the subprocess hasn't been touched
+        by a request yet. The first request clears ``_swapped_at`` so
+        the normal timeout takes over. See :meth:`_idle_reference`
+        for how the reference timestamp + timeout are selected.
         """
-        timeout = self._configuration.tagger_idle_timeout_seconds
-        if timeout <= 0:
-            return
-
-        last_used = self._last_used_t
-        if last_used is None:
-            return  # never used since startup
-
-        if time.monotonic() - last_used < timeout:
+        ref = self._idle_reference()
+        if ref is None:
+            return  # never used since startup, never swapped
+        reference, timeout = ref
+        if timeout <= 0 or time.monotonic() - reference < timeout:
             return
 
         # Non-blocking acquire: if an async request is currently
@@ -849,17 +1222,24 @@ class TaggingService(Service):
         try:
             # Re-check everything under the lock — state may have
             # changed while we were waiting.
-            if self._tagger_client is None or self._last_used_t is None:
+            if self._tagger_client is None:
                 return
-            if time.monotonic() - self._last_used_t < timeout:
+            # Recompute the reference under the lock (the request
+            # path may have just bumped ``_last_used_t``).
+            ref = self._idle_reference()
+            if ref is None:
+                return
+            reference, timeout = ref
+            if timeout <= 0 or time.monotonic() - reference < timeout:
                 return
             if not self._tagger_client.is_alive:
                 # Subprocess died but the client object lingered.
                 # Clean up state; next request will respawn.
                 self._tagger_client = None
                 self._last_used_t = None
+                self._swapped_at = None
                 return
-            idle_for = time.monotonic() - self._last_used_t
+            idle_for = time.monotonic() - reference
             self._logger.info("Tagger idle for %.0fs, stopping. [timeout=%ss]", idle_for, timeout)
             self._stop_locked_sync()
         finally:

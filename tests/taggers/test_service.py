@@ -19,9 +19,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from yadc.api.modules import EventDispatcher, JobScheduler, LoggingFactory
+from yadc.api.configuration import Configuration
+from yadc.api.events import ShutdownEvent
+from yadc.api.modules.tagger_catalog import ActiveTagger
 from yadc.api.services import tagging as tagging_module
-from yadc.api.services.dataset_jobs import DatasetJobService
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.tagging import (
     TaggerResultKey,
@@ -34,39 +35,16 @@ from yadc.taggers.base import TaggerResult
 
 from .conftest import make_client_mock, patch_client_factory
 
+
 # ---------------------------------------------------------------------------
 # Fixtures (job_scheduler + service variants). Image fixtures and the
 # subprocess client / patcher come from the directory's conftest.py.
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def job_scheduler() -> MagicMock:
-    return MagicMock(spec=JobScheduler)
-
-
-@pytest.fixture
-def service(
-    test_configuration,
-    logging_factory: LoggingFactory,
-    event_dispatcher: EventDispatcher,
-    dataset_service: MagicMock,
-    dataset_watcher: MagicMock,
-    job_scheduler: MagicMock,
-    dataset_jobs: DatasetJobService,
-) -> TaggingService:
-    """A ``TaggingService`` configured for a local-path tagger model with a 60s idle timeout."""
-    test_configuration.tagger_model_path = "/fake/model.onnx"
-    test_configuration.tagger_idle_timeout_seconds = 60.0
-    return TaggingService(
-        configuration=test_configuration,
-        logging=logging_factory,
-        event_dispatcher=event_dispatcher,
-        dataset_service=dataset_service,
-        dataset_watcher=dataset_watcher,
-        job_scheduler=job_scheduler,
-        dataset_jobs=dataset_jobs,
-    )
+# The ``service`` and ``job_scheduler`` fixtures now live in
+# ``tests/taggers/conftest.py`` so they're shared across the tagger
+# test suite (alongside the new ``settings_service``).
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +76,7 @@ def configure_dataset_service(dataset_service: MagicMock, images: list[ImageInfo
 
 
 class TestConfiguration:
-    def test_is_configured_reflects_model_path(self, test_configuration, service):  # noqa: ANN001
+    def test_is_configured_reflects_model_path(self, test_configuration: Configuration, service):  # noqa: ANN001
         """``is_configured`` is True iff a non-empty model path or repo_id is set."""
         test_configuration.tagger_model_path = ""
         test_configuration.tagger_repo_id = ""
@@ -120,6 +98,69 @@ class TestConfiguration:
         """``is_available`` is False when the subprocess hasn't been spawned yet."""
         assert service.is_available is False
 
+    def test_effective_active_tagger_falls_back_to_local_configuration(self, test_configuration: Configuration, service: TaggingService):
+        """When no persisted swap exists but ``Configuration.tagger_model_path``
+        is set, ``effective_active_tagger`` synthesizes a ``kind="local"``
+        ``ActiveTagger`` so the picker reflects the legacy Configuration path
+        without requiring a no-op swap."""
+        test_configuration.tagger_model_path = "/models/animetimm/model.onnx"
+        test_configuration.tagger_label_path = "/models/animetimm/selected_tags.csv"
+        test_configuration.tagger_repo_id = ""
+        test_configuration.tagger_preproc_profile = "timm"
+        test_configuration.tagger_default_input_size = 0
+
+        effective = service.effective_active_tagger
+        assert effective is not None
+        assert effective.kind == "local"
+        assert effective.model_path == "/models/animetimm/model.onnx"
+        assert effective.label_path == "/models/animetimm/selected_tags.csv"
+        assert effective.preproc_profile == "timm"
+        assert effective.source_label == "local:/models/animetimm/model.onnx"
+
+    def test_effective_active_tagger_falls_back_to_hf_configuration(self, test_configuration: Configuration, service: TaggingService):
+        """``tagger_repo_id`` set without a persisted swap yields a
+        synthesized ``kind="hf"`` ``ActiveTagger``. Takes priority over a
+        stale ``tagger_model_path`` since HF downloads win in the
+        subprocess args too."""
+        test_configuration.tagger_repo_id = "SmilingWolf/wd-vit-tagger-v3"
+        test_configuration.tagger_repo_model_filename = "model.onnx"
+        test_configuration.tagger_repo_label_filename = "selected_tags.csv"
+        test_configuration.tagger_model_path = "/stale/should-be-ignored.onnx"
+        test_configuration.tagger_preproc_profile = "wd-tagger"
+
+        effective = service.effective_active_tagger
+        assert effective is not None
+        assert effective.kind == "hf"
+        assert effective.repo_id == "SmilingWolf/wd-vit-tagger-v3"
+        assert effective.source_label == "hf:SmilingWolf/wd-vit-tagger-v3"
+
+    def test_effective_active_tagger_returns_persisted_when_set(self, test_configuration: Configuration, service: TaggingService, settings_service):
+        """When a swap has been persisted via SettingsService, that's the
+        authoritative source — the flat Configuration fields are ignored
+        even if they're set."""
+        from yadc.api.modules.tagger_catalog import ActiveTagger
+
+        persisted = ActiveTagger(
+            kind="hf",
+            repo_id="SmilingWolf/wd-eva02-large-tagger-v3",
+            preproc_profile="wd-tagger",
+        )
+        settings_service.set("tagger.active_model", persisted.model_dump())
+        # Re-hydrate: set_active_tagger reads from settings on construction;
+        # the in-memory ``_active_tagger`` is set when ``settings_service.set``
+        # is called by the swap path. For this test, we manually assign via
+        # the service so the property sees it.
+        service._active_tagger = persisted  # noqa: SLF001 (test-only direct assignment)
+        test_configuration.tagger_model_path = "/different/path.onnx"
+
+        effective = service.effective_active_tagger
+        assert effective is persisted
+
+    def test_effective_active_tagger_returns_none_when_unconfigured(self, test_configuration: Configuration, service: TaggingService):
+        test_configuration.tagger_model_path = ""
+        test_configuration.tagger_repo_id = ""
+        assert service.effective_active_tagger is None
+
 
 # ---------------------------------------------------------------------------
 # Startup wiring
@@ -127,7 +168,7 @@ class TestConfiguration:
 
 
 class TestStartup:
-    def test_startup_schedules_idle_check(self, test_configuration, service, job_scheduler):  # noqa: ANN001
+    def test_startup_schedules_idle_check(self, test_configuration: Configuration, service, job_scheduler):  # noqa: ANN001
         """``on_startup`` schedules the idle check job when a JobScheduler is provided."""
         test_configuration.tagger_model_path = "/fake/model.onnx"
 
@@ -137,7 +178,7 @@ class TestStartup:
         args, _ = job_scheduler.new_scheduled_job.call_args
         assert args[1] == service._idle_check_tick
 
-    def test_startup_without_scheduler_does_not_crash(self, test_configuration, service):  # noqa: ANN001
+    def test_startup_without_scheduler_does_not_crash(self, test_configuration: Configuration, service):  # noqa: ANN001
         """``on_startup`` is a no-op for the schedule side when no JobScheduler is injected."""
         test_configuration.tagger_model_path = "/fake/model.onnx"
         asyncio.run(service.on_startup(None))  # should not raise
@@ -169,7 +210,7 @@ class TestLifecycle:
         client.start.assert_awaited_once()
         assert client.tag.await_count == 2
 
-    def test_request_with_unconfigured_model_raises(self, test_configuration, service, image_info: ImageInfo):  # noqa: ANN001
+    def test_request_with_unconfigured_model_raises(self, test_configuration: Configuration, service, image_info: ImageInfo):  # noqa: ANN001
         """Requests raise ``RuntimeError`` when no model path or repo is configured."""
         test_configuration.tagger_model_path = ""
         test_configuration.tagger_repo_id = ""
@@ -211,7 +252,7 @@ class TestReplaceUnderscores:
         assert out.tags == {"long hair": 0.9, "1girl": 0.99, "^_^": 0.7}
         assert out.categories == {"general": ["long hair", "1girl", "^_^"]}
 
-    def test_param_false_overrides_config_true(self, test_configuration, service: TaggingService, image_info: ImageInfo) -> None:
+    def test_param_false_overrides_config_true(self, test_configuration: Configuration, service: TaggingService, image_info: ImageInfo) -> None:
         """An explicit ``False`` wins over a ``True`` server config (per-request
         override semantics, mirroring thresholds)."""
         test_configuration.tagger_replace_underscores = True
@@ -221,7 +262,7 @@ class TestReplaceUnderscores:
             out = asyncio.run(service.tag_image("ds", image_info, replace_underscores=False))
         assert out.tags == {"long_hair": 0.9}
 
-    def test_config_true_applies_when_param_unset(self, test_configuration, service: TaggingService, image_info: ImageInfo) -> None:
+    def test_config_true_applies_when_param_unset(self, test_configuration: Configuration, service: TaggingService, image_info: ImageInfo) -> None:
         """A ``True`` config applies when no per-request override is given."""
         test_configuration.tagger_replace_underscores = True
         client = make_client_mock(alive=True)
@@ -299,7 +340,7 @@ class TestIdleTimeout:
 
     def test_idle_check_disabled_with_zero_timeout(
         self,
-        test_configuration,
+        test_configuration: Configuration,
         service: TaggingService,
         image_info: ImageInfo,
         monkeypatch: pytest.MonkeyPatch,
@@ -356,6 +397,79 @@ class TestIdleTimeout:
         client1.start.assert_awaited_once()
         client2.start.assert_awaited_once()
 
+    def test_idle_check_uses_post_swap_timeout_when_unused(self, test_configuration: Configuration, service: TaggingService, monkeypatch: pytest.MonkeyPatch):
+        """After a swap, the idle check applies the shorter post-swap timeout
+        when no request has used the subprocess yet — a typical
+        "swapped, didn't tag" session tears down within seconds instead of
+        the default 15 minutes."""
+        test_configuration.tagger_repo_id = "SmilingWolf/wd-vit-tagger-v3"
+        test_configuration.tagger_idle_timeout_seconds = 900.0
+        test_configuration.tagger_post_swap_idle_timeout_seconds = 5.0
+
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            assert service._swapped_at is not None
+            assert service._last_used_t is None  # only set by per-request use
+
+            # Fast-forward past the post-swap window (5s) but well
+            # short of the normal idle window (900s).
+            reference = service._swapped_at
+            monkeypatch.setattr(time, "monotonic", lambda: reference + 6.0)
+            service._idle_check_tick()
+
+        client._server.stop.assert_called_once()
+        assert service._tagger_client is None
+        assert service._swapped_at is None
+
+    def test_idle_check_uses_normal_timeout_after_first_post_swap_request(
+        self, test_configuration: Configuration, service: TaggingService, make_image_info, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The first request after a swap drops ``_swapped_at`` so subsequent
+        idle checks measure against the normal (longer) timeout."""
+        test_configuration.tagger_repo_id = "SmilingWolf/wd-vit-tagger-v3"
+        test_configuration.tagger_idle_timeout_seconds = 900.0
+        test_configuration.tagger_post_swap_idle_timeout_seconds = 5.0
+
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            # Use the subprocess once — this should clear ``_swapped_at``.
+            asyncio.run(service.tag_image("ds", make_image_info()))
+            assert service._swapped_at is None
+            last_used = service._last_used_t
+            assert last_used is not None
+
+            # 6s has passed (well past the post-swap window of 5s) but
+            # short of the normal window of 900s. The subprocess must
+            # stay up.
+            monkeypatch.setattr(time, "monotonic", lambda: last_used + 6.0)
+            service._idle_check_tick()
+
+        client._server.stop.assert_not_called()
+        assert service.is_available is True
+
+    def test_post_swap_timeout_zero_disables_short_window(self, test_configuration: Configuration, service: TaggingService, monkeypatch: pytest.MonkeyPatch):
+        """``tagger_post_swap_idle_timeout_seconds <= 0`` falls through to the
+        normal timeout even right after a swap."""
+        test_configuration.tagger_repo_id = "SmilingWolf/wd-vit-tagger-v3"
+        test_configuration.tagger_idle_timeout_seconds = 900.0
+        test_configuration.tagger_post_swap_idle_timeout_seconds = 0.0
+
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            reference = service._swapped_at
+            assert reference is not None
+
+            # 6s after swap — would have triggered teardown if the
+            # post-swap window (5s) applied.
+            monkeypatch.setattr(time, "monotonic", lambda: reference + 6.0)
+            service._idle_check_tick()
+
+        client._server.stop.assert_not_called()
+        assert service.is_available is True
+
 
 # ---------------------------------------------------------------------------
 # Shutdown
@@ -368,14 +482,14 @@ class TestShutdown:
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
             asyncio.run(service.tag_image("ds", image_info))
-            asyncio.run(service.on_shutdown(None))
+            asyncio.run(service.on_shutdown(ShutdownEvent()))
 
         client.stop.assert_awaited_once()
         assert service._tagger_client is None
 
     def test_shutdown_when_not_running_is_noop(self, service: TaggingService) -> None:
         """``on_shutdown`` is a no-op when no subprocess has been spawned."""
-        asyncio.run(service.on_shutdown(None))  # should not raise
+        asyncio.run(service.on_shutdown(ShutdownEvent()))  # should not raise
         assert service._tagger_client is None
 
 
@@ -387,7 +501,7 @@ class TestShutdown:
 class TestHF:
     def test_repo_id_passed_through_to_tagger(
         self,
-        test_configuration,
+        test_configuration: Configuration,
         service: TaggingService,
         image_info: ImageInfo,
     ) -> None:
@@ -480,7 +594,7 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 info = await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             assert info.total == 2
             assert client.tag.await_count == 2
@@ -515,7 +629,7 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 info = await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             assert info.total == 2
             assert client.tag.await_count == 2
@@ -540,10 +654,10 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
-            service._merge_extras_tags.assert_called_once()
-            tags_arg = service._merge_extras_tags.call_args.args[2]
+            service._merge_extras_tags.assert_called_once()  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            tags_arg = service._merge_extras_tags.call_args.args[2]  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             assert tags_arg["general"] == ["1girl"]
             assert tags_arg["rating"] == "safe"
 
@@ -570,7 +684,7 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             # Only the fresh image reached the tagger + write path.
             assert client.tag.await_count == 1
@@ -642,7 +756,7 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             assert client.tag.await_count == 2
             assert dataset_service.write_draft.call_count == 2
@@ -669,11 +783,11 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             assert client.tag.await_count == 1
-            assert service._merge_extras_tags.call_count == 1
-            assert service._merge_extras_tags.call_args.args[1] == images[1].id
+            assert service._merge_extras_tags.call_count == 1  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            assert service._merge_extras_tags.call_args.args[1] == images[1].id  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
 
         asyncio.run(runner())
 
@@ -704,7 +818,7 @@ class TestBatchJob:
                     await service.start_tag_job_async("ds", TagJobOptions())
                 # Unblock and finish.
                 slow_event.set()
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
         asyncio.run(runner())
 
@@ -737,7 +851,7 @@ class TestBatchJob:
                 await started.wait()
                 stopped = await service.stop_tag_job_async("ds")
                 assert stopped is True
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
         asyncio.run(runner())
         final = asyncio.run(service.get_tag_job_status_async("ds"))
@@ -762,10 +876,10 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", opts)
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             dataset_service.write_draft.assert_not_called()
-            service._merge_extras_tags.assert_not_called()
+            service._merge_extras_tags.assert_not_called()  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
 
         asyncio.run(runner())
 
@@ -794,7 +908,7 @@ class TestBatchJob:
         async def runner() -> None:
             with patch_client_factory(client):
                 await service.start_tag_job_async("ds", TagJobOptions())
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
             final = await service.get_tag_job_status_async("ds")
             assert final.status == "done"
@@ -918,7 +1032,7 @@ class TestCancel:
                 assert result.job_id == job_id
                 # stop_event was set.
                 assert service._tag_jobs["ds"].stop_event.is_set() is True
-                await service._tag_jobs["ds"].task  # type: ignore[arg-type]
+                await service._tag_jobs["ds"].task  # pyright: ignore[reportGeneralTypeIssues]
 
         asyncio.run(runner())
         assert asyncio.run(service.get_tag_job_status_async("ds")).status == "cancelled"
@@ -1173,7 +1287,7 @@ class TestTaggerResultCache:
     def test_threshold_change_misses_cache(
         self,
         service: TaggingService,
-        test_configuration,
+        test_configuration: Configuration,
         image_info: ImageInfo,
     ) -> None:
         """A request with a different *bucketed* fingerprint reads a different cache slot.
@@ -1213,7 +1327,7 @@ class TestTaggerResultCache:
     def test_rating_threshold_change_does_not_change_bucket(
         self,
         service: TaggingService,
-        test_configuration,
+        test_configuration: Configuration,
         image_info: ImageInfo,
     ) -> None:
         """Bumping only ``rating_threshold`` keeps the same cache bucket (rating is hardcoded to 0).
@@ -1249,7 +1363,7 @@ class TestTaggerResultCache:
     def test_model_swap_misses_cache(
         self,
         service: TaggingService,
-        test_configuration,
+        test_configuration: Configuration,
         image_info: ImageInfo,
     ) -> None:
         """Swapping ``tagger_repo_id`` mid-session gives the next reader an empty slot.
@@ -1271,7 +1385,7 @@ class TestTaggerResultCache:
     def test_lru_evicts_when_over_budget(
         self,
         service: TaggingService,
-        test_configuration,
+        test_configuration: Configuration,
         make_image_info,
     ) -> None:
         """Capacity from ``tagger_result_max_memory_bytes`` — entries beyond it are evicted LRU-first.
@@ -1567,7 +1681,7 @@ class TestTaggerResultKey:
 
         key = self._make_key()
         with pytest.raises(dataclasses.FrozenInstanceError):
-            key.image_id = 999  # type: ignore[misc]
+            key.image_id = 999  # pyright: ignore[reportAttributeAccessIssue]
 
 
 class TestBucketThreshold:

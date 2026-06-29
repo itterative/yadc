@@ -41,16 +41,31 @@ through :class:`DatasetService` and delegates to :class:`TaggingService`.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pydantic
-from quart import jsonify, request
+from quart import Response, jsonify, request
+
+from yadc.taggers.onnx_preprocess import list_profiles
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
+from ..modules.tagger_catalog import (
+    KNOWN_TAGGER_MODELS,
+    LOCAL_FILE_ENTRY,
+    ActiveTagger,
+)
 from ..services.dataset_jobs import DatasetBusyError
 from ..services.datasets import DatasetService
-from ..services.tagging import TaggingService, TaggingThresholds, TagJobOptions, TagSaveOptions
+from ..services.tagging import (
+    TaggerBusyError,
+    TaggerSwapInProgressError,
+    TaggingService,
+    TaggingThresholds,
+    TagJobOptions,
+    TagSaveOptions,
+)
 from . import controller
 from .blueprints import ApiBlueprint
 from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error, validate_body
@@ -345,3 +360,110 @@ def api_tagging(
         result = TaggerResult(tags=dict(body.tags), categories={k: list(v) for k, v in body.categories.items()})
         content = tagging.preview_save_tags(result, body.save)
         return jsonify({"content": content})
+
+    # --- tagger model swap -----------------------------------------------
+    #
+    # The picker UI calls these three routes. ``GET /api/tagger/active``
+    # surfaces the current selection + subprocess liveness so the panel
+    # can show "Currently running: <source>". ``POST /api/tagger/swap``
+    # drains any in-flight single-image call (bounded by
+    # ``tagger_response_timeout_seconds``) before tearing down the old
+    # subprocess and respawning with the new kwargs. ``GET
+    # /api/tagger/models`` returns the curated catalog used to populate
+    # the dropdown.
+
+    @app.get("/tagger/active")
+    async def get_active_tagger():  # pyright: ignore[reportUnusedFunction]
+        """Return the active tagger selection and whether the subprocess is up.
+
+        Response shape:
+
+        ```json
+        {
+          "active": {"kind": "hf", "repo_id": "...", ..., "source": "hf:..."} | null,
+          "is_available": true | false
+        }
+        ```
+
+        ``active`` reflects both the persisted :class:`ActiveTagger`
+        (SettingsService) and the flat ``Configuration`` fallback —
+        the latter is synthesized so legacy setups using
+        ``Configuration.tagger_model_path`` directly still see the
+        right model in the picker without a no-op swap.
+        ``is_available`` is whether the subprocess is currently up;
+        the picker surfaces this for a "Currently running: …" line.
+        ``active`` is ``null`` only when neither source has a model.
+        """
+        active = tagging.effective_active_tagger
+        if active is None:
+            return jsonify({"active": None, "is_available": False})
+        payload = active.model_dump()
+        payload["source"] = active.source_label
+        return jsonify({"active": payload, "is_available": tagging.is_available})
+
+    @app.post("/tagger/swap")
+    async def swap_tagger():  # pyright: ignore[reportUnusedFunction]
+        """Swap the active tagger model end-to-end.
+
+        Body is the full :class:`ActiveTagger` schema (validated via
+        ``model_validate``). Status codes:
+
+        - 200 + the new active payload — swap completed.
+        - 400 — body failed validation (e.g. ``kind="hf"`` without ``repo_id``).
+        - 409 — a batch tagging job is running; ask the user to stop it first.
+        - 429 — another swap is in flight; response carries
+          ``retry_after_s`` and the standard ``Retry-After`` header.
+
+        The swap itself can take up to ``tagger_response_timeout_seconds``
+        if an in-flight single-image call is mid-inference; the client
+        should show a busy spinner for the duration.
+        """
+        raw_body = await request.get_json(silent=True)
+        try:
+            selection = ActiveTagger.model_validate(raw_body)
+        except pydantic.ValidationError:
+            return jsonify_error(
+                "Invalid swap body",
+                status=400,
+                code=ErrorCode.BAD_REQUEST,
+            )
+
+        try:
+            selection = await tagging.swap_active_model(selection)
+        except TaggerBusyError as exc:
+            return jsonify_error(str(exc), status=409, code=ErrorCode.CONFLICT)
+        except TaggerSwapInProgressError as exc:
+            payload = {
+                "error": str(exc),
+                "retry_after_s": exc.retry_after_s,
+                "code": ErrorCode.TOO_MANY_REQUESTS.value,
+            }
+            return Response(
+                json.dumps(payload),
+                status=429,
+                mimetype="application/json",
+                headers={"Retry-After": str(int(exc.retry_after_s))},
+            )
+
+        payload = selection.model_dump()
+        payload["source"] = selection.source_label
+        return jsonify({"active": payload, "is_available": tagging.is_available}), 200
+
+    @app.get("/tagger/models")
+    async def list_tagger_models():  # pyright: ignore[reportUnusedFunction]
+        """Return the curated tagger model catalog used by the picker dropdown.
+
+        Static for v1 — SmilingWolf HF repos plus a "Local file…"
+        sentinel. The ``profiles`` list mirrors
+        :func:`yadc.taggers.onnx_preprocess.list_profiles` so the
+        picker's profile dropdown stays in sync with the backend's
+        supported set. Adding a new curated entry is a one-line change
+        in :mod:`yadc.api.modules.tagger_catalog`.
+        """
+        return jsonify(
+            {
+                "models": [m.model_dump() for m in KNOWN_TAGGER_MODELS],
+                "local": LOCAL_FILE_ENTRY.model_dump(),
+                "profiles": list_profiles(),
+            }
+        )

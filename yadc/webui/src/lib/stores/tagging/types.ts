@@ -108,3 +108,50 @@ export interface TagJobStatusEvent {
     source: string;
     elapsed: number;
 }
+
+// --- Tagger model swap (mirrors ActiveTagger / TaggerModelSummary on the backend) ---
+
+/** One entry in the curated model catalog surfaced by ``GET /api/tagger/models``. */
+export interface TaggerModelSummary {
+    id: string;
+    display: string;
+    params: string;
+    /** Profile applied when this row is swapped. For curated HF models this
+     *  is baked in (``"wd-tagger"`` for SmilingWolf) and the picker hides the
+     *  Profile control. For the Local sentinel it seeds the picker's Profile
+     *  dropdown when no active selection exists to copy from. */
+    default_preproc_profile: string;
+    /** Override input size for symbolic-dim models. ``0`` = use the model's
+     *  default. Only meaningful for Local selections — curated HF rows use
+     *  ``0`` (their native size). */
+    default_size: number;
+}
+
+/** The persisted active-tagger selection (round-trips through ``POST /api/tagger/swap``). */
+export interface ActiveTaggerSelection {
+    kind: 'hf' | 'local';
+    repo_id: string;
+    repo_model_filename: string;
+    repo_label_filename: string;
+    model_path: string;
+    label_path: string;
+    preproc_profile: string;
+    default_size: number;
+    /** Server-derived source label (``hf:<repo_id>`` / ``local:<path>``). */
+    source: string;
+}
+
+/** ``GET /api/tagger/active`` response shape. ``active === null`` when nothing is configured. */
+export interface ActiveTaggerResponse {
+    active: ActiveTaggerSelection | null;
+    is_available: boolean;
+}
+
+/** Body for the swap request — ``ActiveTaggerSelection`` minus the server-derived ``source``. */
+export type SwapTaggerBody = Omit<ActiveTaggerSelection, 'source'>;
+
+/** Response from ``POST /api/tagger/swap`` — same shape as the GET on success. */
+export type SwapTaggerResponse = ActiveTaggerResponse;
+
+/** Sentinel id in the curated catalog that triggers the local-file prompt. */
+export const LOCAL_FILE_ID = '__local__';
