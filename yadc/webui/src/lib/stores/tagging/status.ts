@@ -69,6 +69,25 @@ function _scheduleEviction(datasetName: string): void {
 /** Upsert a dataset's status. Terminal statuses are scheduled for eviction. */
 export function setTaggingStatus(status: TagJobInfo): void {
     _taggingStatuses.update((map) => {
+        const current = map.get(status.dataset_name);
+        // Don't overwrite a terminal status from the same job with a
+        // non-terminal one. The HTTP response from ``POST /tagger/start``
+        // carries a snapshot read at submit time — for an all-cache-hit
+        // batch the background task can finish (and dispatch the terminal
+        // ``tag_job_status`` SSE event) before the response lands at the
+        // client. A late response that says 'running' would otherwise
+        // yank the UI back from 'done' to 'running'. The terminal SSE
+        // event is the authoritative state for that job_id; if it never
+        // arrives, the eviction timer cleans up after 5 min.
+        if (
+            current !== undefined &&
+            current.job_id !== '' &&
+            current.job_id === status.job_id &&
+            TERMINAL_STATUSES.has(current.status) &&
+            !TERMINAL_STATUSES.has(status.status)
+        ) {
+            return map;
+        }
         const next = new Map(map);
         next.set(status.dataset_name, status);
         return next;

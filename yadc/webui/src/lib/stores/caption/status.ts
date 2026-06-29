@@ -88,6 +88,27 @@ function _scheduleEviction(datasetName: string): void {
  *  fresh non-terminal status arrives for the same dataset. */
 export function setCaptioningStatus(status: CaptioningStatus): void {
     _captioningStatuses.update((map) => {
+        const current = map.get(status.dataset_name);
+        // Don't overwrite a terminal status from the same job with a
+        // non-terminal one. The HTTP response from ``POST /captioner/start``
+        // carries a snapshot read at submit time; if the background task
+        // finishes (and dispatches the terminal ``captioning_status`` SSE
+        // event) before the response lands, a late response that says
+        // 'starting'/'running' would otherwise yank the UI back from
+        // 'done'. The terminal SSE event is the authoritative state for
+        // that job_id; if it never arrives, the eviction timer cleans up
+        // after 5 min. (Same gate as ``setTaggingStatus``; captioning
+        // doesn't have a tagger-style all-cache fast path, but the race
+        // is theoretically possible for small/fast captioning jobs.)
+        if (
+            current !== undefined &&
+            current.job_id !== '' &&
+            current.job_id === status.job_id &&
+            TERMINAL_STATUSES.has(current.status) &&
+            !TERMINAL_STATUSES.has(status.status)
+        ) {
+            return map;
+        }
         const next = new Map(map);
         next.set(status.dataset_name, status);
         return next;
