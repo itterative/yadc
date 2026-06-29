@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 5
+last_history: 6
 ---
 
 # Tagger Plan
@@ -90,6 +90,16 @@ Design history lives in `history/tagger-plan/`:
     Tags tab sorts the other way (confidence descending, ties
     alphabetical) since the user is choosing which tags to keep —
     most-likely tags surface first. See `history/tagger-plan/005`.
+15. **Phase G — Read-through on the result LRU + bucketed cache
+    key.** `tag_image` consults `_tag_results` before spawning the
+    subprocess; a hit returns the cached value (re-applied at the
+    request's effective thresholds + `replace_underscores` post-hoc)
+    with `ImageTaggedEvent` dispatched and skips the byte read /
+    lifecycle work. Covers POST `/tag` and the batch job's per-image
+    loop under matching bucketed thresholds. The cache key coarsens
+    thresholds (`rating=0` always; `general` / `character` floored to
+    the nearest `0.2`), so nearby threshold values share a slot.
+    See `history/tagger-plan/006`.
 
 ## Pending (future iterations)
 

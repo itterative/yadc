@@ -1176,12 +1176,18 @@ class TestTaggerResultCache:
         test_configuration,
         image_info: ImageInfo,
     ) -> None:
-        """A request with different per-request thresholds reads a different cache slot.
+        """A request with a different *bucketed* fingerprint reads a different cache slot.
 
-        ``tag_image`` is called once with config-default thresholds,
-        caching under that fingerprint. A subsequent ``get_tag_result``
-        with a higher ``rating_threshold`` reads a different bucket
-        (empty).
+        ``tag_image`` is called once under config-default thresholds
+        (bucket ``general=0.2``, ``character=0.8``). A subsequent
+        ``get_tag_result`` with a ``general_threshold`` that floors to
+        a different bucket (``0.6`` here, instead of ``0.2``) reads
+        the empty ``general=0.6`` slot.
+
+        ``rating_threshold`` alone never changes the bucket (it's
+        always ``0`` in the key); bumping only ``rating`` is a cache
+        hit on the same slot — which matches the design (cached
+        rating is always 0, rating is reapplied at retrieval).
         """
         test_configuration.tagger_rating_threshold = 0.0
         test_configuration.tagger_general_threshold = 0.35
@@ -1191,9 +1197,54 @@ class TestTaggerResultCache:
         with patch_client_factory(client):
             asyncio.run(service.tag_image("ds", image_info))
 
-        # Cache was written under (0.0, 0.35, 0.85); this reads the
-        # (0.5, 0.35, 0.85) bucket, which is empty.
-        assert asyncio.run(service.get_tag_result("ds", 1, thresholds=TaggingThresholds(rating=0.5))) is None
+        # Cache was written under (0.0, 0.2, 0.8); this reads the
+        # (0.0, 0.6, 0.8) bucket, which is empty.
+        assert (
+            asyncio.run(
+                service.get_tag_result(
+                    "ds",
+                    1,
+                    thresholds=TaggingThresholds(rating=0.0, general=0.7, character=0.85),
+                )
+            )
+            is None
+        )
+
+    def test_rating_threshold_change_does_not_change_bucket(
+        self,
+        service: TaggingService,
+        test_configuration,
+        image_info: ImageInfo,
+    ) -> None:
+        """Bumping only ``rating_threshold`` keeps the same cache bucket (rating is hardcoded to 0).
+
+        Reading the cache with a higher rating threshold re-filters the
+        cached set on the way out — not a cache miss, just a stricter
+        filter pass at retrieval.
+        """
+        test_configuration.tagger_rating_threshold = 0.0
+        test_configuration.tagger_general_threshold = 0.35
+        test_configuration.tagger_character_threshold = 0.85
+
+        from yadc.taggers.base import TaggerResult
+
+        client = make_client_mock(
+            alive=True,
+            tag_result=TaggerResult(
+                tags={"general": 0.6, "safe": 0.5, "explicit": 0.99},
+                categories={"rating": ["general", "safe", "explicit"]},
+            ),
+        )
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        # Bumping rating to 0.9 keeps the same (rating=0, general=0.2,
+        # character=0.8) slot. Re-filter at request values drops "general"
+        # (score 0.6 < 0.9) and "safe" (score 0.5 < 0.9); only
+        # "explicit" survives.
+        out = asyncio.run(service.get_tag_result("ds", 1, thresholds=TaggingThresholds(rating=0.9)))
+        assert out is not None
+        assert out.tags == {"explicit": 0.99}
 
     def test_model_swap_misses_cache(
         self,
@@ -1242,6 +1293,150 @@ class TestTaggerResultCache:
         assert asyncio.run(service.get_tag_result("ds", 3)) is not None
 
 
+class TestTaggerReadThroughCache:
+    """``TaggingService.tag_image`` is read-through on the LRU cache.
+
+    Cache hits must (a) return the cached value verbatim, (b) skip the
+    subprocess spawn, (c) skip the byte read on the image path, and
+    (d) still dispatch ``ImageTaggedEvent`` so SSE clients see the
+    same success signal a real model run would emit. Cache misses
+    must still go through the full path so the entry is then
+    available for the next read.
+
+    These tests reuse a single ``make_client_mock`` across the cold
+    call and any warm-calls-that-should-still-run-the-model: the
+    service-level ``_tagger_client`` is kept alive across the cold
+    call, and a fresh ``patch_client_factory`` would re-spawn on the
+    second ``_ensure_running_locked`` only if the existing client
+    wasn't alive. So the same mock's ``tag.await_count`` is the
+    right surface to assert against for "did the model run".
+    """
+
+    def test_cache_hit_returns_cached_value_without_calling_model(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """A second ``tag_image`` under the same fingerprint hits the LRU and skips the subprocess."""
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            cold = asyncio.run(service.tag_image("ds", image_info))
+            assert client.tag.await_count == 1
+
+            warm = asyncio.run(service.tag_image("ds", image_info))
+            assert client.tag.await_count == 1  # unchanged — short-circuited
+
+        # Cold-path result is the source of truth; warm should equal it
+        # by value (the post-threshold / post-replace form).
+        assert warm.tags == cold.tags
+        assert warm.categories == cold.categories
+
+    def test_cache_hit_does_not_touch_idle_timer(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """A cache hit must not reset ``_last_used_t`` (subprocess wasn't started)."""
+        import time
+
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        baseline_idle_t = service._last_used_t  # noqa: SLF001 — set by the cold call
+        # Wait a tick so monotonic moves; the hit must leave it alone.
+        before = time.monotonic()
+        time.sleep(0.05)
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+        assert service._last_used_t == baseline_idle_t  # noqa: SLF001
+        assert time.monotonic() - before >= 0.05
+
+    def test_cache_hit_dispatches_image_tagged_event(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """``ImageTaggedEvent`` is still emitted on a hit so SSE clients see success."""
+        from yadc.api.events import ImageTaggedEvent
+
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            # Cold call to populate the cache and prime the event log.
+            asyncio.run(service.tag_image("ds", image_info))
+
+            # Spy on dispatch for the warm call.
+            dispatch_spy = MagicMock()
+            original_dispatch = service._event_dispatcher.dispatch  # noqa: SLF001
+            service._event_dispatcher.dispatch = dispatch_spy  # type: ignore[method-assign]  # noqa: SLF001
+            try:
+                asyncio.run(service.tag_image("ds", image_info))
+            finally:
+                service._event_dispatcher.dispatch = original_dispatch  # type: ignore[method-assign]  # noqa: SLF001
+
+        tagged = [c.args[0] for c in dispatch_spy.call_args_list if isinstance(c.args[0], ImageTaggedEvent)]
+        assert len(tagged) == 1
+        assert tagged[0].dataset_name == "ds"
+        assert tagged[0].image_id == image_info.id
+        # Cache hits are instantaneous — ``duration_ms=0`` marks "no
+        # real model run" for downstream consumers (e.g. timing stats).
+        assert tagged[0].duration_ms == 0
+
+    def test_cache_miss_under_different_thresholds_runs_the_model(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Different *bucketed* thresholds hash to a different slot and miss the cache.
+
+        ``rating_threshold`` changes keep the same bucket (rating is
+        always 0 in the key), so to exercise a real bucket-distinct
+        miss we bump ``general_threshold`` enough to land in a
+        different bucket.
+        """
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+            # Cold write under default thresholds (bucket g=0.2) called
+            # the model once.
+            assert client.tag.await_count == 1
+
+            # Override with general=0.7 (bucket g=0.6) — different slot,
+            # the read-through path must fall through to the model again.
+            asyncio.run(
+                service.tag_image(
+                    "ds",
+                    image_info,
+                    thresholds=TaggingThresholds(rating=0.0, general=0.7, character=0.85),
+                )
+            )
+            assert client.tag.await_count == 2
+
+    def test_warm_cache_writes_under_independent_fingerprint(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Buckets stay isolated: a bucket-distinct write doesn't pollute the existing slot.
+
+        Calls under two different bucket floors + a repeat of the
+        first: 3 calls, 2 model runs. The override write created its
+        own bucket; the third call reuses the original slot.
+        """
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))  # bucket g=0.2 (default)
+            asyncio.run(
+                service.tag_image(
+                    "ds",
+                    image_info,
+                    thresholds=TaggingThresholds(rating=0.0, general=0.7, character=0.85),
+                )
+            )  # bucket g=0.6 (override) — miss
+            asyncio.run(service.tag_image("ds", image_info))  # bucket g=0.2 (default) — hit
+            assert client.tag.await_count == 2
+
+
 class TestTaggerResultKey:
     """``TaggerResultKey`` — hashable + ``__eq__`` contract used as an LRU key."""
 
@@ -1253,7 +1448,6 @@ class TestTaggerResultKey:
             rating_threshold=0.0,
             general_threshold=0.35,
             character_threshold=0.85,
-            replace_underscores=False,
         )
         defaults.update(overrides)
         return TaggerResultKey(**defaults)
@@ -1266,7 +1460,12 @@ class TestTaggerResultKey:
         assert hash(a) == hash(b)
 
     def test_distinct_field_makes_keys_unequal(self) -> None:
-        """Each field participates in equality — flipping any one breaks the match."""
+        """Each field participates in equality — flipping any one breaks the match.
+
+        ``replace_underscores`` is no longer in the key (applied
+        post-hoc), so it's intentionally omitted from the
+        equality-breaking list.
+        """
         base = self._make_key()
         for overrides in (
             {"dataset_name": "other"},
@@ -1275,7 +1474,6 @@ class TestTaggerResultKey:
             {"rating_threshold": 0.1},
             {"general_threshold": 0.5},
             {"character_threshold": 0.9},
-            {"replace_underscores": True},
         ):
             modified = self._make_key(**overrides)
             assert modified != base, f"expected {overrides} to break equality"
@@ -1293,3 +1491,35 @@ class TestTaggerResultKey:
         key = self._make_key()
         with pytest.raises(dataclasses.FrozenInstanceError):
             key.image_id = 999  # type: ignore[misc]
+
+
+class TestBucketThreshold:
+    """``bucket_threshold`` — rounds a tagger threshold DOWN to the nearest 0.2 boundary."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0.0, 0.0),
+            (0.05, 0.0),
+            (0.1, 0.0),
+            (0.2, 0.2),
+            (0.35, 0.2),  # canonical default general threshold
+            (0.4, 0.4),
+            (0.5, 0.4),
+            (0.6, 0.6),
+            (0.85, 0.8),  # canonical default character threshold
+            (1.0, 1.0),
+            (1.5, 1.4),
+            (2.0, 2.0),
+        ],
+    )
+    def test_floor_to_step(self, value: float, expected: float) -> None:
+        from yadc.api.services.tagging import bucket_threshold
+
+        assert bucket_threshold(value) == pytest.approx(expected)
+
+    def test_negative_returns_zero(self) -> None:
+        """Negative thresholds aren't useful in the cache — floor to 0."""
+        from yadc.api.services.tagging import bucket_threshold
+
+        assert bucket_threshold(-0.1) == 0.0

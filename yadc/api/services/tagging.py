@@ -21,6 +21,7 @@ changes), ``ImageTaggedEvent`` (per-image success), and
 from __future__ import annotations
 
 import asyncio
+import math
 import threading
 import time
 import uuid
@@ -58,6 +59,42 @@ from yadc.utils import LRU
 # timeout). Small enough not to waste CPU; large enough to be
 # negligible relative to the timeout.
 IDLE_CHECK_INTERVAL_SECONDS: float = 30.0
+
+# Step size used to floor tagger thresholds into cache buckets. The
+# cache key stores the bucket floor (e.g. ``general=0.4``) and the
+# cached value is post-thresholded at that floor, so requests with
+# effective thresholds greater than or equal to the floor can be
+# served from the slot after re-filtering. Bumping the step trades
+# cache hit rate (larger steps → more requests per slot) for storage
+# cost (smaller steps → fewer tags dropped at write time).
+THRESHOLD_BUCKET_STEP: float = 0.2
+
+
+def bucket_threshold(value: float, step: float = THRESHOLD_BUCKET_STEP) -> float:
+    """Round a tagger threshold DOWN to the nearest ``step`` boundary.
+
+    Used to coarsen ``TaggerResultKey`` so requests at nearby
+    threshold values share a slot. The cached value is post-thresholded
+    at the bucket floor (already a subset of any stricter request), so
+    the request's effective filters are reapplied at retrieval.
+    Loose requests (``effective_threshold < bucket_floor``) miss
+    because the cached set has been filtered tighter.
+
+    Examples (default step ``0.2``):
+
+    - ``0.0``  → ``0.0``
+    - ``0.05`` → ``0.0``
+    - ``0.35`` → ``0.2``
+    - ``0.5``  → ``0.4``
+    - ``0.85`` → ``0.8``
+    - ``1.0``  → ``1.0``
+    """
+    if value <= 0:
+        return 0.0
+    # ``+ 1e-9`` dodges float-precision ``0.6 / 0.2 = 2.999999...``
+    # which would otherwise floor to ``1.2`` instead of ``0.6``.
+    return math.floor(value / step + 1e-9) * step
+
 
 TaggerState = Literal["starting", "ready", "stopping", "stopped", "failed"]
 
@@ -124,10 +161,28 @@ class TaggerResultKey:
     """Cache key for a single tagged image result.
 
     Two keys compare equal iff they name the same image AND were
-    produced under the same model + threshold + post-processing
-    settings. When any of those change, the new key hashes to a
-    different bucket and the old entry ages out via LRU eviction —
-    no explicit invalidation needed.
+    produced against the same model AND fall under the same bucketed
+    thresholds. When any of those change the new key hashes to a
+    different slot.
+
+    Threshold bucketing coarsens the key so requests at nearby
+    threshold values share a slot:
+
+    - ``rating_threshold`` is **always** ``0.0``. We never pre-filter
+      rating tags at write time, so the cached set always carries all
+      four rating categories. The request's effective rating is
+      reapplied at retrieval.
+    - ``general_threshold`` / ``character_threshold`` are the
+      :func:`bucket_threshold` floors of the request's effective
+      thresholds. The cached value is post-thresholded at those
+      floors, so it's a subset of any stricter request and the
+      effective thresholds can be reapplied at retrieval.
+
+    ``replace_underscores`` is **not** in the key. That transformation
+    is near-free (string replace) compared to running the model, so
+    we apply it post-hoc at retrieval instead of carrying it through
+    the key — one less axis to coordinate and one less reason for
+    cache thrashing.
 
     Frozen so the dataclass-generated ``__hash__`` and ``__eq__`` are
     reliable: ``LRU`` uses the key as an ``OrderedDict`` key, which
@@ -143,7 +198,6 @@ class TaggerResultKey:
     rating_threshold: float
     general_threshold: float
     character_threshold: float
-    replace_underscores: bool
 
 
 @dataclass
@@ -225,7 +279,11 @@ class TaggingService(Service):
         # result without re-running the model. The fingerprint baked into
         # the key means model / threshold changes naturally hash to a
         # different bucket — old entries age out via LRU eviction without
-        # needing explicit invalidation.
+        # needing explicit invalidation. ``tag_image`` is a read-through
+        # on this LRU: a hit short-circuits the model run entirely (no
+        # subprocess spawn, no byte read, no idle-timer reset), still
+        # dispatching ``ImageTaggedEvent`` so SSE clients see the same
+        # success signal a real run would emit (just with ``duration_ms=0``).
         self._tag_lock: asyncio.Lock = asyncio.Lock()
         self._tag_results: LRU[TaggerResultKey, TaggerResult] = LRU(self._configuration.tagger_result_buffer_size)
 
@@ -281,14 +339,19 @@ class TaggingService(Service):
         dataset_name: str,
         image_id: int,
         thresholds: TaggingThresholds,
-        replace_underscores: bool,
     ) -> TaggerResultKey:
-        """Build a :class:`TaggerResultKey` from the current config + effective settings.
+        """Build a :class:`TaggerResultKey` from the current config + effective thresholds.
 
-        ``thresholds`` and ``replace_underscores`` are the *effective*
-        values (per-request override or config default) — the caller's
-        responsibility. Two keys with different effective settings hash
-        to different buckets and never collide.
+        ``thresholds`` is the *effective* value (per-request override or
+        config default) — the caller's responsibility. The general /
+        character thresholds are floored to the cache-bucket step (see
+        :func:`bucket_threshold`); rating is always recorded as ``0``
+        because we never pre-filter ratings at write time (the request's
+        effective rating is reapplied at retrieval instead).
+
+        Two keys with different effective values floor to different
+        buckets (and never collide); keys with equal floors and the
+        same model collide and reuse the slot.
         """
         cfg = self._configuration
         model_id = cfg.tagger_repo_id.strip() or cfg.tagger_model_path.strip()
@@ -296,11 +359,39 @@ class TaggingService(Service):
             dataset_name=dataset_name,
             image_id=image_id,
             model_id=model_id,
-            rating_threshold=thresholds.rating,
-            general_threshold=thresholds.general,
-            character_threshold=thresholds.character,
-            replace_underscores=replace_underscores,
+            # Always 0 — we never pre-filter ratings at write time;
+            # the request's effective rating is reapplied at retrieval.
+            rating_threshold=0.0,
+            # Floored so nearby request thresholds share a slot.
+            general_threshold=bucket_threshold(thresholds.general),
+            character_threshold=bucket_threshold(thresholds.character),
         )
+
+    @staticmethod
+    def _refilter(
+        cached: TaggerResult,
+        eff_thresholds: TaggingThresholds,
+        eff_replace: bool,
+    ) -> TaggerResult:
+        """Re-apply the request's effective thresholds + ``replace_underscores`` to a cached value.
+
+        The cached value was filtered at the bucket floors
+        (``rating=0``, ``general=bucket_general``, ``character=bucket_character``)
+        at write time, which is always a permissive superset of any
+        stricter request. Re-applying ``apply_thresholds`` at the
+        request's effective values can therefore only drop more tags,
+        never add any. ``replace_underscores`` is a string transform
+        applied post-hoc so the cache can serve both with / without it.
+        """
+        re_filtered = apply_thresholds(
+            cached,
+            rating_threshold=eff_thresholds.rating,
+            general_threshold=eff_thresholds.general,
+            character_threshold=eff_thresholds.character,
+        )
+        if eff_replace:
+            re_filtered = replace_underscores_in(re_filtered)
+        return re_filtered
 
     async def get_tag_result(
         self,
@@ -309,7 +400,7 @@ class TaggingService(Service):
         thresholds: TaggingThresholds | None = None,
         replace_underscores: bool | None = None,
     ) -> TaggerResult | None:
-        """Return the cached tag result for an image, if any.
+        """Return the cached tag result for an image, re-applied at the caller's effective settings.
 
         ``thresholds`` and ``replace_underscores`` are the effective
         values the caller will display (so it lands in the same cache
@@ -317,8 +408,15 @@ class TaggingService(Service):
         the config defaults are used — matching what :meth:`tag_image`
         falls back to when no per-request override is supplied.
 
-        Returns ``None`` when no entry matches (either never tagged,
-        evicted by LRU, or tagged under different settings).
+        The cached value was filtered at the bucket floors, so we
+        re-apply the *effective* thresholds (which are always ≥ bucket
+        floors for a matching key) on the way out. A request whose
+        effective threshold is below the bucket floor (would want to
+        keep tags the cache has already filtered out) misses entirely.
+
+        Returns ``None`` when no entry matches the bucketed key (either
+        never tagged, evicted by LRU, or tagged under different
+        bucketed thresholds).
         """
         eff_thresholds = thresholds or TaggingThresholds(
             rating=self._configuration.tagger_rating_threshold,
@@ -326,30 +424,33 @@ class TaggingService(Service):
             character=self._configuration.tagger_character_threshold,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
-        key = self._tag_result_key(dataset_name, image_id, eff_thresholds, eff_replace)
+        key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
         async with self._tag_lock:
-            return self._tag_results.get(key)
+            cached = self._tag_results.get(key)
+        if cached is None:
+            return None
+        return self._refilter(cached, eff_thresholds, eff_replace)
 
     async def evict_tag_result(
         self,
         dataset_name: str,
         image_id: int,
         thresholds: TaggingThresholds | None = None,
-        replace_underscores: bool | None = None,
     ) -> bool:
         """Drop the cached tag result for an image (best-effort).
 
         Returns ``True`` when an entry was removed, ``False`` when no
         matching entry was present (no error). The fingerprint rules
-        match :meth:`get_tag_result`.
+        match :meth:`get_tag_result` (modulo the bucketing — evicting
+        drops only the bucketed-key slot, leaving any sibling slots
+        for the same image under different bucketed thresholds alone).
         """
         eff_thresholds = thresholds or TaggingThresholds(
             rating=self._configuration.tagger_rating_threshold,
             general=self._configuration.tagger_general_threshold,
             character=self._configuration.tagger_character_threshold,
         )
-        eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
-        key = self._tag_result_key(dataset_name, image_id, eff_thresholds, eff_replace)
+        key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
         async with self._tag_lock:
             try:
                 del self._tag_results[key]
@@ -369,7 +470,13 @@ class TaggingService(Service):
 
         The subprocess is started on demand if not already running.
         The idle timer is reset at the start of the request so an
-        in-flight request can't be torn down mid-flight.
+        in-flight request can't be torn down mid-flight. When the same
+        image + model + bucketed thresholds already have a cached
+        result, the LRU hit short-circuits the model run (no subprocess
+        spawn, no byte read, no idle-timer reset) and returns the
+        cached value re-applied at the request's effective thresholds
+        and ``replace_underscores`` (``ImageTaggedEvent`` dispatched
+        with ``duration_ms=0``).
 
         Dispatches ``ImageTaggedEvent`` on success and
         ``ImageTagErrorEvent`` on failure (via ``EventDispatcher``)
@@ -395,6 +502,44 @@ class TaggingService(Service):
         """
         if not self.is_configured:
             raise RuntimeError("Tagger is not configured on this server")
+
+        # Resolve effective thresholds + replace_underscores once —
+        # the cache key is the *bucketed* thresholds, but the read-
+        # through path re-applies the *effective* (request) thresholds
+        # on the cached value before returning.
+        eff_thresholds = thresholds or TaggingThresholds(
+            rating=self._configuration.tagger_rating_threshold,
+            general=self._configuration.tagger_general_threshold,
+            character=self._configuration.tagger_character_threshold,
+        )
+        eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
+        cache_key = self._tag_result_key(dataset_name, image_info.id, eff_thresholds)
+
+        # --- Read-through cache: skip the model when the LRU already
+        # holds a result for this bucketed key. The cached value was
+        # post-thresholded at the bucket floors (≥ the request's
+        # effective floors) at write time, so re-applying the request's
+        # effective thresholds + ``replace_underscores`` on the way out
+        # yields the same data the cold path would produce. Still
+        # dispatch ``ImageTaggedEvent`` so SSE clients see the same
+        # success signal a real model run would emit.
+        async with self._tag_lock:
+            cached = self._tag_results.get(cache_key)
+        if cached is not None:
+            re_filtered = self._refilter(cached, eff_thresholds, eff_replace)
+            self._event_dispatcher.dispatch(
+                ImageTaggedEvent(
+                    dataset_name=dataset_name,
+                    image_id=image_info.id,
+                    file_name=image_info.file_name,
+                    path=image_info.path,
+                    tags=re_filtered.tags,
+                    categories=re_filtered.categories,
+                    source=source if source else self._source_label(),
+                    duration_ms=0,
+                )
+            )
+            return re_filtered
 
         # The ``source`` label for SSE events. Frontend-supplied
         # value wins; otherwise fall back to the configured model.
@@ -430,20 +575,23 @@ class TaggingService(Service):
             )
             raise
 
-        eff_thresholds = thresholds or TaggingThresholds(
-            rating=self._configuration.tagger_rating_threshold,
-            general=self._configuration.tagger_general_threshold,
-            character=self._configuration.tagger_character_threshold,
-        )
-        thresholded = apply_thresholds(
+        # Cache filtered at the bucket floors — a superset of any
+        # stricter request (whose effective floors are ≥ bucket floors).
+        # ``replace_underscores`` is NOT applied to the cache value:
+        # it's a string transform applied post-hoc at retrieval so the
+        # slot can serve both with- and without-underscores requests.
+        bucketed = apply_thresholds(
             result,
-            rating_threshold=eff_thresholds.rating,
-            general_threshold=eff_thresholds.general,
-            character_threshold=eff_thresholds.character,
+            rating_threshold=cache_key.rating_threshold,
+            general_threshold=cache_key.general_threshold,
+            character_threshold=cache_key.character_threshold,
         )
-        eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
-        if eff_replace:
-            thresholded = replace_underscores_in(thresholded)
+
+        # Effective (request-specific) for caller + dispatched event.
+        # Re-apply on top of the bucketed cache value; since effective
+        # thresholds are always ≥ the bucket floors for a matching key,
+        # this only drops more tags, never adds any.
+        effective = self._refilter(bucketed, eff_thresholds, False)  # replace applied below
 
         duration_ms = int((time.monotonic() - start_t) * 1000)
         self._event_dispatcher.dispatch(
@@ -452,20 +600,22 @@ class TaggingService(Service):
                 image_id=image_info.id,
                 file_name=image_info.file_name,
                 path=image_info.path,
-                tags=thresholded.tags,
-                categories=thresholded.categories,
+                tags=effective.tags,
+                categories=effective.categories,
                 source=event_source,
                 duration_ms=duration_ms,
             )
         )
-        # Cache the thresholded result for cross-session reads (Tags tab
-        # on a fresh page load). The key fingerprint is the *effective*
-        # model + thresholds + replace_underscores — so a request that
-        # uses different per-request overrides lands in a different
-        # bucket from a request that used the config defaults.
+        # Cache the bucketed value for next read (Tags tab on a fresh
+        # page load, or any subsequent POST under the same bucketed
+        # thresholds — different per-request thresholds within the same
+        # bucket land in the same slot and re-filter on the way out).
         async with self._tag_lock:
-            self._tag_results[self._tag_result_key(dataset_name, image_info.id, eff_thresholds, eff_replace)] = thresholded
-        return thresholded
+            self._tag_results[cache_key] = bucketed
+
+        if eff_replace:
+            effective = replace_underscores_in(effective)
+        return effective
 
     async def tag_single_image_async(
         self,

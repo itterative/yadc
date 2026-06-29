@@ -231,6 +231,69 @@ The frontend zod schemas + listeners live in `yadc/webui/src/lib/stores/events.t
 (`tagger_status`, `image_tag_started`, `image_tagged`, `image_tag_error`, `tag_job_status`) and
 route into the `lib/stores/tagging/` domain.
 
+## Result cache (`TaggingService._tag_results`)
+
+A bounded LRU keyed by `TaggerResultKey` (image identity + active
+model + bucketed thresholds). Capacity from
+`Configuration.tagger_result_buffer_size`. `tag_image` is
+**read-through** on this LRU: a hit short-circuits the model run (no
+subprocess spawn, no image-byte read, no idle-timer reset) and
+returns the cached `TaggerResult` re-applied at the request's
+effective thresholds + `replace_underscores`, dispatching
+`ImageTaggedEvent` with `duration_ms=0`. A miss falls through to the
+model as before and writes the new entry.
+
+### Bucketing
+
+Thresholds in the cache key are floored:
+- `rating_threshold` is always `0` — we never pre-filter ratings at
+  write time; the request's effective rating is reapplied at
+  retrieval.
+- `general_threshold` and `character_threshold` are floored to the
+  nearest `0.2` boundary (see `bucket_threshold` in
+  `yadc/api/services/tagging.py`). The cached value is
+  post-thresholded at the bucket floors (a superset of any stricter
+  request), and the request's effective thresholds are reapplied at
+  retrieval — the cache hit just drops more tags.
+
+Trade-offs:
+- **Hit rate**: many nearby threshold values share a slot. Typical
+  wd-tagger defaults `0.35 / 0.85` bucket to `0.2 / 0.8`; requests
+  at `0.5 / 0.9` (or even `0.6 / 0.95`) hit the same slot.
+- **Loose requests miss**: a request whose effective threshold is
+  below the cached bucket floor (e.g. `general=0.1` against a
+  `0.2`-bucket slot) cannot serve from the cache because the
+  cached set has been filtered tighter — the missing low-score tags
+  are gone.
+- **Memory**: each slot stores the bucket-filtered set, not the raw
+  output. At typical `0.2 / 0.8` buckets the survivors set is small;
+  at loose `0.0 / 0.0` buckets it approaches the model's full
+  label space.
+
+### `replace_underscores` post-hoc
+
+`replace_underscores` is **not** in the cache key. The
+transformation is a near-free string walk, applied post-hoc at
+retrieval so the slot can serve both with- and without-underscores
+requests without doubling key axes.
+
+### Public surface on `TaggingService`
+
+- `tag_image(...)` — read-through side effect; also writes the new
+  entry on a miss.
+- `get_tag_result(dataset, image_id, thresholds=, replace_underscores=)` —
+  read-only companion; returns ``None`` on miss, otherwise the
+  cached value re-applied at the caller's effective thresholds.
+- `evict_tag_result(...)` — drop the slot for the bucketed key
+  (best-effort; returns ``bool``). Leaves any sibling slots for the
+  same image under different bucketed thresholds alone.
+
+LRU eviction (`tagger_result_buffer_size`) bounds the working set;
+explicit invalidation isn't needed because stale entries age out
+automatically and the bucketed key naturally differs across model /
+threshold changes.
+- `tag_image(...)` — write-through side effect at the end of a real model run.
+
 ## Save path + batch job (`TaggingService`)
 
 All draft/extras writes happen on the backend via `TaggingService.save_tags`:
@@ -286,6 +349,7 @@ the run); tag failures increment `errors` but the run continues.
 | `tagger_general_threshold` | `0.35` | Drop general tags below this. |
 | `tagger_character_threshold` | `0.85` | Drop character tags below this. |
 | `tagger_replace_underscores` | `False` | Turn underscored tag names (`long_hair`) into spaces (`long hair`) before the result is dispatched/returned/saved. Kaomojis are always preserved. Off by default to preserve raw model output; opt in per-request from the UI (the request option, also `replace_underscores`, overrides this when set). |
+| `tagger_result_buffer_size` | `500` | Capacity of the LRU cache of recent `(image + model + thresholds + replace_underscores)` results. `tag_image` is read-through on this cache: a hit short-circuits the model run (no subprocess spawn, no idle-timer reset) and returns the cached value with `ImageTaggedEvent` dispatched (`duration_ms=0`). Eviction is LRU; no explicit invalidation needed when settings change (different fingerprints hash to different buckets). |
 | `tagger_idle_timeout_seconds` | `900.0` | Tear down the subprocess after this many idle seconds. `0` disables teardown (subprocess stays up once started). |
 | `tagger_heartbeat_interval_seconds` | `15.0` | Worker pushes a heartbeat while idle at this interval. (Liveness signal only — death detection granularity is `tagger_liveness_poll_seconds`.) |
 | `tagger_response_timeout_seconds` | `120.0` | Give up on a wedged-but-alive worker after this many seconds. |
