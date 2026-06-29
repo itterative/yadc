@@ -52,3 +52,14 @@ that builds the `[tags]` extras sub-table. Section order is unchanged
 
 **Files touched:** `yadc/taggers/formatters.py`,
 `tests/taggers/test_formatters.py`, this entry.
+
+---
+
+## Followup: frontend prune grid sorted by confidence
+
+The save-side sort above is for saved artifacts (training captions,
+extras TOMLs). The **interactive prune grid** in the Tags tab is a
+different artifact (the user is picking which tags to keep), so it
+sorts the other way: confidence descending, ties alphabetical.
+`Tags.svelte`'s `orderedCategories` derived now returns
+`{ name, tags }[]` where `tags` is sorted by `result.tags[b] - result.tags[a]`.

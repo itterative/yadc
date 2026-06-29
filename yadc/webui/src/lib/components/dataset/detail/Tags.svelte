@@ -146,14 +146,25 @@
     });
 
     // Stable display order: the wd-tagger convention is rating / general /
-    // character; any other categories sort after, alphabetically.
+    // character; any other categories sort after, alphabetically. Tags
+    // within each category are sorted by score descending (ties broken by
+    // name) so the most likely tags surface first in the interactive
+    // prune grid — the user is more likely to leave top-confidence tags
+    // on and prune the tail.
     const CATEGORY_ORDER = ['rating', 'character', 'general'];
-    let orderedCategories = $derived.by(() => {
+
+    interface OrderedCategory {
+        name: string;
+        tags: string[];
+    }
+
+    let orderedCategories = $derived.by<OrderedCategory[]>(() => {
         if (!result) {
             return [];
         }
-        const keys = Object.keys(result.categories);
-        return [...keys].sort((a, b) => {
+        const r = result;
+        const keys = Object.keys(r.categories);
+        const sortedNames = [...keys].sort((a, b) => {
             const ia = CATEGORY_ORDER.indexOf(a);
             const ib = CATEGORY_ORDER.indexOf(b);
             if (ia !== -1 || ib !== -1) {
@@ -161,6 +172,19 @@
             }
             return a.localeCompare(b);
         });
+        return sortedNames.map((name) => ({
+            name,
+            // Defensive default 0 in case a category entry isn't in
+            // ``result.tags`` (partial / hand-built payload).
+            tags: [...r.categories[name]].sort((a, b) => {
+                const sa = r.tags[a] ?? 0;
+                const sb = r.tags[b] ?? 0;
+                if (sa !== sb) {
+                    return sb - sa;
+                }
+                return a.localeCompare(b);
+            })
+        }));
     });
 
     function toggleTag(tag: string) {
@@ -479,23 +503,23 @@
 
         <!-- Result: grouped toggle chips -->
         <div class="flex flex-1 flex-col gap-4">
-            {#each orderedCategories as cat (cat)}
-                {@const categoryTags = result.categories[cat]}
+            {#each orderedCategories as cat (cat.name)}
+                {@const categoryTags = cat.tags}
                 <section>
                     <div class="mb-3 flex items-center justify-end gap-3 text-xs text-gray-400">
                         <h4 class="flex-1 font-semibold text-gray-400 uppercase">
-                            {cat}
+                            {cat.name}
                         </h4>
 
                         {#if categoryTags.length > 0}
                             <button
                                 class="cursor-pointer hover:text-gray-200"
-                                onclick={() => selectAll(cat)}>Select all</button
+                                onclick={() => selectAll(cat.name)}>Select all</button
                             >
                             <span class="text-gray-600">·</span>
                             <button
                                 class="cursor-pointer hover:text-gray-200"
-                                onclick={() => clearAll(cat)}>Clear</button
+                                onclick={() => clearAll(cat.name)}>Clear</button
                             >
                         {/if}
                     </div>

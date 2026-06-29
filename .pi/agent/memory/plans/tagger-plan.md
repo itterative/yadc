@@ -81,12 +81,15 @@ Design history lives in `history/tagger-plan/`:
     (`num_channels` / `channels` / `height` / `width`); configuration +
     CLI plumbing; diagnostic logs at INFO (contract) and DEBUG (tensor
     stats). See `history/tagger-plan/004`.
-14. **Phase F — Alphabetical sort in draft / extras formatters.** Tags
-    within each section are now sorted alphabetically (plus the
-    uncategorized-fallback branch) — `comma`, `structured`, `scored`,
-    and `extras_tags` all use the same ordering. Re-runs with the same
-    labels produce byte-identical output. See
-    `history/tagger-plan/005`.
+14. **Phase F — Alphabetical sort in draft / extras + confidence
+    descending on the frontend prune grid.** Tags within each section
+    are sorted alphabetically (plus the uncategorized-fallback
+    branch) — `comma`, `structured`, `scored`, and `extras_tags` all
+    use the same ordering, so re-runs with the same labels produce
+    byte-identical saved output. The interactive prune grid in the
+    Tags tab sorts the other way (confidence descending, ties
+    alphabetical) since the user is choosing which tags to keep —
+    most-likely tags surface first. See `history/tagger-plan/005`.
 
 ## Pending (future iterations)
 

@@ -440,6 +440,10 @@ same labels produce diff-stable extras).
   (mode draft/extras + format/name) → interactive `POST .../images/<id>/tags`.
   4th tab in `ImageDetail`'s `CompactPillTabs`; `onTagsSaved` refreshes
   caption/history so Caption/Extras tabs reflect the write.
+  Tag pills within each section are sorted by confidence descending (ties
+  broken alphabetically for stability) — the most likely tags surface
+  first so the user keeps the head and prunes the tail. Saved drafts
+  / extras use a different (alphabetical) order — see formatters below.
 - **Batch side panel** — `lib/components/tagging/TagSettingsPanel.svelte`:
   threshold inputs (diff dots vs canonical wd-tagger defaults + per-field
   reset), save-mode/format/name pickers, Start/Stop. New `Tags` tab in
