@@ -9,6 +9,7 @@ models with rating / general / character groups) populate
 from __future__ import annotations
 
 import abc
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -56,3 +57,42 @@ class Tagger(abc.ABC):
             Categorized tag scores. Callers should apply any
             caller-defined thresholds; taggers expose raw scores.
         """
+
+
+def _deep_size(obj: object, seen: set[int]) -> int:
+    """Sum ``sys.getsizeof`` for *obj* and all transitively-reachable contents.
+
+    Memoizes visited ``id()``s so a string referenced by both the
+    ``tags`` dict (as a key) and a ``categories`` list (as an item) is
+    counted once, not twice. Counts each parent's reference overhead
+    separately (the dict / list container itself).
+    """
+    if id(obj) in seen:
+        return 0
+    seen.add(id(obj))
+    size = sys.getsizeof(obj)
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            size += _deep_size(k, seen) + _deep_size(v, seen)  # pyright: ignore[reportUnknownArgumentType]
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        for item in obj:
+            size += _deep_size(item, seen)  # pyright: ignore[reportUnknownArgumentType]
+    return size
+
+
+def tamer_result_size(result: TaggerResult) -> int:
+    """Approximate memory occupied by a ``TaggerResult`` and all its contents.
+
+    Walks ``result.tags`` (dict of label → score) and
+    ``result.categories`` (dict of category → label list) recursively,
+    using :func:`sys.getsizeof` at each node. Used as the size function
+    for the bytes-bounded LRU cache, so the cache can evict when its
+    summed value sizes exceed a byte budget rather than a fixed item
+    count.
+
+    Recursion depth is bounded: the structure is two dict layers deep
+    at most (tags and categories are dicts; categories' values are
+    flat lists of strings). Cycles are broken by ``id()`` memoization.
+    """
+    seen: set[int] = set()
+    return _deep_size(result, seen) + _deep_size(result.tags, seen) + _deep_size(result.categories, seen)

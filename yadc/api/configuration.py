@@ -127,9 +127,13 @@ class Configuration:
     # Refine result cache
     refine_result_buffer_size: int = 100
 
-    # Tagger result cache (LRU; key includes model + threshold fingerprint
-    # so config changes naturally evict stale entries).
-    tagger_result_buffer_size: int = 500
+    # Tagger result cache (bytes-bounded LRU; key includes the model +
+    # bucketed threshold fingerprint so config changes naturally hash
+    # to a different slot). ``tagger_result_max_memory_bytes`` caps the
+    # summed size of values (per ``tagger_result_size``), not the entry
+    # count — a large model (animetimm ConvNeXt, ~12k tags per result)
+    # would otherwise dominate the cache's working set.
+    tagger_result_max_memory_bytes: int = 128 * 1024 * 1024  # 128 MiB
 
     # Tagger (ONNX)
     # The tagger is enabled when EITHER a local model path OR a HF

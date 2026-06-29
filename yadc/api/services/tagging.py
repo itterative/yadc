@@ -50,9 +50,10 @@ from yadc.api.services.dataset_jobs import DatasetJobService, JobClaim
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
 from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags, format_draft
+from yadc.taggers.base import tamer_result_size
 from yadc.taggers.client import TaggerClient
 from yadc.taggers.postprocessing import replace_underscores as replace_underscores_in
-from yadc.utils import LRU
+from yadc.utils import MemoryLRU
 
 # How often the idle-check job wakes up. Worst-case shutdown latency
 # after the timeout elapses is one interval (e.g. 30s for a 15min
@@ -272,20 +273,27 @@ class TaggingService(Service):
         # loop can't GC them mid-sleep. Entries self-remove on completion.
         self._pending_clears: set[asyncio.Task[None]] = set()
 
-        # Bounded LRU cache for tag results, keyed by
-        # :class:`TaggerResultKey` (image identity + model + thresholds +
-        # post-processing). Persists across requests and browser sessions
-        # so a fresh Tags tab loaded after a batch job sees the existing
-        # result without re-running the model. The fingerprint baked into
-        # the key means model / threshold changes naturally hash to a
-        # different bucket — old entries age out via LRU eviction without
-        # needing explicit invalidation. ``tag_image`` is a read-through
-        # on this LRU: a hit short-circuits the model run entirely (no
-        # subprocess spawn, no byte read, no idle-timer reset), still
-        # dispatching ``ImageTaggedEvent`` so SSE clients see the same
-        # success signal a real run would emit (just with ``duration_ms=0``).
+        # Bounded *bytes*-limited LRU cache for tag results. Keyed by
+        # :class:`TaggerResultKey` (image identity + model + bucketed
+        # thresholds + replace_underscores post-hoc). Persists across
+        # requests and browser sessions so a fresh Tags tab loaded
+        # after a batch job sees the existing result without re-running
+        # the model. The fingerprint baked into the key means model /
+        # threshold changes naturally hash to a different bucket — old
+        # entries age out via LRU eviction without needing explicit
+        # invalidation. ``tag_image`` is a read-through on this LRU:
+        # a hit short-circuits the model run entirely (no subprocess
+        # spawn, no byte read, no idle-timer reset), still dispatching
+        # ``ImageTaggedEvent`` so SSE clients see the same success
+        # signal a real run would emit (just with ``duration_ms=0``).
+        # The byte budget (``tagger_result_max_memory_bytes``) keeps
+        # the working set bounded for large-vocab models like the
+        # animetimm ConvNeXt (~12k tags per result).
         self._tag_lock: asyncio.Lock = asyncio.Lock()
-        self._tag_results: LRU[TaggerResultKey, TaggerResult] = LRU(self._configuration.tagger_result_buffer_size)
+        self._tag_results: MemoryLRU[TaggerResultKey, TaggerResult] = MemoryLRU(
+            self._configuration.tagger_result_max_memory_bytes,
+            size_fn=tamer_result_size,
+        )
 
     # --- event handlers ---------------------------------------------------
 

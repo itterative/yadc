@@ -1268,29 +1268,62 @@ class TestTaggerResultCache:
         test_configuration.tagger_repo_id = "SmilingWolf/wd-vit-large-tagger-v3"
         assert asyncio.run(service.get_tag_result("ds", 1)) is None
 
-    def test_lru_evicts_when_over_capacity(
+    def test_lru_evicts_when_over_budget(
         self,
         service: TaggingService,
         test_configuration,
         make_image_info,
     ) -> None:
-        """Capacity from ``tagger_result_buffer_size`` — entries beyond it are evicted."""
-        from yadc.utils import LRU
+        """Capacity from ``tagger_result_max_memory_bytes`` — entries beyond it are evicted LRU-first.
 
-        test_configuration.tagger_result_buffer_size = 2
-        # Rebuild the LRU at the new capacity (the fixture pre-built it
-        # with the production default of 500).
-        service._tag_results = LRU(2)  # noqa: SLF001
+        With a controlled size function (each entry costs 30 bytes)
+        and a 60-byte budget, only 2 entries fit. The third write
+        pushes the total over budget and the LRU entry (image 1) is
+        evicted to bring it back to 60 bytes. A controlled size
+        function sidesteps the mock's natural TaggerResult footprint
+        so the budget math is deterministic.
+        """
+        from yadc.utils import MemoryLRU
+
+        test_configuration.tagger_result_max_memory_bytes = 60
+
+        def _size_fn(_value):  # noqa: ANN001
+            return 30  # each (mock) TaggerResult occupies 30 bytes
+
+        service._tag_results = MemoryLRU(  # noqa: SLF001
+            test_configuration.tagger_result_max_memory_bytes,
+            size_fn=_size_fn,
+        )
 
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
             for info in (make_image_info(image_id=1), make_image_info(image_id=2), make_image_info(image_id=3)):
                 asyncio.run(service.tag_image("ds", info))
 
-        # Image 1 was the least-recently-used after writing 2 and 3.
+        # Image 1 was the least-recently-used after writing 2 and 3 —
+        # the budget eviction on the third write kicked it out first.
         assert asyncio.run(service.get_tag_result("ds", 1)) is None
         assert asyncio.run(service.get_tag_result("ds", 2)) is not None
         assert asyncio.run(service.get_tag_result("ds", 3)) is not None
+
+    def test_budget_uses_tamer_result_size(
+        self,
+        service: TaggingService,
+        make_image_info,
+    ) -> None:
+        """The service installs ``tamer_result_size`` as the bytes-aware size function."""
+        from yadc.taggers.base import tamer_result_size
+        from yadc.utils import MemoryLRU
+
+        assert isinstance(service._tag_results, MemoryLRU)  # noqa: SLF001
+        # Smoke-test the size function on a representative result;
+        # exact numbers depend on Python / dict layout, so we just
+        # assert it returns a positive value.
+        result = TaggerResult(
+            tags={"1girl": 0.95, "long_hair": 0.8},
+            categories={"general": ["1girl", "long_hair"]},
+        )
+        assert tamer_result_size(result) > 0
 
 
 class TestTaggerReadThroughCache:

@@ -233,15 +233,24 @@ route into the `lib/stores/tagging/` domain.
 
 ## Result cache (`TaggingService._tag_results`)
 
-A bounded LRU keyed by `TaggerResultKey` (image identity + active
-model + bucketed thresholds). Capacity from
-`Configuration.tagger_result_buffer_size`. `tag_image` is
-**read-through** on this LRU: a hit short-circuits the model run (no
-subprocess spawn, no image-byte read, no idle-timer reset) and
-returns the cached `TaggerResult` re-applied at the request's
-effective thresholds + `replace_underscores`, dispatching
-`ImageTaggedEvent` with `duration_ms=0`. A miss falls through to the
-model as before and writes the new entry.
+A bounded *bytes-aware* `MemoryLRU` keyed by `TaggerResultKey`
+(image identity + active model + bucketed thresholds). Capacity from
+`Configuration.tagger_result_max_memory_bytes` (default 128 MiB).
+The size function is `tamer_result_size` (recursive
+`sys.getsizeof` walk with `id()`-memoized cycle protection) so the
+budget accommodates large-vocab models like animetimm ConvNeXt
+(~12k tags per result) without the cache becoming a fixed-size
+window that's mostly empty for sparse buckets and mostly overflowed
+for the loose-bucket case.
+
+`tag_image` is **read-through** on this LRU: a hit short-circuits
+the model run (no subprocess spawn, no image-byte read, no
+idle-timer reset) and returns the cached `TaggerResult` re-applied at
+the request's effective thresholds + `replace_underscores`,
+dispatching `ImageTaggedEvent` with `duration_ms=0`. A miss falls
+through to the model as before and writes the new entry. LRU
+eviction order doesn't depend on entry size — values bigger than
+the budget are silently skipped rather than emptying the cache.
 
 ### Bucketing
 
@@ -288,8 +297,8 @@ requests without doubling key axes.
   (best-effort; returns ``bool``). Leaves any sibling slots for the
   same image under different bucketed thresholds alone.
 
-LRU eviction (`tagger_result_buffer_size`) bounds the working set;
-explicit invalidation isn't needed because stale entries age out
+LRU eviction (`tagger_result_max_memory_bytes`) bounds the working
+set; explicit invalidation isn't needed because stale entries age out
 automatically and the bucketed key naturally differs across model /
 threshold changes.
 - `tag_image(...)` — write-through side effect at the end of a real model run.
@@ -349,7 +358,7 @@ the run); tag failures increment `errors` but the run continues.
 | `tagger_general_threshold` | `0.35` | Drop general tags below this. |
 | `tagger_character_threshold` | `0.85` | Drop character tags below this. |
 | `tagger_replace_underscores` | `False` | Turn underscored tag names (`long_hair`) into spaces (`long hair`) before the result is dispatched/returned/saved. Kaomojis are always preserved. Off by default to preserve raw model output; opt in per-request from the UI (the request option, also `replace_underscores`, overrides this when set). |
-| `tagger_result_buffer_size` | `500` | Capacity of the LRU cache of recent `(image + model + thresholds + replace_underscores)` results. `tag_image` is read-through on this cache: a hit short-circuits the model run (no subprocess spawn, no idle-timer reset) and returns the cached value with `ImageTaggedEvent` dispatched (`duration_ms=0`). Eviction is LRU; no explicit invalidation needed when settings change (different fingerprints hash to different buckets). |
+| `tagger_result_max_memory_bytes` | `128 * 1024 * 1024` (128 MiB) | Byte budget for the `MemoryLRU` cache of recent `(image + model + bucketed thresholds)` results. Size per entry is computed by `tamer_result_size` (recursive `sys.getsizeof` walk). `tag_image` is read-through on this cache: a hit short-circuits the model run (no subprocess spawn, no idle-timer reset) and returns the cached value re-applied at the request's effective thresholds + `replace_underscores` with `ImageTaggedEvent` dispatched (`duration_ms=0`). Eviction is LRU; no explicit invalidation needed when settings change (different fingerprints hash to different buckets). Values larger than the budget are silently skipped. |
 | `tagger_idle_timeout_seconds` | `900.0` | Tear down the subprocess after this many idle seconds. `0` disables teardown (subprocess stays up once started). |
 | `tagger_heartbeat_interval_seconds` | `15.0` | Worker pushes a heartbeat while idle at this interval. (Liveness signal only — death detection granularity is `tagger_liveness_poll_seconds`.) |
 | `tagger_response_timeout_seconds` | `120.0` | Give up on a wedged-but-alive worker after this many seconds. |

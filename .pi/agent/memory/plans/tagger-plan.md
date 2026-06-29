@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 6
+last_history: 7
 ---
 
 # Tagger Plan
@@ -100,6 +100,13 @@ Design history lives in `history/tagger-plan/`:
     thresholds (`rating=0` always; `general` / `character` floored to
     the nearest `0.2`), so nearby threshold values share a slot.
     See `history/tagger-plan/006`.
+16. **Phase H — Memory-aware cache budget.** Replaced the
+    count-limited `LRU(500)` with `MemoryLRU(max_bytes=128 MiB,
+    size_fn=tamer_result_size)` so large-vocab taggers
+    (animetimm ConvNeXt ~12k tags / result) don't dominate the
+    working set. New `MemoryLRU` class shares the OrderedDict
+    backbone with the existing count-limited `LRU`.
+    See `history/tagger-plan/007`.
 
 ## Pending (future iterations)
 
