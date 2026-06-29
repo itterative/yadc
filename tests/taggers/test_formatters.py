@@ -67,6 +67,23 @@ class TestCommaFormatter:
         result = TaggerResult(tags={"a": 0.9, "b": 0.5}, categories={})
         assert comma_formatter(result) == "a, b"
 
+    def test_sorts_alphabetically_within_each_section(self) -> None:
+        """Tags appear in alphabetical order within each section (label-file order doesn't bleed through)."""
+        result = TaggerResult(
+            tags={"solo": 0.9, "1girl": 0.95, "long_hair": 0.8, "smile": 0.7, "rei": 0.85, "asuka": 0.86},
+            categories={
+                "general": ["solo", "1girl", "long_hair", "smile"],  # not alphabetical
+                "character": ["rei", "asuka"],  # not alphabetical
+            },
+        )
+        # Each section sorted alphabetically; character leads general.
+        assert comma_formatter(result) == "asuka, rei, 1girl, long_hair, smile, solo"
+
+    def test_uncategorized_result_is_sorted_alphabetically(self) -> None:
+        """Uncategorized model output (no categories dict) is sorted alphabetically."""
+        result = TaggerResult(tags={"zebra": 0.5, "apple": 0.9, "mango": 0.7}, categories={})
+        assert comma_formatter(result) == "apple, mango, zebra"
+
 
 class TestStructuredFormatter:
     def test_full_output_character_before_general(self) -> None:
@@ -82,6 +99,19 @@ class TestStructuredFormatter:
             categories={"general": ["1girl"]},
         )
         assert structured_formatter(result) == "general: 1girl"
+
+    def test_sorts_alphabetically_within_each_section(self) -> None:
+        """Tags within each category are sorted alphabetically, regardless of label-file order."""
+        result = TaggerResult(
+            tags={"solo": 0.9, "1girl": 0.95, "long_hair": 0.8, "rei": 0.85, "asuka": 0.86},
+            categories={
+                "general": ["solo", "1girl", "long_hair"],
+                "character": ["rei", "asuka"],
+            },
+        )
+        assert structured_formatter(result) == textwrap.dedent("""\
+            character: asuka, rei
+            general: 1girl, long_hair, solo""")
 
 
 class TestScoredFormatter:
@@ -109,6 +139,19 @@ class TestScoredFormatter:
     def test_empty_result(self) -> None:
         assert scored_formatter(TaggerResult(tags={}, categories={})) == ""
 
+    def test_sorts_alphabetically_within_each_section(self) -> None:
+        """Tags within each category are sorted alphabetically, with their scores."""
+        result = TaggerResult(
+            tags={"solo": 0.9, "1girl": 0.95, "long_hair": 0.8, "rei": 0.85, "asuka": 0.86},
+            categories={
+                "general": ["solo", "1girl", "long_hair"],
+                "character": ["rei", "asuka"],
+            },
+        )
+        assert scored_formatter(result) == textwrap.dedent("""\
+            character: asuka (0.86), rei (0.85)
+            general: 1girl (0.95), long_hair (0.80), solo (0.90)""")
+
 
 class TestTopRating:
     def test_returns_highest_scored(self) -> None:
@@ -134,3 +177,17 @@ class TestExtrasTags:
     def test_omits_rating_when_absent(self) -> None:
         result = TaggerResult(tags={"1girl": 0.9}, categories={"general": ["1girl"]})
         assert extras_tags(result) == {"general": ["1girl"], "character": []}
+
+    def test_categories_sorted_alphabetically(self) -> None:
+        """Category lists are sorted alphabetically so extras are diff-stable across re-runs."""
+        result = TaggerResult(
+            tags={"solo": 0.9, "1girl": 0.95, "long_hair": 0.8, "rei": 0.85, "asuka": 0.86},
+            categories={
+                "general": ["solo", "1girl", "long_hair"],
+                "character": ["rei", "asuka"],
+            },
+        )
+        assert extras_tags(result) == {
+            "general": ["1girl", "long_hair", "solo"],
+            "character": ["asuka", "rei"],
+        }

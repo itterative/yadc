@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 4
+last_history: 5
 ---
 
 # Tagger Plan
@@ -81,6 +81,12 @@ Design history lives in `history/tagger-plan/`:
     (`num_channels` / `channels` / `height` / `width`); configuration +
     CLI plumbing; diagnostic logs at INFO (contract) and DEBUG (tensor
     stats). See `history/tagger-plan/004`.
+14. **Phase F — Alphabetical sort in draft / extras formatters.** Tags
+    within each section are now sorted alphabetically (plus the
+    uncategorized-fallback branch) — `comma`, `structured`, `scored`,
+    and `extras_tags` all use the same ordering. Re-runs with the same
+    labels produce byte-identical output. See
+    `history/tagger-plan/005`.
 
 ## Pending (future iterations)
 

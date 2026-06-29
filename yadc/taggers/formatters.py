@@ -68,8 +68,10 @@ def comma_formatter(result: TaggerResult) -> str:
     """Comma-separated tag list, in canonical category order.
 
     Rating tags are excluded — rating is categorical metadata, not a
-    caption tag. This matches how sd-scripts training captions are
-    built.
+    caption tag. Sections appear in canonical order (character before
+    general); tags within each section are sorted alphabetically so the
+    output is stable across re-runs and easy to diff. This matches how
+    sd-scripts training captions are built.
     """
     rating_tags = _rating_set(result)
     ordered = _ordered_tags(result, exclude=rating_tags)
@@ -81,7 +83,8 @@ def structured_formatter(result: TaggerResult) -> str:
 
     Intended as input to a caption refinement run, where the model
     benefits from seeing which tags are rating / general / character.
-    Sections appear in canonical order (character before general).
+    Sections appear in canonical order (character before general); tags
+    within each section are sorted alphabetically.
     """
     lines: list[str] = []
     rating = top_rating(result)
@@ -90,7 +93,7 @@ def structured_formatter(result: TaggerResult) -> str:
     for cat in _CATEGORY_ORDER:
         if cat == "rating":
             continue
-        cat_tags = result.categories.get(cat, [])
+        cat_tags = sorted(result.categories.get(cat, []))
         if cat_tags:
             lines.append(f"{cat}: " + ", ".join(cat_tags))
     return "\n".join(lines)
@@ -102,7 +105,8 @@ def scored_formatter(result: TaggerResult) -> str:
     Like :func:`structured_formatter` but each tag carries its score in
     parentheses, e.g. ``1girl (0.95)``. The confidence lets a
     caption-refinement LLM weigh how much to trust each tag. Sections
-    appear in canonical order (character before general).
+    appear in canonical order (character before general); tags within
+    each section are sorted alphabetically.
     """
     lines: list[str] = []
     rating = top_rating(result)
@@ -111,7 +115,7 @@ def scored_formatter(result: TaggerResult) -> str:
     for cat in _CATEGORY_ORDER:
         if cat == "rating":
             continue
-        cat_tags = result.categories.get(cat, [])
+        cat_tags = sorted(result.categories.get(cat, []))
         if cat_tags:
             parts = [f"{t} ({result.tags.get(t, 0.0):.2f})" for t in cat_tags]
             lines.append(f"{cat}: " + ", ".join(parts))
@@ -148,10 +152,12 @@ def extras_tags(result: TaggerResult) -> dict[str, object]:
 
     Shape: ``{"general": [...], "character": [...], "rating": "<top>"}``.
     ``rating`` is a single string (or omitted when no rating survived).
+    Tags within each category list are sorted alphabetically so two
+    runs on the same model produce diff-stable extras files.
     """
     tags: dict[str, object] = {
-        "general": list(result.categories.get("general", [])),
-        "character": list(result.categories.get("character", [])),
+        "general": sorted(result.categories.get("general", [])),
+        "character": sorted(result.categories.get("character", [])),
     }
     rating = top_rating(result)
     if rating:
@@ -169,18 +175,20 @@ def _rating_set(result: TaggerResult) -> set[str]:
 def _ordered_tags(result: TaggerResult, *, exclude: set[str]) -> list[str]:
     """All tags in canonical category order, minus any in *exclude*.
 
-    Canonical order is ``rating → character → general``, followed by any
-    non-standard categories in their own order. Falls back to
-    ``result.tags`` insertion order when the result has no category
+    Canonical section order is ``rating → character → general``,
+    followed by any non-standard categories in insertion order.
+    Tags within each section are sorted alphabetically so the output is
+    stable across re-runs and easy to diff. Falls back to sorting
+    ``result.tags`` keys alphabetically when the result has no category
     lists (uncategorized model output).
     """
     if result.categories:
         ordered: list[str] = []
         for cat in _CATEGORY_ORDER:
-            ordered.extend(result.categories.get(cat, []))
+            ordered.extend(sorted(result.categories.get(cat, [])))
         for cat, cat_tags in result.categories.items():
             if cat not in _CATEGORY_ORDER:
-                ordered.extend(cat_tags)
+                ordered.extend(sorted(cat_tags))
     else:
-        ordered = list(result.tags.keys())
+        ordered = sorted(result.tags.keys())
     return [t for t in ordered if t not in exclude]

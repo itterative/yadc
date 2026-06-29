@@ -411,11 +411,15 @@ but each tag carries a 2-decimal confidence, e.g. `1girl (0.95)`, so a
 refinement LLM can weigh how much to trust each tag). Category-grouped
 formatters emit sections in canonical order: **rating → character →
 general** (character leads the subject, general follows as detail);
-`comma` uses the same order in its flat list. New text formats (weighted,
-JSON) are added by registering a formatter — no wire-format change. Also
-`top_rating(result)` (highest-scoring rating tag) and
-`extras_tags(result)` (`{general, character, rating}` for the extras
-`[tags]` sub-table — rating a single string, categorical not a set).
+`comma` uses the same order in its flat list. Tags within each section
+are sorted alphabetically so output is stable across re-runs (same
+labels + thresholds → byte-identical text) and easy to diff. New text
+formats (weighted, JSON) are added by registering a formatter — no
+wire-format change. Also `top_rating(result)` (highest-scoring rating
+tag) and `extras_tags(result)` (`{general, character, rating}` for the extras
+`[tags]` sub-table — rating a single string, categorical not a set; the
+`general` / `character` lists are sorted alphabetically so re-runs on the
+same labels produce diff-stable extras).
 
 ## WebUI surface (`yadc/webui/src/`)
 
