@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 type ActiveTaggerKind = Literal["hf", "local"]
 
@@ -37,6 +37,16 @@ class TaggerModelSummary(BaseModel):
     exposes these as user-editable fields in the picker because the
     profile for a local model is caller-specific (animetimm needs
     ``"timm"``, anything else might need ``"wd-tagger"``).
+
+    ``sidecars`` is **internal server-side config**: extra files in
+    the HF repo to download alongside the main ``model.onnx`` on a
+    best-effort basis. The typical case is the ONNX external-data
+    file (``model.onnx_data``) for models that exceed protobuf's 2 GB
+    size limit. Not exposed via the picker API — each download
+    attempt is wrapped in a try/except, so a missing sidecar just
+    means the model loads as a single file. The ``exclude=True``
+    flag keeps the field out of ``model_dump`` / JSON serialization
+    so endpoint code doesn't have to remember to strip it.
     """
 
     id: str
@@ -44,17 +54,28 @@ class TaggerModelSummary(BaseModel):
     params: str
     default_preproc_profile: str = "wd-tagger"
     default_size: int = 0
+    sidecars: list[str] = Field(default_factory=list, exclude=True)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
 
-# Curated SmilingWolf HF repos. Custom HF repo_ids are intentionally
-# out of scope for v1; if a user wants a fork they swap to local and
-# point at the file. Order = display order in the picker. All rows
-# use the wd-tagger profile (the SmilingWolf export convention) with
-# the model's native input size — the picker hides the profile/size
-# controls for these so the user can't pick a mismatched combination.
+# Curated HF repos. Custom HF repo_ids are intentionally out of
+# scope for v1; if a user wants a fork they swap to local and point
+# at the file. SmilingWolf rows use the wd-tagger profile (the
+# SmilingWolf export convention) with the model's native input size.
+# The animetimm ConvNeXt row uses the ``timm`` profile (PyTorch /
+# timm convention) and the ONNX external-data sidecar because the
+# graph exceeds protobuf's 2 GB size limit. The picker hides the
+# profile/size controls for all curated rows so the user can't pick
+# a mismatched combination.
 KNOWN_TAGGER_MODELS: list[TaggerModelSummary] = [
+    TaggerModelSummary(
+        id="itterative/convnextv2_huge.dbv4-full-onnx",
+        display="animetimm ConvNeXtV2 Huge",
+        params="large · SOTA accuracy · timm profile",
+        default_preproc_profile="timm",
+        sidecars=["model.onnx_data"],
+    ),
     TaggerModelSummary(
         id="SmilingWolf/wd-eva02-large-tagger-v3",
         display="WD EVA02 Large v3",

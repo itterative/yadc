@@ -457,8 +457,10 @@ def api_tagging(
         sentinel. The ``profiles`` list mirrors
         :func:`yadc.taggers.onnx_preprocess.list_profiles` so the
         picker's profile dropdown stays in sync with the backend's
-        supported set. Adding a new curated entry is a one-line change
-        in :mod:`yadc.api.modules.tagger_catalog`.
+        supported set. ``sidecars`` is excluded from the response —
+        it's internal server-side download config, not picker UI.
+        Adding a new curated entry is a one-line change in
+        :mod:`yadc.api.modules.tagger_catalog`.
         """
         return jsonify(
             {

@@ -155,6 +155,13 @@ class OnnxTagger(Tagger):
         repo_model_filename: Filename within the HF repo for the model.
         repo_label_filename: Filename within the HF repo for the
             labels.
+        repo_sidecar_filenames: Extra files in the HF repo to fetch
+            alongside the model (best-effort). Typical case: the ONNX
+            external-data file (``model.onnx_data``) for models that
+            exceed protobuf's 2 GB size limit. Each download is
+            wrapped in a try/except for ``EntryNotFoundError`` — a
+            missing sidecar just means the model loads as a single
+            file.
         preproc_profile: The preprocessing profile to use. ``None`` →
             :data:`WD_TAGGER_PROFILE`.
         default_size: Override ``profile.default_input_size`` when
@@ -168,6 +175,7 @@ class OnnxTagger(Tagger):
         repo_id: str | None = None,
         repo_model_filename: str = "model.onnx",
         repo_label_filename: str = "selected_tags.csv",
+        repo_sidecar_filenames: list[str] | None = None,
         preproc_profile: PreprocProfile | None = None,
         default_size: int = 0,
     ) -> None:
@@ -178,6 +186,7 @@ class OnnxTagger(Tagger):
         self._repo_id: str | None = repo_id or None
         self._repo_model_filename: str = repo_model_filename
         self._repo_label_filename: str = repo_label_filename
+        self._repo_sidecar_filenames: list[str] = list(repo_sidecar_filenames or [])
         # Preprocessing profile — applied in ``predict()`` to the
         # input image. The default matches the wd-tagger convention;
         # TIMM_PROFILE fits PyTorch / timm exports that don't bake
@@ -212,6 +221,7 @@ class OnnxTagger(Tagger):
         # clear network/HF error rather than an opaque ORT error.
         if self._repo_id:
             from huggingface_hub import hf_hub_download
+            from huggingface_hub.errors import EntryNotFoundError
 
             downloaded_model = hf_hub_download(
                 repo_id=self._repo_id,
@@ -223,6 +233,24 @@ class OnnxTagger(Tagger):
             )
             model_path = downloaded_model
             self._labels, self._categories = load_labels(downloaded_label)
+            # Sidecar downloads — typically the ONNX external-data file
+            # for models that exceed protobuf's 2 GB size limit. Each
+            # one is best-effort: ``EntryNotFoundError`` just means the
+            # repo doesn't carry that file, which is fine (most models
+            # don't need any). Onnxruntime finds a sibling
+            # ``<model>.onnx_data`` next to the ``.onnx`` automatically,
+            # so downloading it into the same cache directory is all we
+            # need. Logged at warning so operators can see which sidecars
+            # were requested but not present.
+            for sidecar in self._repo_sidecar_filenames:
+                try:
+                    hf_hub_download(repo_id=self._repo_id, filename=sidecar)
+                except EntryNotFoundError:
+                    logger.warning(
+                        "Tagger sidecar not present in HF repo. [repo=%s, sidecar=%s]",
+                        self._repo_id,
+                        sidecar,
+                    )
 
         # Build the ONNX session (extracted into a helper so tests
         # can mock just this step). ``onnxruntime`` is imported lazily

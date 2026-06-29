@@ -46,7 +46,7 @@ from yadc.api.events import (
 from yadc.api.modules import DatasetWatcherService, EventDispatcher, JobScheduler, LoggingFactory, Service
 from yadc.api.modules.dataset_watcher import SELF_JOB_ID
 from yadc.api.modules.event_dispatcher import event_handler
-from yadc.api.modules.tagger_catalog import ActiveTagger
+from yadc.api.modules.tagger_catalog import KNOWN_TAGGER_MODELS, ActiveTagger
 from yadc.api.services.dataset_jobs import DatasetJobService, JobClaim
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
@@ -1048,6 +1048,11 @@ class TaggingService(Service):
         ``default_size`` override. The HF path leaves ``model_path``
         empty — ``OnnxTagger.load_model`` ignores it once ``repo_id``
         is set in kwargs.
+
+        For known catalog repos, ``repo_sidecar_filenames`` is set
+        from :data:`yadc.api.modules.tagger_catalog.KNOWN_TAGGER_MODELS`
+        so extra files (typically the ONNX external-data file for
+        >2 GB models) are downloaded best-effort alongside the model.
         """
         from yadc.taggers.onnx_preprocess import get_profile
 
@@ -1065,6 +1070,9 @@ class TaggingService(Service):
                 tagger_kwargs["repo_id"] = selection.repo_id
                 tagger_kwargs["repo_model_filename"] = selection.repo_model_filename
                 tagger_kwargs["repo_label_filename"] = selection.repo_label_filename
+                sidecars = self._catalog_sidecars(selection.repo_id)
+                if sidecars:
+                    tagger_kwargs["repo_sidecar_filenames"] = sidecars
             else:
                 model_path = selection.model_path
                 explicit = selection.label_path.strip()
@@ -1080,6 +1088,9 @@ class TaggingService(Service):
                 tagger_kwargs["repo_id"] = repo_id
                 tagger_kwargs["repo_model_filename"] = self._configuration.tagger_repo_model_filename
                 tagger_kwargs["repo_label_filename"] = self._configuration.tagger_repo_label_filename
+                sidecars = self._catalog_sidecars(repo_id)
+                if sidecars:
+                    tagger_kwargs["repo_sidecar_filenames"] = sidecars
             else:
                 label_path = self._resolve_label_path(model_path)
 
@@ -1165,6 +1176,22 @@ class TaggingService(Service):
             return configured
         candidate = Path(model_path).parent / "selected_tags.csv"
         return str(candidate) if candidate.exists() else None
+
+    def _catalog_sidecars(self, repo_id: str) -> list[str]:
+        """Sidecar filenames to fetch alongside a known catalog repo's model.
+
+        Returns the row's ``sidecars`` list when ``repo_id`` matches a
+        curated entry in :data:`KNOWN_TAGGER_MODELS`; ``[]`` otherwise
+        (custom HF repos, legacy Configuration-driven setups). The
+        catalog is the single source of truth for which extra files a
+        curated model needs — typically the ONNX external-data file
+        (``model.onnx_data``) for models that exceed protobuf's 2 GB
+        size limit.
+        """
+        for entry in KNOWN_TAGGER_MODELS:
+            if entry.id == repo_id:
+                return list(entry.sidecars)
+        return []
 
     # --- idle check (called by JobScheduler in a daemon thread) ----------
 

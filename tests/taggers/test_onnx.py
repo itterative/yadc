@@ -640,3 +640,85 @@ class TestOnnxTaggerWithProfiles:
         # No sigmoid applied: values stay > 1, matching raw_scores exactly.
         scores = list(result.tags.values())
         assert scores == [pytest.approx(1.93), pytest.approx(1.28), pytest.approx(1.15), pytest.approx(0.67)]  # type: ignore[list-item]  # exact float comparison
+
+
+# ---------------------------------------------------------------------------
+# OnnxTagger.load_model — HF sidecar downloads (best-effort)
+# ---------------------------------------------------------------------------
+#
+# For models that exceed protobuf's 2 GB size limit, ONNX exports the
+# weights to a separate ``model.onnx_data`` file alongside the main
+# ``model.onnx``. ``OnnxTagger`` accepts a ``repo_sidecar_filenames``
+# list and downloads each entry after the model + labels. Each
+# download is wrapped in a try/except for ``EntryNotFoundError`` so
+# a missing file just means the model loads as a single file.
+
+
+class TestOnnxTaggerSidecars:
+    def test_sidecars_downloaded_best_effort(self, fake_model_file: Path, fake_labels_csv: Path):
+        """When ``repo_sidecar_filenames`` is set, each entry is fetched after
+        the main model + label downloads. ``EntryNotFoundError`` on the
+        sidecar is logged at warning but doesn't fail the load."""
+        from huggingface_hub.errors import EntryNotFoundError
+
+        tagger = OnnxTagger(
+            repo_id="some/large-repo",
+            repo_sidecar_filenames=["model.onnx_data"],
+        )
+
+        def _fake_download(repo_id, filename, **_):
+            if filename == "model.onnx":
+                return str(fake_model_file)
+            if filename == "selected_tags.csv":
+                return str(fake_labels_csv)
+            if filename == "model.onnx_data":
+                raise EntryNotFoundError("not in repo")
+            raise AssertionError(f"unexpected download: {filename}")
+
+        with (
+            patch("huggingface_hub.hf_hub_download", side_effect=_fake_download) as mock_dl,
+            patch_session(tagger, input_shape=["batch", 448, 448, 3]),
+        ):
+            tagger.load_model("/unused")
+
+        filenames = [c.kwargs["filename"] for c in mock_dl.call_args_list]
+        assert filenames == ["model.onnx", "selected_tags.csv", "model.onnx_data"]
+
+    def test_no_sidecar_download_when_list_empty(self, fake_model_file: Path, fake_labels_csv: Path):
+        """Default behavior — no sidecar downloads when ``repo_sidecar_filenames`` is empty/None."""
+        tagger = OnnxTagger(repo_id="some/repo")
+
+        with (
+            patch(
+                "huggingface_hub.hf_hub_download",
+                side_effect=[str(fake_model_file), str(fake_labels_csv)],
+            ) as mock_dl,
+            patch_session(tagger, input_shape=["batch", 448, 448, 3]),
+        ):
+            tagger.load_model("/unused")
+
+        filenames = sorted(c.kwargs["filename"] for c in mock_dl.call_args_list)
+        assert filenames == ["model.onnx", "selected_tags.csv"]
+
+    def test_sidecar_present_download_succeeds(self, fake_model_file: Path, fake_labels_csv: Path):
+        """When the sidecar IS in the repo, it gets downloaded normally."""
+        sidecar_file = fake_model_file.parent / "model.onnx_data"
+        sidecar_file.write_bytes(b"external-data")
+
+        tagger = OnnxTagger(
+            repo_id="some/repo",
+            repo_sidecar_filenames=["model.onnx_data"],
+        )
+
+        def _fake_download(repo_id, filename, **_):
+            if filename == "model.onnx":
+                return str(fake_model_file)
+            if filename == "selected_tags.csv":
+                return str(fake_labels_csv)
+            return str(sidecar_file)
+
+        with patch("huggingface_hub.hf_hub_download", side_effect=_fake_download) as mock_dl, patch_session(tagger, input_shape=["batch", 448, 448, 3]):
+            tagger.load_model("/unused")
+
+        filenames = sorted(c.kwargs["filename"] for c in mock_dl.call_args_list)
+        assert filenames == ["model.onnx", "model.onnx_data", "selected_tags.csv"]
