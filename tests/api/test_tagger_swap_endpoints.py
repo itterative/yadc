@@ -60,7 +60,7 @@ def app(mock_tagging: MagicMock) -> Quart:
     mock_logging.get_logger.return_value = MagicMock()
     mock_datasets = MagicMock()
 
-    api_tagging(bp, mock_tagging, mock_datasets, MagicMock(), mock_logging)
+    api_tagging(bp, mock_tagging, mock_datasets, MagicMock(), MagicMock(), mock_logging)
 
     quart_app.register_blueprint(bp)
     return quart_app

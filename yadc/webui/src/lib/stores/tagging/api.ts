@@ -3,12 +3,14 @@ import { clientId } from '../events';
 import type {
     ActiveTaggerResponse,
     CancelResult,
+    SuggestionVariantResponse,
     SwapTaggerBody,
     SwapTaggerResponse,
     TagJobInfo,
     TaggerModelSummary,
     TaggerResult,
-    TagSaveOptions
+    TagSaveOptions,
+    TagSuggestion
 } from './types';
 
 // --- Tagging API helpers ---
@@ -275,6 +277,114 @@ export async function listTaggerModels(signal?: AbortSignal): Promise<TaggerMode
         throw new Error(await apiErrorMessage(res));
     }
     return (await res.json()) as TaggerModelsResponse;
+}
+
+// --- Tag suggestion autocomplete (Tags tab custom-tag input) ---
+//
+// Session-scoped LRU keyed by normalized query string: backspace-and-retype
+// within the same keystroke sequence re-serves cached results instead of
+// re-fetching. 64-entry insertion-order Map; oldest key evicted on overflow.
+
+const SUGGESTION_CACHE_LIMIT = 64;
+const suggestionCache = new Map<string, TagSuggestion[]>();
+
+/** Move the key to the most-recently-used position and return its value. */
+function lruGet(key: string): TagSuggestion[] | undefined {
+    const value = suggestionCache.get(key);
+    if (value === undefined) {
+        return undefined;
+    }
+    suggestionCache.delete(key);
+    suggestionCache.set(key, value);
+    return value;
+}
+
+/** Insert (or refresh) a key, evicting the oldest if over capacity. */
+function lruSet(key: string, value: TagSuggestion[]) {
+    if (!suggestionCache.has(key) && suggestionCache.size >= SUGGESTION_CACHE_LIMIT) {
+        const oldest = suggestionCache.keys().next().value;
+        if (oldest !== undefined) {
+            suggestionCache.delete(oldest);
+        }
+    }
+    suggestionCache.set(key, value);
+}
+
+/** Fetch autocomplete suggestions for *query*. Each suggestion carries its
+ *  catalog category so the dropdown can show a category badge. Cached by
+ *  normalized query (+ limit + replace_underscores) so backspace-and-retype
+ *  within the session is instant; empty results aren't cached (they say
+ *  nothing about a longer query that extends them). When *replaceUnderscores*
+ *  is set the backend spaces out the suggestion names (kaomojis preserved)
+ *  to mirror the tagger's output formatting. */
+export async function fetchTagSuggestions(
+    query: string,
+    signal?: AbortSignal,
+    limit = 20,
+    replaceUnderscores = false
+): Promise<TagSuggestion[]> {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+        return [];
+    }
+
+    const cacheKey = `${limit}:${replaceUnderscores ? '1' : '0'}:${normalized}`;
+    const cached = lruGet(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
+    const params = new URLSearchParams({
+        q: query.trim(),
+        limit: String(limit),
+        replace_underscores: replaceUnderscores ? 'true' : 'false'
+    });
+    const res = await fetch(`${API_BASE}/api/tagging/suggest?${params}`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    const data = (await res.json()) as { query: string; suggestions: TagSuggestion[] };
+    if (data.suggestions.length > 0) {
+        lruSet(cacheKey, data.suggestions);
+    }
+    return data.suggestions;
+}
+
+// --- Tag suggestion variant (catalog selection) ---
+
+/** Fetch the active suggestion variant, the config default, and the full
+ *  variant list in one payload. Used by the Settings picker to populate
+ *  the dropdown and mark the current selection. Unlike the tagger swap,
+ *  this has no busy/in-progress states — the backend persists and kicks a
+ *  background reload, returning immediately. */
+export async function fetchSuggestionVariant(
+    signal?: AbortSignal
+): Promise<SuggestionVariantResponse> {
+    const res = await fetch(`${API_BASE}/api/tagging/suggest/variant`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as SuggestionVariantResponse;
+}
+
+/** Persist a new active suggestion variant. The backend coerces the value
+ *  to the enum (400 on an unknown value) and drops its cached catalog; the
+ *  new variant downloads on the next autocomplete request. Throws on a
+ *  non-200 so the action layer can toast. */
+export async function setSuggestionVariant(
+    variant: string,
+    signal?: AbortSignal
+): Promise<SuggestionVariantResponse> {
+    const res = await fetch(`${API_BASE}/api/tagging/suggest/variant`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant }),
+        signal
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as SuggestionVariantResponse;
 }
 
 /** Discriminated result from :func:`swapTaggerModel`. The action layer

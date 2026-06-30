@@ -77,7 +77,7 @@ A domain gets its own sub-folder when it has ≥2 related files AND they all ser
 
 ### Current layout
 
-- 6 domain sub-folders: `dataset/` (4 files), `caption/` (9 files), `tagging/` (9 files), `config/` (3 files), `env/` (3 files), `templates/` (4 files).
+- 6 domain sub-folders: `dataset/` (4 files), `caption/` (9 files), `tagging/` (10 files), `config/` (3 files), `env/` (3 files), `templates/` (4 files).
 - 7 top-level singletons: `events.ts`, `toasts.ts`, `confirm.ts`, `passwordPrompt.ts`, `sessionPassword.ts`, `settings.ts`, `topbar.svelte.ts`, `storageStore.ts`.
 
 Full per-file summary in `frontend/stores.md`.

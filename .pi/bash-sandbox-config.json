@@ -1,7 +1,8 @@
 {
   "sandbox": {
     "mounts": {
-      "~/Repos/qwen-reranker-test": "readonly"
+      "~/Repos/qwen-reranker-test": "readonly",
+      "~/.cache/yadc": "readwrite"
     }
   },
   "permissions": {

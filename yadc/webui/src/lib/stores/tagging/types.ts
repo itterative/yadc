@@ -155,3 +155,33 @@ export type SwapTaggerResponse = ActiveTaggerResponse;
 
 /** Sentinel id in the curated catalog that triggers the local-file prompt. */
 export const LOCAL_FILE_ID = '__local__';
+
+// --- Tag autocomplete (Tags tab custom-tag input) ---
+
+/** One ranked tag from the suggestion endpoint. Mirrors the matcher's
+ *  ``(name, category)`` tuple — reshaped to a dict at the API boundary for
+ *  JSON-friendliness. ``category`` is the danbooru taxonomy
+ *  (``general`` / ``artist`` / ``copyright`` / ``character`` / ``meta``). */
+export interface TagSuggestion {
+    name: string;
+    category: string;
+}
+
+// --- Tag suggestion variant (autocomplete catalog selection) ---
+
+/** One selectable catalog variant — ``value`` is the enum key sent back on
+ *  PUT, ``label`` is the brand spelling shown in the dropdown. */
+export interface SuggestionVariantOption {
+    value: string;
+    label: string;
+}
+
+/** ``GET`` / ``PUT /api/tagging/suggest/variant`` response. ``variant`` is the
+ *  active selection (persisted user override wins over ``default``);
+ *  ``default`` is the ``Configuration`` default; ``variants`` populates the
+ *  picker. */
+export interface SuggestionVariantResponse {
+    variant: string;
+    default: string;
+    variants: SuggestionVariantOption[];
+}

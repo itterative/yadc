@@ -32,6 +32,12 @@ Routes:
   in-flight single-image tag (graceful-first, kill-as-fallback).
 - ``POST /tagging/preview`` — context-free format preview; no dataset
   or image required (used by settings panels).
+- ``GET /tagging/suggest`` — autocomplete for the Tags tab's custom-tag
+  input (query + limit).
+- ``GET /tagging/suggest/variant`` — return the active + default tag-
+  suggestion catalog variant and the full variant list.
+- ``PUT /tagging/suggest/variant`` — switch the active variant (persists
+  + reloads).
 
 The tagger is a server-side background process (started lazily on the
 first request when ``Configuration.tagger_repo_id`` /
@@ -42,12 +48,14 @@ through :class:`DatasetService` and delegates to :class:`TaggingService`.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pydantic
 from quart import Response, jsonify, request
 
 from yadc.taggers.onnx_preprocess import list_profiles
+from yadc.taggers.postprocessing import replace_underscore_for_tag
 
 from ..configuration import Configuration
 from ..modules.logging_factory import LoggingFactory
@@ -58,6 +66,7 @@ from ..modules.tagger_catalog import (
 )
 from ..services.dataset_jobs import DatasetBusyError
 from ..services.datasets import DatasetService
+from ..services.tag_suggestions import CatalogVariant, TagSuggestionsService, list_variants, resolve_variant
 from ..services.tagging import (
     TaggerBusyError,
     TaggerSwapInProgressError,
@@ -106,11 +115,23 @@ class CancelBody(pydantic.BaseModel):
     job_id: str | None = None
 
 
+class SuggestionVariantBody(pydantic.BaseModel):
+    """Body for ``PUT /tagging/suggest/variant`` — switch catalog variant.
+
+    ``variant`` is a ``CatalogVariant`` value (``anima`` / ``illustrious`` /
+    ``noobaixl``); the controller coerces it to the enum so the service
+    never sees a raw string.
+    """
+
+    variant: str
+
+
 @controller
 def api_tagging(
     app: ApiBlueprint,
     tagging: TaggingService,
     datasets: DatasetService,
+    tag_suggestions: TagSuggestionsService,
     configuration: Configuration,
     logging: LoggingFactory,
 ):
@@ -360,6 +381,138 @@ def api_tagging(
         result = TaggerResult(tags=dict(body.tags), categories={k: list(v) for k, v in body.categories.items()})
         content = tagging.preview_save_tags(result, body.save)
         return jsonify({"content": content})
+
+    @app.get("/tagging/suggest")
+    async def suggest_tags():  # pyright: ignore[reportUnusedFunction]
+        """Autocomplete backend for the Tags tab's custom-tag input.
+
+        Query-string params (no body): ``q`` (1–100 chars after trim;
+        empty → ``[]``) and optional ``limit`` (1–50, default 20) and
+        ``replace_underscores`` (``true``/``1``/``yes``; default off).
+        When set, each suggestion's ``name`` has underscores turned into
+        spaces (kaomojis preserved) so the dropdown mirrors the tagger's
+        ``replace_underscores`` setting; matching still runs on the
+        canonical underscored forms.
+
+        Returns ``{"query", "suggestions": [{name, category}, ...]}``.
+        Each suggestion carries its catalog category (the danbooru
+        taxonomy: ``general`` / ``artist`` / ``copyright`` / ``character``
+        / ``meta``) so the dropdown can render a category badge.
+
+        Ranking is fzf-style fuzzy subsequence scoring (see
+        :mod:`yadc.utils.fuzzy`) multiplied by ``log(post_count)`` so
+        popular tags surface above equally-matching obscure ones. The
+        catalog is downloaded from BetaDoggo's danbooru-tag-list releases
+        and parsed once into memory by :class:`TagSuggestionsService`
+        (currently pinned to NoobAIXL; variants are selectable later).
+
+        The matcher is async and yields every few thousand iterations so
+        the 140k+ catalog doesn't monopolize the event loop. The query
+        echoed in the response is the trimmed input (not the normalized
+        form) so the frontend can show a "no matches for …" hint.
+
+        The active catalog variant is switchable — see
+        ``GET`` / ``PUT /tagging/suggest/variant``.
+        """
+        raw_q = (request.args.get("q") or "").strip()
+        # Length cap: 100 chars on the wire matches the same ceiling
+        # ``suggest`` enforces on the matcher's side.
+        if len(raw_q) > 100:
+            return jsonify_error("Query too long (max 100 characters)", status=400, code=ErrorCode.BAD_REQUEST)
+
+        raw_limit = request.args.get("limit", "20")
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            return jsonify_error("limit must be an integer", status=400, code=ErrorCode.BAD_REQUEST)
+
+        # Mirror the tagger's replace_underscores display setting so the
+        # dropdown matches whatever the user's output is formatted as.
+        # Same truthy idiom as the GET /tag endpoint. Applied post-match
+        # (the matcher works on canonical names; this is a display-only
+        # transform), reusing the tagger's kaomoji-preserving helper.
+        replace_raw = request.args.get("replace_underscores")
+        replace = replace_raw is not None and replace_raw.lower() in ("true", "1", "yes")
+
+        t0 = time.perf_counter()
+        suggestions = await tag_suggestions.suggest(raw_q, limit=limit)
+        # Perf signal: how long the suggest pass actually took for
+        # this query. Captured here (not inside the service) so the
+        # log line lives next to the route, with the wire-level query
+        # string and the final hit count visible together.
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        _logger.debug(
+            "Tag suggest completed in %.1fms [query=%r, hits=%d, limit=%d]",
+            elapsed_ms,
+            raw_q,
+            len(suggestions),
+            limit,
+        )
+        # Re-shape tuples → dicts at the wire boundary so the matcher
+        # can keep its efficient ``(name, category)`` tuple return type
+        # while the JSON shape stays idiomatic for the frontend:
+        # ``[{"name": ..., "category": ...}, ...]``.
+        return jsonify(
+            {
+                "query": raw_q,
+                "suggestions": [
+                    {
+                        "name": replace_underscore_for_tag(name) if replace else name,
+                        "category": category,
+                    }
+                    for name, category in suggestions
+                ],
+            }
+        )
+
+    @app.get("/tagging/suggest/variant")
+    async def get_suggestion_variant():  # pyright: ignore[reportUnusedFunction]
+        """Return the active tag-suggestion variant + the full variant list.
+
+        Single call to populate the picker: the current ``variant`` (what's
+        loaded), the ``default`` (from ``Configuration``), and ``variants``
+        (every known variant with its display label).
+        """
+        active = tag_suggestions.variant
+        default = resolve_variant(configuration.tagger_suggestion_variant)
+        return jsonify(
+            {
+                "variant": active.value,
+                "default": default.value,
+                "variants": [{"value": v.value, "label": label} for v, label in list_variants()],
+            }
+        )
+
+    @app.put("/tagging/suggest/variant")
+    async def set_suggestion_variant():  # pyright: ignore[reportUnusedFunction]
+        """Switch the active tag-suggestion variant.
+
+        Body: ``{"variant": "noobaixl"}``. Coerced to :class:`CatalogVariant`
+        (400 on an unknown value). The service persists the selection,
+        drops its cached catalog, and kicks a background reload of the new
+        variant — the HTTP response returns once the selection is recorded,
+        without waiting for the (possibly network-bound) reload. Returns the
+        same shape as :func:`get_suggestion_variant` so the caller can render
+        immediately.
+        """
+        body = validate_body(SuggestionVariantBody, await request.get_json(silent=True))
+        try:
+            variant = CatalogVariant(body.variant.strip().lower())
+        except ValueError:
+            return jsonify_error(
+                f"Unknown tag suggestion variant: {body.variant!r}",
+                status=400,
+                code=ErrorCode.BAD_REQUEST,
+            )
+        await tag_suggestions.set_variant(variant)
+        default = resolve_variant(configuration.tagger_suggestion_variant)
+        return jsonify(
+            {
+                "variant": variant.value,
+                "default": default.value,
+                "variants": [{"value": v.value, "label": label} for v, label in list_variants()],
+            }
+        )
 
     # --- tagger model swap -----------------------------------------------
     #

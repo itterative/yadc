@@ -40,14 +40,15 @@ yadc/webui/src/lib/stores/
     timing.ts                    # captionTimingRing (per-API+model, persisted to localStorage, cap=32 samples) + recordCaptionTiming
   tagging/                       # Tagger domain — mirrors caption/ (role-based). Backed by the tagger subsystem (see `docs/tagger-architecture.md`).
     index.ts                     # Re-exports for `$lib/stores/tagging`
-    types.ts                     # TaggerResult / TagJobInfo / TagSaveOptions / TaggerStatus + the 4 SSE event shapes + DEFAULT_SAVE
-    api.ts                       # tagImage (sync single-image), startTagJob / stopTagJob / fetchTagJobStatus (batch job), saveImageTags (interactive prune save). No `withPasswordRetry` — tagger endpoints don't require a password.
-    actions.ts                   # tagOptions (assembled) + tagSingleImage (sync, caches result + tracks inflight) + startBatchTagging (optimistic seed) + stopTagging (toast on fail) + saveImageTagsAction (defaults to persisted settings)
+    types.ts                     # TaggerResult / TagJobInfo / TagSaveOptions / TaggerStatus + TagSuggestion (autocomplete row) + SuggestionVariantResponse/SuggestionVariantOption (variant picker payload) + the 4 SSE event shapes + DEFAULT_SAVE
+    api.ts                       # tagImage (sync single-image), startTagJob / stopTagJob / fetchTagJobStatus (batch job), saveImageTags (interactive prune save), fetchTagSuggestions (autocomplete, with a session-scoped LRU keyed by normalized query+limit+replace_underscores so a setting flip re-fetches the matching form), fetchSuggestionVariant/setSuggestionVariant (GET/PUT catalog variant — no busy/in-progress states, throws on non-200). No `withPasswordRetry` — tagger endpoints don't require a password.
+    actions.ts                   # tagOptions (assembled) + tagSingleImage (sync, caches result + tracks inflight) + startBatchTagging (optimistic seed) + stopTagging (toast on fail) + saveImageTagsAction (defaults to persisted settings) + setSuggestionVariantAction (toasts + returns updated payload or null)
     settings.ts                  # tagSettings storable (`yadc/tagSettings`, $version 1): threshold overrides (null=server default) + saveMode/draftName/draftFormat. CANONICAL_THRESHOLDS constant (wd-tagger 0.0/0.35/0.85) is the diff-dot baseline.
     status.ts                    # taggingStatuses store (per-dataset Map) + setTaggingStatus/resetTaggingStatus — mirrors caption/status.ts
     inflight.ts                  # currentlyTagging (per-image set) — mirrors caption/inflight.ts
     taggerStatus.ts              # taggerStatus (single global subprocess-lifecycle slot) + setTaggerStatus. Display-only; configured-ness isn't observable pre-spawn, so the UI never gates on it — any error (incl. 503 not-configured) surfaces as a toast.
     results.ts                   # tagResults (last TaggerResult per `dataset:image`, fed by both the sync tag response and the batch `image_tagged` SSE) + setTagResult/getTagResult/clearTagResult
+    recentTags.ts                # recentTags storable (`yadc/recentTags`, $version 1) — recently-added tags (name + category, capped at `RECENT_TAGS_MAX = 100`) reused via the custom-tag dropdown. `recordRecentTag` dedupes-by-name and moves to front (recency order); `removeRecentTag` drops a single entry.
   config/                        # Config domain — types + API split
     index.ts                     # Re-exports for `$lib/stores/config`
     types.ts                     # Config + ConfigApi/ConfigPrompt/ConfigSettings/ConfigReasoning/ConfigDatasetEntry + DatasetConfig/Detail + ExportBackend/Result + ConfigHistoryEntry

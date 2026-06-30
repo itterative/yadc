@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { SvelteSet } from 'svelte/reactivity';
+    import { SvelteMap, SvelteSet } from 'svelte/reactivity';
     import {
         cancelTaggingAction,
         currentlyTagging,
@@ -23,6 +23,7 @@
     import { deferred } from '$lib/async';
     import { getAbortContext, linkedController } from '$lib/abort';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
+    import TagCategoryChips, { type TagChipView } from './TagCategoryChips.svelte';
 
     interface Props {
         datasetName: string;
@@ -122,13 +123,45 @@
     let enabled = new SvelteSet<string>();
     let lastResultSeen: TaggerResult | undefined = undefined;
 
+    // User-added tags that aren't in the model output. ``name → category``.
+    // Cleared on every fresh result (re-tagging the image discards the
+    // user's additions — the new model output is the new source of truth).
+    // Toggling a custom chip off leaves the entry here so it can be
+    // re-enabled; the ``Clear`` button or wiping the result removes it.
+    const customTags = new SvelteMap<string, string>();
+
     function repopulateFromResult(r: TaggerResult) {
         enabled.clear();
+        customTags.clear();
         for (const tags of Object.values(r.categories)) {
             for (const t of tags) {
                 enabled.add(t);
             }
         }
+    }
+
+    /** Register a tag added through the per-category ``TagInput``. The chip
+     *  is auto-enabled (the user just decided it should exist), and a
+     *  synthetic 100% score is layered in :func:`buildPrunedResult` so the
+     *  saved output reflects the user's confidence. */
+    function addCustomTag(category: string, tag: string) {
+        if (result && tag in result.tags) {
+            // Re-enable a model tag that had been pruned — don't double-
+            // register it as a custom tag (it's not custom, just toggled).
+            enabled.add(tag);
+            return;
+        }
+        customTags.set(tag, category);
+        enabled.add(tag);
+    }
+
+    /** Drop a user-added custom tag from both the map and the enabled set.
+     *  Triggered by the inline × button on a custom chip — the chip body
+     *  click still toggles on/off like a model tag, so the user has both
+     *  "hide temporarily" and "remove entirely" affordances. */
+    function removeCustomTag(tag: string) {
+        customTags.delete(tag);
+        enabled.delete(tag);
     }
 
     $effect(() => {
@@ -155,7 +188,7 @@
 
     interface OrderedCategory {
         name: string;
-        tags: string[];
+        chips: TagChipView[];
     }
 
     let orderedCategories = $derived.by<OrderedCategory[]>(() => {
@@ -163,8 +196,15 @@
             return [];
         }
         const r = result;
-        const keys = Object.keys(r.categories);
-        const sortedNames = [...keys].sort((a, b) => {
+        // Union of categories — union the model's keys with any category a
+        // custom tag was assigned to (a Custom-only category is still shown).
+        const categoryNames: string[] = [...Object.keys(r.categories)];
+        for (const cat of customTags.values()) {
+            if (!categoryNames.includes(cat)) {
+                categoryNames.push(cat);
+            }
+        }
+        const sortedNames = [...categoryNames].sort((a, b) => {
             const ia = CATEGORY_ORDER.indexOf(a);
             const ib = CATEGORY_ORDER.indexOf(b);
             if (ia !== -1 || ib !== -1) {
@@ -172,19 +212,36 @@
             }
             return a.localeCompare(b);
         });
-        return sortedNames.map((name) => ({
-            name,
-            // Defensive default 0 in case a category entry isn't in
-            // ``result.tags`` (partial / hand-built payload).
-            tags: [...r.categories[name]].sort((a, b) => {
+        return sortedNames.map((name) => {
+            // Custom tags lead the section (alphabetical, so order is
+            // stable across adds), then model tags sorted by score desc.
+            // Score is baked into each chip here so :comp:`TagCategoryChips`
+            // doesn't need to know about ``result.tags`` lookup semantics.
+            const chips: TagChipView[] = [];
+            const customInCategory: string[] = [];
+            for (const [tag, cat] of customTags) {
+                if (cat === name) {
+                    customInCategory.push(tag);
+                }
+            }
+            customInCategory.sort();
+            for (const tag of customInCategory) {
+                chips.push({ tag, score: 1.0, isCustom: true });
+            }
+            const modelInCategory = (r.categories[name] ?? []).filter((t) => !customTags.has(t));
+            modelInCategory.sort((a, b) => {
                 const sa = r.tags[a] ?? 0;
                 const sb = r.tags[b] ?? 0;
                 if (sa !== sb) {
                     return sb - sa;
                 }
                 return a.localeCompare(b);
-            })
-        }));
+            });
+            for (const tag of modelInCategory) {
+                chips.push({ tag, score: r.tags[tag] ?? 0, isCustom: false });
+            }
+            return { name, chips };
+        });
     });
 
     function toggleTag(tag: string) {
@@ -215,6 +272,7 @@
     function clearAll(category?: string) {
         if (!category) {
             enabled.clear();
+            customTags.clear();
             return;
         }
 
@@ -226,6 +284,15 @@
 
         for (const t of tags) {
             enabled.delete(t);
+        }
+        // Drop custom tags assigned to this category too — the user is
+        // saying "remove everything in this category". Toggling the chip
+        // off is the alternative for a soft disable.
+        for (const [t, cat] of [...customTags]) {
+            if (cat === category) {
+                customTags.delete(t);
+                enabled.delete(t);
+            }
         }
     }
 
@@ -267,7 +334,21 @@
                 prunedCategories[cat] = kept;
             }
         }
+        // Layer custom tags on top — they carry their chosen category and a
+        // synthetic 100% score. Both draft formatters and the extras
+        // serializer treat them indistinguishably from a high-confidence
+        // model tag.
+        for (const [tag, cat] of customTags) {
+            if (!enabled.has(tag)) {
+                continue;
+            }
+            (prunedCategories[cat] ??= []).push(tag);
+            prunedTags[tag] = 1.0;
+        }
         for (const tag of enabled) {
+            if (tag in prunedTags) {
+                continue;
+            }
             if (tag in r.tags) {
                 prunedTags[tag] = r.tags[tag];
             }
@@ -504,49 +585,19 @@
         <!-- Result: grouped toggle chips -->
         <div class="flex flex-1 flex-col gap-4">
             {#each orderedCategories as cat (cat.name)}
-                {@const categoryTags = cat.tags}
-                <section>
-                    <div class="mb-3 flex items-center justify-end gap-3 text-xs text-gray-400">
-                        <h4 class="flex-1 font-semibold text-gray-400 uppercase">
-                            {cat.name}
-                        </h4>
-
-                        {#if categoryTags.length > 0}
-                            <button
-                                class="cursor-pointer hover:text-gray-200"
-                                onclick={() => selectAll(cat.name)}>Select all</button
-                            >
-                            <span class="text-gray-600">·</span>
-                            <button
-                                class="cursor-pointer hover:text-gray-200"
-                                onclick={() => clearAll(cat.name)}>Clear</button
-                            >
-                        {/if}
-                    </div>
-
-                    <div class="flex flex-wrap gap-1.5">
-                        {#if categoryTags.length === 0}
-                            <span class="pl-1 text-xs text-gray-400 italic">(none)</span>
-                        {/if}
-                        {#each categoryTags as tag (tag)}
-                            {@const score = result.tags[tag] ?? 0}
-                            <button
-                                class="cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors {enabled.has(
-                                    tag
-                                )
-                                    ? 'border-accent/60 bg-accent/20 text-accent'
-                                    : 'border-gray-700 bg-gray-800 text-gray-500 line-through opacity-60 hover:border-gray-600'}"
-                                onclick={() => toggleTag(tag)}
-                                title={score.toFixed(4)}
-                            >
-                                <span>{tag}</span>
-                                <span class="ml-1.5 text-[10px] opacity-70">
-                                    {Math.round(score * 100)}%
-                                </span>
-                            </button>
-                        {/each}
-                    </div>
-                </section>
+                {@const categoryName = cat.name}
+                <TagCategoryChips
+                    category={categoryName}
+                    chips={cat.chips}
+                    tags={result.categories[categoryName] ?? []}
+                    {customTags}
+                    {enabled}
+                    ontoggle={toggleTag}
+                    onremovecustom={removeCustomTag}
+                    onaddcustom={(tag) => addCustomTag(categoryName, tag)}
+                    onselectall={() => selectAll(categoryName)}
+                    onclear={() => clearAll(categoryName)}
+                />
             {/each}
         </div>
     {/if}

@@ -20,7 +20,7 @@ client-side image upload).
 | `TaggerResult` | `yadc/taggers/base.py` | Dataclass with `tags: dict[str, float]` and `categories: dict[str, list[str]]` |
 | `OnnxTagger` | `yadc/taggers/onnx.py` | Concrete ONNX Runtime implementation; downloads from HF Hub when `repo_id` is set |
 | `apply_thresholds` | `yadc/taggers/onnx.py` | Pure helper — drops tags below per-category thresholds |
-| `replace_underscores` | `yadc/taggers/postprocessing.py` | Pure helper — turns `long_hair`→`long hair` (kaomoji-guarded); no-op returns the same object |
+| `replace_underscores` | `yadc/taggers/postprocessing.py` | Pure helper — turns `long_hair`→`long hair` (kaomoji-guarded); no-op returns the same object. The per-tag `replace_underscore_for_tag` is also reused by the suggest endpoint's `replace_underscores` query param (post-match display transform) |
 | `TaggerServer` / `TaggerClient` | `server.py` / `client.py` | Multiprocessing boundary (`multiprocessing.Queue`) |
 | `TaggingService` | `yadc/api/services/tagging.py` | DI service — owns the subprocess lifecycle |
 | `TaggingThresholds` | same | Per-category threshold bundle (rating / general / character) |
@@ -176,6 +176,60 @@ the subprocess is invisible to async callers.
   in-flight tag (graceful-first, kill-as-fallback). Body `{job_id?}`;
   `job_id` omitted is the single-image case. Returns `CancelResult`
   (`outcome`: `stopped` / `killed` / `stale_job` / `nothing_running`).
+- `GET /tagging/suggest?q=&limit=&replace_underscores=` — autocomplete for the Tags tab's
+  custom-tag input. Query-string only (no body); `q` is the user typing,
+  `limit` defaults to 20 (clamped to 1–50). Returns
+  `{"query", "suggestions": [{name, category}, ...]}`` — each row
+  carries the danbooru category (`general` / `artist` / `copyright` /
+  `character` / `meta`) so the dropdown can render category badges.
+  `replace_underscores=true` (``true``/``1``/``yes``) turns each suggestion's
+  `name` underscores into spaces (kaomojis preserved) so the dropdown mirrors
+  the tagger's output formatting; this is a **post-match display transform**
+  reusing `replace_underscore_for_tag` from `yadc/taggers/postprocessing.py` —
+  the matcher always runs on canonical underscored names.
+
+  The catalog is downloaded from BetaDoggo's danbooru-tag-list releases
+  to `~/.cache/yadc/tagging/catalogs/<variant>.csv` and parsed once into
+  memory by the `TagSuggestionsService` DI service (the
+  `yadc/api/services/tag_suggestions/` package). The service lazy-loads
+  on first access (single-flight via a lock so concurrent first-callers
+  share one in-flight parse) and fires a fire-and-forget background
+  preload at `StartupEvent` so the first keystroke is warm — boot isn't
+  blocked on the network download.
+
+  **Variant selection**: the active variant (``anima`` /
+  ``illustrious`` / ``noobaixl``) resolves in layers — a persisted
+  user selection (``tagger.suggestion_variant`` in `SettingsService`,
+  set via `PUT /tagging/suggest/variant`) wins, else
+  `Configuration.tagger_suggestion_variant`, else the built-in default
+  (``noobaixl``). `GET /tagging/suggest/variant` returns the active
+  variant, the config default, and the full variant list + labels in
+  one payload (populates the picker); `PUT /tagging/suggest/variant`
+  coerces the value to `CatalogVariant`, persists it, drops the cached
+  catalog, and kicks a background reload of the new variant — the
+  response returns once the selection is recorded, without waiting on
+  the (possibly network-bound) reload. Switching downloads the new
+  variant on demand if it isn't already cached.
+
+  Pure-function split so tests inject a small fixture catalog: the data
+  layer (`TagCatalog`, `load_catalog`, parse/cache helpers) is in
+  `tag_suggestions/catalog.py`, the matcher in
+  `tag_suggestions/suggestions.py` (`suggest(query, catalog, *, limit)`),
+  the service in `tag_suggestions/service.py`. The controller injects
+  `TagSuggestionsService` (in addition to `TaggingService`,
+  `DatasetService`, `Configuration`) and logs the per-request timing.
+
+  Matching pipeline: the matcher yields to the event loop every ~5k
+  iterations so the 140k+ catalog doesn't monopolize it. An inverted
+  per-char index (over the union of canonical + alias chars) narrows
+  to candidates that contain every distinct query char; a galloping
+  jump-list subsequence pre-check rejects the rest cheaply
+  (`yadc/utils/sorted_intersect.py`); then fzf-style fuzzy scoring
+  (`yadc/utils/fuzzy.py`) ranks survivors, multiplied by `log(post_count)`
+  for a popularity boost. Aliases in the source CSV are matched
+  alongside the canonical — typing `high_res` returns `highres` with its
+  category, not the alias. The controller reshapes the matcher's
+  `(name, category)` tuples to objects at the wire boundary.
 
 The controller injects `TaggingService`, `DatasetService` (path/image
 resolution), and `Configuration` (threshold fallbacks).
@@ -375,6 +429,7 @@ the run); tag failures increment `errors` but the run continues.
 | `tagger_liveness_poll_seconds` | `1.0` | How often the parent polls the response queue while waiting for a tag response / startup. Bounds how fast a dead or killed worker is noticed and how fast a cancel/kill unwinds. Decoupled from the worker heartbeat. |
 | `tagger_cancel_grace_seconds` | `1.0` | Grace window before force-killing the subprocess on cancel. After setting a job's stop_event, cancel waits this long for an in-flight inference to finish on its own before terminating the process. |
 | `tagger_expected_changes_grace_seconds` | `5.0` | Delay between a batch job ending and clearing its expected-changes source tag. Residual inotify events from the last writes land after the loop exits (kernel buffering + debounce); clearing too early re-tags them with the per-file `source` (`"tagger"`) instead of the job_id, which the originating tab can't suppress. Mirrors captioning's deferred clear. Must exceed `watcher_debounce_seconds` + `watcher_expected_file_ttl`. |
+| `tagger_suggestion_variant` | `"noobaixl"` | Default tag-suggestion (autocomplete) catalog variant — one of `anima` / `illustrious` / `noobaixl`. Only the unconfigured default; a persisted user runtime override (`PUT /tagging/suggest/variant` → `tagger.suggestion_variant` in `SettingsService`) takes precedence. An invalid value falls back to `noobaixl` rather than failing boot. |
 
 The wd-tagger canonical defaults (0.35 general, 0.85 character) are the
 defaults. `rating_threshold=0.0` keeps all ratings (the wd-tagger UI
@@ -508,15 +563,17 @@ same labels produce diff-stable extras).
 
 - **Stores** — `lib/stores/tagging/` domain (role-based, mirrors
   `caption/`): `types.ts`, `api.ts` (sync `tagImage`, batch `startTagJob`/
-  `stopTagJob`/`fetchTagJobStatus`, interactive `saveImageTags`),
-  `status.ts` (per-dataset job map + terminal eviction), `inflight.ts`
-  (`currentlyTagging` per-image set), `taggerStatus.ts` (single global
-  subprocess-lifecycle slot), `results.ts` (last `TaggerResult` per
-  `dataset:image`, fed by both the sync response and the batch SSE),
-  `settings.ts` (`tagSettings` storable: thresholds + save options),
-  `actions.ts` (`tagSingleImage`, `startBatchTagging`, `stopTagging`,
-  `saveImageTagsAction`), `index.ts`. `events.ts` adds the four zod
-  schemas + dispatch wiring.
+  `stopTagJob`/`fetchTagJobStatus`, interactive `saveImageTags`, autocomplete
+  `fetchTagSuggestions` with a session-scoped LRU), `status.ts` (per-dataset
+  job map + terminal eviction), `inflight.ts` (`currentlyTagging` per-image
+  set), `taggerStatus.ts` (single global subprocess-lifecycle slot),
+  `results.ts` (last `TaggerResult` per `dataset:image`, fed by both the sync
+  response and the batch SSE), `settings.ts` (`tagSettings` storable:
+  thresholds + save options), `actions.ts` (`tagSingleImage`,
+  `startBatchTagging`, `stopTagging`, `saveImageTagsAction`),
+  `recentTags.ts` (`recentTags` storable in localStorage — recently-added
+  tags reused via the custom-tag dropdown), `index.ts`. `events.ts` adds
+  the four zod schemas + dispatch wiring.
 - **Interactive Tags tab** — `lib/components/dataset/detail/Tags.svelte`:
   Tag button (sync) → result grouped by category (rating/general/character)
   as toggle chips with confidence %, pruned by clicking off → save bar
@@ -527,6 +584,17 @@ same labels produce diff-stable extras).
   broken alphabetically for stability) — the most likely tags surface
   first so the user keeps the head and prunes the tail. Saved drafts
   / extras use a different (alphabetical) order — see formatters below.
+  The chip grid is split into `TagCategoryChips.svelte` (one category's
+  header + chips + inline custom-tag `TagInput`); `Tags.svelte` owns
+  `customTags` (a `SvelteMap` of user-added tags not in the model output)
+  and layers them into the pruned result at a synthetic 1.0 score during
+  `buildPrunedResult`, so save formatters treat them like high-confidence
+  model tags. The custom-tag input (`TagInput.svelte`) hosts the
+  autocomplete dropdown (see the `GET /tagging/suggest` endpoint above):
+  recent tags when the query is empty, catalog hits when typing (debounced
+  250ms), with a `popover="auto"` top-layer list that follows its input on
+  scroll/resize/reflow and flips/clamps into the viewport. The `rating`
+  category omits the input (ratings are categorical, not free-form).
 - **Batch side panel** — `lib/components/tagging/TagSettingsPanel.svelte`:
   threshold inputs (diff dots vs canonical wd-tagger defaults + per-field
   reset), save-mode/format/name pickers, Start/Stop. New `Tags` tab in

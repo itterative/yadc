@@ -17,6 +17,8 @@ from yadc.api.modules.db_connection_factory import DBConnectionFactory
 from yadc.api.modules.db_migrations import DBMigrations
 from yadc.api.modules.logging_factory import LoggingFactory
 from yadc.api.services.dataset_jobs import DatasetJobService
+from yadc.api.services.settings import SettingsService
+from yadc.api.services.settings_repository import SettingsRepository
 
 
 @pytest.fixture
@@ -69,6 +71,16 @@ def logging_factory(test_configuration: Configuration) -> LoggingFactory:
 def dataset_jobs(logging_factory: LoggingFactory) -> DatasetJobService:
     """A real coordinator shared by service-level tests."""
     return DatasetJobService(logging=logging_factory)
+
+
+@pytest.fixture
+def settings_service(
+    db_connection_factory: DBConnectionFactory,
+    logging_factory: LoggingFactory,
+) -> SettingsService:
+    """A real SettingsService wired to a tmp SQLite DB."""
+    repo = SettingsRepository(db_connection_factory, logging_factory)
+    return SettingsService(db_connection_factory, logging_factory, repo)
 
 
 @pytest.fixture

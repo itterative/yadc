@@ -3,12 +3,15 @@
     import { settings } from '$lib/stores/settings';
     import {
         fetchActiveTagger,
+        fetchSuggestionVariant,
         listTaggerModels,
+        setSuggestionVariantAction,
         swapActiveModelAction
     } from '$lib/stores/tagging';
     import { taggingStatuses } from '$lib/stores/tagging';
     import type {
         ActiveTaggerSelection,
+        SuggestionVariantResponse,
         SwapTaggerBody,
         TaggerModelSummary
     } from '$lib/stores/tagging';
@@ -236,6 +239,71 @@
             isSwapping = false;
         }
     }
+
+    // --- Tag autocomplete variant picker ---
+    //
+    // A single dropdown listing the suggestion catalog variants
+    // (Anima / Illustrious / NoobAIXL). Applied immediately on change —
+    // unlike the tagger model, this is a lightweight preference: the
+    // backend persists and returns at once, reloading the new catalog in
+    // the background. On failure the select reverts to the last
+    // successfully-applied value and a toast explains why.
+
+    let variantLoaded = $state(false);
+    let variantError = $state<string | null>(null);
+    let variantResponse = $state<SuggestionVariantResponse | null>(null);
+    // Bound to the <select>; ``committedVariant`` tracks the last value the
+    // backend accepted, so a failed switch can revert the dropdown.
+    let variantValue = $state('');
+    let committedVariant = $state('');
+    let isVariantSwitching = $state(false);
+
+    $effect(() => {
+        if (variantLoaded) {
+            return;
+        }
+        const controller = new AbortController();
+        void (async () => {
+            try {
+                const resp = await fetchSuggestionVariant(controller.signal);
+                variantResponse = resp;
+                variantValue = resp.variant;
+                committedVariant = resp.variant;
+                variantLoaded = true;
+            } catch (e) {
+                if ((e as Error).name !== 'AbortError') {
+                    variantError = (e as Error).message;
+                    variantLoaded = true;
+                }
+            }
+        })();
+        return () => controller.abort();
+    });
+
+    function labelFor(value: string): string {
+        return variantResponse?.variants.find((v) => v.value === value)?.label ?? value;
+    }
+
+    async function handleVariantChange(event: Event) {
+        const next = (event.currentTarget as HTMLSelectElement).value;
+        if (next === committedVariant || isVariantSwitching) {
+            return;
+        }
+        isVariantSwitching = true;
+        try {
+            const resp = await setSuggestionVariantAction(next, labelFor(next));
+            if (resp) {
+                variantResponse = resp;
+                variantValue = resp.variant;
+                committedVariant = resp.variant;
+            } else {
+                // Revert — the backend rejected the switch (toast already shown).
+                variantValue = committedVariant;
+            }
+        } finally {
+            isVariantSwitching = false;
+        }
+    }
 </script>
 
 <div class="space-y-4 p-5">
@@ -438,6 +506,45 @@
                     </div>
                 </div>
             {/if}
+        {/if}
+    </section>
+
+    <section class="space-y-3">
+        <h3 class="section-heading">Tag autocomplete</h3>
+        <p class="text-xs text-gray-500">
+            Picks the tag catalog used for autocomplete in the Tags tab. Each variant is tuned for a
+            different base model.
+        </p>
+
+        {#if variantError}
+            <p class="text-sm text-yellow-400">Failed to load variants: {variantError}</p>
+        {:else if !variantLoaded}
+            <p class="text-xs text-gray-500">Loading…</p>
+        {:else if variantResponse}
+            <div>
+                <label class="label mb-1 block" for="settings-suggestion-variant">Catalog</label>
+                <div class="flex items-center gap-2">
+                    <select
+                        id="settings-suggestion-variant"
+                        class="input"
+                        bind:value={variantValue}
+                        onchange={handleVariantChange}
+                        disabled={isVariantSwitching}
+                    >
+                        {#each variantResponse.variants as option (option.value)}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                    {#if isVariantSwitching}
+                        <SvgSpinner class="animate-spin"></SvgSpinner>
+                    {/if}
+                </div>
+                {#if variantResponse.variant !== variantResponse.default}
+                    <p class="mx-2 mt-2 text-xs text-gray-500">
+                        Default is {labelFor(variantResponse.default)}.
+                    </p>
+                {/if}
+            </div>
         {/if}
     </section>
 </div>

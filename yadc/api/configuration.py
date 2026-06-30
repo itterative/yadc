@@ -221,6 +221,13 @@ class Configuration:
     # ``watcher_debounce_seconds`` + ``watcher_expected_file_ttl``.
     tagger_expected_changes_grace_seconds: float = 5.0
 
+    # Default tag-suggestion (autocomplete) catalog variant. One of the
+    # ``CatalogVariant`` values (``anima`` / ``illustrious`` / ``noobaixl``).
+    # User runtime overrides persist via SettingsService and take
+    # precedence; this is only the unconfigured default. An invalid value
+    # falls back to ``noobaixl`` rather than failing boot.
+    tagger_suggestion_variant: str = "noobaixl"
+
     # yadc paths
     config_path: str = field(default_factory=lambda: str(CONFIG_PATH))
     state_path: str = field(default_factory=lambda: str(STATE_PATH))

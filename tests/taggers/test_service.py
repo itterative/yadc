@@ -35,7 +35,6 @@ from yadc.taggers.base import TaggerResult
 
 from .conftest import make_client_mock, patch_client_factory
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (job_scheduler + service variants). Image fixtures and the
 # subprocess client / patcher come from the directory's conftest.py.

@@ -2,6 +2,7 @@ import { writable, get, type Writable } from 'svelte/store';
 import {
     cancelTagging as apiCancelTagging,
     saveImageTags as apiSaveImageTags,
+    setSuggestionVariant as apiSetSuggestionVariant,
     startTagJob as apiStartTagJob,
     swapTaggerModel as apiSwapTaggerModel,
     tagImage as apiTagImage
@@ -14,6 +15,7 @@ import { toast } from '../toasts';
 import { friendlyErrorMessage } from '$lib/api';
 import type {
     CancelResult,
+    SuggestionVariantResponse,
     SwapTaggerBody,
     TagJobInfo,
     TaggerResult,
@@ -231,5 +233,28 @@ export async function swapActiveModelAction(body: SwapTaggerBody): Promise<SwapT
         case 'error':
             toast.error('Failed to swap tagger model', { details: [result.message] });
             return null;
+    }
+}
+
+// --- Tag suggestion variant (catalog selection) ---
+
+/** Switch the active tag-suggestion (autocomplete) variant. Persists the
+ *  selection on the backend, which drops its cached catalog and reloads the
+ *  new variant in the background; returns the updated variant payload (with
+ *  the new ``variant`` + the full list) so the caller can re-render without
+ *  a refetch. Toasts success/failure and returns ``null`` on error. */
+export async function setSuggestionVariantAction(
+    variant: string,
+    label: string
+): Promise<SuggestionVariantResponse | null> {
+    try {
+        const response = await apiSetSuggestionVariant(variant);
+        toast.info(`Tag autocomplete switched to ${label}`);
+        return response;
+    } catch (e) {
+        toast.error('Failed to switch tag autocomplete variant', {
+            details: [friendlyErrorMessage(e, 'request failed')]
+        });
+        return null;
     }
 }

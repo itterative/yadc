@@ -21,6 +21,7 @@ from .prompt_history import (
 from .prompt_history_repository import PromptExample, PromptHistoryEntry, PromptHistoryRepository
 from .settings import SettingsService
 from .settings_repository import SettingsRepository
+from .tag_suggestions import TagSuggestionsService
 from .tagging import TaggingService
 
 __all__ = [
@@ -53,5 +54,6 @@ __all__ = [
     "PromptHistoryService",
     "SettingsRepository",
     "SettingsService",
+    "TagSuggestionsService",
     "UploadProgressEvent",
 ]
