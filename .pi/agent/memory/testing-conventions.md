@@ -26,13 +26,23 @@ In `pyproject.toml` under `[project.optional-dependencies].test`:
 ## Running Tests
 
 ```bash
-uv run pytest tests                    # all tests (integration tests excluded)
+uv run pytest tests                    # all tests (parallel by default via pytest-xdist `-n auto`, integration excluded)
 uv run pytest tests/core/              # core tests only
 uv run pytest tests -k "test_name"     # specific test
+uv run pytest -p no:xdist tests        # force single-process (serial)
+uv run pytest -n 4 tests              # pin a worker count
 uv run pytest -m "integration_test"    # run integration tests
 ```
 
-Default timeout: 5 seconds. Integration tests are excluded by default via `addopts = "-m 'not integration_test'"` in `[tool.pytest.ini_options]`.
+Default timeout: 5 seconds. Integration tests are excluded by default via `addopts = "-m 'not integration_test' -n auto"` in `[tool.pytest.ini_options]`. `pytest-xdist` parallelizes across CPU cores automatically; pass `-p no:xdist` to run serially.
+
+## Keeping tests fast
+
+With 1100+ tests, per-test cost dominates wall time. Keep these in mind:
+
+- **Avoid subprocess-based CLI tests in the default suite.** Click-surface tests (help output, option validation) should use `click.testing.CliRunner` in-process (see `tests/cli/test_cli_prompts.py` `TestPromptsHelp` / `TestPromptsGenerateCliValidation`), not the `cli(isolated=True)` subprocess fixture. Each `uv run yadc` subprocess costs ~0.6s of cold start. Reserve subprocess tests for `@pytest.mark.integration_test`.
+- **Patch expensive crypto to low iterations** when only round-trip/error behavior is under test (e.g. `monkeypatch.setattr(keystorage_password, "PBKDF2_ITERATIONS", 1)` — production uses 600k).
+- Real concurrency/process tests (tagger server death detection, SSE cleanup) are inherently slow and intentionally timing-sensitive — leave their sleeps/timeouts alone unless a test is actually flaky.
 
 ## Integration Tests
 

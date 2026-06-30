@@ -7,13 +7,27 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from yadc.cmd.config import AppConfig, AppConfigKeyStorage, AppConfigKeyStoragePassword
+from yadc.cmd.envs import keystorage_password as ks_password
 from yadc.cmd.envs.keystorage_password import (
     NONCE_LENGTH,
-    PBKDF2_ITERATIONS,
     SALT_LENGTH,
     PasswordKeyStorage,
     PasswordRequiredError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _low_pbkdf2_iterations(monkeypatch):
+    """Run PBKDF2 with 1 iteration instead of the production 600k.
+
+    These tests only verify the encrypt/decrypt round-trip and error
+    paths — not the KDF's computational cost — so the full iteration
+    count (≈0.1s per derivation) is pure waste. Patched in the
+    production module, which both ``PasswordKeyStorage.load_private_key``
+    and the local ``_encrypt_pem`` helper read, so the two sides stay
+    in sync.
+    """
+    monkeypatch.setattr(ks_password, "PBKDF2_ITERATIONS", 1)
 
 
 def _encrypt_pem(pem: bytes, password: str) -> str:
@@ -24,7 +38,9 @@ def _encrypt_pem(pem: bytes, password: str) -> str:
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=PBKDF2_ITERATIONS,
+        # Use the (patched-low) module constant so encrypt and decrypt stay
+        # in sync — see the ``_low_pbkdf2_iterations`` autouse fixture below.
+        iterations=ks_password.PBKDF2_ITERATIONS,
     )
     key = kdf.derive(password.encode("utf-8"))
     aesgcm = AESGCM(key)

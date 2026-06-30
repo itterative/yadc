@@ -26,66 +26,81 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.testing import CliRunner
 
+from yadc.cli_prompts import prompts as prompts_group
 from yadc.llm import StreamChunk
 
 # Centralized patch target paths — see ``testing-conventions.md``.
 _PATCH_STREAM_TEMPLATE_CHUNKS = "yadc.cmd.prompts.prompts.stream_template_chunks"
+# In-process CliRunner avoids the ~0.6s `uv run yadc` cold start that the
+# subprocess ``cli(isolated=True)`` fixture pays per test. The help/validation
+# tests below only exercise click's option surface, so no subprocess is needed.
+
+
+@pytest.fixture
+def cli_runner():
+    return CliRunner()
 
 
 class TestPromptsHelp:
-    """Smoke tests for --help output (subprocess)."""
+    """Smoke tests for --help output (in-process via CliRunner)."""
 
-    def test_prompts_group_help(self, cli):
-        runner = cli(isolated=True)
-        result = runner("prompts --help")
-        assert "generate" in result.stdout
+    def test_prompts_group_help(self, cli_runner):
+        result = cli_runner.invoke(prompts_group, ["--help"])
+        assert result.exit_code == 0
+        assert "generate" in result.output
 
-    def test_generate_help(self, cli):
-        runner = cli(isolated=True)
-        result = runner("prompts generate --help")
-        assert "--env" in result.stdout
-        assert "--intent" in result.stdout
-        assert "--focus" in result.stdout
-        assert "--image-quality" in result.stdout
-        assert "--refine" in result.stdout
-        assert "--save-as" in result.stdout
-        assert "--force" in result.stdout
-        assert "user template" in result.stdout.lower()
+    def test_generate_help(self, cli_runner):
+        result = cli_runner.invoke(prompts_group, ["generate", "--help"])
+        assert result.exit_code == 0
+        assert "--env" in result.output
+        assert "--intent" in result.output
+        assert "--focus" in result.output
+        assert "--image-quality" in result.output
+        assert "--refine" in result.output
+        assert "--save-as" in result.output
+        assert "--force" in result.output
+        assert "user template" in result.output.lower()
 
 
 class TestPromptsGenerateCliValidation:
-    """Click-level validation for ``prompts generate`` — runs the real CLI."""
+    """Click-level validation for ``prompts generate`` (in-process via CliRunner)."""
 
-    def test_intent_required(self, cli):
-        runner = cli(isolated=True)
-        result = runner("prompts generate", should_fail=True)
+    def test_intent_required(self, cli_runner):
+        result = cli_runner.invoke(prompts_group, ["generate"])
+        assert result.exit_code != 0
         assert "--intent" in result.stderr or "Missing option" in result.stderr
 
-    def test_focus_rejects_invalid_value(self, cli):
-        runner = cli(isolated=True)
-        result = runner("prompts generate --intent 'x' --focus bogus", should_fail=True)
+    def test_focus_rejects_invalid_value(self, cli_runner):
+        result = cli_runner.invoke(prompts_group, ["generate", "--intent", "x", "--focus", "bogus"])
+        assert result.exit_code != 0
         assert "Invalid value" in result.stderr or "--focus" in result.stderr
 
-    def test_image_quality_rejects_invalid_value(self, cli):
-        runner = cli(isolated=True)
-        result = runner("prompts generate --intent 'x' --image-quality ultra", should_fail=True)
+    def test_image_quality_rejects_invalid_value(self, cli_runner):
+        result = cli_runner.invoke(prompts_group, ["generate", "--intent", "x", "--image-quality", "ultra"])
+        assert result.exit_code != 0
         assert "Invalid value" in result.stderr or "--image-quality" in result.stderr
 
-    def test_refine_accepts_template_name_without_file_check(self, cli):
+    def test_refine_accepts_template_name_without_file_check(self, cli_runner):
         """``--refine <name>`` is accepted by click even when no file matches.
 
         Click no longer validates the path exists (the cmd layer does
         file-vs-template resolution), so a template name that's not a
         file passes click validation. The actual lookup error surfaces
         from the cmd layer later — this test only confirms click
-        doesn't reject the option upfront.
+        doesn't reject the option upfront. The cmd-layer ``generate``
+        is patched to raise ``FileNotFoundError`` so no real config/LLM
+        side effects occur.
         """
-        runner = cli(isolated=True)
-        result = runner(
-            "prompts generate --intent 'x' --refine nonexistent-template-name",
-            should_fail=True,
-        )
+        import yadc.cli_prompts as cli_prompts_mod
+
+        def _raise_not_found(*args, **kwargs):
+            raise FileNotFoundError("neither a file path nor a known user template")
+
+        with patch.object(cli_prompts_mod.cmd_prompts, "generate", _raise_not_found):
+            result = cli_runner.invoke(prompts_group, ["generate", "--intent", "x", "--refine", "nonexistent-template-name"])
+        assert result.exit_code != 0
         # Click didn't reject (no "Invalid value" / "does not exist");
         # the failure is from the cmd layer's template lookup.
         assert "does not exist" not in result.stderr

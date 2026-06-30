@@ -130,7 +130,13 @@ class TestHangingServer:
         return TaggerServer(
             HangingTagger,
             "/fake/model.onnx",
-            heartbeat_interval=0.5,
+            # Dead-worker detection is gated by ``poll_interval`` (the parent
+            # re-checks ``is_alive()`` each poll), not ``heartbeat_interval``;
+            # ``HangingTagger.predict`` kills the process immediately, so the
+            # idle heartbeat never fires. Cranked low to keep this test fast
+            # — the production defaults (15s / 1.0s) are irrelevant here.
+            heartbeat_interval=0.05,
+            poll_interval=0.05,
             response_timeout=5.0,
         )
 
