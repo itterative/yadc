@@ -1,0 +1,51 @@
+/*
+ * Thin themed scrollbars that thicken slightly on hover.
+ * Chrome/Edge ship fat default scrollbars; this matches Firefox's thin look.
+ * WebKit can't resize the track on hover, so we render an 8px track with a
+ * transparent border on the thumb (background-clip: padding-box) for a 4px
+ * visible thumb, then shrink that border on hover to expose a 6px thumb.
+ */
+
+/* Theme colors apply to every browser. `scrollbar-width: thin` is the value we
+   want for Chrome/Edge; Firefox reads it too but renders `thin` too faintly, so
+   Firefox is overridden back to `auto` in the Gecko-only @supports block below. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-muted) transparent;
+}
+
+/* Firefox (Gecko) only: -moz-appearance is a Gecko vendor property, so this
+   @supports query never matches Chrome/Edge/Safari. Restores Firefox's default
+   scrollbar width while keeping the themed color above. */
+@supports (-moz-appearance: none) {
+    * {
+        scrollbar-width: auto;
+    }
+}
+
+/* WebKit (Chrome / Edge / Safari) */
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted);
+    border-width: 1px;
+}
+
+/* Keep the corner (e.g. where two scrollbars meet) transparent */
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}

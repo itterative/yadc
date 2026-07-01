@@ -7,6 +7,7 @@
 @import '../lib/styles/badges.css';
 @import '../lib/styles/utilities.css';
 @import '../lib/styles/animations.css';
+@import '../lib/styles/scrollbar.css';
 
 @theme {
     --color-bg: #0f1117;
