@@ -49,12 +49,21 @@ _ctx = multiprocessing.get_context("forkserver")
 # healthy worker from a dead process.
 HEARTBEAT_INTERVAL_SECONDS: float = 15.0
 
-# Maximum time to wait for a single tag response, or for the startup
-# ``ready`` signal. Normal CPU inference completes well under this; the
-# cap exists so a wedged (alive but hung) worker is detected rather than
-# blocking the request handler forever. Picked generously so legitimate
-# slow inference (large images, cold CPU caches) isn't falsely flagged.
+# Maximum time to wait for a single tag response. Normal CPU inference
+# completes well under this; the cap exists so a wedged (alive but hung)
+# worker is detected rather than blocking the request handler forever.
+# Picked generously so legitimate slow inference (large images, cold CPU
+# caches) isn't falsely flagged.
 RESPONSE_TIMEOUT_SECONDS: float = 120.0
+
+# Maximum time to wait for the startup ``ready`` signal — i.e. for
+# ``load_model`` to finish in the worker. This is separate from
+# :data:`RESPONSE_TIMEOUT_SECONDS` because ``load_model`` may download
+# the model from HuggingFace Hub the first time a tagger is selected, and
+# a multi-hundred-MB download on a slow link can take far longer than a
+# single inference. Kept generous; a truly wedged worker is still caught
+# via the ``is_alive()`` poll long before this elapses.
+STARTUP_TIMEOUT_SECONDS: float = 900.0
 
 # How often the parent polls the response queue while waiting for a tag
 # response or the startup ready signal. This bounds how quickly a dead or
@@ -82,35 +91,39 @@ def _worker(
     tagger = tagger_cls(**tagger_kwargs)
 
     try:
-        tagger.load_model(model_path)
-        response_queue.put({"id": 0, "ready": True})
-        logger.info("Tagger process ready.")
-    except Exception:  # noqa: BLE001
-        response_queue.put({"id": 0, "ready": False, "error": traceback.format_exc()})
-        logger.exception("Failed to load tagger model.")
-        return
-
-    while True:
         try:
-            msg = request_queue.get(timeout=heartbeat_interval)
-        except queue.Empty:
-            # Idle — affirm the worker is alive and the model is still loaded.
-            response_queue.put({"id": 0, "heartbeat": True})
-            continue
+            tagger.load_model(model_path)
+            response_queue.put({"id": 0, "ready": True})
+            logger.info("Tagger process ready.")
+        except Exception:
+            response_queue.put({"id": 0, "ready": False, "error": traceback.format_exc()})
+            logger.exception("Failed to load tagger model.")
+            return
 
-        if msg is None:
-            # Sentinel — shutdown signal.
-            break
+        while True:
+            try:
+                msg = request_queue.get(timeout=heartbeat_interval)
+            except queue.Empty:
+                # Idle — affirm the worker is alive and the model is still loaded.
+                response_queue.put({"id": 0, "heartbeat": True})
+                continue
 
-        msg_id = msg.get("id", 0)
-        try:
-            result: TaggerResult = tagger.predict(msg["image_bytes"])
-            response_queue.put({"id": msg_id, "result": result})
-        except Exception:  # noqa: BLE001
-            logger.exception("Tagging error.")
-            response_queue.put({"id": msg_id, "error": traceback.format_exc()})
+            if msg is None:
+                # Sentinel — shutdown signal.
+                break
 
-    tagger.unload_model()
+            msg_id = msg.get("id", 0)
+            try:
+                result: TaggerResult = tagger.predict(msg["image_bytes"])
+                response_queue.put({"id": msg_id, "result": result})
+            except Exception:
+                logger.exception("Tagging error.")
+                response_queue.put({"id": msg_id, "error": traceback.format_exc()})
+
+        tagger.unload_model()
+    except KeyboardInterrupt:
+        pass
+
     logger.info("Tagger process shut down.")
 
 
@@ -133,6 +146,7 @@ class TaggerServer:
         *,
         heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
         response_timeout: float = RESPONSE_TIMEOUT_SECONDS,
+        start_timeout: float = STARTUP_TIMEOUT_SECONDS,
         poll_interval: float = POLL_INTERVAL_SECONDS,
     ) -> None:
         self._tagger_cls: type[Tagger] = tagger_cls
@@ -140,6 +154,10 @@ class TaggerServer:
         self._tagger_kwargs: dict[str, Any] = tagger_kwargs or {}
         self._heartbeat_interval: float = heartbeat_interval
         self._response_timeout: float = response_timeout
+        # Bound on ``start()`` only. Separate from ``_response_timeout``
+        # (which bounds ``tag()``) because the startup phase includes the
+        # initial model download, which can dwarf a single inference.
+        self._start_timeout: float = start_timeout
         # How often the parent polls the response queue while waiting. This
         # is the granularity at which a dead/killed worker is detected
         # (``is_alive()`` is checked each poll). Decoupled from the worker's
@@ -153,8 +171,10 @@ class TaggerServer:
     def start(self) -> None:
         """Spawn the tagger process and wait for it to be ready.
 
-        Bounded by ``response_timeout`` so a worker that dies
-        before reporting ready surfaces as a clear error instead of
+        Bounded by ``start_timeout`` (not the per-tag ``response_timeout``)
+        because ``load_model`` may download the model from HuggingFace the
+        first time, which can take far longer than inference. A worker that
+        dies before reporting ready surfaces as a clear error instead of
         hanging the caller.
         """
         self._request_queue = _ctx.Queue()
@@ -175,7 +195,7 @@ class TaggerServer:
         )
         self._process.start()
 
-        deadline = time.monotonic() + self._response_timeout
+        deadline = time.monotonic() + self._start_timeout
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:

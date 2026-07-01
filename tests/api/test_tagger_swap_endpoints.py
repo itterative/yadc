@@ -148,7 +148,7 @@ class TestSwapTagger:
             "/api/tagger/swap",
             json=selection.model_dump(),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = await resp.get_json()
         assert data["active"]["repo_id"] == "SmilingWolf/wd-eva02-large-tagger-v3"
         assert data["active"]["source"] == "hf:SmilingWolf/wd-eva02-large-tagger-v3"

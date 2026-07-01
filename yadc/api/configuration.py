@@ -189,6 +189,13 @@ class Configuration:
     # detects death faster at the cost of more idle chatter.
     tagger_heartbeat_interval_seconds: float = 15.0
     tagger_response_timeout_seconds: float = 120.0
+    # Bound on the tagger *startup* phase (``load_model``), kept separate
+    # from ``tagger_response_timeout_seconds`` (which bounds a single
+    # inference) because the first selection of a HuggingFace tagger
+    # downloads the model — a multi-hundred-MB fetch on a slow link can
+    # dwarf one inference. A wedged worker is still caught well before
+    # this via the liveness poll.
+    tagger_startup_timeout_seconds: float = 900.0
     # How often the parent polls the tagger response queue while waiting.
     # Bounds how quickly a dead/killed worker is noticed and how fast a
     # cancel/kill unwinds. Decoupled from the worker heartbeat above.

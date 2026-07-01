@@ -8,7 +8,8 @@
         setSuggestionVariantAction,
         swapActiveModelAction
     } from '$lib/stores/tagging';
-    import { taggingStatuses } from '$lib/stores/tagging';
+    import { taggingStatuses, taggerStatus } from '$lib/stores/tagging';
+    import { toast } from '$lib/stores/toasts';
     import type {
         ActiveTaggerSelection,
         SuggestionVariantResponse,
@@ -81,6 +82,15 @@
     let pickerSize = $state(0);
     let pickerError = $state<string | null>(null);
     let isSwapping = $state(false);
+    // The swap POST returns 202 immediately; the drain+download+respawn runs
+    // in the background and is reported over the ``tagger_status`` SSE stream.
+    // These track that in-flight swap so the spinner stays up and the
+    // success/failure toast fires when the SSE state actually settles.
+    let swapInFlight = $state(false);
+    // Guards against the initial ``ready`` value (the old subprocess) racing
+    // ahead of the swap's own transition: we only resolve once we've seen a
+    // swap-driven transition (stopping/stopped/starting) followed by ready/failed.
+    let sawSwapTransition = $state(false);
 
     // Build the dropdown options from the curated catalog + the local sentinel.
     // The local sentinel inherits its profile / size from the active
@@ -225,20 +235,81 @@
             return;
         }
         isSwapping = true;
+        swapInFlight = true;
+        sawSwapTransition = false;
         try {
             const next = await swapActiveModelAction(body);
             if (next) {
-                // Re-seed form fields from the persisted selection without
-                // re-fetching — the action already returns the canonical row.
+                // 202 Accepted — the backend accepted the swap and is running
+                // the drain+download+respawn in the background. Show the
+                // intended selection immediately; keep the spinner up until
+                // the ``tagger_status`` SSE stream settles on ready/failed.
                 active = {
                     ...next,
                     source: next.kind === 'hf' ? `hf:${next.repo_id}` : `local:${next.model_path}`
                 };
+            } else {
+                // Refused (busy / in-progress / error) — the action already
+                // toasted. No background work, so drop the spinner.
+                isSwapping = false;
+                swapInFlight = false;
             }
-        } finally {
+        } catch (e) {
             isSwapping = false;
+            swapInFlight = false;
+            toast.error('Failed to swap tagger model', {
+                details: [(e as Error).message]
+            });
         }
     }
+
+    // Resolve the in-flight swap from the ``tagger_status`` SSE stream. The
+    // swap always ends in ``ready`` (success) or ``failed`` (rolled back);
+    // ``sawSwapTransition`` ignores the stale pre-swap status so an already-
+    // ready subprocess doesn't falsely short-circuit the wait.
+    $effect(() => {
+        const status = $taggerStatus;
+        if (!swapInFlight) {
+            return;
+        }
+        if (
+            status.state === 'stopping' ||
+            status.state === 'stopped' ||
+            status.state === 'starting'
+        ) {
+            sawSwapTransition = true;
+            return;
+        }
+        if (!sawSwapTransition) {
+            return;
+        }
+        // Terminal state reached.
+        swapInFlight = false;
+        isSwapping = false;
+        if (status.state === 'ready') {
+            toast.info(`Tagger swapped to ${status.source || 'the new model'}`);
+        } else if (status.state === 'failed') {
+            toast.error('Tagger swap failed — reverted to the previous model', {
+                details: status.error ? [status.error] : undefined
+            });
+            // Rollback happened server-side; re-seed from the persisted truth.
+            void fetchActiveTagger()
+                .then((resp) => {
+                    if (resp.active) {
+                        active = {
+                            ...resp.active,
+                            source:
+                                resp.active.kind === 'hf'
+                                    ? `hf:${resp.active.repo_id}`
+                                    : `local:${resp.active.model_path}`
+                        };
+                    }
+                })
+                .catch(() => {
+                    /* best-effort re-sync */
+                });
+        }
+    });
 
     // --- Tag autocomplete variant picker ---
     //

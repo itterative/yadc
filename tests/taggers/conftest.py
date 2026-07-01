@@ -20,6 +20,7 @@ from yadc.api.modules import EventDispatcher, JobScheduler
 from yadc.api.modules.db_connection_factory import DBConnectionFactory
 from yadc.api.modules.db_migrations import DBMigrations
 from yadc.api.modules.logging_factory import LoggingFactory
+from yadc.api.modules.tagger_catalog import ActiveTagger
 from yadc.api.services.dataset_jobs import DatasetJobService
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
@@ -311,3 +312,30 @@ def patch_client_factory(client: Any):
 
     with patch.object(tagging_module, "TaggerClient", return_value=client):
         yield client
+
+
+def run_swap(service: TaggingService, selection: ActiveTagger) -> None:
+    """Drive a tagger swap to completion under a single event loop.
+
+    ``swap_active_model`` hands the drain+respawn to a background task and
+    returns immediately (the HTTP handler answers 202 without awaiting the
+    model download). ``asyncio.run`` tears the loop down once the entry
+    coroutine finishes, so a bare ``asyncio.run(service.swap_active_model(...))``
+    would cancel that task mid-flight. This helper awaits the spawned
+    ``_swap_task`` within the same loop so post-swap state (``_active_tagger``,
+    the respawned client, persistence) is settled before assertions run.
+
+    The ``not task.done()`` guard skips a stale task left over from a
+    previous swap on an already-closed loop (e.g. a no-op swap that never
+    spawns a new one). Returns the selection ``swap_active_model`` yielded.
+    """
+    import asyncio
+
+    async def _drive() -> ActiveTagger:
+        result = await service.swap_active_model(selection)
+        task = service._swap_task
+        if task is not None and not task.done():
+            await task
+        return result
+
+    return asyncio.run(_drive())

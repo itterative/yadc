@@ -417,6 +417,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4f/85/b505a99a133d9f99d21af182af416e9baef70bdeef019983479651e494c2/huggingface_hub-1.21.0-py3-none-any.whl", hash = "sha256:eadaa3678c512c82aea69e8675d90a184861e68de32f1105668628b4dce0e7cd", size = 721078, upload-time = "2026-06-25T13:09:24.402Z" },
 ]
 
+[package.optional-dependencies]
+hf-xet = [
+    { name = "hf-xet" },
+]
+
 [[package]]
 name = "hypercorn"
 version = "0.18.0"
@@ -1465,7 +1470,7 @@ dependencies = [
     { name = "click" },
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "huggingface-hub" },
+    { name = "huggingface-hub", extra = ["hf-xet"] },
     { name = "injector" },
     { name = "jinja2" },
     { name = "keyring" },
@@ -1520,7 +1525,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.0" },
     { name = "cryptography", specifier = ">=46.0.1" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "huggingface-hub", specifier = ">=1.21.0" },
+    { name = "huggingface-hub", extras = ["hf-xet"], specifier = ">=1.21.0" },
     { name = "injector", specifier = ">=0.22.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "keyring", specifier = ">=25.6.0" },

@@ -195,16 +195,19 @@ export async function saveImageTagsAction(
     }
 }
 
-/** Swap the active tagger selection. Dispatches the right toast for each
- *  outcome (success / batch running / concurrent swap / error) and returns
- *  the new active payload on success, or ``null`` when the server refused
- *  the swap. The caller decides what to do with ``null`` (typically: leave
- *  the picker showing the prior value). */
+/** Swap the active tagger selection. Returns the *intended* selection on
+ *  202 (accepted) — the actual drain+download+respawn runs in the background
+ *  and is reported via the ``tagger_status`` SSE stream, so the caller is
+ *  responsible for toasting success/failure when the SSE state settles (see
+ *  ``GeneralSettings``). Returns ``null`` when the server refused the swap
+ *  (busy / in-progress / error); those refusals are toasted here since they
+ *  are immediate. */
 export async function swapActiveModelAction(body: SwapTaggerBody): Promise<SwapTaggerBody | null> {
     const result = await apiSwapTaggerModel(body);
     switch (result.status) {
         case 'ok':
-            toast.info(`Tagger swapped to ${result.response.active?.source ?? body.repo_id}`);
+            // 202 Accepted — don't toast success yet; the swap (including any
+            // first-run model download) is still running in the background.
             return result.response.active
                 ? {
                       kind: result.response.active.kind,

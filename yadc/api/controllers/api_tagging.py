@@ -561,15 +561,18 @@ def api_tagging(
         Body is the full :class:`ActiveTagger` schema (validated via
         ``model_validate``). Status codes:
 
-        - 200 + the new active payload — swap completed.
+        - 202 + the new active payload — swap accepted; the drain+respawn
+          (including any first-run model download) runs in the background
+          and is reported via the ``tagger_status`` SSE stream.
         - 400 — body failed validation (e.g. ``kind="hf"`` without ``repo_id``).
         - 409 — a batch tagging job is running; ask the user to stop it first.
         - 429 — another swap is in flight; response carries
           ``retry_after_s`` and the standard ``Retry-After`` header.
 
-        The swap itself can take up to ``tagger_response_timeout_seconds``
-        if an in-flight single-image call is mid-inference; the client
-        should show a busy spinner for the duration.
+        The swap itself can take up to ``tagger_startup_timeout_seconds``
+        when the model must be downloaded; because it runs detached from
+        the request, the client follows the SSE stream rather than holding
+        the connection open.
         """
         raw_body = await request.get_json(silent=True)
         try:
@@ -600,7 +603,11 @@ def api_tagging(
 
         payload = selection.model_dump()
         payload["source"] = selection.source_label
-        return jsonify({"active": payload, "is_available": tagging.is_available}), 200
+        # 202 Accepted: validation passed and the drain+respawn runs in the
+        # background (:meth:`TaggingService._swap_background`). A slow
+        # first-run model download happens detached from this request; the
+        # picker follows the ``tagger_status`` SSE stream to completion.
+        return jsonify({"active": payload, "is_available": tagging.is_available}), 202
 
     @app.get("/tagger/models")
     async def list_tagger_models():  # pyright: ignore[reportUnusedFunction]

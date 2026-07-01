@@ -92,6 +92,30 @@ class FailingTagger(Tagger):
         return TaggerResult(tags={})
 
 
+class SlowLoadingTagger(Tagger):
+    """A tagger whose ``load_model`` blocks for *delay* seconds.
+
+    Models the real-world first-run case where ``load_model`` downloads the
+    model from HuggingFace — a phase that can take far longer than a single
+    inference and must be bounded by ``start_timeout``, not the per-tag
+    ``response_timeout``.
+    """
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+
+    def load_model(self, model_path: str, **kwargs) -> None:  # noqa: ANN001, ANN401
+        import time
+
+        time.sleep(self.delay)
+
+    def unload_model(self) -> None:
+        pass
+
+    def predict(self, image_bytes: bytes) -> TaggerResult:
+        return TaggerResult(tags={})
+
+
 class TestFailingTagger:
     @pytest.fixture
     def server(self):
@@ -103,6 +127,53 @@ class TestFailingTagger:
             server.start()
         except RuntimeError as exc:
             assert "model not found" in str(exc)
+        assert not server.is_alive
+
+
+class TestStartupTimeout:
+    """``start()`` is bounded by ``start_timeout``, independent of the per-tag ``response_timeout``.
+
+    Regression guard for the slow-download scenario: a tagger whose
+    ``load_model`` (the model download) takes longer than
+    ``response_timeout`` must still come up, because the startup phase has
+    its own, larger deadline.
+    """
+
+    def test_start_outlasts_response_timeout(self) -> None:
+        """A slow ``load_model`` exceeding ``response_timeout`` still starts.
+
+        ``start_timeout`` > ``response_timeout`` > load delay, so the worker
+        reports ready before the *startup* deadline even though it would have
+        blown the per-tag one.
+        """
+        server = TaggerServer(
+            SlowLoadingTagger,
+            "/fake/model.onnx",
+            {"delay": 0.5},
+            heartbeat_interval=0.05,
+            poll_interval=0.05,
+            response_timeout=0.2,
+            start_timeout=5.0,
+        )
+        server.start()
+        try:
+            assert server.is_alive
+        finally:
+            server.stop()
+
+    def test_start_respects_its_own_timeout(self) -> None:
+        """A ``load_model`` slower than ``start_timeout`` surfaces as a clear error."""
+        server = TaggerServer(
+            SlowLoadingTagger,
+            "/fake/model.onnx",
+            {"delay": 2.0},
+            heartbeat_interval=0.05,
+            poll_interval=0.05,
+            response_timeout=10.0,
+            start_timeout=0.2,
+        )
+        with pytest.raises(RuntimeError, match="no ready signal before timeout"):
+            server.start()
         assert not server.is_alive
 
 

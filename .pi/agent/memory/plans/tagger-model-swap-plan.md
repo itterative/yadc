@@ -1,7 +1,7 @@
 ---
 name: tagger-model-swap-plan
 description: User-configurable tagger model — let the user pick / swap the active model from the WebUI, drain in-flight work, persist the choice, and surface "currently running" + "available models" to the UI.
-last_history: 2
+last_history: 3
 status: Complete
 ---
 
@@ -24,7 +24,7 @@ deviations).
 | Available-models source | **SmilingWolf HF repos only** for v1 (static curated list). Custom repo_id input deferred. Local file picker deferred. |
 | Persistence | **SQLite via `SettingsService`** — first real consumer of the existing (currently unused) KV store. `Configuration` carries the in-memory active selection. |
 | Config awareness | Active selection is a field on `Configuration` (not a separate store) — `TaggingService` reads from it like any other knob. |
-| Endpoint shape | `GET /api/tagger/active`, `POST /api/tagger/swap`, `GET /api/tagger/models`. |
+| Endpoint shape | `GET /api/tagger/active`, `POST /api/tagger/swap` (**202 Accepted** — drain+download+respawn run in a background task; progress via the `tagger_status` SSE stream), `GET /api/tagger/models`. See history entry 003. |
 | Cache | No changes — `TaggerResultKey.model_id` already isolates results per model. Old entries age out via LRU. |
 | Cancel semantics | Reuse existing `cancel_async()` if the swap endpoint needs to abort mid-swap (e.g. user clicks Cancel in the UI). |
 
@@ -109,12 +109,13 @@ know the active model is in flux.
 
 ## Risks / open questions
 
-- **HTTP request duration during drain** — a long single-image
-  inference (close to the 120s response timeout) will hold up the
-  swap HTTP request for that long. Documented in the endpoint
-  comment; UI shows a spinner. If this becomes painful, the swap
-  endpoint could go 202 + SSE, but that adds complexity for an
-  infrequent operation.
+- **HTTP request duration during drain / download** — **resolved**
+  by making the swap fire-and-forget (202 + SSE). The POST returns
+  immediately after validation; the drain+download+respawn run in
+  `_swap_background` and are reported over `tagger_status`. A separate
+  `tagger_startup_timeout_seconds` (default 900s) now bounds the
+  `load_model` phase independently of the per-tag `response_timeout`.
+  See history entry 003.
 - **Concurrent swap requests** — `_lifecycle_lock` serializes them.
   A second swap arriving while the first is mid-drain waits in the
   lock queue; if the first one fails the second still proceeds with

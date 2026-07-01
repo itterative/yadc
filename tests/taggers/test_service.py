@@ -33,7 +33,7 @@ from yadc.api.services.tagging import (
 )
 from yadc.taggers.base import TaggerResult
 
-from .conftest import make_client_mock, patch_client_factory
+from .conftest import make_client_mock, patch_client_factory, run_swap
 
 # ---------------------------------------------------------------------------
 # Fixtures (job_scheduler + service variants). Image fixtures and the
@@ -407,7 +407,7 @@ class TestIdleTimeout:
 
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            run_swap(service, ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger"))
             assert service._swapped_at is not None
             assert service._last_used_t is None  # only set by per-request use
 
@@ -432,7 +432,7 @@ class TestIdleTimeout:
 
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            run_swap(service, ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger"))
             # Use the subprocess once — this should clear ``_swapped_at``.
             asyncio.run(service.tag_image("ds", make_image_info()))
             assert service._swapped_at is None
@@ -457,7 +457,7 @@ class TestIdleTimeout:
 
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger")))
+            run_swap(service, ActiveTagger(kind="hf", repo_id="SmilingWolf/wd-vit-tagger-v3", preproc_profile="wd-tagger"))
             reference = service._swapped_at
             assert reference is not None
 

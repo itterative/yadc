@@ -28,7 +28,7 @@ dependencies = [
     "stream-zip>=0.0.84",
     "numpy>=2.0.0",
     "onnxruntime>=1.20.0",
-    "huggingface-hub>=1.21.0",
+    "huggingface-hub[hf_xet]>=1.21.0",
 ]
 
 [project.optional-dependencies]

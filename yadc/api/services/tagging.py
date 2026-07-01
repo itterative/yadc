@@ -306,6 +306,12 @@ class TaggingService(Service):
         # holds the lifecycle lock for the full drain+spawn, while the
         # swap-in-progress lock is only for the HTTP-visible window.
         self._swap_in_progress_lock: threading.Lock = threading.Lock()
+        # Holds a reference to the in-flight background swap task so the
+        # event loop can't garbage-collect it mid-flight (a task that
+        # isn't referenced elsewhere can be collected and cancelled). The
+        # swap-in-progress lock is the real mutual-exclusion gate; this is
+        # purely a keep-alive handle.
+        self._swap_task: asyncio.Task[None] | None = None
         # ``None`` until the first request arrives. Used as the
         # "last touched" timestamp by the idle-check job.
         self._last_used_t: float | None = None
@@ -395,7 +401,7 @@ class TaggingService(Service):
     # --- persisted active-tagger selection --------------------------------
 
     async def swap_active_model(self, selection: ActiveTagger) -> ActiveTagger:
-        """Swap the active tagger selection end-to-end (drain → respawn → persist).
+        """Swap the active tagger selection end-to-end (validation up front, drain+respawn in the background).
 
         The full flow:
 
@@ -409,34 +415,30 @@ class TaggingService(Service):
            flight. ``_swap_in_progress_lock`` is an atomic gate
            distinct from ``_lifecycle_lock`` so a failing swap doesn't
            hold the lifecycle lock open.
-        3. Drain any in-flight single-image call. Acquiring
-           ``_lifecycle_lock`` naturally waits for it to release;
-           ``_acquire_lifecycle`` polls with ``asyncio.sleep`` so the
-           loop keeps running. Worst-case drain time is
-           ``tagger_response_timeout_seconds`` (a wedged call).
-        4. Tear down the current subprocess via ``_stop_locked_async``,
-           which emits the stopping + stopped events with the **old**
-           source label.
-        5. Update ``_active_tagger`` in-memory; ``_ensure_running_locked``
-           reads from it on respawn.
-        6. Respawn. On failure the in-memory selection is rolled back
-           to the previous one and a best-effort rollback respawn runs
-           so the service stays operative. If the rollback respawn
-           also fails (``failed`` event is dispatched), the service
-           is degraded but not wedged.
-        7. Persist via ``SettingsService.set`` after a successful
-           respawn. A persist failure logs and continues — the
-           in-memory state is correct for this session; a restart
-           would re-load the old model. Per the plan we don't roll
-           back the swap on a persist failure (can revisit if the cost
-           proves painful in practice).
+        3. Return the intended selection immediately (HTTP 202) and
+           hand off to :meth:`_swap_background`, which:
+           a. Drains any in-flight single-image call (acquiring
+              ``_lifecycle_lock`` naturally waits for it to release;
+              ``_acquire_lifecycle`` polls with ``asyncio.sleep`` so the
+              loop keeps running).
+           b. Tears down the current subprocess via ``_stop_locked_async``,
+              emitting stopping + stopped events with the **old** source
+              label.
+           c. Flips ``_active_tagger`` to the new selection.
+           d. Respawns. On failure the in-memory selection is rolled
+              back to the previous one and a best-effort rollback respawn
+              runs so the service stays operative. If the rollback
+              respawn also fails (a ``failed`` event is dispatched), the
+              service is degraded but not wedged.
+           e. Persists via ``SettingsService.set`` after a successful
+              respawn. A persist failure logs and continues.
 
-        Returns the persisted :class:`ActiveTagger` (same instance).
-        The ``starting`` + ``ready`` SSE events emitted by step 6
-        carry the **new** source label because ``_active_tagger`` was
-        updated in step 5 before the respawn ran — other browser
-        tabs see the full transition (stopped → starting → ready) and
-        pick up the new label from those events.
+        Returning immediately (rather than awaiting the whole swap) keeps
+        a slow first-run model download from blocking — and being
+        cancelled by — the HTTP handler. The frontend follows progress via
+        the existing ``tagger_status`` SSE stream (stopping/stopped → old
+        label, then starting/ready/failed → new label) and re-fetches the
+        active selection on a terminal state.
         """
 
         if self._active_tagger is not None and self._active_tagger == selection:
@@ -454,12 +456,39 @@ class TaggingService(Service):
                 "another swap is already in progress",
                 retry_after_s=2.0,
             )
+        # Run the drain → stop → respawn → persist in the background so a
+        # slow first-run model download (HuggingFace fetch inside the
+        # worker's ``load_model``) can't block — and get cancelled by — the
+        # HTTP request handler. The swap-in-progress lock stays held until
+        # the background task finishes; progress is reported over the
+        # existing ``tagger_status`` SSE stream (stopping/stopped with the
+        # *old* label, then starting/ready/failed with the *new* one), so
+        # the picker refreshes on state change without a long-hanging POST.
+        # Hold the task reference on the instance so the event loop can't
+        # garbage-collect a mid-flight swap.
+        old_active = self._active_tagger
+        self._swap_task = asyncio.create_task(self._swap_background(selection, old_active))
+        return selection
+
+    async def _swap_background(self, selection: ActiveTagger, old_active: ActiveTagger | None) -> None:
+        """Background half of :meth:`swap_active_model`.
+
+        Drains any in-flight single-image call, stops the old subprocess
+        (SSE carries the *old* label), flips ``_active_tagger`` to the new
+        selection, respawns (SSE carries the *new* label), and persists.
+        On respawn failure the in-memory selection rolls back to the
+        previous one and a best-effort rollback respawn runs; the outcome
+        reaches the UI via the ``failed`` SSE event rather than a raised
+        exception, since this runs detached from any HTTP handler.
+        """
         try:
             await self._acquire_lifecycle()
             try:
-                old_active = self._active_tagger
                 if self._tagger_client is not None:
                     await self._stop_locked_async()
+                # Flip the selection *after* the old subprocess is torn down
+                # so the stopping/stopped events carry the old label, then the
+                # starting/ready events from the respawn carry the new one.
                 self._active_tagger = selection
                 # Mark the spawn as post-swap so the idle check applies
                 # ``tagger_post_swap_idle_timeout_seconds`` until the first
@@ -484,7 +513,7 @@ class TaggingService(Service):
                             self._emit_status("failed", error=str(exc))
                     else:
                         self._emit_status("failed", error=str(exc))
-                    raise
+                    return
                 try:
                     self._settings_service.set("tagger.active_model", selection.model_dump())
                 except Exception:
@@ -494,9 +523,16 @@ class TaggingService(Service):
                     selection.kind,
                     selection.source_label,
                 )
-                return selection
             finally:
                 self._lifecycle_lock.release()
+        except Exception:
+            # Defensive catch-all: this task is detached from any request
+            # handler, so an unhandled exception would only surface as a
+            # logged ``task exception was never retrieved`` warning and leave
+            # the swap-in-progress lock held. Surface it as a ``failed`` SSE
+            # event and let the finally release the lock.
+            self._logger.exception("Unexpected error during tagger swap.")
+            self._emit_status("failed", error="unexpected error during tagger swap")
         finally:
             self._swap_in_progress_lock.release()
 
@@ -1015,6 +1051,7 @@ class TaggingService(Service):
             tagger_kwargs,
             heartbeat_interval=self._configuration.tagger_heartbeat_interval_seconds,
             response_timeout=self._configuration.tagger_response_timeout_seconds,
+            start_timeout=self._configuration.tagger_startup_timeout_seconds,
             poll_interval=self._configuration.tagger_liveness_poll_seconds,
         )
         try:

@@ -13,7 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,7 +26,7 @@ from yadc.api.services.tagging import (
     TaggingService,
 )
 
-from .conftest import make_client_mock, patch_client_factory
+from .conftest import make_client_mock, patch_client_factory, run_swap
 
 
 def _selection(repo_id: str = "SmilingWolf/wd-vit-tagger-v3", *, kind: ActiveTaggerKind = "hf") -> ActiveTagger:
@@ -45,7 +44,7 @@ class TestSwapHappyPath:
         """The persisted settings row reflects the swap so a restart loads the new selection."""
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection()))
+            run_swap(service, _selection())
 
         raw = settings_service.get("tagger.active_model")
         assert raw["kind"] == "hf"
@@ -55,7 +54,7 @@ class TestSwapHappyPath:
         """``active_tagger`` reflects the swapped selection after the swap returns."""
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection()))
+            run_swap(service, _selection())
 
         assert service.active_tagger is not None
         assert service.active_tagger.repo_id == "SmilingWolf/wd-vit-tagger-v3"
@@ -65,7 +64,7 @@ class TestSwapHappyPath:
         client = make_client_mock(alive=True)
         selection = _selection()
         with patch_client_factory(client):
-            result = asyncio.run(service.swap_active_model(selection))
+            result = run_swap(service, selection)
 
         assert result is selection
 
@@ -78,10 +77,10 @@ class TestSwapHappyPath:
             # Spawn an initial subprocess via a no-op swap (with a different repo).
             # Cleaner: spawn via ``tag_image`` but that needs a real image fixture;
             # simplest is to call swap twice and observe the start count.
-            asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-eva02-large-tagger-v3")))
+            run_swap(service, _selection("SmilingWolf/wd-eva02-large-tagger-v3"))
             client.start.reset_mock()
 
-            asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-vit-tagger-v3")))
+            run_swap(service, _selection("SmilingWolf/wd-vit-tagger-v3"))
 
         # Exactly one spawn per swap (the client mock is reused across swaps;
         # we reset between them).
@@ -103,7 +102,7 @@ class TestSwapRefusals:
         service._tag_jobs["ds"] = MagicMock(task=fake_task)
         try:
             with pytest.raises(TaggerBusyError, match="batch tagging job is running"):
-                asyncio.run(service.swap_active_model(_selection()))
+                run_swap(service, _selection())
         finally:
             service._tag_jobs.pop("ds", None)
 
@@ -114,7 +113,7 @@ class TestSwapRefusals:
         assert acquired, "test setup: lock should be free initially"
         try:
             with pytest.raises(TaggerSwapInProgressError, match="another swap") as excinfo:
-                asyncio.run(service.swap_active_model(_selection()))
+                run_swap(service, _selection())
             assert excinfo.value.retry_after_s == 2.0
         finally:
             service._swap_in_progress_lock.release()
@@ -127,7 +126,7 @@ class TestSwapRefusals:
         service._tag_jobs["ds"] = MagicMock(task=fake_task)
         try:
             with pytest.raises(TaggerBusyError):
-                asyncio.run(service.swap_active_model(_selection()))
+                run_swap(service, _selection())
         finally:
             service._tag_jobs.pop("ds", None)
 
@@ -138,12 +137,14 @@ class TestSwapRollback:
     """Failure paths should leave the service in a usable state."""
 
     def test_respawn_failure_rolls_back_active_tagger(self, test_configuration: Configuration, service: TaggingService):
-        """When ``_ensure_running_locked`` raises, ``_active_tagger`` is restored to
-        its previous value and the exception propagates."""
+        """When the respawn ``_ensure_running_locked`` raises, the background swap
+        rolls ``_active_tagger`` back to its previous value. The failure is
+        surfaced via the ``failed`` SSE event (not a raised exception) because
+        the swap runs detached from the HTTP handler."""
         test_configuration.tagger_repo_id = "SmilingWolf/wd-eva02-large-tagger-v3"
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-eva02-large-tagger-v3")))
+            run_swap(service, _selection("SmilingWolf/wd-eva02-large-tagger-v3"))
             first_active = service.active_tagger
 
         with patch_client_factory(client), pytest.MonkeyPatch.context() as mp:
@@ -152,8 +153,9 @@ class TestSwapRollback:
                 "_ensure_running_locked",
                 AsyncMock(side_effect=RuntimeError("boom")),
             )
-            with pytest.raises(RuntimeError, match="boom"):
-                asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-vit-tagger-v3")))
+            # No exception escapes: the background task swallows it and
+            # dispatches a ``failed`` SSE event instead.
+            run_swap(service, _selection("SmilingWolf/wd-vit-tagger-v3"))
 
         assert service.active_tagger is not None
         assert service.active_tagger == first_active
@@ -174,7 +176,7 @@ class TestSwapPersistFailure:
 
         with patch_client_factory(client), pytest.MonkeyPatch.context() as mp:
             mp.setattr(service, "_settings_service", broken_settings)
-            asyncio.run(service.swap_active_model(_selection()))
+            run_swap(service, _selection())
 
         assert service.active_tagger is not None
         assert service.active_tagger.repo_id == "SmilingWolf/wd-vit-tagger-v3"
@@ -188,11 +190,11 @@ class TestSwapNoOp:
         selection, doesn't touch the subprocess, and doesn't re-persist."""
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection()))
+            run_swap(service, _selection())
             client.start.reset_mock()
             client.stop.reset_mock()
 
-            result = asyncio.run(service.swap_active_model(_selection()))
+            result = run_swap(service, _selection())
 
         assert result is service.active_tagger
         assert client.start.await_count == 0
@@ -208,7 +210,7 @@ class TestSwapNoOp:
         # ``_active_tagger`` is None at this point because no swap has run.
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-eva02-large-tagger-v3")))
+            run_swap(service, _selection("SmilingWolf/wd-eva02-large-tagger-v3"))
 
         assert service.active_tagger is not None
         assert service.active_tagger.repo_id == "SmilingWolf/wd-eva02-large-tagger-v3"
@@ -221,7 +223,7 @@ class TestSwapNoOp:
         test_configuration.tagger_preproc_profile = "wd-tagger"
         client = make_client_mock(alive=True)
         with patch_client_factory(client):
-            asyncio.run(service.swap_active_model(_selection("SmilingWolf/wd-eva02-large-tagger-v3")))
+            run_swap(service, _selection("SmilingWolf/wd-eva02-large-tagger-v3"))
             client.start.reset_mock()
 
             selection = ActiveTagger(
@@ -229,7 +231,7 @@ class TestSwapNoOp:
                 repo_id="SmilingWolf/wd-eva02-large-tagger-v3",
                 preproc_profile="timm",
             )
-            asyncio.run(service.swap_active_model(selection))
+            run_swap(service, selection)
 
         assert client.start.await_count == 1
         assert client.stop.await_count == 1

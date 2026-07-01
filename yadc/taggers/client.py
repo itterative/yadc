@@ -9,7 +9,13 @@ from __future__ import annotations
 from typing import Any
 
 from yadc.taggers.base import Tagger, TaggerResult
-from yadc.taggers.server import HEARTBEAT_INTERVAL_SECONDS, POLL_INTERVAL_SECONDS, RESPONSE_TIMEOUT_SECONDS, TaggerServer
+from yadc.taggers.server import (
+    HEARTBEAT_INTERVAL_SECONDS,
+    POLL_INTERVAL_SECONDS,
+    RESPONSE_TIMEOUT_SECONDS,
+    STARTUP_TIMEOUT_SECONDS,
+    TaggerServer,
+)
 
 
 class TaggerClient:
@@ -31,6 +37,7 @@ class TaggerClient:
         *,
         heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
         response_timeout: float = RESPONSE_TIMEOUT_SECONDS,
+        start_timeout: float = STARTUP_TIMEOUT_SECONDS,
         poll_interval: float = POLL_INTERVAL_SECONDS,
     ) -> None:
         self._server: TaggerServer = TaggerServer(
@@ -39,6 +46,7 @@ class TaggerClient:
             tagger_kwargs,
             heartbeat_interval=heartbeat_interval,
             response_timeout=response_timeout,
+            start_timeout=start_timeout,
             poll_interval=poll_interval,
         )
 
