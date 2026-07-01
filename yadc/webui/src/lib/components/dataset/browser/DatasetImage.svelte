@@ -6,6 +6,10 @@
         class?: string;
         datasetName: string;
         item: ImageInfo;
+        /** Position of ``item`` in the host's source ``items`` array.
+         *  Exposed as ``data-image-idx`` so keyboard nav can follow backend
+         *  order rather than the column-major DOM order. */
+        srcIndex?: number;
         selected?: boolean;
         active?: boolean;
         onclick: (item: ImageInfo) => void;
@@ -16,6 +20,7 @@
         class: klazz = '',
         datasetName,
         item,
+        srcIndex,
         selected = false,
         active = false,
         onclick,
@@ -56,6 +61,8 @@
 </script>
 
 <button
+    data-image-id={item.id}
+    data-image-idx={srcIndex}
     class="{klazz} relative {selected
         ? 'outline-2 outline-offset-[-2px] outline-accent'
         : ''} {active ? 'shimmer-accent animate-none' : ''} {flashing && !active

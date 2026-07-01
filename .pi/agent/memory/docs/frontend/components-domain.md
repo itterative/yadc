@@ -17,9 +17,10 @@ Domain components. Per the "scope rule" (in `frontend-architecture`), these are 
 
 ```
 yadc/webui/src/lib/components/dataset/
-  browser/                      # Image grid + tile
-    DatasetBrowser.svelte       # Masonry grid container (column distribution + infinite scroll + selectedId)
-    DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline)
+  browser/                      # Image grid + tile + grid keyboard nav
+    DatasetBrowser.svelte       # Masonry grid container (column distribution via argmin + infinite scroll + selectedId). Marks the grid `data-grid-container`; exposes a `children` snippet rendered inside the container so a nested `GridKeyboardNav` can scope to it. Threads each tile's source-array index (`srcIndex`) so nav follows backend order, not the column-major DOM order.
+    DatasetImage.svelte         # Masonry grid tile (thumbnail + badges + selected outline). Emits `data-image-id` (backend id) and `data-image-idx` (source-array position) for nav lookups.
+    GridKeyboardNav.svelte      # Renderless (hidden placeholder + `<svelte:window onkeydown>`) arrow-key nav nested inside `DatasetBrowser`. Discovers its grid via `closest('[data-grid-container]')`. **Left/right** = spatial + wrapping: a greedy cyclic chain (`buildChain`) walks tiles in backend-index order, each step casting a rightward ray from the focused tile's top edge (`rightNeighbor`, capped at `RIGHT_NEIGHBOR_SCAN_LIMIT`=10 candidates, rejects tiles starting below `RIGHT_NEIGHBOR_MAX_TOP_FRACTION`=0.5 of the current height); left is the chain's modular mirror; wrap at the right edge jumps to the next reading-row start. **Up/down** = within-column DOM siblings (no wrap, every tile reachable). Neighbors are precomputed into a `Map<id, Neighbors>` graph (O(N log N) rebuild, sort-dominated; O(1) per keypress) and invalidated by a coalesced-rAF `MutationObserver`+`ResizeObserver` on the container. At the right-wrap seam with `hasMore`, right-nav triggers `loadMore` instead of wrapping so keyboard-only users can paginate. Inert when `disabled` (lightbox open — `ImagePreviewDialog` owns arrows then) or nothing focused; ignores editable targets (input/textarea/select/contenteditable/`.cm-editor`).
   detail/                       # Image detail (tab host + tabs)
     ImageDetail.svelte          # Tab system host (CompactPillTabs: Caption / Preview / Extras / Tags) + data layer (captionData / historyEntries / API calls). History auto-loaded alongside caption.
     Caption.svelte              # Caption box (ActionCard + ActionBar) + Drafts (Card+ActionBar: Promote/Delete) + History (always visible when entries exist, Restore/Delete by content hash)

@@ -5,6 +5,7 @@
     import { browser } from '$app/environment';
     import { get } from 'svelte/store';
     import DatasetBrowser from '$lib/components/dataset/browser/DatasetBrowser.svelte';
+    import GridKeyboardNav from '$lib/components/dataset/browser/GridKeyboardNav.svelte';
     import ImagePreviewDialog from '$lib/components/ui/ImagePreviewDialog.svelte';
     import DatasetSidePanel from './DatasetSidePanel.svelte';
     import AddFilesDialog from './AddFilesDialog.svelte';
@@ -697,7 +698,21 @@
                     onclick={handleItemClick}
                     ondblclick={handleItemDblClick}
                     onendreached={loadMore}
-                />
+                >
+                    <!-- Grid keyboard nav: arrow keys move the focused image
+                         outside the lightbox. Scoped to its grid container
+                         (discovered via ``data-grid-container``); disabled
+                         while the preview dialog is open (it owns arrows then). -->
+                    <GridKeyboardNav
+                        focusedId={focusedItem?.id ?? null}
+                        {images}
+                        disabled={previewItem !== null}
+                        {hasMore}
+                        {isLoadingMore}
+                        onfocus={(item) => (focusedItem = item)}
+                        onloadmore={loadMore}
+                    />
+                </DatasetBrowser>
 
                 {#if !isLoading && images.length === 0}
                     <EmptyState

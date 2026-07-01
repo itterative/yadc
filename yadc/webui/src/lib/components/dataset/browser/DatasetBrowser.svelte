@@ -3,6 +3,7 @@
     import DatasetImage from '$lib/components/dataset/browser/DatasetImage.svelte';
     import SpinnerBlock from '$lib/components/ui/SpinnerBlock.svelte';
     import { random } from '$lib/random';
+    import type { Snippet } from 'svelte';
     import type { ImageInfo } from '$lib/stores/dataset';
 
     interface Props {
@@ -19,6 +20,11 @@
         onclick: (item: ImageInfo) => void;
         ondblclick?: (item: ImageInfo) => void;
         onendreached: () => void;
+        /** Optional content rendered inside the grid container. Callers can
+         *  nest a ``GridKeyboardNav`` here; it self-discovers the container
+         *  via its ``data-grid-container`` marker, so no element needs to be
+         *  threaded in. */
+        children?: Snippet;
     }
 
     let {
@@ -31,7 +37,8 @@
         activeIds = new Set<number>(),
         onclick,
         ondblclick,
-        onendreached
+        onendreached,
+        children
     }: Props = $props();
 
     const DEFAULT_GRID_COLUMNS = 4;
@@ -87,18 +94,26 @@
 
         const normalWidth = 100;
         const columnHeights: number[] = new Array(gridColumns).fill(0);
-        const splitItems: ImageInfo[][] = new Array(gridColumns).fill(1).map(() => []);
+        interface Slotted {
+            item: ImageInfo;
+            /** Position in the source ``items`` array — threaded to tiles as
+             *  ``data-image-idx`` so nav can follow backend order, not the
+             *  column-major DOM order. */
+            src: number;
+        }
+        const splitItems: Slotted[][] = new Array(gridColumns).fill(1).map(() => []);
 
-        for (const item of items) {
-            const index = argmin(columnHeights);
-            splitItems[index].push(item);
+        for (let src = 0; src < items.length; src++) {
+            const item = items[src];
+            const col = argmin(columnHeights);
+            splitItems[col].push({ item, src });
 
             if (!item.width || !item.height) {
-                columnHeights[index] += 1;
+                columnHeights[col] += 1;
                 continue;
             }
 
-            columnHeights[index] += item.height * (normalWidth / item.width) + 1;
+            columnHeights[col] += item.height * (normalWidth / item.width) + 1;
         }
 
         return [splitItems, columnHeights];
@@ -138,21 +153,23 @@
 
 <div class="{klazz} relative" style="overflow: hidden;">
     <div
+        data-grid-container
         class="grid-cols-auto grid w-full gap-4 [--x-grid-cols:2] lg:[--x-grid-cols:3] xl:[--x-grid-cols:4] 2xl:[--x-grid-cols:5]"
         bind:this={container}
         bind:offsetWidth={width}
     >
         {#each columns as column, column_index (column_index)}
             <div class="flex flex-col gap-4">
-                {#each column as item (`${column_index}-${item.id}`)}
+                {#each column as entry (`${column_index}-${entry.item.id}`)}
                     <DatasetImage
                         class="relative row-end-[auto_span_20px] transform cursor-pointer overflow-hidden rounded-xl bg-gray-800 shadow-md transition-all hover:scale-105 hover:shadow-xl"
                         {datasetName}
-                        {item}
-                        selected={item.id === selectedId}
-                        active={activeIds.has(item.id)}
-                        onclick={() => onclick(item)}
-                        ondblclick={ondblclick ? () => ondblclick(item) : undefined}
+                        item={entry.item}
+                        srcIndex={entry.src}
+                        selected={entry.item.id === selectedId}
+                        active={activeIds.has(entry.item.id)}
+                        onclick={() => onclick(entry.item)}
+                        ondblclick={ondblclick ? () => ondblclick(entry.item) : undefined}
                     />
                 {/each}
 
@@ -170,6 +187,10 @@
                 {/if}
             </div>
         {/each}
+
+        <!-- Callers can nest a ``GridKeyboardNav`` here; it finds this
+             container via the ``data-grid-container`` marker above. -->
+        {@render children?.()}
     </div>
 
     {#if isLoadingMore}
