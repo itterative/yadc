@@ -2,7 +2,7 @@ name: release-assets
 
 on:
   release:
-    types: [published, prereleased]
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -44,6 +44,19 @@ jobs:
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
         with:
           version: latest
+
+      - name: Update version files from tag
+        shell: bash
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          echo "Setting version to $VERSION (from tag)"
+          sed -i -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" pyproject.toml
+          sed -i -E "s/__version__ = \"[^\"]+\"/__version__ = \"$VERSION\"/" yadc/__init__.py
+          echo "--- pyproject.toml ---"
+          grep '^version' pyproject.toml | head -1
+          echo "--- yadc/__init__.py ---"
+          grep '__version__' yadc/__init__.py
+          uv lock
 
       - name: Build sdist and wheel
         run: |
@@ -112,23 +125,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Verify version consistency
+      - name: Update version files from tag
         shell: bash
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
-          PYPROJECT_VERSION=$(grep '^version' pyproject.toml | head -1 | sed -E 's/version = "([^"]+)".*/\1/')
-          PKG_VERSION=$(grep '__version__' yadc/__init__.py | sed -E 's/__version__ = "([^"]+)".*/\1/')
-          echo "Tag:                 $VERSION"
-          echo "pyproject.toml:      $PYPROJECT_VERSION"
-          echo "yadc/__init__.py:    $PKG_VERSION"
-          if [[ "$VERSION" != "$PYPROJECT_VERSION" ]]; then
-            echo "::error::Tag version $VERSION does not match pyproject.toml ($PYPROJECT_VERSION). Bump pyproject.toml and run 'uv sync' before tagging."
-            exit 1
-          fi
-          if [[ "$PYPROJECT_VERSION" != "$PKG_VERSION" ]]; then
-            echo "::error::pyproject.toml version $PYPROJECT_VERSION does not match yadc/__init__.py ($PKG_VERSION). Keep them in sync."
-            exit 1
-          fi
+          echo "Setting version to $VERSION (from tag)"
+          sed -i -E "s/^version = \"[^\"]+\"/version = \"$VERSION\"/" pyproject.toml
+          sed -i -E "s/__version__ = \"[^\"]+\"/__version__ = \"$VERSION\"/" yadc/__init__.py
+          echo "--- pyproject.toml ---"
+          grep '^version' pyproject.toml | head -1
+          echo "--- yadc/__init__.py ---"
+          grep '__version__' yadc/__init__.py
+          uv lock
 
       - name: Build SvelteKit frontend
         shell: bash
