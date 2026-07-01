@@ -30,7 +30,7 @@ import queue
 import sys
 import time
 import traceback
-from multiprocessing.context import ForkServerProcess, SpawnProcess
+from multiprocessing.process import BaseProcess
 from typing import Any
 
 from yadc.taggers.base import Tagger, TaggerResult
@@ -178,7 +178,7 @@ class TaggerServer:
         self._poll_interval: float = poll_interval
         self._request_queue: Any = None
         self._response_queue: Any = None
-        self._process: ForkServerProcess | SpawnProcess | None = None
+        self._process: BaseProcess | None = None
 
     def start(self) -> None:
         """Spawn the tagger process and wait for it to be ready.
