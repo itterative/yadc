@@ -31,7 +31,7 @@ SCORE_MATCH = 16
 # each subsequent gap char adds ``SCORE_GAP_EXT``. Tighter (more negative)
 # penalties push contiguous matches higher and de-prioritise scattered
 # char matches.
-SCORE_GAP_START = -3
+SCORE_GAP_START = -6
 SCORE_GAP_EXT = -1
 
 # Position bonuses added to a match. ``SCORE_MATCH_BOUNDARY`` (after a
@@ -44,7 +44,7 @@ SCORE_MATCH_CAMEL = 6
 
 # Streak bonus: each match adds ``SCORE_CONSECUTIVE * streak`` where
 # ``streak`` is the consecutive-match count at and including this one.
-SCORE_CONSECUTIVE = 4
+SCORE_CONSECUTIVE = 12
 
 
 def fuzzy_score(query: str, target: str) -> int | None:
@@ -94,7 +94,8 @@ def fuzzy_score(query: str, target: str) -> int | None:
             if consecutive > 0:
                 score += SCORE_GAP_START
                 consecutive = 0
-            score += SCORE_GAP_EXT
+            elif score > 0:
+                score += SCORE_GAP_EXT
             ti += 1
 
     if pi < m:
