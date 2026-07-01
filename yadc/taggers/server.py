@@ -27,9 +27,10 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import queue
+import sys
 import time
 import traceback
-from multiprocessing.context import ForkServerProcess
+from multiprocessing.context import ForkServerProcess, SpawnProcess
 from typing import Any
 
 from yadc.taggers.base import Tagger, TaggerResult
@@ -42,7 +43,18 @@ logger = logging.getLogger(__name__)
 # ``fork()`` from a threaded parent is deprecated in Python 3.13+ and
 # can deadlock — the async event loop holds locks that the forked
 # child would also try to acquire.
-_ctx = multiprocessing.get_context("forkserver")
+#
+# ``forkserver`` is POSIX-only; Windows has to fall back to ``spawn``.
+# ``spawn`` re-imports the worker module per process so it's slower,
+# but it's the only cross-platform safe option. The bundled .exe
+# calls ``multiprocessing.freeze_support()`` early in
+# ``scripts/entrypoints/webui_desktop.py`` so the spawn helper can
+# resolve to the frozen bootloader rather than failing on a missing
+# ``python.exe`` next to the .exe.
+if sys.platform == "win32":
+    _ctx = multiprocessing.get_context("spawn")
+else:
+    _ctx = multiprocessing.get_context("forkserver")
 
 # How often the worker pushes a heartbeat while idle (no incoming
 # request). The heartbeat lets the main process distinguish a slow but
@@ -166,7 +178,7 @@ class TaggerServer:
         self._poll_interval: float = poll_interval
         self._request_queue: Any = None
         self._response_queue: Any = None
-        self._process: ForkServerProcess | None = None
+        self._process: ForkServerProcess | SpawnProcess | None = None
 
     def start(self) -> None:
         """Spawn the tagger process and wait for it to be ready.
