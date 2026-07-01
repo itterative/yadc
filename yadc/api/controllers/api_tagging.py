@@ -89,6 +89,18 @@ class TagImageBody(pydantic.BaseModel):
     replace_underscores: bool | None = None
 
 
+class TagCustomizationsBody(pydantic.BaseModel):
+    """Body shape mirroring :class:`TagCustomizations` — the user's edits.
+
+    Optional on the preview request; persisted onto the cached result
+    so navigation restores the selection. Absent / ``null`` leaves the
+    cache entry untouched.
+    """
+
+    disabled: list[str]
+    custom_tags: dict[str, list[str]] = pydantic.Field(default_factory=dict)
+
+
 class SaveTagsBody(pydantic.BaseModel):
     """Body for ``POST .../images/<id>/tags`` — write pruned tags.
 
@@ -96,12 +108,15 @@ class SaveTagsBody(pydantic.BaseModel):
     single-image ``tag`` endpoint returns, so the frontend can pass back
     exactly what the user kept after pruning. ``save`` selects the
     destination; ``source`` is a frontend label echoed in no events here
-    (the write is synchronous, not job-driven).
+    (the write is synchronous, not job-driven). ``customizations`` is
+    only honored by the preview route (it persists the selection to the
+    cache); the save route ignores it.
     """
 
     tags: dict[str, float]
     categories: dict[str, list[str]]
     save: TagSaveOptions = pydantic.Field(default_factory=TagSaveOptions)
+    customizations: TagCustomizationsBody | None = None
 
 
 class CancelBody(pydantic.BaseModel):
@@ -349,6 +364,13 @@ def api_tagging(
         Same body as ``POST .../tags``. Returns ``{"content": "..."}`` —
         formatter text for ``draft``, the ``[tags]`` TOML sub-table for
         ``extras``, empty for ``none``.
+
+        Doubles as the persistence path for the user's interactive
+        selection: when ``customizations`` is present it is written onto
+        the cached result (same key as the model output) so navigating
+        away from the image and back restores the selection. The same
+        threshold / ``replace_underscores`` query overrides as the GET
+        route select the cache bucket to write against.
         """
         # Image existence isn't strictly required (no disk write), but
         # keep the check for a consistent 404 with the save route.
@@ -361,10 +383,39 @@ def api_tagging(
             )
 
         body = validate_body(SaveTagsBody, await request.get_json(silent=True))
-        from yadc.taggers import TaggerResult
+        from yadc.taggers import TagCustomizations, TaggerResult
 
         result = TaggerResult(tags=dict(body.tags), categories={k: list(v) for k, v in body.categories.items()})
         content = tagging.preview_save_tags(result, body.save)
+
+        # Persist the selection onto the cached result (best-effort;
+        # misses silently when the image was never tagged / evicted).
+        if body.customizations is not None:
+            def _float_arg(arg: str) -> float | None:
+                raw = request.args.get(arg)
+                return float(raw) if raw is not None else None
+
+            rating = _float_arg("rating_threshold")
+            general = _float_arg("general_threshold")
+            character = _float_arg("character_threshold")
+            thresholds = (
+                TaggingThresholds(
+                    rating=rating if rating is not None else configuration.tagger_rating_threshold,
+                    general=general if general is not None else configuration.tagger_general_threshold,
+                    character=character if character is not None else configuration.tagger_character_threshold,
+                )
+                if any(v is not None for v in (rating, general, character))
+                else None
+            )
+            await tagging.set_tag_customizations(
+                name,
+                image_id,
+                TagCustomizations(
+                    disabled=list(body.customizations.disabled),
+                    custom_tags={k: list(v) for k, v in body.customizations.custom_tags.items()},
+                ),
+                thresholds=thresholds,
+            )
         return jsonify({"content": content})
 
     @app.post("/tagging/preview")

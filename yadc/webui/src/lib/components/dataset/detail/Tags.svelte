@@ -8,10 +8,15 @@
         previewImageTags,
         saveImageTagsAction,
         tagSettings,
-        tagSingleImage
+        tagSingleImage,
+        tagTierMap,
+        tagCategoryOverrideMap,
+        computeOrderedCategories,
+        computeSelection,
+        type TagChipView
     } from '$lib/stores/tagging';
     import type { ImageInfo } from '$lib/stores/dataset';
-    import type { TagSaveOptions, TaggerResult } from '$lib/stores/tagging';
+    import type { TagCustomizations, TagSaveOptions, TaggerResult } from '$lib/stores/tagging';
     import Card from '$lib/components/ui/Card.svelte';
     import ActionBar from '$lib/components/ui/ActionBar.svelte';
     import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
@@ -23,7 +28,7 @@
     import { deferred } from '$lib/async';
     import { getAbortContext, linkedController } from '$lib/abort';
     import SvgSparkle from '$lib/icons/SvgSparkle.svelte';
-    import TagCategoryChips, { type TagChipView } from './TagCategoryChips.svelte';
+    import TagCategoryChips from '$lib/components/tagging/TagCategoryChips.svelte';
 
     interface Props {
         datasetName: string;
@@ -48,12 +53,27 @@
     // (no race where the older response overwrites the newer one).
     const parentSignal = getAbortContext();
 
+    // Threshold / transform settings as reactive primitives. Reading
+    // ``$tagSettings.X`` directly in the fetch effect below would subscribe
+    // to the whole ``tagSettings`` store, so any unrelated update (e.g. the
+    // user flipping the save mode / draft format in the save bar) would
+    // re-trigger a full result reload — wiping manual toggles and
+    // force-enabled absent starred tags. Routing through ``$derived`` lets
+    // Svelte memoize on value equality: the effect only re-runs when a
+    // threshold value actually changes.
+    let ratingThreshold = $derived($tagSettings.ratingThreshold);
+    let generalThreshold = $derived($tagSettings.generalThreshold);
+    let characterThreshold = $derived($tagSettings.characterThreshold);
+    let replaceUnderscores = $derived($tagSettings.replaceUnderscores);
+
     $effect(() => {
         // Re-fetch when the focused image changes. Aborts the previous
         // request so an in-flight fetch for the old image can't land
         // after we've already started showing the new image. Pass the
         // current thresholds + replace_underscores so the read lands
         // in the same cache bucket as the original POST /tag write.
+        // Depends on the ``$derived`` primitives above (not the raw store)
+        // so a save-bar settings change doesn't reload the result.
         const controller = linkedController(parentSignal);
         isLoadingResult = true;
         result = undefined;
@@ -61,10 +81,10 @@
             datasetName,
             item.id,
             {
-                rating_threshold: $tagSettings.ratingThreshold,
-                general_threshold: $tagSettings.generalThreshold,
-                character_threshold: $tagSettings.characterThreshold,
-                replace_underscores: $tagSettings.replaceUnderscores
+                rating_threshold: ratingThreshold,
+                general_threshold: generalThreshold,
+                character_threshold: characterThreshold,
+                replace_underscores: replaceUnderscores
             },
             controller.signal
         )
@@ -140,9 +160,35 @@
         }
     }
 
+    /** Restore the user's saved selection from a cached result's
+     *  ``customizations``. Translates the persisted ``disabled`` /
+     *  ``customTags`` (category → names) shape back into the internal
+     *  ``enabled`` set + ``customTags`` (name → category) map. Falls back
+     *  to :func:`repopulateFromResult` when none were stored. */
+    function restoreFromCustomizations(r: TaggerResult, c: TagCustomizations) {
+        enabled.clear();
+        customTags.clear();
+        const disabledSet = new Set(c.disabled);
+        // Model tags: all on except those explicitly disabled.
+        for (const tags of Object.values(r.categories)) {
+            for (const t of tags) {
+                if (!disabledSet.has(t)) {
+                    enabled.add(t);
+                }
+            }
+        }
+        // Custom additions: invert category → names into name → category.
+        for (const [category, names] of Object.entries(c.custom_tags)) {
+            for (const name of names) {
+                customTags.set(name, category);
+                enabled.add(name);
+            }
+        }
+    }
+
     /** Register a tag added through the per-category ``TagInput``. The chip
      *  is auto-enabled (the user just decided it should exist), and a
-     *  synthetic 100% score is layered in :func:`buildPrunedResult` so the
+     *  synthetic 100% score is layered in :func:`computeSelection` so the
      *  saved output reflects the user's confidence. */
     function addCustomTag(category: string, tag: string) {
         if (result && tag in result.tags) {
@@ -175,74 +221,22 @@
             return;
         }
         lastResultSeen = r;
-        repopulateFromResult(r);
+        if (r.customizations) {
+            restoreFromCustomizations(r, r.customizations);
+        } else {
+            repopulateFromResult(r);
+        }
     });
 
-    // Stable display order: the wd-tagger convention is rating / general /
-    // character; any other categories sort after, alphabetically. Tags
-    // within each category are sorted by score descending (ties broken by
-    // name) so the most likely tags surface first in the interactive
-    // prune grid — the user is more likely to leave top-confidence tags
-    // on and prune the tail.
-    const CATEGORY_ORDER = ['rating', 'character', 'general'];
-
-    interface OrderedCategory {
-        name: string;
-        chips: TagChipView[];
-    }
-
-    let orderedCategories = $derived.by<OrderedCategory[]>(() => {
-        if (!result) {
-            return [];
-        }
-        const r = result;
-        // Union of categories — union the model's keys with any category a
-        // custom tag was assigned to (a Custom-only category is still shown).
-        const categoryNames: string[] = [...Object.keys(r.categories)];
-        for (const cat of customTags.values()) {
-            if (!categoryNames.includes(cat)) {
-                categoryNames.push(cat);
-            }
-        }
-        const sortedNames = [...categoryNames].sort((a, b) => {
-            const ia = CATEGORY_ORDER.indexOf(a);
-            const ib = CATEGORY_ORDER.indexOf(b);
-            if (ia !== -1 || ib !== -1) {
-                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-            }
-            return a.localeCompare(b);
-        });
-        return sortedNames.map((name) => {
-            // Custom tags lead the section (alphabetical, so order is
-            // stable across adds), then model tags sorted by score desc.
-            // Score is baked into each chip here so :comp:`TagCategoryChips`
-            // doesn't need to know about ``result.tags`` lookup semantics.
-            const chips: TagChipView[] = [];
-            const customInCategory: string[] = [];
-            for (const [tag, cat] of customTags) {
-                if (cat === name) {
-                    customInCategory.push(tag);
-                }
-            }
-            customInCategory.sort();
-            for (const tag of customInCategory) {
-                chips.push({ tag, score: 1.0, isCustom: true });
-            }
-            const modelInCategory = (r.categories[name] ?? []).filter((t) => !customTags.has(t));
-            modelInCategory.sort((a, b) => {
-                const sa = r.tags[a] ?? 0;
-                const sb = r.tags[b] ?? 0;
-                if (sa !== sb) {
-                    return sb - sa;
-                }
-                return a.localeCompare(b);
-            });
-            for (const tag of modelInCategory) {
-                chips.push({ tag, score: r.tags[tag] ?? 0, isCustom: false });
-            }
-            return { name, chips };
-        });
-    });
+    // Display layout for the prune grid — starred tags pulled to their
+    // section's lead, absent starred force-shown, non-starred kept in their
+    // natural category. See :func:`computeOrderedCategories` for the rules;
+    // it's extracted so the routing logic is unit-testable.
+    let orderedCategories = $derived(
+        result
+            ? computeOrderedCategories(result, customTags, $tagTierMap, $tagCategoryOverrideMap)
+            : []
+    );
 
     function toggleTag(tag: string) {
         if (enabled.has(tag)) {
@@ -252,44 +246,22 @@
         }
     }
 
-    function selectAll(category?: string) {
-        const r = result;
-        if (!r) {
-            return;
-        }
-
-        const categoryTags = category
-            ? [r.categories[category] ?? []]
-            : Array(...Object.keys(r.categories)).map((c) => r.categories[c]);
-
-        for (const tags of categoryTags) {
-            for (const t of tags) {
-                enabled.add(t);
-            }
+    function selectAll(chips: TagChipView[]) {
+        for (const c of chips) {
+            enabled.add(c.tag);
         }
     }
 
-    function clearAll(category?: string) {
-        if (!category) {
-            enabled.clear();
-            customTags.clear();
-            return;
-        }
-
-        if (!result) {
-            return;
-        }
-
-        const tags = result.categories[category] ?? [];
-
-        for (const t of tags) {
-            enabled.delete(t);
+    function clearAll(name: string, chips: TagChipView[]) {
+        for (const c of chips) {
+            enabled.delete(c.tag);
         }
         // Drop custom tags assigned to this category too — the user is
-        // saying "remove everything in this category". Toggling the chip
-        // off is the alternative for a soft disable.
+        // saying "remove everything in this category". Absent starred tags
+        // (not custom) just get disabled above and stay force-shown; only
+        // real custom registrations are dropped.
         for (const [t, cat] of [...customTags]) {
-            if (cat === category) {
+            if (cat === name) {
                 customTags.delete(t);
                 enabled.delete(t);
             }
@@ -324,45 +296,25 @@
         }
     }
 
-    function buildPrunedResult(): TaggerResult {
-        const r = result!;
-        const prunedCategories: Record<string, string[]> = {};
-        const prunedTags: Record<string, number> = {};
-        for (const [cat, tags] of Object.entries(r.categories)) {
-            const kept = tags.filter((t) => enabled.has(t));
-            if (kept.length > 0) {
-                prunedCategories[cat] = kept;
-            }
+    /** Compute the saved pruned result and the persisted customization
+     *  snapshot in one pass. The routing / absent-starred / disabled rules
+     *  live in :func:`computeSelection` (extracted so they're testable and
+     *  can't drift between display, save, and persist). */
+    function buildSelection() {
+        if (!result) {
+            return undefined;
         }
-        // Layer custom tags on top — they carry their chosen category and a
-        // synthetic 100% score. Both draft formatters and the extras
-        // serializer treat them indistinguishably from a high-confidence
-        // model tag.
-        for (const [tag, cat] of customTags) {
-            if (!enabled.has(tag)) {
-                continue;
-            }
-            (prunedCategories[cat] ??= []).push(tag);
-            prunedTags[tag] = 1.0;
-        }
-        for (const tag of enabled) {
-            if (tag in prunedTags) {
-                continue;
-            }
-            if (tag in r.tags) {
-                prunedTags[tag] = r.tags[tag];
-            }
-        }
-        return { tags: prunedTags, categories: prunedCategories };
+        return computeSelection(result, enabled, customTags, $tagTierMap, $tagCategoryOverrideMap);
     }
 
     async function handleSave() {
-        if (!result) {
+        const sel = buildSelection();
+        if (!sel) {
             return;
         }
         isSaving = true;
         try {
-            await saveImageTagsAction(datasetName, item.id, buildPrunedResult());
+            await saveImageTagsAction(datasetName, item.id, sel.pruned);
             toast.success('Tags saved');
             onTagsSaved?.();
         } catch (e) {
@@ -398,38 +350,66 @@
         };
     }
 
-    const debouncedFetch = deferred(async (pruned: TaggerResult, opts: TagSaveOptions) => {
-        inflightController?.abort();
-        const controller = linkedController(parentSignal);
-        inflightController = controller;
-        previewLoading = true;
-        try {
-            previewText = await previewImageTags(
-                datasetName,
-                item.id,
-                pruned,
-                opts,
-                controller.signal
-            );
-        } catch (e) {
-            if ((e as Error).name !== 'AbortError') {
-                previewText = '';
+    const debouncedFetch = deferred(
+        async (args: {
+            pruned: TaggerResult;
+            opts: TagSaveOptions;
+            thresholds: {
+                rating_threshold: number | null;
+                general_threshold: number | null;
+                character_threshold: number | null;
+            };
+            customizations: TagCustomizations;
+        }) => {
+            inflightController?.abort();
+            const controller = linkedController(parentSignal);
+            inflightController = controller;
+            previewLoading = true;
+            try {
+                previewText = await previewImageTags(
+                    datasetName,
+                    item.id,
+                    args.pruned,
+                    args.opts,
+                    {
+                        ...args.thresholds,
+                        customizations: args.customizations
+                    },
+                    controller.signal
+                );
+            } catch (e) {
+                if ((e as Error).name !== 'AbortError') {
+                    previewText = '';
+                }
+            } finally {
+                previewLoading = false;
             }
-        } finally {
-            previewLoading = false;
-        }
-    }, 250);
+        },
+        250
+    );
 
     $effect(() => {
-        // Dependencies: result, saveMode, draftFormat, and the enabled set
-        // (read via buildPrunedResult so toggles retrigger).
-        if (!result) {
+        // Dependencies: result, saveMode, draftFormat, and the enabled /
+        // custom sets (read via buildSelection so toggles retrigger). The
+        // snapshot also doubles as the customization payload persisted to
+        // the backend cache, so the selection survives navigating away and
+        // back.
+        const sel = buildSelection();
+        if (!sel) {
             previewText = '';
             return;
         }
-        const pruned = buildPrunedResult();
         const opts = buildSaveOptions();
-        debouncedFetch(pruned, opts);
+        debouncedFetch({
+            pruned: sel.pruned,
+            opts,
+            thresholds: {
+                rating_threshold: ratingThreshold,
+                general_threshold: generalThreshold,
+                character_threshold: characterThreshold
+            },
+            customizations: sel.customizations
+        });
     });
 </script>
 
@@ -592,11 +572,12 @@
                     tags={result.categories[categoryName] ?? []}
                     {customTags}
                     {enabled}
+                    tiers={$tagTierMap}
                     ontoggle={toggleTag}
                     onremovecustom={removeCustomTag}
                     onaddcustom={(tag) => addCustomTag(categoryName, tag)}
-                    onselectall={() => selectAll(categoryName)}
-                    onclear={() => clearAll(categoryName)}
+                    onselectall={() => selectAll(cat.chips)}
+                    onclear={() => clearAll(categoryName, cat.chips)}
                 />
             {/each}
         </div>

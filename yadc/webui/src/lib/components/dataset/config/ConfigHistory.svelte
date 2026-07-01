@@ -105,7 +105,7 @@
     });
 </script>
 
-<div class="space-y-3 pb-4">
+<div class="space-y-3">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <h3 class="section-heading">Revision History</h3>

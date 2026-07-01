@@ -9,6 +9,7 @@ import type {
     TagJobInfo,
     TaggerModelSummary,
     TaggerResult,
+    TagCustomizations,
     TagSaveOptions,
     TagSuggestion
 } from './types';
@@ -202,20 +203,51 @@ export async function fetchTagResult(
 
 /** Preview what :func:`saveImageTags` would write, without touching disk.
  *  Returns formatter text (draft) / the ``[tags]`` TOML sub-table (extras) /
- *  empty string (none). */
+ *  empty string (none). When ``customizations`` is supplied it is also
+ *  persisted onto the backend's cached result for this image (same
+ *  cache bucket as the threshold options) so navigation restores the
+ *  selection. The threshold options are forwarded as query params so
+ *  the persist lands in the same bucket as the original POST /tag. */
 export async function previewImageTags(
     datasetName: string,
     imageId: number,
     result: TaggerResult,
     save: TagSaveOptions,
+    options: {
+        rating_threshold?: number | null;
+        general_threshold?: number | null;
+        character_threshold?: number | null;
+        customizations?: TagCustomizations | null;
+    } = {},
     signal?: AbortSignal
 ): Promise<string> {
+    const params = new URLSearchParams();
+    if (options.rating_threshold != null) {
+        params.set('rating_threshold', String(options.rating_threshold));
+    }
+    if (options.general_threshold != null) {
+        params.set('general_threshold', String(options.general_threshold));
+    }
+    if (options.character_threshold != null) {
+        params.set('character_threshold', String(options.character_threshold));
+    }
+    const qs = params.toString();
     const res = await fetch(
-        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/tags/preview`,
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/images/${imageId}/tags/preview${qs ? '?' + qs : ''}`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tags: result.tags, categories: result.categories, save }),
+            body: JSON.stringify({
+                tags: result.tags,
+                categories: result.categories,
+                save,
+                customizations: options.customizations
+                    ? {
+                          disabled: options.customizations.disabled,
+                          custom_tags: options.customizations.custom_tags
+                      }
+                    : null
+            }),
             signal
         }
     );

@@ -89,7 +89,7 @@
     {/if}
 
     <!-- Tab content -->
-    <div class="mt-4 flex-1" role="tabpanel">
+    <div class="flex-1 py-4" role="tabpanel">
         {@render children()}
     </div>
 </div>

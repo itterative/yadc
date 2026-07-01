@@ -15,6 +15,27 @@ from typing import Any
 
 
 @dataclass
+class TagCustomizations:
+    """User edits layered on top of a tag result for one image.
+
+    The model output (``tags`` / ``categories``) is the tagger's truth;
+    this carries the interactive selection the user made in the Tags
+    tab. ``disabled`` is the subset of model-result tags the user
+    turned off (stored rather than ``enabled`` so a cache-bucket change
+    — different model / thresholds — naturally defaults the new result
+    to all-on, and only the explicitly-turned-off tags carry over).
+    ``custom_tags`` mirrors :attr:`TaggerResult.categories` (category →
+    names) so each addition remembers where it was placed. Both are
+    optional (``None`` for raw model runs) and persist on the cached
+    :class:`TaggerResult` so navigating away and back restores the
+    selection.
+    """
+
+    disabled: list[str]
+    custom_tags: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass
 class TaggerResult:
     """Result of a tagging operation.
 
@@ -24,10 +45,15 @@ class TaggerResult:
         categories: Map of category name to the ordered list of tag
             names from ``tags`` that belong to it. Empty for taggers
             that don't categorize (flat output).
+        customizations: Optional user-edited selection layered on top
+            of the model output (kept tags + custom tags). ``None`` for
+            raw model runs; set by the interactive Tags tab. Carried
+            through the cache so navigation preserves the selection.
     """
 
     tags: dict[str, float]
     categories: dict[str, list[str]] = field(default_factory=dict)
+    customizations: TagCustomizations | None = None
 
 
 class Tagger(abc.ABC):
@@ -95,4 +121,9 @@ def tamer_result_size(result: TaggerResult) -> int:
     flat lists of strings). Cycles are broken by ``id()`` memoization.
     """
     seen: set[int] = set()
-    return _deep_size(result, seen) + _deep_size(result.tags, seen) + _deep_size(result.categories, seen)
+    total = _deep_size(result, seen) + _deep_size(result.tags, seen) + _deep_size(result.categories, seen)
+    if result.customizations is not None:
+        total += _deep_size(result.customizations, seen)
+        total += _deep_size(result.customizations.disabled, seen)
+        total += _deep_size(result.customizations.custom_tags, seen)
+    return total

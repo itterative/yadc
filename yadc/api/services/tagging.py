@@ -52,7 +52,7 @@ from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
 from yadc.api.services.settings import SettingsService
 from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags, format_draft
-from yadc.taggers.base import tamer_result_size
+from yadc.taggers.base import TagCustomizations, tamer_result_size
 from yadc.taggers.client import TaggerClient
 from yadc.taggers.postprocessing import replace_underscores as replace_underscores_in
 from yadc.utils import MemoryLRU, size_units
@@ -733,6 +733,10 @@ class TaggingService(Service):
         )
         if eff_replace:
             re_filtered = replace_underscores_in(re_filtered)
+        # User-edited selection is independent of thresholds / underscores —
+        # carry it through the refilter so reads don't wipe it. (The
+        # transform helpers above build fresh results and omit it.)
+        re_filtered.customizations = cached.customizations
         return re_filtered
 
     async def get_tag_result(
@@ -798,6 +802,40 @@ class TaggingService(Service):
                 del self._tag_results[key]
             except KeyError:
                 return False
+            return True
+
+    async def set_tag_customizations(
+        self,
+        dataset_name: str,
+        image_id: int,
+        customizations: TagCustomizations,
+        thresholds: TaggingThresholds | None = None,
+    ) -> bool:
+        """Attach a user-edited selection to the cached result for an image (best-effort).
+
+        Customizations ride on the cached :class:`TaggerResult` under
+        the same key as the model output (image + model + bucketed
+        thresholds), so a model / settings change naturally orphans
+        them — the user's edits apply only to the tagged result they
+        were made against. Returns ``True`` when an entry was updated,
+        ``False`` when no slot matches (never tagged / evicted / stale
+        settings) — a miss is silent: there is simply nothing to
+        remember the selection against yet.
+        """
+        eff_thresholds = thresholds or TaggingThresholds(
+            rating=self._configuration.tagger_rating_threshold,
+            general=self._configuration.tagger_general_threshold,
+            character=self._configuration.tagger_character_threshold,
+        )
+        key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
+        async with self._tag_lock:
+            cached = self._tag_results.get(key)
+            if cached is None:
+                return False
+            cached.customizations = customizations
+            # Re-insert so the size function re-measures (customizations
+            # changed the entry's byte cost) and the entry is promoted.
+            self._tag_results[key] = cached
             return True
 
     async def tag_image(

@@ -208,6 +208,4 @@
             />
         </div>
     </section>
-
-    <div class="h-2"></div>
 </div>

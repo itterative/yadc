@@ -1,5 +1,21 @@
 // Types matching the backend tagger API dataclasses / SSE events.
 
+/** User-edited selection layered on a cached tag result — mirrors
+ *  ``TagCustomizations`` (``yadc/taggers/base.py``). Persisted on the
+ *  backend result cache so navigation restores the selection.
+ *
+ *  ``disabled`` stores the model-result tags the user turned off
+ *  (not the enabled set) so a cache-bucket change defaults the new
+ *  result to all-on and only explicitly-disabled tags carry over.
+ *  ``custom_tags`` mirrors the result's ``categories`` shape
+ *  (category → names). */
+export interface TagCustomizations {
+    /** Model-result tags the user turned off. */
+    disabled: string[];
+    /** User-added tags grouped by category (mirrors ``categories``). */
+    custom_tags: Record<string, string[]>;
+}
+
 /** Per-image tag result — mirrors ``TaggerResult`` (``yadc/taggers/base.py``)
  *  and the JSON the synchronous ``tag`` endpoint returns. */
 export interface TaggerResult {
@@ -8,6 +24,9 @@ export interface TaggerResult {
     tags: Record<string, number>;
     /** Tags grouped by category (e.g. ``{rating, general, character}``). */
     categories: Record<string, string[]>;
+    /** Optional user-edited selection. ``null`` / undefined when the image
+     *  has only raw model output (never customized). */
+    customizations?: TagCustomizations | null;
 }
 
 /** Where / how a tag result is persisted for an image. Mirrors

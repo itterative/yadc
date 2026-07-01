@@ -5,6 +5,7 @@
     import { recentTags, recordRecentTag, removeRecentTag, tagSettings } from '$lib/stores/tagging';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
+    import { positionPopover } from './popover';
 
     interface Props {
         /** Category this input belongs to — shown as context on the add button. */
@@ -293,41 +294,12 @@
     let dropdownEl = $state<HTMLUListElement | null>(null);
 
     /** Recompute the dropdown's fixed position from the input's current rect
-     *  and clamp it into the viewport. Called on first show and on every
-     *  scroll / resize / content-reflow so the popover *follows* its anchor.
-     *
-     *  Returns ``false`` when the input has scrolled entirely out of the
-     *  viewport — the caller then hides via :func:`hideForAnchorLoss`. */
+     *  and clamp it into the viewport. Delegates to :func:`positionPopover`
+     *  (shared with :comp:`TagChip`'s category menu). Returns ``false`` when
+     *  the input has scrolled entirely out of the viewport — the caller then
+     *  hides via :func:`hideForAnchorLoss`. */
     function positionDropdown(el: HTMLElement, input: HTMLElement): boolean {
-        const rect = input.getBoundingClientRect();
-        const padding = 4;
-        if (rect.bottom < 0 || rect.top > window.innerHeight) {
-            return false;
-        }
-        const minWidth = Math.max(Math.round(rect.width), 160);
-
-        el.style.minWidth = `${minWidth}px`;
-        el.style.top = `${Math.round(rect.bottom + padding)}px`;
-        el.style.left = `${Math.round(rect.left)}px`;
-        if (!el.matches(':popover-open')) {
-            el.showPopover();
-        }
-
-        // Clamp into the viewport: flip above the input if there's no room
-        // below, and shift the leading edge left if it would run off the right.
-        const ddRect = el.getBoundingClientRect();
-        let top = rect.bottom + padding;
-        if (top + ddRect.height > window.innerHeight - padding) {
-            const flipped = rect.top - ddRect.height - padding;
-            top = Math.max(flipped, padding);
-        }
-        let left = rect.left;
-        if (left + ddRect.width > window.innerWidth - padding) {
-            left = Math.max(window.innerWidth - ddRect.width - padding, padding);
-        }
-        el.style.top = `${Math.round(top)}px`;
-        el.style.left = `${Math.round(left)}px`;
-        return true;
+        return positionPopover(el, input, { minWidthFloor: 160 });
     }
 
     $effect(() => {
