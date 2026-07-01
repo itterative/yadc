@@ -33,13 +33,15 @@ jobs:
     needs: extract-version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.13'
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
         with:
           version: latest
 
@@ -50,7 +52,7 @@ jobs:
 
       - name: Upload to release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: |
             dist/yadc-${{ needs.extract-version.outputs.version }}-py3-none-any.whl
@@ -58,7 +60,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: yadc-python-${{ needs.extract-version.outputs.version }}-ubuntu-latest
           path: |
@@ -94,17 +96,19 @@ jobs:
             exe_suffix: '.exe'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.13'
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
         with:
           version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
 
@@ -154,13 +158,13 @@ jobs:
 
       - name: Upload to release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
           fail_on_unmatched_files: true
 
       - name: Upload as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}-${{ matrix.os }}
           path: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
