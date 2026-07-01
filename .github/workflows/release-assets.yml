@@ -45,6 +45,18 @@ jobs:
         with:
           version: latest
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+
+      - name: Build SvelteKit frontend
+        shell: bash
+        run: |
+          pushd yadc/webui
+          npm ci
+          npm run build
+          popd
+
       - name: Update version files from tag
         shell: bash
         run: |
@@ -123,7 +135,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Update version files from tag
         shell: bash
@@ -154,10 +166,19 @@ jobs:
       - name: Run PyInstaller
         shell: bash
         run: |
+          # PyInstaller refuses ``--name`` when a spec file is supplied
+          # (the spec's ``EXE(..., name=...)`` is authoritative). Edit
+          # the spec in place so the output binary carries the
+          # versioned name. The pattern ``name='yadc-webui-{variant}'``
+          # is the same on both ``build_exe.spec`` and
+          # ``build_exe_gpu.spec`` (the GPU spec is identical except
+          # for the literal ``cpu`` → ``gpu``).
+          sed -i -E "s/name='yadc-webui-(cpu|gpu)'/name='yadc-webui-\1-${{ needs.extract-version.outputs.version }}'/" scripts/${{ matrix.spec }}
+          echo "--- updated spec name ---"
+          grep -E "^\s*name=" scripts/${{ matrix.spec }}
           uv run pyinstaller scripts/${{ matrix.spec }} \
             --distpath build/dist \
             --workpath build/work-${{ matrix.variant }} \
-            --name "yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}" \
             --clean
 
       - name: Show output
