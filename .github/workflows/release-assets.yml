@@ -107,18 +107,21 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            os_label: linux
             label: linux-cpu
             variant: cpu
             extra: ''
             spec: build_exe.spec
             exe_suffix: ''
           - os: windows-latest
+            os_label: windows
             label: windows-cpu
             variant: cpu
             extra: ''
             spec: build_exe.spec
             exe_suffix: '.exe'
           - os: windows-latest
+            os_label: windows
             label: windows-gpu
             variant: gpu
             extra: '--extra gpu'
@@ -178,7 +181,7 @@ jobs:
           # is the same on both ``build_exe.spec`` and
           # ``build_exe_gpu.spec`` (the GPU spec is identical except
           # for the literal ``cpu`` → ``gpu``).
-          sed -i -E "s/name='yadc-webui-(cpu|gpu)'/name='yadc-webui-\1-${{ needs.extract-version.outputs.version }}'/" scripts/${{ matrix.spec }}
+          sed -i -E "s/name='yadc-webui-(cpu|gpu)'/name='yadc-webui-${{ matrix.os_label }}-\1-${{ needs.extract-version.outputs.version }}'/" scripts/${{ matrix.spec }}
           echo "--- updated spec name ---"
           grep -E "^\s*name=" scripts/${{ matrix.spec }}
           uv run pyinstaller scripts/${{ matrix.spec }} \
@@ -197,12 +200,12 @@ jobs:
           # See the build-package step for why we pass ``tag_name``
           # explicitly instead of relying on auto-detect.
           tag_name: ${{ github.event.release.tag_name }}
-          files: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
+          files: build/dist/yadc-webui-${{ matrix.os_label }}-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
           fail_on_unmatched_files: true
 
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}-${{ matrix.os }}
-          path: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
+          name: yadc-webui-${{ matrix.os_label }}-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}
+          path: build/dist/yadc-webui-${{ matrix.os_label }}-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
           if-no-files-found: error
