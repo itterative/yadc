@@ -422,7 +422,7 @@
     </div>
 
     <!-- Inner tabs: Caption / Preview / Edit -->
-    <CompactPillTabs bind:value={activeTab} class="h-full pt-4">
+    <CompactPillTabs storageId="dataset/imageDetails" bind:value={activeTab} class="h-full pt-4">
         <Tab id="caption" label="Caption" icon={SvgSparkle} class="h-full">
             <Caption
                 {datasetName}

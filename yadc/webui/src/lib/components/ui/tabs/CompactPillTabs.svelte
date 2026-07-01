@@ -1,10 +1,15 @@
 <script lang="ts">
     import { createTabsState, setTabsContext } from './TabsContext.svelte';
+    import { loadStoredTabId, saveStoredTabId } from './tabState';
     import TabScroller from './TabScroller.svelte';
 
     interface Props {
         class?: string;
         value?: string;
+        /** When set, the active tab id is persisted to localStorage under
+         *  ``yadc/tab:<storageId>`` and restored on mount, so a refresh returns
+         *  the user to the same tab. Must be unique across tab instances. */
+        storageId?: string;
         hideSingle?: boolean;
         children: import('svelte').Snippet;
     }
@@ -12,6 +17,7 @@
     let {
         class: className = '',
         value = $bindable(''),
+        storageId,
         hideSingle = false,
         children
     }: Props = $props();
@@ -30,6 +36,30 @@
         if (idx !== -1 && idx !== state.activeIndex) {
             state.setActiveIndex(idx);
         }
+    });
+
+    // Persist the active tab across reloads when ``storageId`` is given.
+    // See Tabs.svelte for the restore-via-activeIndex rationale.
+    let restored = false;
+    $effect(() => {
+        if (restored || !storageId || state.tabs.length === 0) {
+            return;
+        }
+        restored = true;
+        const stored = loadStoredTabId(storageId);
+        if (stored) {
+            const idx = state.tabs.findIndex((t) => t.id === stored);
+            if (idx !== -1) {
+                state.setActiveIndex(idx);
+            }
+        }
+    });
+    $effect(() => {
+        const cur = currentValue;
+        if (!storageId || !restored || !cur) {
+            return;
+        }
+        saveStoredTabId(storageId, cur);
     });
 </script>
 

@@ -164,7 +164,7 @@
             <FabButton icon={SvgMenuLeft} label="Toggle panel" onclick={() => (open = !open)} />
         {/if}
     {/snippet}
-    <PillTabs bind:value={activeTab} class="min-h-0 flex-1">
+    <PillTabs storageId="prompts" bind:value={activeTab} class="min-h-0 flex-1">
         {#snippet end()}
             <button
                 class="cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"

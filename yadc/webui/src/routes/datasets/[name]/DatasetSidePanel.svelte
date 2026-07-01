@@ -42,7 +42,7 @@
 </script>
 
 <SidePanel bind:open onclose={onpanelclose}>
-    <PillTabs bind:value={panelTab} class="h-full flex-1">
+    <PillTabs storageId="dataset" bind:value={panelTab} class="h-full flex-1">
         {#snippet end()}
             <button
                 class="cursor-pointer p-1 text-gray-400 transition-colors hover:text-white lg:hidden"

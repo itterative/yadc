@@ -24,8 +24,9 @@ Patterns specific to the yadc webui frontend. For SvelteKit/Tailwind v4 setup se
 - **`PillTabs.svelte`** — Pre-styled variant (rounded-full buttons on border-bottom bar). Wraps `Tabs`.
 - **`CompactPillTabs.svelte`** — Compact segmented-control variant (`bg-gray-800/50` container, rounded-md buttons) with icon support. Uses `TabsContext` directly rather than wrapping `Tabs`.
 - **`Tab.svelte`** — Child that auto-registers via context during init via `untrack()` (synchronous, before parent renders). Shows/hides its slot content. Accepts optional `icon` prop.
+- **`tabState.ts`** — `storable<Record<string,string>>` under `yadc/tabState` persisting the last active tab id per storage scope. Read/written via `loadStoredTabId`/`saveStoredTabId`.
 
-`value` is bindable and uses `id` (not `label`) for matching.
+`value` is bindable and uses `id` (not `label`) for matching. The three hosts (`Tabs`, `PillTabs`, `CompactPillTabs`) accept an optional `storageId`: when set, the active tab id is persisted to `yadc/tabState[storageId]` (via `tabState.ts`) and restored on mount, so a refresh returns the user to the same tab. The restore is one-shot and writes `activeIndex` directly (not via `value`, which the declaration-ordered sync effects would clobber); a missing or stale stored id silently falls back to the first tab. `storageId` must be unique across tab instances.
 
 All existing usages (`EditDatasetDialog`, `AddDatasetDialog`,
 `SettingsDialog`, `ImageDetail` via `CompactPillTabs`, `SidePanel`,

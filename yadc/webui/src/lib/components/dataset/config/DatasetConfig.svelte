@@ -229,7 +229,7 @@
             {/if}
 
             <!-- ═══ View mode toggle ═══ -->
-            <CompactPillTabs bind:value={activeView} class="h-full">
+            <CompactPillTabs storageId="dataset/config" bind:value={activeView} class="h-full">
                 <Tab id="simplified" label="Form" icon={SvgFile} class="flex flex-col gap-4">
                     <DatasetConfigForm {source} {datasetName} {loadedConfigPath} {previewContent} />
                 </Tab>

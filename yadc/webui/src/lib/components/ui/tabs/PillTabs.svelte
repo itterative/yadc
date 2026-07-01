@@ -5,6 +5,7 @@
     interface Props {
         class?: string;
         value?: string;
+        storageId?: string;
         hideSingle?: boolean;
         end?: Snippet;
         children: Snippet;
@@ -13,13 +14,14 @@
     let {
         class: className = '',
         value = $bindable(''),
+        storageId,
         hideSingle = false,
         end,
         children
     }: Props = $props();
 </script>
 
-<Tabs class={className} bind:value {hideSingle} {end}>
+<Tabs class={className} bind:value {storageId} {hideSingle} {end}>
     {#snippet tab(t, isActive, onclick)}
         <button
             type="button"
