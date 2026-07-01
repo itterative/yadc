@@ -79,6 +79,11 @@ jobs:
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
+          # ``github.ref`` for a ``release: published`` run is the
+          # default branch, not the tag — the action's auto-detect
+          # then complains "GitHub Releases requires a tag". Pass the
+          # tag explicitly from the release event.
+          tag_name: ${{ github.event.release.tag_name }}
           files: |
             dist/yadc-${{ needs.extract-version.outputs.version }}-py3-none-any.whl
             dist/yadc-${{ needs.extract-version.outputs.version }}.tar.gz
@@ -189,6 +194,9 @@ jobs:
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
+          # See the build-package step for why we pass ``tag_name``
+          # explicitly instead of relying on auto-detect.
+          tag_name: ${{ github.event.release.tag_name }}
           files: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
           fail_on_unmatched_files: true
 
