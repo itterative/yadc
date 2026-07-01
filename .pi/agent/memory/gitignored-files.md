@@ -20,6 +20,7 @@ The root `.gitignore` is **deliberately trimmed** to project-specific patterns. 
 | `*.so` | C extensions (defensive) |
 | `*.egg-info/` | setuptools metadata (covers `yadc.egg-info/`) |
 | `.pytest_cache/`, `.ruff_cache/` | test/lint cache |
+| `dist/`, `build/` | PyInstaller desktop-.exe build outputs (see `docs/desktop-exe.md`) — intentionally narrow-scope; see note below |
 | `.env`, `.envrc` | secrets |
 | `.venv` | uv virtual env (uv default) |
 
@@ -33,6 +34,10 @@ The root `.gitignore` previously inherited the GitHub Python template, which inc
 
 - `env/` shadowed `yadc/webui/src/lib/stores/env/` — the env store was created on disk during a refactor but never tracked. Took a second such case (`lib/`) to surface and clean up.
 - `lib/` shadowed `yadc/webui/src/lib/` — `yadc/webui/.gitignore` worked around it with `!src/lib/`.
+
+### Exception: `dist/` and `build/` are now intentionally ignored
+
+The desktop-.exe build (commit `daad70b`) re-added `dist/` and `build/` to the root `.gitignore`. This is **safe** and intentional, not a regression of the collision above: no tracked content lives under any `dist/` or `build/` path. `yadc/webui/build/` (the SPA build output) was already ignored by `yadc/webui/.gitignore`'s anchored `/build` rule, and nothing else uses those directory names. If a future feature wants a tracked `build/` or `dist/` sub-folder, **rename the folder** rather than re-narrowing the gitignore — the broad rule is load-bearing for the PyInstaller outputs.
 
 If a new top-level sub-folder ever collides with a gitignore pattern, prefer to **remove the pattern** over adding a per-path negation. The cleanup itself is the prevention.
 

@@ -24,7 +24,7 @@ def _make_sse_events() -> tuple[SSEEvents, EventDispatcher]:
     config = Configuration()
     logging_factory = LoggingFactory(config)
     event_dispatcher = EventDispatcher(logging_factory)
-    job_scheduler = JobScheduler(logging_factory)
+    job_scheduler = JobScheduler(logging_factory, config)
     sse = SSEEvents(config, event_dispatcher, job_scheduler, logging_factory)
     event_dispatcher.register_service(sse)
     return sse, event_dispatcher

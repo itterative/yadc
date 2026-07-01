@@ -16,19 +16,22 @@ event) and then calling :meth:`join_all`.
 from __future__ import annotations
 
 import threading
+from logging import Logger
 from typing import Any, Callable
 
 from yadc.api.configuration import Configuration
 from yadc.api.events import ShutdownEvent
 from yadc.api.modules.event_dispatcher import event_handler
 
+from .logging_factory import LoggingFactory
 from .service import Service
 
 
 class ThreadFactory(Service):
     """Singleton factory for daemon background threads."""
 
-    def __init__(self, configuration: Configuration) -> None:
+    def __init__(self, configuration: Configuration, logging: LoggingFactory) -> None:
+        self._logger: Logger = logging.get_logger(__name__)
         self._threads: list[threading.Thread] = []
         self._lock: threading.Lock = threading.Lock()
         self._timeout: float = configuration.graceful_shutdown_threads_timeout
@@ -71,5 +74,11 @@ class ThreadFactory(Service):
             threads = list(self._threads)
             self._event.set()
 
+        self._logger.info("Stopping %d background threads. [timeout=%.1fs]", len(threads), self._timeout)
+
         for thread in threads:
-            thread.join(timeout=self._timeout)
+            try:
+                thread.join(timeout=self._timeout)
+            except RuntimeError:
+                # ``Thread.join`` raises for never-started threads (deferred-start workers whose ``on_startup`` never ran).
+                pass

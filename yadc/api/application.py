@@ -147,35 +147,52 @@ class Application(Module):
 
         import uvicorn
 
-        self.configure_services()
-        self.configure_controllers()
+        event_dispatcher: EventDispatcher | None = None
+        shutdown_dispatched: bool = False
+        try:
+            self.configure_services()
+            self.configure_controllers()
 
-        # NOTE: StartupEvent is dispatched from configure_app()'s before_serving
-        # callback, not here, so that async handlers have a running event loop.
-        self.configure_app()
+            # NOTE: StartupEvent is dispatched from configure_app()'s before_serving
+            # callback, not here, so that async handlers have a running event loop.
+            self.configure_app()
 
-        event_dispatcher = self.injector.get(EventDispatcher)
+            event_dispatcher = self.injector.get(EventDispatcher)
 
-        config = uvicorn.Config(
-            self.app,
-            host=self.configuration.http_host,
-            port=self.configuration.http_port,
-            # log_level intentionally omitted — UvicornLoggingConfig owns
-            # all uvicorn logger levels; passing it here would have
-            # uvicorn setLevel() them post-dictConfig and clobber that.
-            lifespan="on",
-            timeout_graceful_shutdown=self.configuration.graceful_shutdown_timeout,
-        )
-        server = uvicorn.Server(config)
+            config = uvicorn.Config(
+                self.app,
+                host=self.configuration.http_host,
+                port=self.configuration.http_port,
+                # log_level intentionally omitted — UvicornLoggingConfig owns
+                # all uvicorn logger levels; passing it here would have
+                # uvicorn setLevel() them post-dictConfig and clobber that.
+                lifespan="on",
+                timeout_graceful_shutdown=self.configuration.graceful_shutdown_timeout,
+            )
+            server = uvicorn.Server(config)
 
-        # Monkey-patch uvicorn's signal handler so we can dispatch ShutdownEvent
-        # *before* uvicorn starts waiting for connections to close. This lets SSE
-        # generators see the shutdown flag and exit cleanly.
-        _original_handle_exit = server.handle_exit
+            # Monkey-patch uvicorn's signal handler so we can dispatch ShutdownEvent
+            # *before* uvicorn starts waiting for connections to close. This lets SSE
+            # generators see the shutdown flag and exit cleanly.
+            _original_handle_exit = server.handle_exit
 
-        def _handle_exit(sig: int, frame: FrameType | None) -> None:
-            event_dispatcher.dispatch(ShutdownEvent())
-            _original_handle_exit(sig, frame)
+            def _handle_exit(sig: int, frame: FrameType | None) -> None:
+                nonlocal shutdown_dispatched
+                event_dispatcher.dispatch(ShutdownEvent())
+                shutdown_dispatched = True
+                _original_handle_exit(sig, frame)
 
-        server.handle_exit = _handle_exit  # type: ignore[method-assign]
-        server.run()
+            server.handle_exit = _handle_exit  # type: ignore[method-assign]
+
+            server.run()
+        finally:
+            # If startup raised before ``server.run()``, uvicorn's signal
+            # handler never fired and background threads (SSE ping, tagger
+            # idle check, dataset refresh) would keep emitting "Event loop
+            # not available" warnings. Dispatch here too. Safe to fire
+            # twice: handlers are idempotent.
+            if event_dispatcher is not None and not shutdown_dispatched:
+                try:
+                    event_dispatcher.dispatch(ShutdownEvent())
+                except Exception:
+                    pass

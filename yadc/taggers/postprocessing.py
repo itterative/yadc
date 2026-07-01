@@ -47,7 +47,5 @@ def replace_underscores(result: TaggerResult) -> TaggerResult:
     if not any(new != old for old, new in remap.items()):
         return result
     new_tags = {remap[tag]: score for tag, score in result.tags.items()}
-    new_categories = {
-        cat: [replace_underscore_for_tag(t) for t in tags] for cat, tags in result.categories.items()
-    }
+    new_categories = {cat: [replace_underscore_for_tag(t) for t in tags] for cat, tags in result.categories.items()}
     return TaggerResult(tags=new_tags, categories=new_categories)

@@ -1,0 +1,167 @@
+name: release-assets
+
+on:
+  release:
+    types: [published, prereleased]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-version:
+    name: Extract version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - id: extract
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            # workflow_dispatch — read version from pyproject.toml
+            TAG="$(grep '^version' pyproject.toml | head -1 | sed -E 's/version = "([^"]+)".*/\1/')"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building for version $VERSION (from $TAG)"
+
+  build-package:
+    name: Build sdist + wheel
+    needs: extract-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+
+      - name: Build sdist and wheel
+        run: |
+          uv build
+          ls -lh dist/
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/yadc-${{ needs.extract-version.outputs.version }}-py3-none-any.whl
+            dist/yadc-${{ needs.extract-version.outputs.version }}.tar.gz
+          fail_on_unmatched_files: true
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yadc-python-${{ needs.extract-version.outputs.version }}-ubuntu-latest
+          path: |
+            dist/yadc-${{ needs.extract-version.outputs.version }}-py3-none-any.whl
+            dist/yadc-${{ needs.extract-version.outputs.version }}.tar.gz
+          if-no-files-found: error
+
+  build:
+    name: ${{ matrix.label }}
+    needs: extract-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-cpu
+            variant: cpu
+            extra: ''
+            spec: build_exe.spec
+            exe_suffix: ''
+          - os: windows-latest
+            label: windows-cpu
+            variant: cpu
+            extra: ''
+            spec: build_exe.spec
+            exe_suffix: '.exe'
+          - os: windows-latest
+            label: windows-gpu
+            variant: gpu
+            extra: '--extra gpu'
+            spec: build_exe_gpu.spec
+            exe_suffix: '.exe'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          PYPROJECT_VERSION=$(grep '^version' pyproject.toml | head -1 | sed -E 's/version = "([^"]+)".*/\1/')
+          PKG_VERSION=$(grep '__version__' yadc/__init__.py | sed -E 's/__version__ = "([^"]+)".*/\1/')
+          echo "Tag:                 $VERSION"
+          echo "pyproject.toml:      $PYPROJECT_VERSION"
+          echo "yadc/__init__.py:    $PKG_VERSION"
+          if [[ "$VERSION" != "$PYPROJECT_VERSION" ]]; then
+            echo "::error::Tag version $VERSION does not match pyproject.toml ($PYPROJECT_VERSION). Bump pyproject.toml and run 'uv sync' before tagging."
+            exit 1
+          fi
+          if [[ "$PYPROJECT_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::pyproject.toml version $PYPROJECT_VERSION does not match yadc/__init__.py ($PKG_VERSION). Keep them in sync."
+            exit 1
+          fi
+
+      - name: Build SvelteKit frontend
+        shell: bash
+        run: |
+          pushd yadc/webui
+          npm ci
+          npm run build
+          popd
+
+      - name: Install yadc with [packaging${{ matrix.extra }}]
+        shell: bash
+        run: |
+          uv sync --extra packaging ${{ matrix.extra }}
+
+      - name: Run PyInstaller
+        shell: bash
+        run: |
+          uv run pyinstaller scripts/${{ matrix.spec }} \
+            --distpath build/dist \
+            --workpath build/work-${{ matrix.variant }} \
+            --name "yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}" \
+            --clean
+
+      - name: Show output
+        shell: bash
+        run: ls -lh build/dist/
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
+          fail_on_unmatched_files: true
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}-${{ matrix.os }}
+          path: build/dist/yadc-webui-${{ matrix.variant }}-${{ needs.extract-version.outputs.version }}${{ matrix.exe_suffix }}
+          if-no-files-found: error

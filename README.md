@@ -14,6 +14,12 @@ If you want to use it as an executable, you can also install it directly using y
 * with pipx, `pipx install git+https://github.com/itterative/yadc@0.8.1` then `yadc caption DATASET_TOML`
 * with uvx, `uv tool install git+https://github.com/itterative/yadc@0.8.1` then `yadc caption DATASET_TOML`
 
+### Desktop app (Windows)
+
+Pre-built `yadc-webui-cpu.exe` and `yadc-webui-gpu.exe` bundles are also
+shipped — see [docs/desktop-exe.md](docs/desktop-exe.md) for usage and how
+to build the .exe yourself.
+
 ### Requirements
 * Python 3.11 (or later)
 * OpenAI compatible API (e.g. koboldcpp) or Gemini API

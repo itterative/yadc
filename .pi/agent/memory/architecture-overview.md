@@ -35,3 +35,7 @@ Yet Another Dataset Captioner — a CLI tool for captioning image datasets using
 - `frontend-patterns` — frontend patterns (Tabs, Z-index, Topbar, Notifications, Drop-to-upload, SSE)
 - `webui-frontend` — SvelteKit/Tailwind v4 setup
 - `codemirror-quirks` — CodeMirror 6 sizing pitfalls
+
+## Top-level non-package directories
+
+- `scripts/` — standalone, not part of the `yadc/` importable package. Contains the desktop-.exe tooling: `entrypoints/webui_desktop.py` (PyInstaller entry point — mutates `sys.argv` then dispatches to `yadc.cli:cli`), `build_exe.spec` / `build_exe_gpu.spec` (PyInstaller specs), and `build_windows_exe.{ps1,sh}` (build drivers). See `plans/desktop-exe-plan` and `docs/desktop-exe.md`. CI build/publish lives in `.github/workflows/release-assets.yml`.

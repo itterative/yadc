@@ -7,3 +7,7 @@
 
 - [Advanced usage](/docs/ADVANCED_USAGE.md)  
   In-depth information for advanced usage for captioning your datasets.
+
+- [Desktop app (.exe)](/docs/desktop-exe.md)  
+  Building and using the standalone Windows `.exe` that ships the webui
+  without a Python install.

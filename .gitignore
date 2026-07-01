@@ -18,6 +18,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Desktop .exe build outputs — see docs/desktop-exe.md. ``dist/``
+# contains the PyInstaller artifacts, ``build/`` contains venvs and
+# the PyInstaller work tree. Both are recreated by
+# scripts/build_windows_exe.{ps1,sh}.
+dist/
+build/
+
 # Secrets / virtual envs
 .env
 .envrc

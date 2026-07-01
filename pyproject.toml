@@ -35,6 +35,13 @@ dependencies = [
 gpu = [
     "onnxruntime-gpu>=1.20.0",
 ]
+# Bundle the project as a standalone desktop .exe via PyInstaller. Not
+# needed for normal use; install with ``uv pip install -e '.[packaging]'``
+# (or ``pip install 'yadc[packaging]'``) before running
+# ``scripts/build_windows_exe.ps1``.
+packaging = [
+    "pyinstaller>=6.10.0",
+]
 
 [dependency-groups]
 dev = [
