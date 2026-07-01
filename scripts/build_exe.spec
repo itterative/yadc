@@ -48,7 +48,12 @@ DATA_FILES = [
 
     # Misc textual data shipped via the python package.
     (str(ROOT / 'yadc' / 'api' / 'banner.txt'), 'yadc/api'),
-    (str(ROOT / 'yadc' / 'templates' / 'jinja'), 'yadc/templates'),
+    # Destination must mirror the package path (``yadc/templates/jinja``)
+    # because ``yadc/templates/jinja/__init__.py`` makes it a real package
+    # and the loader resolves it via ``resources.files('yadc.templates.jinja')``.
+    # A plain ``yadc/templates`` destination would copy ``default.jinja`` into
+    # ``yadc/templates/`` instead of ``yadc/templates/jinja/``.
+    (str(ROOT / 'yadc' / 'templates' / 'jinja'), 'yadc/templates/jinja'),
     (str(ROOT / 'yadc' / 'prompt_generation' / 'prompts'), 'yadc/prompt_generation/prompts'),
 ]
 

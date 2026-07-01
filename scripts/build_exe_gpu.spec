@@ -31,7 +31,9 @@ DATA_FILES = [
     (str(ROOT / 'yadc' / 'webui' / 'build'), 'yadc/webui/build'),
     (str(ROOT / 'yadc' / 'api' / 'migrations'), 'yadc/api/migrations'),
     (str(ROOT / 'yadc' / 'api' / 'banner.txt'), 'yadc/api'),
-    (str(ROOT / 'yadc' / 'templates' / 'jinja'), 'yadc/templates'),
+    # Mirror the package path so the importlib.resources loader finds the
+    # templates; see build_exe.spec for the full rationale.
+    (str(ROOT / 'yadc' / 'templates' / 'jinja'), 'yadc/templates/jinja'),
     (str(ROOT / 'yadc' / 'prompt_generation' / 'prompts'), 'yadc/prompt_generation/prompts'),
 ]
 DATA_FILES += collect_data_files('jinja2')
