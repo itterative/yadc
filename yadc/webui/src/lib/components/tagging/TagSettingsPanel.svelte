@@ -1,6 +1,8 @@
 <script lang="ts">
     import { startBatchTagging, stopTagging, taggingStatuses } from '$lib/stores/tagging';
     import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import SvgSettings from '$lib/icons/SvgSettings.svelte';
     import SvgStar from '$lib/icons/SvgStar.svelte';
@@ -68,17 +70,15 @@
     </div>
 
     <!-- Footer: sticky start/stop button -->
-    <div class="shrink-0 border-t border-border p-4">
-        {#if isBatchTagging || isCancelling}
-            <button
-                class="btn w-full border-error/40 bg-error/20 px-4 py-2 text-sm text-error hover:bg-error/30"
-                onclick={handleStop}
-                disabled={isCancelling}
-            >
-                {isCancelling ? 'Cancelling...' : 'Cancel'}
-            </button>
-        {:else}
-            <button class="btn-primary w-full" onclick={handleStart}>Start</button>
-        {/if}
+    <div class="shrink-0 border-t border-border">
+        <ActionBar>
+            {#if isBatchTagging || isCancelling}
+                <ActionBarItem variant="danger" onclick={handleStop} disabled={isCancelling}>
+                    {isCancelling ? 'Cancelling...' : 'Cancel'}
+                </ActionBarItem>
+            {:else}
+                <ActionBarItem variant="primary" onclick={handleStart}>Start</ActionBarItem>
+            {/if}
+        </ActionBar>
     </div>
 </div>

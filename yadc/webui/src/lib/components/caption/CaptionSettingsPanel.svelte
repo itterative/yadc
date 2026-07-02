@@ -2,6 +2,8 @@
     import EnvSelector from '$lib/components/env/EnvSelector.svelte';
     import CaptionOptionsFields from '$lib/components/settings/CaptionOptionsFields.svelte';
     import type { CaptionOptionsDiffDefaults } from '$lib/components/settings/CaptionOptionsFields.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import {
         captionOptions as captionOptionsStore,
         startBatchCaptioning,
@@ -445,19 +447,21 @@
     </div>
 
     <!-- Footer: sticky start/stop button -->
-    <div class="flex-shrink-0 border-t border-border p-4">
-        {#if isBatchCaptioning}
-            <button
-                class="btn w-full border-error/40 bg-error/20 px-4 py-2 text-sm text-error hover:bg-error/30"
-                onclick={() => {
-                    stopCaptioning(_datasetName);
-                    _onclose?.();
-                }}
-            >
-                Stop Captioning
-            </button>
-        {:else}
-            <button class="btn-primary w-full" onclick={handleStart}> Start Captioning </button>
-        {/if}
+    <div class="shrink-0 border-t border-border">
+        <ActionBar>
+            {#if isBatchCaptioning}
+                <ActionBarItem
+                    variant="danger"
+                    onclick={() => {
+                        stopCaptioning(_datasetName);
+                        _onclose?.();
+                    }}
+                >
+                    Cancel
+                </ActionBarItem>
+            {:else}
+                <ActionBarItem variant="primary" onclick={handleStart}>Start</ActionBarItem>
+            {/if}
+        </ActionBar>
     </div>
 </div>

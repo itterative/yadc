@@ -4,6 +4,8 @@
     import SvgFile from '$lib/icons/SvgFile.svelte';
     import SvgEdit from '$lib/icons/SvgEdit.svelte';
     import SvgHistory from '$lib/icons/SvgHistory.svelte';
+    import ActionBar from '$lib/components/ui/ActionBar.svelte';
+    import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
     import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
     import Tab from '$lib/components/ui/tabs/Tab.svelte';
     import {
@@ -245,24 +247,15 @@
 
     <!-- Footer: sticky save button -->
     {#if !isLoading && !error && activeView !== 'history'}
-        <div class="shrink-0 border-t border-border p-4">
-            <div class="flex gap-2">
-                <button
-                    class="btn-secondary flex-1"
-                    onclick={() => loadConfig()}
-                    disabled={isSaving}
-                >
-                    <SvgRefresh class="mr-1 inline-block h-4 w-4" />
+        <div class="shrink-0 border-t border-border">
+            <ActionBar>
+                <ActionBarItem icon={SvgRefresh} onclick={() => loadConfig()} disabled={isSaving}>
                     Reload
-                </button>
-                <button
-                    class="btn-primary flex-1"
-                    onclick={handleSave}
-                    disabled={isSaving || !dirty}
-                >
-                    {isSaving ? 'Saving…' : 'Save Config'}
-                </button>
-            </div>
+                </ActionBarItem>
+                <ActionBarItem variant="primary" onclick={handleSave} disabled={isSaving || !dirty}>
+                    {isSaving ? 'Saving…' : 'Save'}
+                </ActionBarItem>
+            </ActionBar>
         </div>
     {/if}
 </div>
