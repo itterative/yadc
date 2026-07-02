@@ -101,13 +101,13 @@ Images that already have a draft with the given name are skipped. Use `--overwri
 
 ### Using drafts in the final caption
 
-When running `yadc caption` without `--draft`, all existing draft files for each image are read and made available as a `drafts` variable in the prompt template. This is a dictionary mapping draft names to their content. Note that `drafts` is only defined when at least one draft file exists, so your template should check for it.
+When running `yadc caption` without `--draft`, all existing draft files for each image are read and made available as a `drafts` variable in the prompt template. This is a dictionary mapping draft names to their content.
 
 Example template:
 ```jinja
 {% set user_prompt %}
 Provide a detailed description of the image within 1-2 paragraphs.
-{% if drafts is defined %}
+{% if drafts %}
 
 Use the following AI-generated drafts to refine your description:
 {% for name, text in drafts.items() %}
@@ -123,13 +123,11 @@ You can also reference individual drafts by name:
 ```jinja
 {% set user_prompt %}
 Describe the image.
-{% if drafts is defined %}
 {% if drafts.gemma %}
 Gemma's description: {{ drafts.gemma }}
 {% endif %}
 {% if drafts.qwen %}
 Qwen's description: {{ drafts.qwen }}
-{% endif %}
 {% endif %}
 {% endset %}
 ```

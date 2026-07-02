@@ -219,7 +219,7 @@ class Captioner(abc.ABC):
         """
 
         caption_rounds = kwargs.get("caption_rounds", [])
-        drafts = kwargs.get("drafts", None)
+        drafts = kwargs.get("drafts", {})
 
         return self._renderer.render(
             dataset_image,
