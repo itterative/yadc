@@ -30,6 +30,7 @@ class ExportBody(pydantic.BaseModel):
     caption_extension: str = ".txt"
     zip: bool = False
     include_images: bool = False
+    delimiter: str = "\n"
 
     model_config: ClassVar[pydantic.ConfigDict] = pydantic.ConfigDict(extra="forbid")
 
@@ -85,6 +86,10 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
             output (str):         Output file/dir path. Default: auto-detect.
             append (bool):        Append to existing output. Default: false.
             caption_extension (str): File extension for txt format. Default: ".txt".
+            delimiter (str):      String placed between the primary source and
+                                  chained drafts when more than one segment
+                                  contributes to the caption. Default: ``"\\n"``.
+                                  Ignored if there is nothing to chain.
         """
         body = validate_body(ExportBody, await request.get_json(silent=True))
         # ExportBody._resolve guarantees these are always set after validation.
@@ -154,6 +159,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                     caption_extension=body.caption_extension,
                     include_images=body.include_images,
                     base_dir=base_dir,
+                    delimiter=body.delimiter,
                 )
             except ValueError as e:
                 return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)
@@ -212,6 +218,7 @@ def api_export(app: ApiBlueprint, logging: LoggingFactory, datasets: DatasetServ
                 output=output_path,
                 append=body.append,
                 caption_extension=body.caption_extension,
+                delimiter=body.delimiter,
             )
         except ValueError as e:
             return jsonify_error(str(e), status=400, code=ErrorCode.BAD_REQUEST)

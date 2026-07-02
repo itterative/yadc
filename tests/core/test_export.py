@@ -191,6 +191,26 @@ class TestExportTxt:
         assert count == 2
         assert (out_dir / "img001.caption").read_text() == "gemma: anime girl\nqwen: colorful scene\n"
 
+    def test_export_txt_custom_delimiter(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+
+        count = run_export(
+            "sd-scripts",
+            images,
+            fmt="txt",
+            source="caption",
+            drafts=("gemma", "qwen"),
+            output=out_dir,
+            append=False,
+            caption_extension=".caption",
+            delimiter=". ",
+        )
+
+        assert count == 2
+        assert (out_dir / "img001.caption").read_text() == "1girl, hatsune miku, vocaloid. gemma: anime girl. qwen: colorful scene\n"
+
     def test_export_txt_alongside_images(self, tmp_images):
         tmp_path, images = tmp_images
 
@@ -621,6 +641,27 @@ class TestReadCaptionSource:
         with pytest.raises(ValueError, match="source must be"):
             read_caption_source(images[0], source="bogus")
 
+    def test_caption_with_custom_delimiter(self, tmp_images):
+        tmp_path, images = tmp_images
+        result = read_caption_source(images[0], source="caption", drafts=("test",), delimiter=". ")
+        assert result == "1girl, hatsune miku, vocaloid. draft: miku on stage"
+
+    def test_caption_with_double_newline_delimiter(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        result = read_caption_source(images[0], source="caption", drafts=("gemma", "qwen"), delimiter="\n\n")
+        assert result == "1girl, hatsune miku, vocaloid\n\ngemma: anime girl\n\nqwen: colorful scene"
+
+    def test_draft_with_custom_delimiter(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        result = read_caption_source(images[0], source="draft", drafts=("gemma", "qwen"), delimiter=" | ")
+        assert result == "gemma: anime girl | qwen: colorful scene"
+
+    def test_delimiter_with_single_segment(self, tmp_images):
+        tmp_path, images = tmp_images
+        # Delimiter is only used between segments; single-source exports join a one-element list.
+        result = read_caption_source(images[0], source="caption", delimiter="anything")
+        assert result == "1girl, hatsune miku, vocaloid"
+
 
 # ---- yadc backend: fixtures ----
 
@@ -804,3 +845,20 @@ class TestStreamingZip:
             assert all(name.endswith(".png") or name == "metadata.jsonl" for name in names)
             assert zf.testzip() is None
         assert count >= 1
+
+    def test_sd_scripts_zip_jsonl_custom_delimiter(self, tmp_images_multi_draft):
+        tmp_path, images = tmp_images_multi_draft
+        buf, count = run_export_zip_to_buf(
+            "sd-scripts",
+            images,
+            fmt="jsonl",
+            source="caption",
+            drafts=("gemma", "qwen"),
+            base_dir=tmp_path,
+            delimiter=". ",
+        )
+        assert count == 2
+        with zipfile.ZipFile(buf) as zf:
+            lines = zf.read("metadata.jsonl").decode().strip().split("\n")
+        entry = json.loads(lines[0])
+        assert entry["caption"] == "1girl, hatsune miku, vocaloid. gemma: anime girl. qwen: colorful scene"

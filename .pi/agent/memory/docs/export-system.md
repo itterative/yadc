@@ -56,6 +56,7 @@ For the `jsonl` and `json` zip variants, `image_path` values use the relative pa
 
 - `--draft <name>` — export a specific named draft instead of caption file
 - `--with-draft <name>` — append additional drafts after primary source (can be repeated)
+- `--delimiter <str>` — string placed between the primary source and each chained draft (default: `"\n"`). Only takes effect when more than one segment contributes to a caption (i.e., when chaining is active). The API exposes this as the `delimiter` field on the `POST /export` body (free-form string, default `"\n"`).
 - Default: reads from caption files
 
 ## Format Inference
@@ -69,5 +70,6 @@ For the `jsonl` and `json` zip variants, `image_path` values use the relative pa
 ```
 yadc export <dataset> [--backend sd-scripts] [--draft NAME] [--with-draft NAME]
                      [--format json|jsonl|txt] [--output PATH] [--append]
-                     [--caption-extension .txt] [--env ENV] [--user-config NAME]
+                     [--caption-extension .txt] [--delimiter DELIM]
+                     [--env ENV] [--user-config NAME]
 ```

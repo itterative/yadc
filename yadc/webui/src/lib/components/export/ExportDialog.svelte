@@ -51,6 +51,7 @@
     let draftName = $state('');
     let chainedDrafts: string[] = $state([]);
     let chainInput = $state('');
+    let delimiter = $state('\n');
     let outputPath = $state('');
     let append = $state(false);
     let captionExtension = $state('.txt');
@@ -67,6 +68,16 @@
     let remainingDrafts = $derived(
         availableDrafts.filter((d) => d !== draftName && !chainedDrafts.includes(d))
     );
+    // The delimiter is only used when multiple sources/drafts are joined — i.e.
+    // when the user has chained at least one extra draft. Reset to '\n' when
+    // chaining goes away so a stale custom value never silently affects a later
+    // export.
+    let chainingActive = $derived(chainedDrafts.length > 0);
+    $effect(() => {
+        if (!chainingActive) {
+            delimiter = '\n';
+        }
+    });
 
     // Size estimate: only zip exports that bundle images can grow large. yadc
     // (zip_only) always includes images; sd-scripts only when include_images is
@@ -196,6 +207,7 @@
             }
             if (chainedDrafts.length > 0) {
                 opts.with_drafts = chainedDrafts;
+                opts.delimiter = delimiter;
             }
 
             if (asZip) {
@@ -207,7 +219,8 @@
                     draft: source === 'draft' && draftName.trim() ? draftName.trim() : undefined,
                     with_drafts: chainedDrafts.length > 0 ? chainedDrafts : undefined,
                     caption_extension: captionExtension,
-                    include_images: includeImages
+                    include_images: includeImages,
+                    ...(chainedDrafts.length > 0 ? { delimiter } : {})
                 });
                 result = {
                     status: 'ok',
@@ -416,6 +429,22 @@
                                     + {d}
                                 </button>
                             {/each}
+                        </div>
+                    {/if}
+                    {#if chainingActive}
+                        <div class="mt-3 flex items-center gap-2">
+                            <label class="text-sm text-gray-400" for="chain-delimiter">
+                                Separator
+                            </label>
+                            <select
+                                id="chain-delimiter"
+                                class="input cursor-pointer"
+                                bind:value={delimiter}
+                            >
+                                <option value={'\n'}>Newline</option>
+                                <option value={'. '}>Period + space</option>
+                                <option value={'\n\n'}>Double newline</option>
+                            </select>
                         </div>
                     {/if}
                 </div>

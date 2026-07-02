@@ -21,6 +21,8 @@ def read_caption_source(
     image: DatasetImage,
     source: str,
     drafts: tuple[str, ...] = (),
+    *,
+    delimiter: str = "\n",
 ) -> str:
     """Read caption text from the chosen source, optionally appending drafts.
 
@@ -30,7 +32,10 @@ def read_caption_source(
                 When source is ``'draft'``, the first element of *drafts* is the
                 primary draft (required). Remaining elements are appended.
         drafts: Draft names to include. Order matters — they are joined with
-                ``\\n`` after the primary source.
+                *delimiter* after the primary source.
+        delimiter: String placed between every joined source/draft segment.
+                Defaults to ``"\\n"``, matching the prior hardcoded behavior.
+                Common presets: ``". "`` (sentences), ``"\\n\\n"`` (paragraphs).
 
     Returns:
         The combined text, stripped of whitespace.
@@ -67,4 +72,4 @@ def read_caption_source(
     else:
         raise ValueError(f'source must be "caption" or "draft", got {source!r}')
 
-    return "\n".join(parts)
+    return delimiter.join(parts)

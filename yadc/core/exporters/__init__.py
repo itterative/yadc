@@ -31,6 +31,7 @@ class _RunFn(Protocol):
         output: pathlib.Path | None,
         append: bool,
         caption_extension: str,
+        delimiter: str,
     ) -> int: ...
 
 
@@ -45,6 +46,7 @@ class _IterZipMembersFn(Protocol):
         caption_extension: str,
         include_images: bool,
         base_dir: pathlib.Path | None,
+        delimiter: str,
     ) -> tuple[Iterator[ZipMember], int]: ...
 
 
@@ -105,6 +107,7 @@ def run_export(
     output: pathlib.Path | None = None,
     append: bool = False,
     caption_extension: str = ".txt",
+    delimiter: str = "\n",
 ) -> int:
     """Dispatch to the named backend's ``run()`` function."""
     descriptor = get_backend(backend_name)
@@ -119,6 +122,7 @@ def run_export(
         output=output,
         append=append,
         caption_extension=caption_extension,
+        delimiter=delimiter,
     )
 
 
@@ -132,6 +136,7 @@ def stream_export_zip(
     caption_extension: str = ".txt",
     include_images: bool = False,
     base_dir: pathlib.Path | None = None,
+    delimiter: str = "\n",
 ) -> tuple[Iterator[bytes], int]:
     """Stream a dataset export as a zip64 archive.
 
@@ -152,5 +157,6 @@ def stream_export_zip(
         caption_extension=caption_extension,
         include_images=include_images,
         base_dir=base_dir,
+        delimiter=delimiter,
     )
     return stream_zip_bytes(members), count

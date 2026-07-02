@@ -45,6 +45,7 @@ def run(
     output: pathlib.Path | None = None,
     append: bool = False,
     caption_extension: str = ".txt",
+    delimiter: str = "\n",
 ) -> int:
     """Run the sd-scripts export.
 
@@ -60,16 +61,18 @@ def run(
                 or write caption files next to source images).
         append: Append to existing output.
         caption_extension: File extension for txt format (default: ``.caption``).
+        delimiter: String used to join primary source and chained drafts when
+                more than one segment contributes to the caption. Default ``"\\n"``.
 
     Returns:
         Number of entries/files written.
     """
     if fmt == "json":
-        return _export_json(images, output, source, drafts, append)
+        return _export_json(images, output, source, drafts, append, delimiter=delimiter)
     elif fmt == "jsonl":
-        return _export_jsonl(images, output, source, drafts, append)
+        return _export_jsonl(images, output, source, drafts, append, delimiter=delimiter)
     elif fmt == "txt":
-        return _export_txt(images, source, drafts, output, caption_extension, append)
+        return _export_txt(images, source, drafts, output, caption_extension, append, delimiter=delimiter)
     else:
         raise ValueError(f"Unknown format: {fmt}")
 
@@ -83,6 +86,7 @@ def iter_zip_members(
     caption_extension: str = ".txt",
     include_images: bool = False,
     base_dir: pathlib.Path | None = None,
+    delimiter: str = "\n",
 ) -> tuple[Iterator[ZipMember], int]:
     """Build the zip's entries for the sd-scripts export.
 
@@ -100,13 +104,13 @@ def iter_zip_members(
     members: list[ZipMember] = []
 
     if fmt == "json":
-        data, count = _build_json(images, source, drafts, base_dir)
+        data, count = _build_json(images, source, drafts, base_dir, delimiter=delimiter)
         members.append(bytes_member("metadata.json", data, now))
     elif fmt == "jsonl":
-        data, count = _build_jsonl(images, source, drafts, base_dir)
+        data, count = _build_jsonl(images, source, drafts, base_dir, delimiter=delimiter)
         members.append(bytes_member("metadata.jsonl", data, now))
     elif fmt == "txt":
-        captions, count = _build_txt(images, source, drafts, caption_extension, base_dir)
+        captions, count = _build_txt(images, source, drafts, caption_extension, base_dir, delimiter=delimiter)
         members.extend(bytes_member(name, text, now) for name, text in captions)
     else:
         raise ValueError(f"Unknown format: {fmt}")
@@ -124,12 +128,14 @@ def _collect_captions(
     images: list[DatasetImage],
     source: str,
     drafts: tuple[str, ...],
+    *,
+    delimiter: str = "\n",
 ) -> list[tuple[DatasetImage, str]]:
     """Collect (image, caption_text) pairs for all images with valid captions."""
     result: list[tuple[DatasetImage, str]] = []
     for image in images:
         try:
-            text = read_caption_source(image, source, drafts)
+            text = read_caption_source(image, source, drafts, delimiter=delimiter)
         except FileNotFoundError:
             continue
         if not text:
@@ -144,6 +150,8 @@ def _export_json(
     source: str,
     drafts: tuple[str, ...],
     append: bool,
+    *,
+    delimiter: str = "\n",
 ) -> int:
     if output_path is None:
         raise ValueError("output_path is required for json format")
@@ -161,7 +169,7 @@ def _export_json(
     count = 0
     for image in images:
         try:
-            text = read_caption_source(image, source, drafts)
+            text = read_caption_source(image, source, drafts, delimiter=delimiter)
         except FileNotFoundError:
             continue
         if not text:
@@ -182,10 +190,12 @@ def _build_json(
     source: str,
     drafts: tuple[str, ...],
     base_dir: pathlib.Path,
+    *,
+    delimiter: str = "\n",
 ) -> tuple[bytes, int]:
     data: dict[str, dict[str, str]] = {}
     count = 0
-    for image, text in _collect_captions(images, source, drafts):
+    for image, text in _collect_captions(images, source, drafts, delimiter=delimiter):
         data[relative_arc_name(image.absolute_path, base_dir)] = {"caption": text}
         count += 1
     return (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"), count
@@ -196,10 +206,12 @@ def _build_jsonl(
     source: str,
     drafts: tuple[str, ...],
     base_dir: pathlib.Path,
+    *,
+    delimiter: str = "\n",
 ) -> tuple[bytes, int]:
     lines: list[str] = []
     count = 0
-    for image, text in _collect_captions(images, source, drafts):
+    for image, text in _collect_captions(images, source, drafts, delimiter=delimiter):
         entry = {"image_path": relative_arc_name(image.absolute_path, base_dir), "caption": text}
         lines.append(json.dumps(entry, ensure_ascii=False))
         count += 1
@@ -213,6 +225,8 @@ def _export_jsonl(
     source: str,
     drafts: tuple[str, ...],
     append: bool,
+    *,
+    delimiter: str = "\n",
 ) -> int:
     if output_path is None:
         raise ValueError("output_path is required for jsonl format")
@@ -223,7 +237,7 @@ def _export_jsonl(
     with open(output_path, mode) as f:
         for image in images:
             try:
-                text = read_caption_source(image, source, drafts)
+                text = read_caption_source(image, source, drafts, delimiter=delimiter)
             except FileNotFoundError:
                 continue
             if not text:
@@ -242,10 +256,12 @@ def _build_txt(
     drafts: tuple[str, ...],
     caption_extension: str,
     base_dir: pathlib.Path,
+    *,
+    delimiter: str = "\n",
 ) -> tuple[list[tuple[str, bytes]], int]:
     out: list[tuple[str, bytes]] = []
     count = 0
-    for image, text in _collect_captions(images, source, drafts):
+    for image, text in _collect_captions(images, source, drafts, delimiter=delimiter):
         rel = relative_arc_name(image.absolute_path, base_dir)
         caption_rel = str(pathlib.PurePosixPath(rel).with_suffix(caption_extension))
         content = text if text.endswith("\n") else text + "\n"
@@ -274,11 +290,13 @@ def _export_txt(
     output_dir: pathlib.Path | None,
     caption_extension: str,
     append: bool,
+    *,
+    delimiter: str = "\n",
 ) -> int:
     count = 0
     for image in images:
         try:
-            text = read_caption_source(image, source, drafts)
+            text = read_caption_source(image, source, drafts, delimiter=delimiter)
         except FileNotFoundError:
             continue
         if not text:

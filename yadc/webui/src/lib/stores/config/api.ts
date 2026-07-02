@@ -31,6 +31,7 @@ export async function runExport(
         output?: string;
         append?: boolean;
         caption_extension?: string;
+        delimiter?: string;
     },
     signal?: AbortSignal
 ): Promise<ExportResult> {

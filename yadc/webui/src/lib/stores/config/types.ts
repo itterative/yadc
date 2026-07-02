@@ -26,6 +26,8 @@ export interface ExportZipOptions {
     with_drafts?: string[];
     caption_extension?: string;
     include_images?: boolean;
+    /** String placed between the primary source and chained drafts. Defaults to "\n". */
+    delimiter?: string;
 }
 
 export interface DatasetConfig {

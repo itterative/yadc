@@ -73,6 +73,17 @@ _EXPORT_MAP = {".json": "json", ".jsonl": "jsonl"}
     default=".txt",
     help="File extension for per-image caption files (txt format). Default: .txt.",
 )
+@click.option(
+    "--delimiter",
+    "delimiter",
+    type=str,
+    default="\n",
+    help=(
+        "String placed between the primary source and chained drafts when more "
+        "than one segment contributes to the caption. Default: a newline. "
+        "Examples: ', ', '. ', '\n\n'."
+    ),
+)
 @click.option("--env", type=str, default=None, help="Configuration environment")
 @click.option("--user-config", type=str, default=None, help="Base user config")
 @cli_common.log_level
@@ -85,6 +96,7 @@ def export(
     output: str | None,
     append: bool,
     caption_extension: str,
+    delimiter: str,
     env: str | None,  # pyright: ignore[reportUnusedParameter]
     user_config: str | None,  # pyright: ignore[reportUnusedParameter]
 ) -> None:
@@ -189,6 +201,7 @@ def export(
             output=output_path,
             append=append,
             caption_extension=caption_extension,
+            delimiter=delimiter,
         )
     except Exception as e:
         _logger.error("Error: %s", e)
