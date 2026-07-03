@@ -1,5 +1,6 @@
 import { derived } from 'svelte/store';
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 
 /** User-curated tag tiers, used to visually emphasise specific tags in the
  *  prune grid. Persisted globally (localStorage) for now — tag names only,
@@ -36,13 +37,26 @@ export const TIER_KEYS: Readonly<Record<TagTier, TierKey>> = {
     undesired: 'undesired'
 };
 
-export const tagHighlights = storable<TagHighlights>('yadc/tagHighlights', {
-    $version: 1,
-    starred: [],
-    desired: [],
-    undesired: [],
-    categoryOverrides: {}
+const TagHighlightsSchema = z.object({
+    $version: z.number(),
+    starred: z.array(z.string()).default([]),
+    desired: z.array(z.string()).default([]),
+    undesired: z.array(z.string()).default([]),
+    categoryOverrides: z.record(z.string(), z.string()).default({})
 });
+
+export const tagHighlights = storable(
+    'yadc/tagHighlights',
+    {
+        $version: 1,
+        starred: [],
+        desired: [],
+        undesired: [],
+        categoryOverrides: {}
+    },
+    null,
+    TagHighlightsSchema
+);
 
 /** Reactive ``tag → tier`` lookup. Re-derives whenever the store changes so
  *  chip rendering in the prune grid stays in sync with the customize tab. */

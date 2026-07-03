@@ -1,4 +1,5 @@
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 
 /** Persisted tagger UI settings. The thresholds are override candidates —
  *  ``null`` means "use the server config default" (the batch panel omits
@@ -28,7 +29,19 @@ export const CANONICAL_THRESHOLDS = {
     character: 0.85
 } as const;
 
-export const tagSettings = storable<TagSettings>(
+const TagSettingsSchema = z.object({
+    $version: z.number(),
+    ratingThreshold: z.number().nullable(),
+    generalThreshold: z.number().nullable(),
+    characterThreshold: z.number().nullable(),
+    replaceUnderscores: z.boolean(),
+    saveMode: z.enum(['none', 'draft', 'extras']),
+    draftName: z.string(),
+    draftFormat: z.string(),
+    overwrite: z.boolean()
+});
+
+export const tagSettings = storable(
     'yadc/tagSettings',
     {
         $version: 3,
@@ -42,5 +55,6 @@ export const tagSettings = storable<TagSettings>(
         overwrite: false
     },
     // v2 → v3: add ``overwrite`` (defaults off — preserve existing tags by default).
-    (data) => ({ ...(data as object), $version: 3, overwrite: false }) as TagSettings
+    (data) => ({ ...(data as object), $version: 3, overwrite: false }) as TagSettings,
+    TagSettingsSchema
 );

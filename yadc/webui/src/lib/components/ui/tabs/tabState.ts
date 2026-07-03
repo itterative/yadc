@@ -1,13 +1,14 @@
 import { get } from 'svelte/store';
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 
-interface TabStateMap {
-    $version: number;
+const TabStateSchema = z.object({
+    $version: z.number(),
     /** ``storageId`` -> last active tab id, keyed by the consuming tab host. */
-    tabs: Record<string, string>;
-}
+    tabs: z.record(z.string(), z.string()).default({})
+});
 
-const tabState = storable<TabStateMap>('yadc/tabState', { $version: 1, tabs: {} }, null);
+const tabState = storable('yadc/tabState', { $version: 1, tabs: {} }, null, TabStateSchema);
 
 /** Read the last-selected tab id for a given storage scope. Returns ``null``
  *  when unset. Callers are responsible for validating the id still exists in

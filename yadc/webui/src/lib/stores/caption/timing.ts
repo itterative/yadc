@@ -1,19 +1,22 @@
 import { derived, type Readable } from 'svelte/store';
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 
-interface TimingRingData {
-    $version: number;
-    timings: Record<string, number[]>;
-}
+const TimingRingSchema = z.object({
+    $version: z.number(),
+    timings: z.record(z.string(), z.array(z.number())).default({})
+});
 
 /** Per-API+model ring buffer of successful caption durations (ms),
  *  persisted to localStorage. Drives the ETA estimate in the topbar
  *  by averaging the per-image duration and dividing by
  *  ``max_concurrent``. */
-const _captionTimingRing = storable<TimingRingData>('yadc/captionTimingRing', {
-    $version: 1,
-    timings: {}
-});
+const _captionTimingRing = storable(
+    'yadc/captionTimingRing',
+    { $version: 1, timings: {} },
+    null,
+    TimingRingSchema
+);
 
 const MAX_TIMING_SAMPLES = 32;
 

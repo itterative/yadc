@@ -22,7 +22,7 @@ yadc/webui/src/lib/
   events.ts            # TypedEventSource — SSE with Zod validation
   async.ts             # debounce (async debounce+dedupe with AbortSignal support), sleep, synchronized, delayed helpers
   notifications.ts     # Browser Notification API helpers (permission, sending, first-use prompt)
-  storable.js          # localStorage-backed writable store
+  storable.ts          # localStorage-backed writable store (versioned, optional Zod schema, runtime fallback + quarantine on failure)
   random.ts            # Seeded PRNG for deterministic stub layouts
   upload.ts            # Promise-based XMLHttpRequest wrapper with upload progress tracking and AbortSignal support. Returns `UploadResponse` which implements `ResponseLike`.
   format.ts            # Shared formatting utilities — `formatBytes(bytes)` for human-readable file sizes

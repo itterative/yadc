@@ -1,4 +1,5 @@
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 
 export interface CaptionSettings {
     $version: number;
@@ -19,18 +20,39 @@ export interface CaptionSettings {
     apiModelName: string;
 }
 
-export const captionSettings = storable<CaptionSettings>('yadc/captionSettings', {
-    $version: 2,
-    env: 'default',
-    maxTokens: 512,
-    imageQuality: 'auto',
-    draftName: '',
-    overwrite: false,
-    rounds: 1,
-    batchSize: 1,
-    reasoningEnabled: false,
-    reasoningEffort: 'low',
-    selectedTemplate: 'default',
-    apiUrl: '',
-    apiModelName: ''
+const CaptionSettingsSchema = z.object({
+    $version: z.number(),
+    env: z.string(),
+    maxTokens: z.number(),
+    imageQuality: z.enum(['auto', 'high', 'low']),
+    draftName: z.string(),
+    overwrite: z.boolean(),
+    rounds: z.number(),
+    batchSize: z.number(),
+    reasoningEnabled: z.boolean(),
+    reasoningEffort: z.enum(['low', 'medium', 'high']),
+    selectedTemplate: z.string(),
+    apiUrl: z.string(),
+    apiModelName: z.string()
 });
+
+export const captionSettings = storable(
+    'yadc/captionSettings',
+    {
+        $version: 2,
+        env: 'default',
+        maxTokens: 512,
+        imageQuality: 'auto',
+        draftName: '',
+        overwrite: false,
+        rounds: 1,
+        batchSize: 1,
+        reasoningEnabled: false,
+        reasoningEffort: 'low',
+        selectedTemplate: 'default',
+        apiUrl: '',
+        apiModelName: ''
+    },
+    null,
+    CaptionSettingsSchema
+);

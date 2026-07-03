@@ -1,27 +1,34 @@
 import storable from '$lib/storable.js';
+import { z } from 'zod';
+
+const RecentTagSchema = z.object({
+    name: z.string(),
+    category: z.string()
+});
+
+const RecentTagsSchema = z.object({
+    $version: z.number(),
+    tags: z.array(RecentTagSchema).default([])
+});
 
 /** Recently-added tag, persisted to localStorage so the user can reuse tags
  *  they've added across images. ``category`` is the catalog category the tag
  *  was picked with, or ``'custom'`` for a tag the user typed manually. */
-export interface RecentTag {
-    name: string;
-    category: string;
-}
+export type RecentTag = z.infer<typeof RecentTagSchema>;
+
+/** Persisted shape. Inferred from ``RecentTagsSchema``. */
+export type RecentTagsData = z.infer<typeof RecentTagsSchema>;
 
 /** Maximum entries kept in localStorage. The dropdown only shows what fits in
  *  its scroll viewport anyway; 100 is a generous ceiling that keeps the
  *  persisted payload small. */
 export const RECENT_TAGS_MAX = 100;
 
-export interface RecentTagsData {
-    $version: number;
-    tags: RecentTag[];
-}
-
-export const recentTags = storable<RecentTagsData>(
+export const recentTags = storable(
     'yadc/recentTags',
     { $version: 1, tags: [] },
-    null
+    null,
+    RecentTagsSchema
 );
 
 /** Record (or refresh) a recently-added tag. Dedupes by name — the tag moves

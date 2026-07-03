@@ -1,4 +1,5 @@
 import storable from '$lib/storable.js';
+import { z } from 'zod';
 import type { PromptGenFocus, PromptImageQuality } from './types';
 
 /**
@@ -73,10 +74,24 @@ function migrateToCurrent(
     return { ...DEFAULTS, ...stored, $version: DEFAULTS.$version };
 }
 
-export const promptSettings = storable<PromptFormSettings>(
+const PromptFormSettingsSchema = z.object({
+    $version: z.number(),
+    mode: z.enum(['generate', 'refine']),
+    env: z.string(),
+    apiUrl: z.string(),
+    apiToken: z.string(),
+    apiModelName: z.string(),
+    intent: z.string(),
+    focus: z.enum(['system', 'user', 'both']),
+    maxTokens: z.number(),
+    imageQuality: z.enum(['auto', 'low', 'high'])
+});
+
+export const promptSettings = storable(
     'yadc/prompts/formSettings',
     DEFAULTS,
-    migrateToCurrent
+    migrateToCurrent,
+    PromptFormSettingsSchema
 );
 
 /** Reset to defaults and clear the localStorage entry. */
