@@ -79,6 +79,15 @@
         }
     });
 
+    /** Options for the chain-separator dropdown. Values are real characters
+     *  (newlines, etc.) — using a JS array keeps them out of `value={...}`
+     *  mustache literals where the lint rule wants HTML entities instead. */
+    const DELIMITER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+        { value: '\n', label: 'Newline' },
+        { value: '. ', label: 'Period + space' },
+        { value: '\n\n', label: 'Double newline' }
+    ];
+
     // Size estimate: only zip exports that bundle images can grow large. yadc
     // (zip_only) always includes images; sd-scripts only when include_images is
     // on. size_bytes is the image-only SQLite total — sidecars are <0.5% and
@@ -441,9 +450,9 @@
                                 class="input cursor-pointer"
                                 bind:value={delimiter}
                             >
-                                <option value={'\n'}>Newline</option>
-                                <option value={'. '}>Period + space</option>
-                                <option value={'\n\n'}>Double newline</option>
+                                {#each DELIMITER_OPTIONS as opt (opt.value)}
+                                    <option value={opt.value}>{opt.label}</option>
+                                {/each}
                             </select>
                         </div>
                     {/if}
