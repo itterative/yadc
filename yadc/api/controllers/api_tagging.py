@@ -58,6 +58,7 @@ from yadc.taggers.onnx_preprocess import list_profiles
 from yadc.taggers.postprocessing import replace_underscore_for_tag
 
 from ..configuration import Configuration
+from ..modules.dataset_watcher import SELF_JOB_ID
 from ..modules.logging_factory import LoggingFactory
 from ..modules.tagger_catalog import (
     KNOWN_TAGGER_MODELS,
@@ -350,8 +351,12 @@ def api_tagging(
         from yadc.taggers import TaggerResult
 
         result = TaggerResult(tags=dict(body.tags), categories={k: list(v) for k, v in body.categories.items()})
+        # ``source`` identifies the originating tab (``"ui:<uuid>"`` from a
+        # frontend tab) so the resulting ``DatasetChangedEvent`` can be
+        # suppressed by the originating tab. Mirrors the caption / draft /
+        # extras write endpoints.
         try:
-            await tagging.save_tags(name, image_info, result, body.save, source="tagger")
+            await tagging.save_tags(name, image_info, result, body.save, source=request.args.get("source", SELF_JOB_ID))
         except ValueError as exc:
             # ``save_tags`` → ``update_extras`` validates TOML; a malformed merge surfaces here.
             return jsonify_error(str(exc), status=400, code=ErrorCode.BAD_REQUEST)
@@ -391,6 +396,7 @@ def api_tagging(
         # Persist the selection onto the cached result (best-effort;
         # misses silently when the image was never tagged / evicted).
         if body.customizations is not None:
+
             def _float_arg(arg: str) -> float | None:
                 raw = request.args.get(arg)
                 return float(raw) if raw is not None else None
