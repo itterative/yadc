@@ -8,6 +8,7 @@ import {
     tagImage as apiTagImage
 } from './api';
 import { addCurrentlyTagging, removeCurrentlyTagging } from './inflight';
+import { snapshotTagPolicy } from './policy';
 import { resetTaggingStatus, setTaggingStatus, taggingStatuses } from './status';
 import { tagSettings } from './settings';
 import { registerJobId } from '../caption/jobs';
@@ -24,15 +25,20 @@ import type {
 
 // --- Assembled options store ---
 
-/** Threshold + save options assembled by the batch panel and read by the
- *  action functions. ``null`` thresholds mean "use server default" (omitted
- *  from the request). Written by TagSettingsPanel. */
+/** Threshold + save + policy options assembled by the batch panel and
+ *  read by the action functions. ``null`` thresholds mean "use server
+ *  default" (omitted from the request). Written by TagSettingsPanel.
+ *  ``policy`` is a snapshot of the ``tagPolicy`` storable so each
+ *  request carries the always-add / banned lists the user has
+ *  currently configured. */
 export interface TagOptions {
     rating_threshold?: number;
     general_threshold?: number;
     character_threshold?: number;
     replace_underscores?: boolean;
     save?: TagSaveOptions;
+    always_add?: string[];
+    banned?: string[];
     source?: string;
 }
 
@@ -57,6 +63,7 @@ export async function tagSingleImage(
     source?: string
 ): Promise<TaggerResult> {
     const options = get(tagOptions);
+    const policy = snapshotTagPolicy();
     addCurrentlyTagging(datasetName, imageId);
     try {
         return await apiTagImage(datasetName, imageId, {
@@ -64,6 +71,8 @@ export async function tagSingleImage(
             general_threshold: options.general_threshold,
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
+            always_add: policy.alwaysAdd,
+            banned: policy.banned,
             source
         });
     } finally {
@@ -87,6 +96,7 @@ export async function startBatchTagging(datasetName: string): Promise<string> {
         elapsed: 0
     });
     const options = get(tagOptions);
+    const policy = snapshotTagPolicy();
     try {
         const info: TagJobInfo = await apiStartTagJob(datasetName, {
             rating_threshold: options.rating_threshold,
@@ -94,6 +104,8 @@ export async function startBatchTagging(datasetName: string): Promise<string> {
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
             save: options.save,
+            always_add: policy.alwaysAdd,
+            banned: policy.banned,
             source: options.source
         });
         // Seed real status immediately so the progress bar appears without

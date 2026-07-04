@@ -41,3 +41,16 @@ The project now uses a **hybrid approach**:
 - **Pure thin events** for cases where no useful context can be provided (e.g. `DatasetChangedEvent` — the changed files are internal implementation details, frontend just refreshes)
 
 The convention: **prefer enriched thin events** for collection changes, **fat events** for per-item data that avoids a round-trip.
+
+## Notable exception: `image_tagged` in the Tags tab (2026-07-04)
+
+The Tags tab (`components/dataset/detail/Tags.svelte`) now handles
+`image_tagged` **thin-style**: the handler ignores the fat payload and
+bumps a local nonce that re-triggers the cached-result fetch
+(`fetchCachedTagResult`). Reason: the always-add / banned policy is a
+backend read-time transform, and the SSE payload carries the result
+computed with the *tagging request's* policy — which may be stale
+relative to the *viewer's* current policy. Refetching applies the
+viewer's current settings. This is the first per-item event handled
+thin-style; if the pattern holds up it may inform the broader
+standardization decision above.

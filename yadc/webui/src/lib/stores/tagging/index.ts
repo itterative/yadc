@@ -3,6 +3,7 @@ export * from './api';
 export * from './constants';
 export * from './highlights';
 export * from './inflight';
+export * from './policy';
 export * from './recentTags';
 export * from './results';
 export * from './selectionModel';

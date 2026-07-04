@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 7
+last_history: 9
 ---
 
 # Tagger Plan
@@ -107,6 +107,26 @@ Design history lives in `history/tagger-plan/`:
     working set. New `MemoryLRU` class shares the OrderedDict
     backbone with the existing count-limited `LRU`.
     See `history/tagger-plan/007`.
+17. **Phase I — Starred / desired / undesired highlight tiers on
+    the customisation tab.** `tagHighlights` storable
+    (`yadc/tagHighlights`, $version 1) holds three mutually-exclusive
+    tier lists + a `categoryOverrides` map; `tagTierMap` derived for
+    the per-image prune grid (visual fill on chips that match).
+    TierList + TagCustomize + TagChip + TagCategoryChips form a
+    consistent curation surface across the Customize and Tags tabs.
+    See `history/tagger-plan/008`.
+18. **Phase J — Always-add / banned policy** — new `TagPolicy` on
+    `TagJobOptions` and the single-image body; backend
+    `apply_policy` applies the policy as a **read-time transform** in
+    `_refilter` (thresholds → policy → `replace_underscores`). It is
+    **not** part of `TaggerResultKey` and **not** baked into the cached
+    value, so toggling a policy tag shows up on the next read of an
+    existing slot without re-tagging. Frontend `tagPolicy` storable +
+    new "Tags" section in TagSettings (two `PolicyList` instances:
+    always-add ↔ starred, banned ↔ undesired; tier members render
+    as quick-add buttons). Policy applies to model output only — the
+    user's explicit prune on the interactive save path isn't
+    second-guessed. See `history/tagger-plan/009`.
 
 ## Pending (future iterations)
 

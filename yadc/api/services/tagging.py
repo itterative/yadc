@@ -54,6 +54,7 @@ from yadc.api.services.settings import SettingsService
 from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags, format_draft
 from yadc.taggers.base import TagCustomizations, tamer_result_size
 from yadc.taggers.client import TaggerClient
+from yadc.taggers.postprocessing import TagPolicy, apply_policy
 from yadc.taggers.postprocessing import replace_underscores as replace_underscores_in
 from yadc.utils import MemoryLRU, size_units
 
@@ -147,7 +148,9 @@ class TagJobOptions(pydantic.BaseModel):
 
     ``image_ids`` omitted/empty → tag the whole dataset; otherwise tag
     just the listed images. Thresholds fall back to the server config
-    when unset. ``save`` controls per-image persistence.
+    when unset. ``save`` controls per-image persistence. ``policy``
+    auto-injects or removes tags from each result post-threshold (see
+    :class:`TagPolicy`).
     """
 
     image_ids: list[int] | None = None
@@ -157,6 +160,7 @@ class TagJobOptions(pydantic.BaseModel):
     replace_underscores: bool | None = None
     save: TagSaveOptions = pydantic.Field(default_factory=TagSaveOptions)
     source: str | None = None
+    policy: TagPolicy = pydantic.Field(default_factory=TagPolicy)
 
 
 @dataclass(frozen=True)
@@ -181,11 +185,11 @@ class TaggerResultKey:
       floors, so it's a subset of any stricter request and the
       effective thresholds can be reapplied at retrieval.
 
-    ``replace_underscores`` is **not** in the key. That transformation
-    is near-free (string replace) compared to running the model, so
-    we apply it post-hoc at retrieval instead of carrying it through
-    the key — one less axis to coordinate and one less reason for
-    cache thrashing.
+    ``replace_underscores`` and the always-add / banned policy are
+    **not** in the key. Both are near-free transforms applied post-hoc
+    at retrieval (see :meth:`TaggingService._refilter`), so a single
+    cache slot serves every variant of either — toggling a policy tag
+    shows up on the next read without re-tagging.
 
     Frozen so the dataclass-generated ``__hash__`` and ``__eq__`` are
     reliable: ``LRU`` uses the key as an ``OrderedDict`` key, which
@@ -683,6 +687,10 @@ class TaggingService(Service):
         because we never pre-filter ratings at write time (the request's
         effective rating is reapplied at retrieval instead).
 
+        The always-add / banned policy is intentionally **not** part of
+        the key — it's a read-time transform (see :meth:`_refilter`),
+        so a single slot serves every policy variant.
+
         Two keys with different effective values floor to different
         buckets (and never collide); keys with equal floors and the
         same model collide and reuse the slot.
@@ -714,16 +722,20 @@ class TaggingService(Service):
         cached: TaggerResult,
         eff_thresholds: TaggingThresholds,
         eff_replace: bool,
+        policy: TagPolicy | None = None,
     ) -> TaggerResult:
-        """Re-apply the request's effective thresholds + ``replace_underscores`` to a cached value.
+        """Re-apply the request's effective thresholds + policy + ``replace_underscores`` to a cached value.
 
         The cached value was filtered at the bucket floors
         (``rating=0``, ``general=bucket_general``, ``character=bucket_character``)
         at write time, which is always a permissive superset of any
         stricter request. Re-applying ``apply_thresholds`` at the
         request's effective values can therefore only drop more tags,
-        never add any. ``replace_underscores`` is a string transform
-        applied post-hoc so the cache can serve both with / without it.
+        never add any. The always-add / banned policy is then applied
+        via :func:`apply_policy` (injects missing always-add tags at
+        1.0, drops banned ones) and ``replace_underscores`` is a
+        string transform applied last so the cache can serve both
+        with / without it and every policy variant from one slot.
         """
         re_filtered = apply_thresholds(
             cached,
@@ -731,9 +743,11 @@ class TaggingService(Service):
             general_threshold=eff_thresholds.general,
             character_threshold=eff_thresholds.character,
         )
+        if policy is not None:
+            re_filtered = apply_policy(re_filtered, policy)
         if eff_replace:
             re_filtered = replace_underscores_in(re_filtered)
-        # User-edited selection is independent of thresholds / underscores —
+        # User-edited selection is independent of thresholds / underscores / policy —
         # carry it through the refilter so reads don't wipe it. (The
         # transform helpers above build fresh results and omit it.)
         re_filtered.customizations = cached.customizations
@@ -745,6 +759,7 @@ class TaggingService(Service):
         image_id: int,
         thresholds: TaggingThresholds | None = None,
         replace_underscores: bool | None = None,
+        policy: TagPolicy | None = None,
     ) -> TaggerResult | None:
         """Return the cached tag result for an image, re-applied at the caller's effective settings.
 
@@ -754,6 +769,12 @@ class TaggingService(Service):
         the config defaults are used — matching what :meth:`tag_image`
         falls back to when no per-request override is supplied.
 
+        ``policy`` is the request's intent for always-add / banned
+        tags; it's applied as a read-time transform (see
+        :func:`apply_policy`) and is **not** part of the cache key, so
+        toggling a policy tag shows up on the next read of an existing
+        slot without re-tagging.
+
         The cached value was filtered at the bucket floors, so we
         re-apply the *effective* thresholds (which are always ≥ bucket
         floors for a matching key) on the way out. A request whose
@@ -762,7 +783,7 @@ class TaggingService(Service):
 
         Returns ``None`` when no entry matches the bucketed key (either
         never tagged, evicted by LRU, or tagged under different
-        bucketed thresholds).
+        bucketed thresholds / model).
         """
         eff_thresholds = thresholds or TaggingThresholds(
             rating=self._configuration.tagger_rating_threshold,
@@ -775,7 +796,7 @@ class TaggingService(Service):
             cached = self._tag_results.get(key)
         if cached is None:
             return None
-        return self._refilter(cached, eff_thresholds, eff_replace)
+        return self._refilter(cached, eff_thresholds, eff_replace, policy)
 
     async def evict_tag_result(
         self,
@@ -789,7 +810,8 @@ class TaggingService(Service):
         matching entry was present (no error). The fingerprint rules
         match :meth:`get_tag_result` (modulo the bucketing — evicting
         drops only the bucketed-key slot, leaving any sibling slots
-        for the same image under different bucketed thresholds alone).
+        for the same image under different bucketed thresholds
+        alone).
         """
         eff_thresholds = thresholds or TaggingThresholds(
             rating=self._configuration.tagger_rating_threshold,
@@ -817,10 +839,12 @@ class TaggingService(Service):
         the same key as the model output (image + model + bucketed
         thresholds), so a model / settings change naturally orphans
         them — the user's edits apply only to the tagged result they
-        were made against. Returns ``True`` when an entry was updated,
-        ``False`` when no slot matches (never tagged / evicted / stale
-        settings) — a miss is silent: there is simply nothing to
-        remember the selection against yet.
+        were made against. The always-add / banned policy is not part
+        of the key, so policy changes don't orphan customizations.
+        Returns ``True`` when an entry was updated, ``False`` when no
+        slot matches (never tagged / evicted / stale settings) — a
+        miss is silent: there is simply nothing to remember the
+        selection against yet.
         """
         eff_thresholds = thresholds or TaggingThresholds(
             rating=self._configuration.tagger_rating_threshold,
@@ -846,6 +870,7 @@ class TaggingService(Service):
         replace_underscores: bool | None = None,
         source: str | None = None,
         job_id: str | None = None,
+        policy: TagPolicy | None = None,
     ) -> TaggerResult:
         """Tag a single image.
 
@@ -902,6 +927,7 @@ class TaggingService(Service):
             character=self._configuration.tagger_character_threshold,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
+        eff_policy = policy if policy is not None else TagPolicy()
         cache_key = self._tag_result_key(dataset_name, image_info.id, eff_thresholds)
 
         # --- Read-through cache: skip the model when the LRU already
@@ -915,7 +941,7 @@ class TaggingService(Service):
         async with self._tag_lock:
             cached = self._tag_results.get(cache_key)
         if cached is not None:
-            re_filtered = self._refilter(cached, eff_thresholds, eff_replace)
+            re_filtered = self._refilter(cached, eff_thresholds, eff_replace, eff_policy)
             # Yield once so the event loop can run other ready tasks
             # (idle check, in-flight cancellations) between back-to-back
             # cache hits in a batch. ``_refilter`` is the closest thing
@@ -989,9 +1015,10 @@ class TaggingService(Service):
 
         # Cache filtered at the bucket floors — a superset of any
         # stricter request (whose effective floors are ≥ bucket floors).
-        # ``replace_underscores`` is NOT applied to the cache value:
-        # it's a string transform applied post-hoc at retrieval so the
-        # slot can serve both with- and without-underscores requests.
+        # ``replace_underscores`` and the always-add / banned policy are
+        # NOT applied to the cache value: both are read-time transforms
+        # applied post-hoc at retrieval so the slot can serve every
+        # variant of either without re-tagging.
         bucketed = apply_thresholds(
             result,
             rating_threshold=cache_key.rating_threshold,
@@ -1002,8 +1029,10 @@ class TaggingService(Service):
         # Effective (request-specific) for caller + dispatched event.
         # Re-apply on top of the bucketed cache value; since effective
         # thresholds are always ≥ the bucket floors for a matching key,
-        # this only drops more tags, never adds any.
-        effective = self._refilter(bucketed, eff_thresholds, False)  # replace applied below
+        # this only drops more tags, never adds any. The policy is
+        # applied here too (injects always-add, drops banned) so the
+        # returned result and SSE event match what the caller asked for.
+        effective = self._refilter(bucketed, eff_thresholds, False, eff_policy)  # replace applied below
 
         duration_ms = int((time.monotonic() - start_t) * 1000)
         self._event_dispatcher.dispatch(
@@ -1036,12 +1065,15 @@ class TaggingService(Service):
         thresholds: TaggingThresholds | None = None,
         replace_underscores: bool | None = None,
         source: str | None = None,
+        policy: TagPolicy | None = None,
     ) -> TaggerResult:
         """Tag a single image, gated by the cross-service dataset coordinator.
 
         Wraps :meth:`tag_image` (which is also called internally by batch
         jobs) with a transient claim so a single-image tag can't overlap a
-        captioning run — or vice versa — on the same dataset.
+        captioning run — or vice versa — on the same dataset. ``policy``
+        auto-injects / removes tags from the result (see
+        :class:`TagPolicy`); ``None`` means no policy.
 
         Raises:
             DatasetBusyError: if another job kind holds the dataset (→ 409).
@@ -1055,6 +1087,7 @@ class TaggingService(Service):
                 thresholds=thresholds,
                 replace_underscores=replace_underscores,
                 source=source,
+                policy=policy,
             )
         finally:
             await self._dataset_jobs.release(claim)
@@ -1406,6 +1439,7 @@ class TaggingService(Service):
                 thresholds=self._thresholds_from_options(options),
                 replace_underscores=options.replace_underscores,
                 save=options.save,
+                policy=options.policy,
                 claim=claim,
                 # Seed progress with the preflight skip count so the bar
                 # starts at the right position (e.g. 40/50 when 40 were
@@ -1687,6 +1721,7 @@ class TaggingService(Service):
                         replace_underscores=state.replace_underscores,
                         source=state.source,
                         job_id=state.job_id,
+                        policy=state.policy,
                     )
 
                     if state.save.mode != "none":
@@ -1855,6 +1890,7 @@ class _TagJobState:
     thresholds: TaggingThresholds
     replace_underscores: bool | None
     save: TagSaveOptions
+    policy: TagPolicy
     claim: JobClaim
     status: TagJobStatus = "running"
     processed: int = 0

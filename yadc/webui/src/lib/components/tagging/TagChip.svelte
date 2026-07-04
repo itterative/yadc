@@ -115,7 +115,7 @@
     <span class="mr-1.5">
         {chip.tag}
 
-        {#if !chip.isCustom && !chip.absent}
+        {#if chip.score >= 0 && !chip.isCustom && !chip.absent}
             <span class="text-[95%] opacity-70">
                 {Math.round(chip.score * 100)}%
             </span>

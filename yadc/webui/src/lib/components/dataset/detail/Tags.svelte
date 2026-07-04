@@ -7,6 +7,7 @@
         onImageTagged,
         previewImageTags,
         saveImageTagsAction,
+        tagPolicy,
         tagSettings,
         tagSingleImage,
         tagTierMap,
@@ -41,10 +42,12 @@
     let { datasetName, item, onTagsSaved }: Props = $props();
 
     // The result for the focused image. Backend is the source of truth:
-    //   - Fetched from the LRU on mount + every image switch
-    //   - Updated in place by the Tag click response
-    //   - Updated in place by SSE ``image_tagged`` events that match
-    //     the focused image (registered via ``onImageTagged``)
+    //   - Fetched from the LRU on mount + every image switch + every
+    //     policy/threshold change + every matching SSE ``image_tagged``
+    //     event (thin-event style: the SSE payload is just a "this
+    //     image changed" signal; we refetch so the viewer's current
+    //     policy/thresholds are applied rather than the tagging
+    //     request's possibly-stale ones).
     let result = $state<TaggerResult | undefined>(undefined);
     let isLoadingResult = $state(false);
 
@@ -65,49 +68,87 @@
     let generalThreshold = $derived($tagSettings.generalThreshold);
     let characterThreshold = $derived($tagSettings.characterThreshold);
     let replaceUnderscores = $derived($tagSettings.replaceUnderscores);
+    // Policy lists are read reactively (not via ``get``) so toggling a
+    // tag in the always-add / banned Settings re-fetches the cached
+    // result — the policy is a backend read-time transform, so the
+    // new view shows up without re-tagging. Frozen-snapshot copies so
+    // the effect's dependency is the list identity, not deep contents.
+    let alwaysAdd = $derived(Object.freeze([...$tagPolicy.alwaysAdd]));
+    let banned = $derived(Object.freeze([...$tagPolicy.banned]));
+
+    // Bumped by the SSE handler to trigger a refetch of the cached
+    // result without touching the focused image. Acts as a reactive
+    // dependency the fetch effect reads — Svelte re-runs the effect on
+    // each bump. See the thin-events todo: ``image_tagged`` carries a
+    // fat payload, but we deliberately ignore it here and refetch so a
+    // policy change since the tag isn't undone by a stale payload.
+    let resultNonce = $state(0);
+    // Plain (non-reactive) mirror of the focused image id so the fetch
+    // effect can tell a real focus switch (clear + show loading) apart
+    // from a same-image refresh (SSE / policy edit: keep the stale
+    // result visible until the fresh one lands, no flash). Initial -1
+    // is a sentinel — image ids are positive auto-increment.
+    let focusedImageId: number = -1;
 
     $effect(() => {
-        // Re-fetch when the focused image changes. Aborts the previous
-        // request so an in-flight fetch for the old image can't land
-        // after we've already started showing the new image. Pass the
-        // current thresholds + replace_underscores so the read lands
-        // in the same cache bucket as the original POST /tag write.
-        // Depends on the ``$derived`` primitives above (not the raw store)
-        // so a save-bar settings change doesn't reload the result.
+        // Re-fetch when the focused image, thresholds, or policy change,
+        // or when an SSE ``image_tagged`` event bumps the nonce. Aborts
+        // the previous request so an in-flight fetch for the old image
+        // can't land after we've already started showing the new image.
+        // Passes the current thresholds + replace_underscores so the
+        // read lands in the same cache bucket as the original POST /tag
+        // write; the policy is a backend read-time transform forwarded
+        // here to apply over the cached value. Only clears + shows the
+        // loading state on a real focus switch — a same-image refresh
+        // (policy edit / SSE) keeps the stale result visible until the
+        // fresh one lands, so there's no flash.
+        void resultNonce;
+
+        const imageId = item.id;
         const controller = linkedController(parentSignal);
-        isLoadingResult = true;
-        result = undefined;
-        fetchCachedTagResult(
-            datasetName,
-            item.id,
-            {
-                rating_threshold: ratingThreshold,
-                general_threshold: generalThreshold,
-                character_threshold: characterThreshold,
-                replace_underscores: replaceUnderscores
-            },
-            controller.signal
-        )
-            .then((r) => {
-                result = r ?? undefined;
+        if (imageId !== focusedImageId) {
+            focusedImageId = imageId;
+            result = undefined;
+            isLoadingResult = true;
+        }
+
+        (async () => {
+            try {
+                result = await fetchCachedTagResult(
+                    datasetName,
+                    imageId,
+                    {
+                        rating_threshold: ratingThreshold,
+                        general_threshold: generalThreshold,
+                        character_threshold: characterThreshold,
+                        replace_underscores: replaceUnderscores,
+                        always_add: [...alwaysAdd],
+                        banned: [...banned]
+                    },
+                    controller.signal
+                ) ?? undefined;
+
                 isLoadingResult = false;
-            })
-            .catch((e) => {
+            } catch (e) {
                 if ((e as Error).name !== 'AbortError') {
                     result = undefined;
                     isLoadingResult = false;
                 }
-            });
+            }
+        })();
+
         return () => controller.abort();
     });
 
     $effect(() => {
         // Subscribe to per-image tagged events (SSE + future paths).
-        // Filters to the focused image — other tabs/images are
-        // unaffected. Unsubscribes on destroy.
-        return onImageTagged((ds, id, r) => {
+        // Thin-event handling: ignore the fat payload and bump the
+        // nonce so the fetch effect refetches with the viewer's current
+        // policy / thresholds applied. Filters to the focused image —
+        // other tabs/images are unaffected. Unsubscribes on destroy.
+        return onImageTagged((ds, id) => {
             if (ds === datasetName && id === item.id) {
-                result = r;
+                resultNonce++;
             }
         });
     });

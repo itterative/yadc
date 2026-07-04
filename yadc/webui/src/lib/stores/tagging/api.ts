@@ -32,6 +32,8 @@ export async function tagImage(
         general_threshold?: number;
         character_threshold?: number;
         replace_underscores?: boolean;
+        always_add?: string[];
+        banned?: string[];
         source?: string;
     } = {},
     signal?: AbortSignal
@@ -50,7 +52,9 @@ export async function tagImage(
                 rating_threshold: options.rating_threshold,
                 general_threshold: options.general_threshold,
                 character_threshold: options.character_threshold,
-                replace_underscores: options.replace_underscores
+                replace_underscores: options.replace_underscores,
+                always_add: options.always_add ?? [],
+                banned: options.banned ?? []
             }),
             signal
         }
@@ -73,6 +77,8 @@ export async function startTagJob(
         character_threshold?: number;
         replace_underscores?: boolean;
         save?: TagSaveOptions;
+        always_add?: string[];
+        banned?: string[];
         source?: string;
     } = {},
     signal?: AbortSignal
@@ -80,7 +86,11 @@ export async function startTagJob(
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/tag`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options),
+        body: JSON.stringify({
+            ...options,
+            always_add: options.always_add ?? [],
+            banned: options.banned ?? []
+        }),
         signal
     });
     if (!res.ok) {
@@ -160,9 +170,11 @@ export async function saveImageTags(
  *  or tagged under settings that no longer match the current config).
  *  Used by the interactive Tags tab on a fresh page load to surface
  *  results produced by an earlier batch job without re-running the
- *  model. The thresholds + replace_underscores options are passed
- *  through to the backend so the GET lands in the same cache bucket
- *  as the original POST /tag write. */
+ *  model. The thresholds options are passed through to the backend so
+ *  the GET lands in the same cache bucket as the original POST /tag
+ *  write. ``replace_underscores`` and the always-add / banned policy
+ *  are read-time transforms (not part of the cache key), so they
+ *  apply on top of whatever the original write cached. */
 export async function fetchTagResult(
     datasetName: string,
     imageId: number,
@@ -171,6 +183,8 @@ export async function fetchTagResult(
         general_threshold?: number | null;
         character_threshold?: number | null;
         replace_underscores?: boolean | null;
+        always_add?: string[];
+        banned?: string[];
     } = {},
     signal?: AbortSignal
 ): Promise<TaggerResult | null> {
@@ -186,6 +200,16 @@ export async function fetchTagResult(
     }
     if (options.replace_underscores != null) {
         params.set('replace_underscores', options.replace_underscores ? 'true' : 'false');
+    }
+    // Multi-valued params mirror the backend's ``request.args.getlist``
+    // (``?always_add=tag1&always_add=tag2``). Empty / undefined sends
+    // nothing — the backend interprets missing as an empty list, same
+    // as ``[]``, so a no-policy GET shares the empty-policy cache slot.
+    for (const t of options.always_add ?? []) {
+        params.append('always_add', t);
+    }
+    for (const t of options.banned ?? []) {
+        params.append('banned', t);
     }
     const qs = params.toString();
     const res = await fetch(
@@ -217,6 +241,8 @@ export async function previewImageTags(
         rating_threshold?: number | null;
         general_threshold?: number | null;
         character_threshold?: number | null;
+        always_add?: string[];
+        banned?: string[];
         customizations?: TagCustomizations | null;
     } = {},
     signal?: AbortSignal
@@ -230,6 +256,15 @@ export async function previewImageTags(
     }
     if (options.character_threshold != null) {
         params.set('character_threshold', String(options.character_threshold));
+    }
+    // ``always_add`` / ``banned`` mirror :func:`fetchTagResult`; the
+    // backend applies them as a read-time transform on the cached
+    // value (they are not part of the cache key).
+    for (const t of options.always_add ?? []) {
+        params.append('always_add', t);
+    }
+    for (const t of options.banned ?? []) {
+        params.append('banned', t);
     }
     const qs = params.toString();
     const res = await fetch(

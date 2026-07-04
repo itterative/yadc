@@ -32,6 +32,7 @@ from yadc.api.services.tagging import (
     TagSaveOptions,
 )
 from yadc.taggers.base import TaggerResult
+from yadc.taggers.postprocessing import TagPolicy
 
 from .conftest import make_client_mock, patch_client_factory, run_swap
 
@@ -1652,9 +1653,9 @@ class TestTaggerResultKey:
     def test_distinct_field_makes_keys_unequal(self) -> None:
         """Each field participates in equality — flipping any one breaks the match.
 
-        ``replace_underscores`` is no longer in the key (applied
-        post-hoc), so it's intentionally omitted from the
-        equality-breaking list.
+        ``replace_underscores`` and the always-add / banned policy are
+        not in the key (applied post-hoc at retrieval), so they're
+        intentionally omitted from the equality-breaking list.
         """
         base = self._make_key()
         for overrides in (
@@ -1713,3 +1714,129 @@ class TestBucketThreshold:
         from yadc.api.services.tagging import bucket_threshold
 
         assert bucket_threshold(-0.1) == 0.0
+
+
+class TestPolicyRoundTrip:
+    """Service-level write → read round-trip for the always-add / banned policy.
+
+    The policy is a read-time transform (see :func:`apply_policy`),
+    **not** part of the cache key. These tests pin the behaviour the
+    user-facing feature relies on: after tagging an image once, toggling
+    a policy tag is reflected on the next read of the same cache slot —
+    no re-tagging, and the underlying cached value is untouched.
+    """
+
+    def _tagged_result(self) -> TaggerResult:
+        return TaggerResult(
+            tags={"1girl": 0.99, "safe": 0.99, "nsfw": 0.6},
+            categories={"general": ["1girl", "nsfw"], "rating": ["safe"]},
+        )
+
+    def test_always_add_appears_on_read_without_retagging(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Tag once with no policy, then read with ``always_add`` → the tag is there.
+
+        This is the regression test for the original bug: when the policy
+        was baked into the cache key, the second read landed in a
+        different bucket and missed entirely (404), so the always-add tag
+        never appeared.
+        """
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        # Read the same slot with an always-add policy the original write
+        # didn't carry — the tag should be injected at 1.0 under general.
+        out = asyncio.run(service.get_tag_result("ds", 1, policy=TagPolicy(always_add=["masterpiece"])))
+        assert out is not None
+        assert out.tags["masterpiece"] == 1.0
+        assert "masterpiece" in out.categories["general"]
+
+    def test_banned_disappears_on_read_without_retagging(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Tag once, then read with ``banned`` → the tag is gone from this view."""
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        out = asyncio.run(service.get_tag_result("ds", 1, policy=TagPolicy(banned=["nsfw"])))
+        assert out is not None
+        assert "nsfw" not in out.tags
+        assert "nsfw" not in out.categories["general"]
+
+    def test_disabling_policy_reverts_to_model_output(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Read with policy, then read without → the raw model output comes back.
+
+        The cached value is never mutated by the policy, so toggling a
+        policy off restores the original result on the next read.
+        """
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        with_policy = asyncio.run(service.get_tag_result("ds", 1, policy=TagPolicy(always_add=["masterpiece"])))
+        assert with_policy is not None and "masterpiece" in with_policy.tags
+
+        without_policy = asyncio.run(service.get_tag_result("ds", 1))
+        assert without_policy is not None
+        assert "masterpiece" not in without_policy.tags
+        # Model output is intact.
+        assert without_policy.tags["1girl"] == 0.99
+        assert without_policy.tags["nsfw"] == 0.6
+
+    def test_cached_value_is_not_mutated_by_policy_read(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """Reading with a policy must not bake that policy into the cached slot."""
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        # Read with a policy that would inject / remove tags.
+        asyncio.run(service.get_tag_result("ds", 1, policy=TagPolicy(always_add=["masterpiece"], banned=["nsfw"])))
+
+        # A subsequent no-policy read returns the untouched model output.
+        out = asyncio.run(service.get_tag_result("ds", 1))
+        assert out is not None
+        assert "masterpiece" not in out.tags
+        assert out.tags["nsfw"] == 0.6
+
+    def test_always_add_wins_over_banned_on_read(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """A tag in both lists is kept (always-add semantics win) on the read path."""
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            asyncio.run(service.tag_image("ds", image_info))
+
+        out = asyncio.run(service.get_tag_result("ds", 1, policy=TagPolicy(always_add=["nsfw"], banned=["nsfw"])))
+        assert out is not None
+        assert out.tags["nsfw"] == 0.6  # original score, kept
+        assert "nsfw" in out.categories["general"]
+
+    def test_cold_path_return_value_reflects_policy(
+        self,
+        service: TaggingService,
+        image_info: ImageInfo,
+    ) -> None:
+        """``tag_image`` with a policy returns a result that already has it applied."""
+        client = make_client_mock(alive=True, tag_result=self._tagged_result())
+        with patch_client_factory(client):
+            result = asyncio.run(service.tag_image("ds", image_info, policy=TagPolicy(always_add=["masterpiece"], banned=["nsfw"])))
+        assert result.tags["masterpiece"] == 1.0
+        assert "masterpiece" in result.categories["general"]
+        assert "nsfw" not in result.tags

@@ -298,14 +298,14 @@ route into the `lib/stores/tagging/` domain.
 ## Result cache (`TaggingService._tag_results`)
 
 A bounded *bytes-aware* `MemoryLRU` keyed by `TaggerResultKey`
-(image identity + active model + bucketed thresholds). Capacity from
-`Configuration.tagger_result_max_memory_bytes` (default 128 MiB).
-The size function is `tamer_result_size` (recursive
-`sys.getsizeof` walk with `id()`-memoized cycle protection) so the
-budget accommodates large-vocab models like animetimm ConvNeXt
-(~12k tags per result) without the cache becoming a fixed-size
-window that's mostly empty for sparse buckets and mostly overflowed
-for the loose-bucket case.
+(image identity + active model + bucketed thresholds).
+Capacity from `Configuration.tagger_result_max_memory_bytes`
+(default 128 MiB). The size function is `tamer_result_size`
+(recursive `sys.getsizeof` walk with `id()`-memoized cycle
+protection) so the budget accommodates large-vocab models like
+animetimm ConvNeXt (~12k tags per result) without the cache
+becoming a fixed-size window that's mostly empty for sparse buckets
+and mostly overflowed for the loose-bucket case.
 
 `tag_image` is **read-through** on this LRU: a hit short-circuits
 the model run (no subprocess spawn, no image-byte read, no
@@ -315,6 +315,41 @@ dispatching `ImageTaggedEvent` with `duration_ms=0`. A miss falls
 through to the model as before and writes the new entry. LRU
 eviction order doesn't depend on entry size — values bigger than
 the budget are silently skipped rather than emptying the cache.
+
+### Tag policy (`TagPolicy`)
+
+`TagPolicy` is a stdlib dataclass + `apply_policy` is a pure
+transform, both in `yadc/taggers/postprocessing.py` (alongside
+`replace_underscores`) so the CLI can reach them without depending on
+the API service layer. `TagPolicy` rides on `TagJobOptions` (and the
+single-image body) with two `list[str]` fields: `always_add` (tags
+injected at score 1.0 into the `general` category on every tagged
+result) and `banned` (tags removed from the result entirely). The
+user configures them in the TagSettings tab's **Tags** section; the
+Customize tab's starred/undesired tiers render as quick-add
+shortcuts (the lists are independent — a starred tag doesn't have
+to be in always_add, and a ban-list entry doesn't have to be in
+the undesired tier). Policy is a **read-time transform** applied
+via :func:`apply_policy` inside `_refilter` (thresholds → policy →
+`replace_underscores`); it is **not** part of `TaggerResultKey` and
+is **not** baked into the cached value, so toggling a policy tag is
+reflected on the next read of an existing cache slot without
+re-tagging — and the cached model output stays untouched.
+
+Semantics:
+- `always_add` wins over `banned` for the same name (otherwise the
+  intent of "always have it" would be silently cancelled).
+- New always-add tags the model missed are injected at score 1.0
+  under `general` (mirrors how custom user tags score on the
+  interactive prune grid — formatters / cache consumers don't
+  need a separate "injected" path).
+- Banned tags are removed from both `tags` and every
+  `categories[cat]` list. Categories that end up empty after
+  filtering are omitted from the cached value.
+- Policy is only applied to **model output** (single-image POST +
+  batch loop). The interactive save endpoint (`POST
+  .../images/<id>/tags`) writes the user-pruned result as-is — a
+  user's explicit prune isn't second-guessed by a stale policy.
 
 ### Bucketing
 
@@ -350,13 +385,28 @@ transformation is a near-free string walk, applied post-hoc at
 retrieval so the slot can serve both with- and without-underscores
 requests without doubling key axes.
 
+### `TagPolicy` as a read-time transform (see also: Tag policy above)
+
+The always-add / banned policy is applied post-hoc at retrieval,
+like ``replace_underscores``. It is **not** part of the cache key
+and **not** baked into the cached value. This is deliberate: a
+policy is transformative (always_add adds tags; banned removes
+them), but applying it on read means a single cache slot serves
+every policy variant — toggling a policy tag shows up on the next
+read without re-tagging, and the cached model output is preserved
+verbatim for future policy changes.
+
 ### Public surface on `TaggingService`
 
-- `tag_image(...)` — read-through side effect; also writes the new
-  entry on a miss.
-- `get_tag_result(dataset, image_id, thresholds=, replace_underscores=)` —
+- `tag_image(..., policy=)` — read-through side effect; also writes
+  the new entry on a miss. The cached value is the bucketed
+  post-threshold model output (no policy); the returned result has
+  the caller's policy applied.
+- `get_tag_result(dataset, image_id, thresholds=, replace_underscores=, policy=)` —
   read-only companion; returns ``None`` on miss, otherwise the
-  cached value re-applied at the caller's effective thresholds.
+  cached value re-applied at the caller's effective thresholds with
+  the policy applied on the way out. ``policy`` is not part of the
+  key.
 - `evict_tag_result(...)` — drop the slot for the bucketed key
   (best-effort; returns ``bool``). Leaves any sibling slots for the
   same image under different bucketed thresholds alone.

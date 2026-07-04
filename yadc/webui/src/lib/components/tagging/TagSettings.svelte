@@ -2,12 +2,23 @@
     import {
         tagOptions as tagOptionsStore,
         tagSettings,
+        TAG_TIERS,
         CANONICAL_THRESHOLDS,
-        previewTagFormats
+        previewTagFormats,
+        alwaysAddList,
+        bannedList,
+        addToAlwaysAdd,
+        removeFromAlwaysAdd,
+        addToBanned,
+        removeFromBanned,
+        clearAlwaysAdd,
+        clearBanned,
+        TAG_CATEGORIES
     } from '$lib/stores/tagging';
     import type { TagSaveOptions, TaggerResult } from '$lib/stores/tagging';
     import Checkbox from '$lib/components/ui/Checkbox.svelte';
     import Slider from '$lib/components/ui/Slider.svelte';
+    import PolicyList from './PolicyList.svelte';
     import { deferred } from '$lib/async';
     import { get } from 'svelte/store';
     import { getAbortContext, linkedController } from '$lib/abort';
@@ -249,7 +260,7 @@
                 CANONICAL_THRESHOLDS.rating,
                 ratingOverridden,
                 (v) => (ratingThreshold = v),
-                () => resetThreshold('rating')
+                () => resetThreshold(TAG_CATEGORIES.rating)
             )}
             {@render thresholdRow(
                 'tag-general-threshold',
@@ -258,7 +269,7 @@
                 CANONICAL_THRESHOLDS.general,
                 generalOverridden,
                 (v) => (generalThreshold = v),
-                () => resetThreshold('general')
+                () => resetThreshold(TAG_CATEGORIES.general)
             )}
             {@render thresholdRow(
                 'tag-character-threshold',
@@ -267,7 +278,7 @@
                 CANONICAL_THRESHOLDS.character,
                 characterOverridden,
                 (v) => (characterThreshold = v),
-                () => resetThreshold('character')
+                () => resetThreshold(TAG_CATEGORIES.character)
             )}
         </div>
 
@@ -275,18 +286,40 @@
         <div class="mt-3 flex items-start gap-2">
             <Checkbox id="tag-replace-underscores" bind:checked={replaceUnderscores} />
             <div>
-                <label class="cursor-pointer text-sm" for="tag-replace-underscores"
-                    >Replace underscores with spaces</label
-                >
+                <label class="cursor-pointer text-sm" for="tag-replace-underscores">
+                    Replace underscores with spaces
+                </label>
+
                 <p class="text-xs text-gray-500">
-                    WD-tagger tags ship underscored (e.g. <code class="text-gray-400"
-                        >long_hair</code
-                    >). On, they read as <code class="text-gray-400">long hair</code> in results and
-                    saves. Kaomojis (e.g. <code class="text-gray-400">^_^</code>) are always
-                    preserved.
+                    WD-tagger tags ship underscored (e.g. <code>long_hair</code>). On, they read as
+                    <code>long hair</code>
+                    in results and saves. Kaomojis (e.g. <code>^_^</code>) are always preserved.
                 </p>
             </div>
         </div>
+    </section>
+
+    <!-- ═══ Section: Tags ═══ -->
+    <section class="space-y-4">
+        <PolicyList
+            title="Always add"
+            description="Forced into every tagged image's result at score 1.0. Use this for tags you want on every image in the dataset (e.g. quality markers)."
+            list={alwaysAddList}
+            tier={TAG_TIERS.starred}
+            onadd={addToAlwaysAdd}
+            onremove={removeFromAlwaysAdd}
+            activeFillClass="border-amber-400/60 bg-amber-400/20 text-amber-300"
+        />
+
+        <PolicyList
+            title="Banned"
+            description="Removed from every tagged image's result entirely. Use this for tags that should never appear regardless of the model's confidence (e.g. content you don't want in the dataset)."
+            list={bannedList}
+            tier={TAG_TIERS.undesired}
+            onadd={addToBanned}
+            onremove={removeFromBanned}
+            activeFillClass="border-rose-400/60 bg-rose-400/20 text-rose-300"
+        />
     </section>
 
     <!-- ═══ Section: Save ═══ -->
@@ -316,14 +349,14 @@
                     </p>
                 {:else if saveMode === 'draft'}
                     <p class="mt-2 text-xs text-gray-500">
-                        Writes formatted tag text to a draft sidecar file per image (e.g. <code
-                            class="text-gray-400">&lt;id&gt;.{assembledSave.draft_name}.draft~</code
-                        >). Used as the training caption for image-generation fine-tuning.
+                        Writes formatted tag text to a draft sidecar file per image (e.g.
+                        <code>{`<id>.${assembledSave.draft_name}.draft~`}</code>). Used as the
+                        training caption for image-generation fine-tuning.
                     </p>
                 {:else}
                     <p class="mt-2 text-xs text-gray-500">
-                        Merges a <code class="text-gray-400">[tags]</code> section into each image's TOML,
-                        preserving other keys.
+                        Merges a <code>[tags]</code> section into each image's TOML, preserving other
+                        keys.
                     </p>
                 {/if}
             </div>
@@ -331,9 +364,9 @@
                 <div class="flex items-start gap-2">
                     <Checkbox id="tag-overwrite-batch" bind:checked={overwrite} />
                     <div>
-                        <label class="cursor-pointer text-sm" for="tag-overwrite-batch"
-                            >Overwrite existing tags</label
-                        >
+                        <label class="cursor-pointer text-sm" for="tag-overwrite-batch">
+                            Overwrite existing tags
+                        </label>
                         <p class="text-xs text-gray-500">
                             When off (default), images that already have a saved {saveMode ===
                             'draft'
@@ -373,6 +406,7 @@
                 </div>
             {/if}
             {#if saveMode === 'draft' || saveMode === 'extras'}
+                {@const _previewText = previewText || '(empty)'}
                 <div class="rounded-md border border-border bg-gray-900/40 p-2">
                     <div class="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
                         <span>Preview</span>
@@ -381,10 +415,17 @@
                         {/if}
                     </div>
                     <pre
-                        class="overflow-x-auto font-mono text-xs wrap-break-word whitespace-pre-wrap text-gray-300">{previewText ||
-                            '(empty)'}</pre>
+                        class="overflow-x-auto font-mono text-xs wrap-break-word whitespace-pre-wrap text-gray-300">{_previewText}</pre>
                 </div>
             {/if}
         </div>
     </section>
 </div>
+
+<style lang="postcss">
+    @reference "tailwindcss";
+
+    code {
+        @apply text-gray-400;
+    }
+</style>

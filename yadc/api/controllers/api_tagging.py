@@ -55,7 +55,7 @@ import pydantic
 from quart import Response, jsonify, request
 
 from yadc.taggers.onnx_preprocess import list_profiles
-from yadc.taggers.postprocessing import replace_underscore_for_tag
+from yadc.taggers.postprocessing import TagPolicy, replace_underscore_for_tag
 
 from ..configuration import Configuration
 from ..modules.dataset_watcher import SELF_JOB_ID
@@ -88,6 +88,7 @@ class TagImageBody(pydantic.BaseModel):
     general_threshold: float | None = None
     character_threshold: float | None = None
     replace_underscores: bool | None = None
+    policy: TagPolicy = pydantic.Field(default_factory=TagPolicy)
 
 
 class TagCustomizationsBody(pydantic.BaseModel):
@@ -207,6 +208,7 @@ def api_tagging(
                 thresholds=thresholds,
                 replace_underscores=body.replace_underscores,
                 source=source,
+                policy=body.policy,
             )
         except DatasetBusyError as exc:
             return jsonify_error(str(exc), status=409, code=ErrorCode.CONFLICT)
@@ -285,10 +287,13 @@ def api_tagging(
         Used by the interactive Tags tab on a fresh page load to
         surface a result that was produced by an earlier batch job or
         single-image tag. The cache key fingerprint includes thresholds
-        and ``replace_underscores``; callers pass the same values
-        they'd use for POST so the read lands in the same bucket as
-        the original write. Any field omitted falls back to the server
-        config (matching the POST behaviour).
+        (and model); ``replace_underscores`` and the always-add / banned
+        policy are read-time transforms applied to the cached value, so
+        they don't need to match the original write to hit the slot.
+
+        ``always_add`` and ``banned`` are optional multi-valued query
+        params (caller may repeat the key, e.g. ``?always_add=tag1&always_add=tag2``).
+        Absent → the empty list (no policy applied).
 
         Returns ``404`` when no entry matches (never tagged, evicted
         by LRU, or tagged under a different model / settings).
@@ -321,11 +326,18 @@ def api_tagging(
             if any(v is not None for v in (rating, general, character))
             else None
         )
+        # ``getlist`` returns every value for a repeated query key
+        # (``?always_add=a&always_add=b`` → ``["a", "b"]``). Absent → ``[]``.
+        always_add = request.args.getlist("always_add")
+        banned = request.args.getlist("banned")
+        policy = TagPolicy(always_add=always_add, banned=banned)
+
         result = await tagging.get_tag_result(
             name,
             image_id,
             thresholds=thresholds,
             replace_underscores=replace,
+            policy=policy,
         )
         if result is None:
             return jsonify_error("No cached tag result for this image", status=404, code=ErrorCode.NOT_FOUND)
