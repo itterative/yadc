@@ -321,20 +321,36 @@ the budget are silently skipped rather than emptying the cache.
 `TagPolicy` is a stdlib dataclass + `apply_policy` is a pure
 transform, both in `yadc/taggers/postprocessing.py` (alongside
 `replace_underscores`) so the CLI can reach them without depending on
-the API service layer. `TagPolicy` rides on `TagJobOptions` (and the
-single-image body) with two `list[str]` fields: `always_add` (tags
-injected at score 1.0 into the `general` category on every tagged
-result) and `banned` (tags removed from the result entirely). The
-user configures them in the TagSettings tab's **Tags** section; the
-Customize tab's starred/undesired tiers render as quick-add
-shortcuts (the lists are independent — a starred tag doesn't have
-to be in always_add, and a ban-list entry doesn't have to be in
-the undesired tier). Policy is a **read-time transform** applied
-via :func:`apply_policy` inside `_refilter` (thresholds → policy →
-`replace_underscores`); it is **not** part of `TaggerResultKey` and
-is **not** baked into the cached value, so toggling a policy tag is
-reflected on the next read of an existing cache slot without
-re-tagging — and the cached model output stays untouched.
+the API service layer. `TagPolicy` carries two `list[str]` fields:
+`always_add` (tags injected at score 1.0 into the `general`
+category on every tagged result) and `banned` (tags removed from
+the result entirely). The user configures them in the TagSettings
+tab's **Tags** section; the Customize tab's starred/undesired
+tiers render as quick-add shortcuts (the lists are independent — a
+starred tag doesn't have to be in always_add, and a ban-list entry
+doesn't have to be in the undesired tier).
+
+**Storage** — per dataset, not per request. The lists live in
+the `dataset_settings` table (SQLite) under keys
+`policy_always_add` / `policy_banned`, served by
+`yadc/api/services/tag_policy_service.py` (`get(dataset_name)` /
+`set(dataset_name, policy)`). Request bodies no longer carry the
+fields: `TagImageBody`, `TagJobOptions`, and the GET cache-read
+endpoint all delegate to the stored policy, which
+:class:`TaggingService._resolve_policy` reads at request / job
+start. Resolution order: explicit `policy=` kwarg (service-level
+unit tests) → `TagPolicyService.get(dataset_name)` → empty
+`TagPolicy()` (no policy service injected).
+
+The Customize tab's starred/undesired tiers are a separate global
+data flow — see **Tag highlights** below.
+
+Policy is a **read-time transform** applied via :func:`apply_policy`
+inside `_refilter` (thresholds → policy → `replace_underscores`);
+it is **not** part of `TaggerResultKey` and is **not** baked into
+the cached value, so toggling a policy tag is reflected on the next
+read of an existing cache slot without re-tagging — the cached
+model output stays untouched.
 
 Semantics:
 - `always_add` wins over `banned` for the same name (otherwise the
@@ -615,16 +631,37 @@ same labels produce diff-stable extras).
 - **Stores** — `lib/stores/tagging/` domain (role-based, mirrors
   `caption/`): `types.ts`, `api.ts` (sync `tagImage`, batch `startTagJob`/
   `stopTagJob`/`fetchTagJobStatus`, interactive `saveImageTags`, autocomplete
-  `fetchTagSuggestions` with a session-scoped LRU), `status.ts` (per-dataset
+  `fetchTagSuggestions` with a session-scoped LRU,
+  `fetchTagHighlights` / `putTagHighlights`,
+  `fetchTagPolicy` / `putTagPolicy`), `status.ts` (per-dataset
   job map + terminal eviction), `inflight.ts` (`currentlyTagging` per-image
   set), `taggerStatus.ts` (single global subprocess-lifecycle slot),
   `results.ts` (last `TaggerResult` per `dataset:image`, fed by both the sync
-  response and the batch SSE), `settings.ts` (`tagSettings` storable:
-  thresholds + save options), `actions.ts` (`tagSingleImage`,
-  `startBatchTagging`, `stopTagging`, `saveImageTagsAction`),
+  response and the batch SSE), `settings.ts` (`tagSettings` storable in
+  localStorage — thresholds + save options), `actions.ts`
+  (`tagSingleImage`, `startBatchTagging`, `stopTagging`,
+  `saveImageTagsAction`), `highlights.ts` (mirror store backed by the
+  backend `tagger.tag_highlights` row in the `settings` KV table;
+  `ensureHighlightsLoaded` fetches once on mount, mutations
+  `setTagTier` / `clearTier` / `setTagCategoryOverride` etc. update
+  locally + PUT the full payload), `policy.ts` (per-dataset mirror
+  store backed by `dataset_settings` rows `policy_always_add` /
+  `policy_banned`; `loadTagPolicy(datasetName)` populates on dataset
+  switch, mutations `addToAlwaysAdd` / `removeFromAlwaysAdd` /
+  `addToBanned` / `removeFromBanned` / `clearAlwaysAdd` /
+  `clearBanned` update locally + PUT the full policy),
   `recentTags.ts` (`recentTags` storable in localStorage — recently-added
   tags reused via the custom-tag dropdown), `index.ts`. `events.ts` adds
   the four zod schemas + dispatch wiring.
+
+  Request bodies do **not** carry the always-add / banned policy
+  anymore — they were dropped from the wire once the per-dataset
+  store took over. ``TaggingService._resolve_policy`` reads the
+  stored policy for the dataset at every request / job start; the
+  Tags tab's reactive subscription to ``$tagPolicy.alwaysAdd`` /
+  ``$tagPolicy.banned`` still drives a refetch of the cached
+  result on a policy edit so the new view shows up without
+  re-tagging.
 - **Interactive Tags tab** — `lib/components/dataset/detail/Tags.svelte`:
   Tag button (sync) → result grouped by category (rating/general/character)
   as toggle chips with confidence %, pruned by clicking off → save bar

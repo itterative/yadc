@@ -1,5 +1,11 @@
 <script lang="ts">
-    import { startBatchTagging, stopTagging, taggingStatuses } from '$lib/stores/tagging';
+    import {
+        ensureHighlightsLoaded,
+        loadTagPolicy,
+        startBatchTagging,
+        stopTagging,
+        taggingStatuses
+    } from '$lib/stores/tagging';
     import CompactPillTabs from '$lib/components/ui/tabs/CompactPillTabs.svelte';
     import ActionBar from '$lib/components/ui/ActionBar.svelte';
     import ActionBarItem from '$lib/components/ui/ActionBarItem.svelte';
@@ -19,6 +25,25 @@
     }
 
     let { datasetName, onclose }: Props = $props();
+
+    // Hydrate the global highlights (one-shot cached promise — repeated
+    // calls are no-ops) and the per-dataset policy whenever the
+    // dataset changes. Both stores are mirror caches of backend state;
+    // without a load here the PolicyList / TierList would render empty
+    // until a manual mutation.
+    $effect(() => {
+        void datasetName;
+        ensureHighlightsLoaded().catch((e) => {
+            toast.error('Failed to load tag highlights', {
+                details: [friendlyErrorMessage(e, 'request failed')]
+            });
+        });
+        loadTagPolicy(datasetName).catch((e) => {
+            toast.error('Failed to load tag policy for this dataset', {
+                details: [friendlyErrorMessage(e, 'request failed')]
+            });
+        });
+    });
 
     // Derive batch tagging state from the per-dataset status map so this
     // panel reflects only this dataset's job.

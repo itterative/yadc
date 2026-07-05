@@ -1,7 +1,7 @@
 ---
 name: tagger-plan
 description: ONNX image-tagging feature for yadc — base abstraction, ONNX implementation, multiprocessing subprocess, dataset-image API endpoint, CLI, batch tagging job, WebUI surface, cancel, postprocessing.
-last_history: 9
+last_history: 10
 ---
 
 # Tagger Plan
@@ -136,6 +136,15 @@ Design history lives in `history/tagger-plan/`:
   [`tagger-model-swap-plan`](./tagger-model-swap-plan.md). Drain
   pending in-flight work, refuse swap during batch jobs, persist via
   SQLite (`SettingsService`), ship SmilingWolf HF repos in v1.
+- **Backend storage for tag highlights + per-dataset policy** —
+  `tagHighlights` (starred/desired/undesired/categoryOverrides) moves to
+  the existing `settings` KV table under `tagger.tag_highlights`;
+  `tagPolicy` (always_add/banned) moves to a new `dataset_settings`
+  KV table (PK `(dataset_id, key)`, FK ON DELETE CASCADE) with keys
+  `policy_always_add` / `policy_banned`. Drop `always_add`/`banned`
+  from `TagImageBody` / `TagJobOptions`; backend resolves policy from
+  the per-dataset row. Frontend stores stay as mirror caches.
+  See `history/tagger-plan/010`.
 - **Clean up the new tests.** The tagger test suite grew fast during
   this feature work; review for duplication, extract shared fixtures,
   and trim over-specified assertions.

@@ -54,6 +54,8 @@ def app(mock_tag_suggestions: MagicMock, mock_configuration: MagicMock) -> Quart
         MagicMock(),  # tagging
         MagicMock(),  # datasets
         mock_tag_suggestions,
+        MagicMock(),  # tag_highlights
+        MagicMock(),  # tag_policy
         mock_configuration,
         mock_logging,
     )

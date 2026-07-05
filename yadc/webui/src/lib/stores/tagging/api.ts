@@ -23,7 +23,9 @@ import type {
 
 /** Tag a single image synchronously. Returns the thresholded result
  *  immediately (used by the interactive Tag button — no job/SSE round-trip).
- *  503 when the tagger isn't configured. */
+ *  503 when the tagger isn't configured. The always-add / banned policy
+ *  is resolved server-side per dataset (see :mod:`yadc.api.services.tag_policy_service`)
+ *  — the request body no longer carries it. */
 export async function tagImage(
     datasetName: string,
     imageId: number,
@@ -32,8 +34,6 @@ export async function tagImage(
         general_threshold?: number;
         character_threshold?: number;
         replace_underscores?: boolean;
-        always_add?: string[];
-        banned?: string[];
         source?: string;
     } = {},
     signal?: AbortSignal
@@ -52,9 +52,7 @@ export async function tagImage(
                 rating_threshold: options.rating_threshold,
                 general_threshold: options.general_threshold,
                 character_threshold: options.character_threshold,
-                replace_underscores: options.replace_underscores,
-                always_add: options.always_add ?? [],
-                banned: options.banned ?? []
+                replace_underscores: options.replace_underscores
             }),
             signal
         }
@@ -67,7 +65,9 @@ export async function tagImage(
 
 /** Start a batch tagging job. Returns initial job info (``202``).
  *  ``imageIds`` omitted/empty → whole dataset; otherwise just those.
- *  Thresholds fall back to the server config when undefined. */
+ *  Thresholds fall back to the server config when undefined. The
+ *  always-add / banned policy is resolved server-side per dataset —
+ *  the request body no longer carries it. */
 export async function startTagJob(
     datasetName: string,
     options: {
@@ -77,8 +77,6 @@ export async function startTagJob(
         character_threshold?: number;
         replace_underscores?: boolean;
         save?: TagSaveOptions;
-        always_add?: string[];
-        banned?: string[];
         source?: string;
     } = {},
     signal?: AbortSignal
@@ -86,11 +84,7 @@ export async function startTagJob(
     const res = await fetch(`${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/tag`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ...options,
-            always_add: options.always_add ?? [],
-            banned: options.banned ?? []
-        }),
+        body: JSON.stringify(options),
         signal
     });
     if (!res.ok) {
@@ -172,9 +166,12 @@ export async function saveImageTags(
  *  results produced by an earlier batch job without re-running the
  *  model. The thresholds options are passed through to the backend so
  *  the GET lands in the same cache bucket as the original POST /tag
- *  write. ``replace_underscores`` and the always-add / banned policy
- *  are read-time transforms (not part of the cache key), so they
- *  apply on top of whatever the original write cached. */
+ *  write. ``replace_underscores`` is a read-time transform (not part
+ *  of the cache key) so it applies on top of whatever the original
+ *  write cached. The always-add / banned policy is resolved
+ *  server-side per dataset (see :mod:`policy.ts`); a separate fetch /
+ *  refetch is needed to surface a policy change, since the cache slot
+ *  itself is unchanged. */
 export async function fetchTagResult(
     datasetName: string,
     imageId: number,
@@ -183,8 +180,6 @@ export async function fetchTagResult(
         general_threshold?: number | null;
         character_threshold?: number | null;
         replace_underscores?: boolean | null;
-        always_add?: string[];
-        banned?: string[];
     } = {},
     signal?: AbortSignal
 ): Promise<TaggerResult | null> {
@@ -200,16 +195,6 @@ export async function fetchTagResult(
     }
     if (options.replace_underscores != null) {
         params.set('replace_underscores', options.replace_underscores ? 'true' : 'false');
-    }
-    // Multi-valued params mirror the backend's ``request.args.getlist``
-    // (``?always_add=tag1&always_add=tag2``). Empty / undefined sends
-    // nothing — the backend interprets missing as an empty list, same
-    // as ``[]``, so a no-policy GET shares the empty-policy cache slot.
-    for (const t of options.always_add ?? []) {
-        params.append('always_add', t);
-    }
-    for (const t of options.banned ?? []) {
-        params.append('banned', t);
     }
     const qs = params.toString();
     const res = await fetch(
@@ -241,8 +226,6 @@ export async function previewImageTags(
         rating_threshold?: number | null;
         general_threshold?: number | null;
         character_threshold?: number | null;
-        always_add?: string[];
-        banned?: string[];
         customizations?: TagCustomizations | null;
     } = {},
     signal?: AbortSignal
@@ -256,15 +239,6 @@ export async function previewImageTags(
     }
     if (options.character_threshold != null) {
         params.set('character_threshold', String(options.character_threshold));
-    }
-    // ``always_add`` / ``banned`` mirror :func:`fetchTagResult`; the
-    // backend applies them as a read-time transform on the cached
-    // value (they are not part of the cache key).
-    for (const t of options.always_add ?? []) {
-        params.append('always_add', t);
-    }
-    for (const t of options.banned ?? []) {
-        params.append('banned', t);
     }
     const qs = params.toString();
     const res = await fetch(
@@ -312,6 +286,116 @@ export async function previewTagFormats(
     }
     const data = (await res.json()) as { content: string };
     return data.content;
+}
+
+// --- Tag highlights (global tier curation) ---
+//
+// ``/api/tagging/highlights`` is a single-blob key under the
+// server-side ``settings`` KV table at ``tagger.tag_highlights``. The
+// shape mirrors the persisted :class:`yadc.api.services.tag_highlights_service.TagHighlights`
+// so the round-trip is a pure identity. Mirrors how ``tagger.active_model``
+// and ``tagger.suggestion_variant`` are exposed.
+
+/** Wire shape returned by :func:`fetchTagHighlights` (and accepted by
+ *  :func:`putTagHighlights`). Matches the backend ``TagHighlights``
+ *  dataclass field-for-field. */
+export interface TagHighlightsPayload {
+    starred: string[];
+    desired: string[];
+    undesired: string[];
+    category_overrides: Record<string, string>;
+}
+
+/** Fetch the persisted global tag highlights. Returns the same shape
+ *  regardless of whether the user has stored anything yet (a fresh
+ *  install is an all-empty object). Throws on a non-200 — the action
+ *  layer typically toasts the failure rather than handling it
+ *  explicitly. */
+export async function fetchTagHighlights(signal?: AbortSignal): Promise<TagHighlightsPayload> {
+    const res = await fetch(`${API_BASE}/api/tagging/highlights`, { signal });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as TagHighlightsPayload;
+}
+
+/** Replace the persisted tag highlights with ``value`` (whole-blob write).
+
+ *  400 on Pydantic validation failure (e.g. a wrong shape). The
+ *  frontend always sends the complete current state — partial updates
+ *  aren't worth a merge protocol here. */
+export async function putTagHighlights(
+    value: TagHighlightsPayload,
+    signal?: AbortSignal
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/tagging/highlights`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+        signal
+    });
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+}
+
+// --- Dataset tag policy (always_add / banned) ---
+//
+// ``GET/PUT /api/datasets/<name>/tag/policy``. Per-dataset; key
+// ``policy_always_add`` / ``policy_banned`` in the new
+// ``dataset_settings`` SQL table. The frontend mirror store caches
+// the same object so the UI is reactive; mutators update locally +
+// PUT. 404 when the dataset isn't registered.
+
+/** Wire shape returned by :func:`fetchTagPolicy`. Matches the backend
+ *  ``TagPolicy`` field names (``always_add`` / ``banned``, snake_case
+ *  for consistency with the rest of the wire surface). */
+export interface TagPolicyPayload {
+    always_add: string[];
+    banned: string[];
+}
+
+/** Fetch the persisted always-add / banned policy for ``datasetName``.
+
+ *  404 when the dataset is not registered with yadc; action layer
+ *  surfaces the toast. */
+export async function fetchTagPolicy(
+    datasetName: string,
+    signal?: AbortSignal
+): Promise<TagPolicyPayload> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/tag/policy`,
+        { signal }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
+    return (await res.json()) as TagPolicyPayload;
+}
+
+/** Persist the always-add / banned policy for ``datasetName`` (whole-blob write).
+
+ *  404 when the dataset is not registered (the action layer calls
+ *  :func:`fetchTagPolicy` first to verify registration); 400 on
+ *  Pydantic validation failure. Empty lists are persisted normally —
+ *  clearing a list is a real edit. */
+export async function putTagPolicy(
+    datasetName: string,
+    value: TagPolicyPayload,
+    signal?: AbortSignal
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/tag/policy`,
+        {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(value),
+            signal
+        }
+    );
+    if (!res.ok) {
+        throw new Error(await apiErrorMessage(res));
+    }
 }
 
 // --- Tagger model swap ---

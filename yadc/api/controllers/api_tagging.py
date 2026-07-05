@@ -38,6 +38,14 @@ Routes:
   suggestion catalog variant and the full variant list.
 - ``PUT /tagging/suggest/variant`` — switch the active variant (persists
   + reloads).
+- ``GET /tagging/highlights`` / ``PUT /tagging/highlights`` — global
+  tier curation (starred / desired / undesired + category overrides)
+  stored under the ``settings`` KV table at
+  ``tagger.tag_highlights``.
+- ``GET /datasets/<name>/tag/policy`` / ``PUT .../tag/policy`` —
+  per-dataset always-add / banned policy, stored under the
+  ``dataset_settings`` table (key ``policy_always_add`` /
+  ``policy_banned``).
 
 The tagger is a server-side background process (started lazily on the
 first request when ``Configuration.tagger_repo_id`` /
@@ -67,6 +75,8 @@ from ..modules.tagger_catalog import (
 )
 from ..services.dataset_jobs import DatasetBusyError
 from ..services.datasets import DatasetService
+from ..services.tag_highlights_service import TagHighlights, TagHighlightsService
+from ..services.tag_policy_service import TagPolicyService
 from ..services.tag_suggestions import CatalogVariant, TagSuggestionsService, list_variants, resolve_variant
 from ..services.tagging import (
     TaggerBusyError,
@@ -82,13 +92,16 @@ from .utils_json import ErrorCode, jsonify_dataclass, jsonify_error, validate_bo
 
 
 class TagImageBody(pydantic.BaseModel):
-    """Optional per-request threshold overrides. All fields default to ``None`` (use server config)."""
+    """Optional per-request threshold overrides. All fields default to ``None`` (use server config).
+
+    The always-add / banned policy is not carried on the wire — the
+    backend resolves it per-dataset from :class:`TagPolicyService`.
+    """
 
     rating_threshold: float | None = None
     general_threshold: float | None = None
     character_threshold: float | None = None
     replace_underscores: bool | None = None
-    policy: TagPolicy = pydantic.Field(default_factory=TagPolicy)
 
 
 class TagCustomizationsBody(pydantic.BaseModel):
@@ -143,12 +156,42 @@ class SuggestionVariantBody(pydantic.BaseModel):
     variant: str
 
 
+class TagPolicyBody(pydantic.BaseModel):
+    """Body for ``PUT /datasets/<name>/tag/policy`` — replace the always-add / banned lists.
+
+    Both fields are required and overwrite the stored values verbatim;
+    an empty list is persisted (so clearing a list doesn't require a
+    separate endpoint). The frontend usually sends the *complete*
+    current state — the server doesn't merge.
+    """
+
+    always_add: list[str]
+    banned: list[str]
+
+
+class TagHighlightsBody(pydantic.BaseModel):
+    """Body for ``PUT /tagging/highlights`` — replace the global tag tiers in full.
+
+    The wire shape matches the persisted blob: three tier lists plus a
+    category-override dict. Mirrors the frontend ``TagHighlights`` shape
+    so the round-trip is trivial — the frontend saves the same object
+    it received on the GET.
+    """
+
+    starred: list[str]
+    desired: list[str]
+    undesired: list[str]
+    category_overrides: dict[str, str] = pydantic.Field(default_factory=dict)
+
+
 @controller
 def api_tagging(
     app: ApiBlueprint,
     tagging: TaggingService,
     datasets: DatasetService,
     tag_suggestions: TagSuggestionsService,
+    tag_highlights: TagHighlightsService,
+    tag_policy: TagPolicyService,
     configuration: Configuration,
     logging: LoggingFactory,
 ):
@@ -208,7 +251,6 @@ def api_tagging(
                 thresholds=thresholds,
                 replace_underscores=body.replace_underscores,
                 source=source,
-                policy=body.policy,
             )
         except DatasetBusyError as exc:
             return jsonify_error(str(exc), status=409, code=ErrorCode.CONFLICT)
@@ -278,6 +320,48 @@ def api_tagging(
         scoped = [j for j in jobs if j.dataset_name == name]
         return jsonify_dataclass(scoped)
 
+    # --- per-dataset tag policy (always-add / banned) -----------------
+    #
+    # Stored server-side per dataset. The frontend mirror store caches
+    # the same object so the UI is reactive; mutators update locally +
+    # PUT. The GET also covers the "fresh tab on a different dataset"
+    # case where the previous mirror isn't applicable.
+
+    @app.get("/datasets/<name>/tag/policy")
+    def get_dataset_tag_policy(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Return the always-add / banned policy for ``name``.
+
+        Returns the persisted policy (both lists may be empty) for a
+        registered dataset, and ``404`` when the dataset isn't
+        registered with the yadc DB. Unregistered datasets aren't
+        addressable through any other tag endpoint either, so this
+        keeps the surface consistent.
+        """
+        if datasets.get_dataset(name) is None:
+            return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+        policy = tag_policy.get(name)
+        return jsonify({"always_add": list(policy.always_add), "banned": list(policy.banned)})
+
+    @app.put("/datasets/<name>/tag/policy")
+    async def put_dataset_tag_policy(name: str):  # pyright: ignore[reportUnusedFunction]
+        """Persist the always-add / banned policy for ``name``.
+
+        Body is the full policy shape (both lists required, both
+        overwritten verbatim). Returns ``200`` with the persisted
+        policy; ``404`` when the dataset isn't registered; ``400``
+        when the body fails validation.
+        """
+        if datasets.get_dataset(name) is None:
+            return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+        body = validate_body(TagPolicyBody, await request.get_json(silent=True))
+        policy = TagPolicy(always_add=list(body.always_add), banned=list(body.banned))
+        stored = tag_policy.set(name, policy)
+        if not stored:
+            # Race: dataset was unregistered between the GET check
+            # above and the SET. Surface as 404 for symmetry.
+            return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
+        return jsonify({"always_add": list(policy.always_add), "banned": list(policy.banned)})
+
     @app.get("/datasets/<name>/images/<int:image_id>/tag")
     async def get_cached_tag_result(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
         """Read the cached tag result for an image, if any.
@@ -291,9 +375,11 @@ def api_tagging(
         policy are read-time transforms applied to the cached value, so
         they don't need to match the original write to hit the slot.
 
-        ``always_add`` and ``banned`` are optional multi-valued query
-        params (caller may repeat the key, e.g. ``?always_add=tag1&always_add=tag2``).
-        Absent → the empty list (no policy applied).
+        Policy is resolved server-side from :class:`TagPolicyService`
+        for the dataset — this endpoint no longer accepts
+        ``always_add`` / ``banned`` query params (the policy move took
+        them off the wire). Toggling a policy tag is reflected on the
+        next read without re-tagging.
 
         Returns ``404`` when no entry matches (never tagged, evicted
         by LRU, or tagged under a different model / settings).
@@ -326,18 +412,15 @@ def api_tagging(
             if any(v is not None for v in (rating, general, character))
             else None
         )
-        # ``getlist`` returns every value for a repeated query key
-        # (``?always_add=a&always_add=b`` → ``["a", "b"]``). Absent → ``[]``.
-        always_add = request.args.getlist("always_add")
-        banned = request.args.getlist("banned")
-        policy = TagPolicy(always_add=always_add, banned=banned)
 
+        # Policy now lives on the server (per-dataset, ``TagPolicyService``)
+        # so the cached result is re-applied against the active policy on
+        # the read; no per-request override is accepted here.
         result = await tagging.get_tag_result(
             name,
             image_id,
             thresholds=thresholds,
             replace_underscores=replace,
-            policy=policy,
         )
         if result is None:
             return jsonify_error("No cached tag result for this image", status=404, code=ErrorCode.NOT_FOUND)
@@ -580,6 +663,59 @@ def api_tagging(
                 "variant": variant.value,
                 "default": default.value,
                 "variants": [{"value": v.value, "label": label} for v, label in list_variants()],
+            }
+        )
+
+    # --- global tag highlights (starred / desired / undesired tiers) ---
+    #
+    # Single row per yadc install. Lives under ``settings/tagger.tag_highlights``
+    # (the same KV pattern as ``tagger.suggestion_variant``). The frontend
+    # mirror store loads this on mount and PUTs the full shape on every
+    # mutator so the persisted blob is always a complete representation of
+    # the tiers — partial updates aren't worth the merge semantics here.
+
+    @app.get("/tagging/highlights")
+    def get_tag_highlights():  # pyright: ignore[reportUnusedFunction]
+        """Return the persisted tag highlights (or defaults for a fresh install).
+
+        Always returns a body — missing / corrupted rows fall back to
+        empty tiers in :class:`TagHighlightsService`, and the JSON
+        shape is stable so the frontend can hard-construct it from
+        the response.
+        """
+        value: TagHighlights = tag_highlights.get()
+        return jsonify(
+            {
+                "starred": list(value.starred),
+                "desired": list(value.desired),
+                "undesired": list(value.undesired),
+                "category_overrides": dict(value.category_overrides),
+            }
+        )
+
+    @app.put("/tagging/highlights")
+    async def put_tag_highlights():  # pyright: ignore[reportUnusedFunction]
+        """Replace the persisted tag highlights with the request body.
+
+        Body is the full shape (all three tier lists + category
+        overrides); the server overwrites the stored blob verbatim.
+        400 on Pydantic validation failure (e.g. wrong types).
+        """
+        body = validate_body(TagHighlightsBody, await request.get_json(silent=True))
+        tag_highlights.set(
+            TagHighlights(
+                starred=list(body.starred),
+                desired=list(body.desired),
+                undesired=list(body.undesired),
+                category_overrides=dict(body.category_overrides),
+            )
+        )
+        return jsonify(
+            {
+                "starred": list(body.starred),
+                "desired": list(body.desired),
+                "undesired": list(body.undesired),
+                "category_overrides": dict(body.category_overrides),
             }
         )
 

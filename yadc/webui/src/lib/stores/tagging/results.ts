@@ -44,11 +44,11 @@ export function dispatchImageTagged(
  *  ``TaggerResultKey`` fingerprint). The caller passes the same
  *  threshold + replace_underscores options it would send to POST
  *  ``/tag`` so the read lands in the same cache bucket as the
- *  original write. The always-add / banned policy is a read-time
- *  transform on the backend (not part of the cache key), so it's
- *  forwarded here to apply on top of the cached value — pass the
- *  current snapshot so toggling a policy tag shows up without
- *  re-tagging. Used by the Tags tab on mount and image switch.
+ *  original write. The always-add / banned policy is resolved
+ *  server-side per dataset — callers that need a policy change to
+ *  surface on the displayed result refetch (the cache slot itself
+ *  is unchanged; only the read-time transform differs). Used by the
+ *  Tags tab on mount and image switch.
  */
 export async function fetchCachedTagResult(
     datasetName: string,
@@ -58,8 +58,6 @@ export async function fetchCachedTagResult(
         general_threshold?: number | null;
         character_threshold?: number | null;
         replace_underscores?: boolean | null;
-        always_add?: string[];
-        banned?: string[];
     } = {},
     signal?: AbortSignal
 ): Promise<TaggerResult | null> {

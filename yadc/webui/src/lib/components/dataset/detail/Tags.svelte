@@ -14,6 +14,7 @@
         tagCategoryOverrideMap,
         computeOrderedCategories,
         computeSelection,
+        loadTagPolicy,
         type TagChipView
     } from '$lib/stores/tagging';
     import type { ImageInfo } from '$lib/stores/dataset';
@@ -73,8 +74,28 @@
     // result — the policy is a backend read-time transform, so the
     // new view shows up without re-tagging. Frozen-snapshot copies so
     // the effect's dependency is the list identity, not deep contents.
+    // Policy is now per-dataset; the mirror store tracks which dataset
+    // the current value belongs to via ``$tagPolicy.datasetName`` —
+    // a non-null / matching value confirms the policy is loaded for
+    // this image's dataset.
     let alwaysAdd = $derived(Object.freeze([...$tagPolicy.alwaysAdd]));
     let banned = $derived(Object.freeze([...$tagPolicy.banned]));
+    let policyLoadedFor = $derived($tagPolicy.datasetName);
+
+    // Load the per-dataset policy on mount and on dataset switch.
+    // Idempotent — :func:`loadTagPolicy` shares an in-flight fetch
+    // across concurrent callers and re-uses the cached promise for the
+    // same dataset.
+    $effect(() => {
+        void datasetName;
+        loadTagPolicy(datasetName).catch((e) => {
+            if ((e as Error).name !== 'AbortError') {
+                toast.error('Failed to load tag policy for this dataset', {
+                    details: [friendlyErrorMessage(e, 'request failed')]
+                });
+            }
+        });
+    });
 
     // Bumped by the SSE handler to trigger a refetch of the cached
     // result without touching the focused image. Acts as a reactive
@@ -97,12 +118,16 @@
         // can't land after we've already started showing the new image.
         // Passes the current thresholds + replace_underscores so the
         // read lands in the same cache bucket as the original POST /tag
-        // write; the policy is a backend read-time transform forwarded
-        // here to apply over the cached value. Only clears + shows the
-        // loading state on a real focus switch — a same-image refresh
-        // (policy edit / SSE) keeps the stale result visible until the
-        // fresh one lands, so there's no flash.
+        // write. Policy is resolved server-side per dataset — a refetch
+        // is needed to surface a policy change, since the cache slot
+        // itself is unchanged. Only clears + shows the loading state on
+        // a real focus switch — a same-image refresh (policy edit / SSE)
+        // keeps the stale result visible until the fresh one lands, so
+        // there's no flash.
         void resultNonce;
+        void alwaysAdd;
+        void banned;
+        void policyLoadedFor;
 
         const imageId = item.id;
         const controller = linkedController(parentSignal);
@@ -114,19 +139,18 @@
 
         (async () => {
             try {
-                result = await fetchCachedTagResult(
-                    datasetName,
-                    imageId,
-                    {
-                        rating_threshold: ratingThreshold,
-                        general_threshold: generalThreshold,
-                        character_threshold: characterThreshold,
-                        replace_underscores: replaceUnderscores,
-                        always_add: [...alwaysAdd],
-                        banned: [...banned]
-                    },
-                    controller.signal
-                ) ?? undefined;
+                result =
+                    (await fetchCachedTagResult(
+                        datasetName,
+                        imageId,
+                        {
+                            rating_threshold: ratingThreshold,
+                            general_threshold: generalThreshold,
+                            character_threshold: characterThreshold,
+                            replace_underscores: replaceUnderscores
+                        },
+                        controller.signal
+                    )) ?? undefined;
 
                 isLoadingResult = false;
             } catch (e) {

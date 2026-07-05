@@ -52,7 +52,16 @@ class TestCatalogSidecarsEndpoint:
 
         quart_app = Quart(__name__)
         bp = ApiBlueprint("api", __name__, url_prefix="/api")
-        api_tagging(bp, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        api_tagging(
+            bp,
+            MagicMock(),  # tagging
+            MagicMock(),  # datasets
+            MagicMock(),  # tag_suggestions
+            MagicMock(),  # tag_highlights
+            MagicMock(),  # tag_policy
+            MagicMock(),  # configuration
+            MagicMock(),  # logging
+        )
         quart_app.register_blueprint(bp)
         return quart_app
 

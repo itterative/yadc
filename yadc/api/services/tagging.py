@@ -51,6 +51,7 @@ from yadc.api.services.dataset_jobs import DatasetJobService, JobClaim
 from yadc.api.services.dataset_repository import ImageInfo
 from yadc.api.services.datasets import DatasetService
 from yadc.api.services.settings import SettingsService
+from yadc.api.services.tag_policy_service import TagPolicyService
 from yadc.taggers import OnnxTagger, TaggerResult, apply_thresholds, extras_tags, format_draft
 from yadc.taggers.base import TagCustomizations, tamer_result_size
 from yadc.taggers.client import TaggerClient
@@ -148,9 +149,10 @@ class TagJobOptions(pydantic.BaseModel):
 
     ``image_ids`` omitted/empty → tag the whole dataset; otherwise tag
     just the listed images. Thresholds fall back to the server config
-    when unset. ``save`` controls per-image persistence. ``policy``
-    auto-injects or removes tags from each result post-threshold (see
-    :class:`TagPolicy`).
+    when unset. ``save`` controls per-image persistence. The
+    always-add / banned policy is resolved server-side from
+    :class:`TagPolicyService` against the dataset — request bodies
+    do not carry an override.
     """
 
     image_ids: list[int] | None = None
@@ -160,7 +162,6 @@ class TagJobOptions(pydantic.BaseModel):
     replace_underscores: bool | None = None
     save: TagSaveOptions = pydantic.Field(default_factory=TagSaveOptions)
     source: str | None = None
-    policy: TagPolicy = pydantic.Field(default_factory=TagPolicy)
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,7 @@ class TaggingService(Service):
         dataset_watcher: DatasetWatcherService,
         dataset_jobs: DatasetJobService,
         settings_service: SettingsService,
+        tag_policy_service: TagPolicyService | None = None,
         job_scheduler: JobScheduler | None = None,
     ):
         self._configuration: Configuration = configuration
@@ -285,6 +287,11 @@ class TaggingService(Service):
         self._dataset_watcher: DatasetWatcherService = dataset_watcher
         self._dataset_jobs: DatasetJobService = dataset_jobs
         self._settings_service: SettingsService = settings_service
+        # Optional so unit tests that build the service directly (no
+        # DI) without a settings-backed policy store keep working:
+        # ``None`` falls back to an empty policy at every call site.
+        # Production wiring (auto-discovery) injects the real service.
+        self._tag_policy_service: TagPolicyService | None = tag_policy_service
         self._job_scheduler: JobScheduler | None = job_scheduler
 
         # The user's persisted active-tagger selection (set via the
@@ -773,7 +780,10 @@ class TaggingService(Service):
         tags; it's applied as a read-time transform (see
         :func:`apply_policy`) and is **not** part of the cache key, so
         toggling a policy tag shows up on the next read of an existing
-        slot without re-tagging.
+        slot without re-tagging. When ``None`` (the controller path
+        after the policy move), :class:`TagPolicyService` resolves the
+        per-dataset stored policy. When ``policy`` is supplied
+        explicitly (test / preview path), it wins.
 
         The cached value was filtered at the bucket floors, so we
         re-apply the *effective* thresholds (which are always ≥ bucket
@@ -791,12 +801,13 @@ class TaggingService(Service):
             character=self._configuration.tagger_character_threshold,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
+        eff_policy = self._resolve_policy(dataset_name, override=policy)
         key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
         async with self._tag_lock:
             cached = self._tag_results.get(key)
         if cached is None:
             return None
-        return self._refilter(cached, eff_thresholds, eff_replace, policy)
+        return self._refilter(cached, eff_thresholds, eff_replace, eff_policy)
 
     async def evict_tag_result(
         self,
@@ -927,7 +938,7 @@ class TaggingService(Service):
             character=self._configuration.tagger_character_threshold,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
-        eff_policy = policy if policy is not None else TagPolicy()
+        eff_policy = self._resolve_policy(dataset_name, override=policy)
         cache_key = self._tag_result_key(dataset_name, image_info.id, eff_thresholds)
 
         # --- Read-through cache: skip the model when the LRU already
@@ -1065,15 +1076,15 @@ class TaggingService(Service):
         thresholds: TaggingThresholds | None = None,
         replace_underscores: bool | None = None,
         source: str | None = None,
-        policy: TagPolicy | None = None,
     ) -> TaggerResult:
         """Tag a single image, gated by the cross-service dataset coordinator.
 
         Wraps :meth:`tag_image` (which is also called internally by batch
         jobs) with a transient claim so a single-image tag can't overlap a
-        captioning run — or vice versa — on the same dataset. ``policy``
-        auto-injects / removes tags from the result (see
-        :class:`TagPolicy`); ``None`` means no policy.
+        captioning run — or vice versa — on the same dataset. The
+        always-add / banned policy is resolved by :meth:`tag_image` from
+        :class:`TagPolicyService` for the dataset — there is no per-call
+        policy override at this layer.
 
         Raises:
             DatasetBusyError: if another job kind holds the dataset (→ 409).
@@ -1087,7 +1098,6 @@ class TaggingService(Service):
                 thresholds=thresholds,
                 replace_underscores=replace_underscores,
                 source=source,
-                policy=policy,
             )
         finally:
             await self._dataset_jobs.release(claim)
@@ -1439,7 +1449,12 @@ class TaggingService(Service):
                 thresholds=self._thresholds_from_options(options),
                 replace_underscores=options.replace_underscores,
                 save=options.save,
-                policy=options.policy,
+                # Resolve the per-dataset policy once at job start —
+                # the policy is read-time-only at the cache layer, so
+                # capturing a snapshot here keeps behaviour consistent
+                # across all images in the batch even if the user edits
+                # the policy mid-run.
+                policy=self._resolve_policy(dataset_name),
                 claim=claim,
                 # Seed progress with the preflight skip count so the bar
                 # starts at the right position (e.g. 40/50 when 40 were
@@ -1877,6 +1892,29 @@ class TaggingService(Service):
             if not next_token:
                 break
         return all_images
+
+    def _resolve_policy(self, dataset_name: str, *, override: TagPolicy | None = None) -> TagPolicy:
+        """Return the effective always-add / banned policy for ``dataset_name``.
+
+        Resolution order:
+
+        1. ``override`` if supplied — explicit caller intent, used by
+           service-level unit tests and any future preview path that
+           wants to try a policy without persisting.
+        2. The per-dataset stored policy via
+           :meth:`TagPolicyService.get` (production). An unregistered
+           dataset returns an empty :class:`TagPolicy` from the
+           service, so a missing policy defaults cleanly without a
+           404 leaking into the tag call.
+        3. Empty :class:`TagPolicy` — the fallback for unit tests
+           that construct the service without injecting
+           ``TagPolicyService``.
+        """
+        if override is not None:
+            return override
+        if self._tag_policy_service is not None:
+            return self._tag_policy_service.get(dataset_name)
+        return TagPolicy()
 
 
 @dataclass

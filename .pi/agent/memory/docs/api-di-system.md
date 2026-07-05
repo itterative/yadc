@@ -142,7 +142,9 @@ def api_my_feature(app: ApiBlueprint, logging: LoggingFactory):
 | `DatasetService` | `services/` | TOML-based datasets, filesystem scanning, SQLite indexing, paginated image queries, caption read/write, import/create/delete/rescan. Injects `DatasetWatcherService` + `Configuration` |
 | `DatasetJobService` | `services/` | Cross-service per-dataset job mutex — the single source of truth for "who holds a dataset". `try_acquire`/`release` enforce that at most one sidecar-writing job (captioning or tagging, batch or single-image) runs per dataset at a time. Raises `DatasetBusyError(ValueError → 409)` on conflict. |
 | `CaptioningService` | `services/` | Background captioning jobs (start/stop/status), env/config/template resolution, `CaptioningStatusEvent` emission via `EventDispatcher`. Acquires a dataset claim through `DatasetJobService` for each job. |
-| `TaggingService` | `services/` | ONNX tagger subprocess lifecycle (lazy spawn / idle teardown) + batch tagging jobs + single-image tag. Acquires a dataset claim through `DatasetJobService` for batch jobs and single-image tags. |
+| `TaggingService` | `services/` | ONNX tagger subprocess lifecycle (lazy spawn / idle teardown) + batch tagging jobs + single-image tag. Acquires a dataset claim through `DatasetJobService` for batch jobs and single-image tags. Resolves the per-dataset always-add / banned policy via `TagPolicyService`; the policy is **not** carried on the wire anymore. |
+| `TagHighlightsService` | `services/` | Single-row accessor over `settings/tagger.tag_highlights`. Persists the global starred / desired / undesired tiers + `category_overrides` as one JSON blob. Pydantic-driven permissive decode — corrupt or missing rows return defaults rather than raising. |
+| `TagPolicyService` | `services/` | Per-dataset accessor over `dataset_settings` rows `policy_always_add` / `policy_banned`. Each list is one row; mutators upsert both. Missing dataset → empty `TagPolicy` (no 404). Backs the always-add / banned list applied read-time by `TaggingService`. |
 
 ## App Lifecycle Events
 
