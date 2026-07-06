@@ -3,6 +3,7 @@
     import {
         cancelTaggingAction,
         currentlyTagging,
+        displayTag,
         fetchCachedTagResult,
         onImageTagged,
         previewImageTags,
@@ -15,7 +16,8 @@
         computeOrderedCategories,
         computeSelection,
         loadTagPolicy,
-        type TagChipView
+        type TagChipView,
+        type TaggedEntry
     } from '$lib/stores/tagging';
     import type { ImageInfo } from '$lib/stores/dataset';
     import type { TagCustomizations, TagSaveOptions, TaggerResult } from '$lib/stores/tagging';
@@ -254,16 +256,24 @@
     /** Register a tag added through the per-category ``TagInput``. The chip
      *  is auto-enabled (the user just decided it should exist), and a
      *  synthetic 100% score is layered in :func:`computeSelection` so the
-     *  saved output reflects the user's confidence. */
-    function addCustomTag(category: string, tag: string) {
-        if (result && tag in result.tags) {
+     *  saved output reflects the user's confidence.
+     *
+     *  The prune grid works in display-form identities (model tags,
+     *  ``customTags``, ``enabled`` all keyed on display), so the incoming
+     *  canonical entry is projected to display here via :func:`displayTag`.
+     *  Free-text entries (``canonical_form: false``) and kaomojis pin
+     *  their literal identity; catalog picks follow the user's
+     *  ``replaceUnderscores`` preference. */
+    function addCustomTag(category: string, entry: TaggedEntry) {
+        const display = displayTag(entry, $tagSettings.replaceUnderscores);
+        if (result && display in result.tags) {
             // Re-enable a model tag that had been pruned — don't double-
             // register it as a custom tag (it's not custom, just toggled).
-            enabled.add(tag);
+            enabled.add(display);
             return;
         }
-        customTags.set(tag, category);
-        enabled.add(tag);
+        customTags.set(display, category);
+        enabled.add(display);
     }
 
     /** Drop a user-added custom tag from both the map and the enabled set.
@@ -640,7 +650,7 @@
                     tiers={$tagTierMap}
                     ontoggle={toggleTag}
                     onremovecustom={removeCustomTag}
-                    onaddcustom={(tag) => addCustomTag(categoryName, tag)}
+                    onaddcustom={(entry) => addCustomTag(categoryName, entry)}
                     onselectall={() => selectAll(cat.chips)}
                     onclear={() => clearAll(categoryName, cat.chips)}
                 />

@@ -2,7 +2,15 @@
     import { getAbortContext, linkedController } from '$lib/abort';
     import { fetchTagSuggestions } from '$lib/stores/tagging/api';
     import type { TagSuggestion } from '$lib/stores/tagging/types';
-    import { recentTags, recordRecentTag, removeRecentTag, tagSettings } from '$lib/stores/tagging';
+    import {
+        displayTag,
+        normKey,
+        recentTags,
+        recordRecentTag,
+        removeRecentTag,
+        tagSettings,
+        type TaggedEntry
+    } from '$lib/stores/tagging';
     import SvgPlus from '$lib/icons/SvgPlus.svelte';
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import { positionPopover } from './popover';
@@ -15,9 +23,13 @@
         modelTags: readonly string[];
         /** Currently-added custom tags (name → category). Used for dedupe. */
         existingCustomTags: ReadonlyMap<string, string>;
-        /** Called with a normalized, validated tag name. The parent handles
-         *  registering it and adding it to its enabled set. */
-        onadd: (tag: string) => void;
+        /** Called with the canonical ``{name, canonical_form}`` entry to add.
+         *  ``canonical_form: false`` for free-text entries (literal
+         *  identity pinned, rendered verbatim); ``true`` for
+         *  autocomplete / recent picks (canonical catalog identity, the
+         *  frontend applies the user's ``replace_underscores``
+         *  preference at render time). The consumer stores it verbatim. */
+        onadd: (entry: TaggedEntry) => void;
     }
 
     let { category, modelTags, existingCustomTags, onadd }: Props = $props();
@@ -83,10 +95,13 @@
      *  limit. Re-derives whenever the store, the model output, or the user's
      *  custom additions change. */
     let recentItems = $derived.by<TagSuggestion[]>(() => {
-        const present = new Set<string>([...modelTags, ...existingCustomTags.keys()]);
+        // normKey so a canonical recent pick is filtered when its display
+        // counterpart is already on the image (the two sides may differ in
+        // form — see :func:`tryAdd`).
+        const present = new Set([...modelTags, ...existingCustomTags.keys()].map(normKey));
         const out: TagSuggestion[] = [];
         for (const t of $recentTags.tags) {
-            if (present.has(t.name)) {
+            if (present.has(normKey(t.name))) {
                 continue;
             }
             out.push({ name: t.name, category: t.category });
@@ -158,12 +173,7 @@
         debounceTimer = window.setTimeout(async () => {
             debounceTimer = null;
             try {
-                const result = await fetchTagSuggestions(
-                    query,
-                    controller.signal,
-                    DROPDOWN_LIMIT,
-                    $tagSettings.replaceUnderscores
-                );
+                const result = await fetchTagSuggestions(query, controller.signal, DROPDOWN_LIMIT);
                 if (!controller.signal.aborted) {
                     // Late results aren't useful — the user has moved on.
                     suggestions = result;
@@ -193,19 +203,24 @@
 
     /** Dedupe + commit a tag. Used by both the manual-commit and dropdown-pick
      *  paths so the rules don't drift. Returns the outcome so the caller
-     *  knows whether to record the tag in recent history. */
-    function tryAdd(rawTag: string): AddOutcome {
-        if (modelTags.includes(rawTag)) {
+     *  knows whether to record the tag in recent history.
+     *
+     *  Dedupe is normalization-aware (:func:`normKey`) so a canonical
+     *  autocomplete pick (``speech_bubble``) still matches against the prune
+     *  grid's display-form model / custom tags. The committed entry is the
+     *  canonical ``{name, canonical_form}`` identity; the consumer
+     *  projects to display as needed. */
+    function tryAdd(rawTag: string, canonicalForm: boolean): AddOutcome {
+        const key = normKey(rawTag);
+        if (modelTags.some((t) => normKey(t) === key)) {
             // Re-enable the pruned model tag rather than double-registering it.
-            onadd(rawTag);
+            onadd({ name: rawTag, canonical_form: canonicalForm });
             return 'model';
         }
-
-        if (existingCustomTags.has(rawTag)) {
+        if ([...existingCustomTags.keys()].some((t) => normKey(t) === key)) {
             return 'duplicate';
         }
-
-        onadd(rawTag);
+        onadd({ name: rawTag, canonical_form: canonicalForm });
         return 'added';
     }
 
@@ -216,7 +231,7 @@
             value = '';
             return;
         }
-        const outcome = tryAdd(raw);
+        const outcome = tryAdd(raw, false);
         if (outcome === 'added') {
             // Manually-typed tags have no catalog category — record them as
             // 'custom' so the recent dropdown can badge them distinctly.
@@ -230,10 +245,11 @@
     /** Commit a tag selected from the dropdown. The category is recorded into
      *  recent history so the badge persists across sessions. In recent mode
      *  the dropdown stays open (grabbing several reuse tags); in fetched mode
-     *  it closes (the query is stale once a tag is chosen). */
+     *  it closes (the query is stale once a tag is chosen). Dropdown picks
+     *  are non-custom: the catalog identity flows through canonical. */
     function commitFromDropdown(name: string, category: string) {
         const wasRecentPick = showingRecent;
-        const outcome = tryAdd(name);
+        const outcome = tryAdd(name, true);
         if (outcome === 'added') {
             recordRecentTag(name, category);
         }
@@ -517,7 +533,12 @@
                         : 'text-gray-300 hover:bg-gray-700'}"
                     onmousedown={(e) => onRowMouseDown(e, item)}
                 >
-                    <span class="truncate">{item.name}</span>
+                    <span class="truncate"
+                        >{displayTag(
+                            { name: item.name, canonical_form: item.category !== 'custom' },
+                            $tagSettings.replaceUnderscores
+                        )}</span
+                    >
                     <span class="flex shrink-0 items-center gap-1">
                         {#if showingRecent}
                             <button

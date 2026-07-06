@@ -1913,7 +1913,8 @@ class TaggingService(Service):
         if override is not None:
             return override
         if self._tag_policy_service is not None:
-            return self._tag_policy_service.get(dataset_name)
+            stored = self._tag_policy_service.get(dataset_name)
+            return self._tag_policy_service.names_for_policy(stored)
         return TagPolicy()
 
 

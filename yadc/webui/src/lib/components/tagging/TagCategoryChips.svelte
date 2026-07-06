@@ -6,6 +6,7 @@
         CATEGORIES_WITHOUT_CUSTOM_INPUT,
         TAG_TIERS,
         type TagChipView,
+        type TaggedEntry,
         type TagTier
     } from '$lib/stores/tagging';
 
@@ -31,9 +32,9 @@
          *  custom-tags map). Only rendered for non-starred custom chips —
          *  starred tags are curated in the customize tab, never removed here. */
         onremovecustom: (tag: string) => void;
-        /** Submit a new custom tag for this category. The parent owns the
-         *  category binding; this callback only emits the tag name. */
-        onaddcustom: (tag: string) => void;
+        /** Submit a new custom tag for this category. Emits the canonical
+         *  ``{name, custom}`` entry; the parent owns the category binding. */
+        onaddcustom: (entry: TaggedEntry) => void;
         /** Re-enable every model tag in this category (custom are by
          *  definition enabled, so Select all is a no-op for them). */
         onselectall?: () => void;
@@ -132,7 +133,7 @@
             {@const baseFill = tierFill
                 ? tierFill
                 : isEnabled
-                  ? chip.isCustom
+                  ? !chip.canonicalForm
                       ? 'border-purple-500/60 bg-purple-500/20 text-purple-300'
                       : 'border-accent/60 bg-accent/20 text-accent'
                   : ''}
@@ -149,7 +150,7 @@
                 fillClass={`${disabledFill} ${baseFill}`}
                 {ontoggle}
                 {onremovecustom}
-                removable={chip.isCustom && !starred}
+                removable={!chip.canonicalForm && !starred}
             />
         {/each}
         {#if customInputEnabled}

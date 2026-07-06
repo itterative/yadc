@@ -1,7 +1,12 @@
 <script lang="ts">
     import SvgClose from '$lib/icons/SvgClose.svelte';
     import SvgStar from '$lib/icons/SvgStar.svelte';
-    import type { TagChipView, CategoryOption } from '$lib/stores/tagging';
+    import {
+        displayTag,
+        tagSettings,
+        type TagChipView,
+        type CategoryOption
+    } from '$lib/stores/tagging';
     import SvgChevronDown from '$lib/icons/SvgChevronDown.svelte';
     import { anchorVisible, positionPopover } from './popover';
 
@@ -48,6 +53,17 @@
     let menuEl = $state<HTMLDivElement | null>(null);
     let caretEl = $state<HTMLButtonElement | null>(null);
 
+    /** Visible label — ``chip.tag`` is the identity (canonical for curated
+     *  chips, display-form for prune-grid model tags); project it through the
+     *  user's ``replaceUnderscores`` preference for rendering. Callbacks
+     *  still receive the raw ``chip.tag`` identity. */
+    let label = $derived(
+        displayTag(
+            { name: chip.tag, canonical_form: chip.canonicalForm },
+            $tagSettings.replaceUnderscores
+        )
+    );
+
     /** Display label for the badge — the short form, looked up from the
      *  options so it stays in sync with the popover's active highlight. */
     let categoryShort = $derived(
@@ -85,15 +101,26 @@
     }
 </script>
 
+<!--
+    ``chip.tag`` is the tag identity, whose form depends on context:
+    canonical (``speech_bubble``) for curated chips in the Customize tab,
+    display-form (``speech bubble``) for model-output chips in the prune
+    grid. The visible label projects it through the user's
+    ``replaceUnderscores`` preference (see ``label``); callbacks
+    (``ontoggle`` / ``onremovecustom`` / ``onchangecategory``) receive
+    the raw ``chip.tag`` identity so each consumer matches in its own
+    convention.
+-->
+
 <div
     role="button"
     tabindex="0"
     aria-pressed={enabled}
-    aria-label={chip.isCustom
-        ? `${chip.tag} (custom tag, click to toggle)`
+    aria-label={!chip.canonicalForm
+        ? `${label} (custom tag, click to toggle)`
         : chip.absent
-          ? `${chip.tag} (starred, not detected in this image, click to toggle)`
-          : `${chip.tag}, confidence ${Math.round(chip.score * 100)}%`}
+          ? `${label} (starred, not detected in this image, click to toggle)`
+          : `${label}, confidence ${Math.round(chip.score * 100)}%`}
     class="flex cursor-pointer justify-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors {fillClass}"
     onclick={() => ontoggle?.(chip.tag)}
     onkeydown={(e) => {
@@ -102,7 +129,7 @@
             ontoggle?.(chip.tag);
         }
     }}
-    title={chip.isCustom
+    title={!chip.canonicalForm
         ? 'Custom tag'
         : chip.absent
           ? 'Starred — not detected in this image'
@@ -113,9 +140,9 @@
     {/if}
 
     <span class="mr-1.5">
-        {chip.tag}
+        {label}
 
-        {#if chip.score >= 0 && !chip.isCustom && !chip.absent}
+        {#if chip.score >= 0 && chip.canonicalForm && !chip.absent}
             <span class="text-[95%] opacity-70">
                 {Math.round(chip.score * 100)}%
             </span>
@@ -128,7 +155,7 @@
             type="button"
             class="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-600/40 px-1 opacity-80 transition-colors hover:opacity-100 focus:opacity-100"
             title="Change section"
-            aria-label="Change section for {chip.tag}"
+            aria-label="Change section for {label}"
             onclick={toggleMenu}
         >
             <span class="text-[90%] tracking-wide uppercase">{categoryShort}</span>
@@ -141,7 +168,7 @@
             type="button"
             class="inline-flex flex-0 cursor-pointer items-center justify-center rounded px-1 opacity-70 transition-colors hover:bg-purple-700/30 hover:opacity-100 focus:opacity-100"
             title="Remove custom tag"
-            aria-label="Remove {chip.tag}"
+            aria-label="Remove {label}"
             onclick={(e) => {
                 e.stopPropagation();
                 onremovecustom?.(chip.tag);

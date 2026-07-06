@@ -4,9 +4,10 @@
  *  ``/api/datasets/<name>/tag/policy`` (stored in the server-side
  *  ``dataset_settings`` table as the ``policy_always_add`` /
  *  ``policy_banned`` rows). This module is the **mirror store**:
- *  reactive in-memory copy used by :comp:`PolicyList` / :comp:`Tags.svelte`
- *  for UI reactivity, plus mutators that PUT optimistically against
- *  the dataset that ``loadTagPolicy`` last populated.
+ *  reactive in-memory copy used by :comp:`PolicyList` /
+ *  :comp:`Tags.svelte` for UI reactivity, plus mutators that PUT
+ *  optimistically against the dataset that ``loadTagPolicy`` last
+ *  populated.
  *
  *  Lifecycle:
  *
@@ -14,32 +15,39 @@
  *    populates the store from the server when the active dataset
  *    changes (page-level effect). A repeat call for the same dataset
  *    is a no-op (returns the cached promise).
- *  - **Optimistic mutations**: every mutator updates the store first
- *    and PUTs the full policy. A failure reverts and rethrows.
+ *  - **Optimistic mutations**: every mutator updates the local
+ *    mirror first and PUTs the full payload against the active
+ *    dataset. A PUT failure reverts and rethrows.
  *  - **Dataset switch**: when the page switches to a different
- *    dataset, call :func:`loadTagPolicy(newName)` again — the store
- *    resets to that dataset's persisted policy. The previous dataset's
- *    in-memory state is dropped; mutators targeting the old name
- *    would fail (the PUT endpoint returns 404) and the component is
- *    expected to gate on ``$tagPolicy.datasetName``.
+ *    dataset, call :func:`loadTagPolicy(newName)` again — the
+ *    mirror resets to that dataset's persisted policy. The previous
+ *    dataset's in-memory state is dropped; mutators targeting the
+ *    old name would fail (the PUT endpoint returns 404) and the
+ *    component is expected to gate on ``$tagPolicy.datasetName``.
+ *
+ *  The wire / mirror shape is per-entry ``{name, canonical_form}``,
+ *  with ``name`` in **canonical** form. ``canonical_form: true``
+ *  means the entry's name is the canonical (model-output) form —
+ *  the frontend applies the user's ``replaceUnderscores`` preference
+ *  at render time. ``false`` means the name is in display form
+ *  already (free-text user input, or a kaomoji) — render verbatim.
  */
 
 import { derived, get, writable } from 'svelte/store';
 import { fetchTagPolicy, putTagPolicy, type TagPolicyPayload } from './api';
+import { type TaggedEntry } from './highlights';
 
-/** Mirror-store state — same payload as the backend ``TagPolicy``
- *  dataclass plus a ``datasetName`` discriminator so the UI can refuse
- *  mutations against a dataset that isn't currently loaded. Camel-case
- *  locally because the rest of the tagging stores use it; the wire
- *  adapter below translates to ``always_add`` / ``banned``. */
+/** Mirror-store state — same payload as the backend ``StoredPolicy``
+ *  (per-entry) plus a ``datasetName`` discriminator so the UI can
+ *  refuse mutations against a dataset that isn't currently loaded. */
 export interface TagPolicyMirror {
     /** The dataset this policy belongs to. ``null`` until the first
      *  :func:`loadTagPolicy` resolves. Mutators refuse to fire when
      *  this is ``null`` (or, defensively, when it doesn't match the
      *  most recently loaded dataset). */
     datasetName: string | null;
-    alwaysAdd: string[];
-    banned: string[];
+    alwaysAdd: TaggedEntry[];
+    banned: TaggedEntry[];
 }
 
 const DEFAULT_POLICY: TagPolicyMirror = {
@@ -117,6 +125,13 @@ function ensureLoaded(): string {
     return current.datasetName;
 }
 
+function payloadFor(value: TagPolicyMirror): TagPolicyPayload {
+    return {
+        always_add: [...value.alwaysAdd],
+        banned: [...value.banned]
+    };
+}
+
 async function persist(value: TagPolicyMirror): Promise<void> {
     const datasetName = value.datasetName;
     if (datasetName === null) {
@@ -125,22 +140,20 @@ async function persist(value: TagPolicyMirror): Promise<void> {
     const previous = get(tagPolicy);
     tagPolicy.set(value);
     try {
-        await putTagPolicy(datasetName, {
-            always_add: [...value.alwaysAdd],
-            banned: [...value.banned]
-        });
+        const response = await putTagPolicy(datasetName, payloadFor(value));
+        tagPolicy.set(policyToMirror(response, datasetName));
     } catch (e) {
         tagPolicy.set(previous);
         throw e;
     }
 }
 
-function ensureUnique(list: string[], tag: string): string[] {
-    return list.includes(tag) ? list : [...list, tag];
+function ensureUnique(list: TaggedEntry[], entry: TaggedEntry): TaggedEntry[] {
+    return list.some((e) => e.name === entry.name) ? list : [...list, entry];
 }
 
-function removeOnce(list: string[], tag: string): string[] {
-    const idx = list.indexOf(tag);
+function removeOnce(list: TaggedEntry[], name: string): TaggedEntry[] {
+    const idx = list.findIndex((e) => e.name === name);
     if (idx < 0) {
         return list;
     }
@@ -149,16 +162,18 @@ function removeOnce(list: string[], tag: string): string[] {
     return next;
 }
 
-/** Add ``tag`` to the always-add list (idempotent). */
-export function addToAlwaysAdd(tag: string): Promise<void> {
+/** Add ``entry`` to the always-add list (idempotent). ``entry`` is the
+ *  canonical ``{name, canonical_form}`` identity, stored verbatim. */
+export function addToAlwaysAdd(entry: TaggedEntry): Promise<void> {
     ensureLoaded();
     return persist({
         ...get(tagPolicy),
-        alwaysAdd: ensureUnique(get(tagPolicy).alwaysAdd, tag)
+        alwaysAdd: ensureUnique(get(tagPolicy).alwaysAdd, entry)
     });
 }
 
-/** Remove ``tag`` from the always-add list. */
+/** Remove ``tag`` from the always-add list. ``tag`` is the canonical
+ *  ``name`` (the chip's ``entry.name``), matched against the mirror. */
 export function removeFromAlwaysAdd(tag: string): Promise<void> {
     ensureLoaded();
     return persist({
@@ -167,16 +182,18 @@ export function removeFromAlwaysAdd(tag: string): Promise<void> {
     });
 }
 
-/** Add ``tag`` to the banned list (idempotent). */
-export function addToBanned(tag: string): Promise<void> {
+/** Add ``entry`` to the banned list (idempotent). ``entry`` is the
+ *  canonical ``{name, canonical_form}`` identity, stored verbatim. */
+export function addToBanned(entry: TaggedEntry): Promise<void> {
     ensureLoaded();
     return persist({
         ...get(tagPolicy),
-        banned: ensureUnique(get(tagPolicy).banned, tag)
+        banned: ensureUnique(get(tagPolicy).banned, entry)
     });
 }
 
-/** Remove ``tag`` from the banned list. */
+/** Remove ``tag`` from the banned list. ``tag`` is the canonical
+ *  ``name`` (the chip's ``entry.name``), matched against the mirror. */
 export function removeFromBanned(tag: string): Promise<void> {
     ensureLoaded();
     return persist({
@@ -197,32 +214,17 @@ export function clearBanned(): Promise<void> {
     return persist({ ...get(tagPolicy), banned: [] });
 }
 
-/* ───── backwards-compatible wire shape ─────
- *
- * :class:`TagPolicyMirror` is the new mirror store shape. Some
- * callers / pre-existing tests still expect the wire-only subset
- * (``always_add`` / ``banned``), so ``snapshotTagPolicy`` keeps that
- * contract. */
-
-export interface TagPolicySnapshot {
-    always_add: string[];
-    banned: string[];
-}
-
-/** Compute a wire snapshot for code that hasn't migrated to the mirror
- *  store shape (the action layer for example, which used to forward
- *  this on every request — now dropped). The backend no longer reads
- *  these on the wire, but the helper stays so the few remaining
- *  consumers (and the legacy tests) keep working. */
-export function snapshotTagPolicy(): TagPolicySnapshot {
-    const p = get(tagPolicy);
-    return { always_add: [...p.alwaysAdd], banned: [...p.banned] };
+function policyToMirror(payload: TagPolicyPayload, datasetName: string): TagPolicyMirror {
+    return {
+        datasetName,
+        alwaysAdd: [...payload.always_add],
+        banned: [...payload.banned]
+    };
 }
 
 /* Reactive mirrors for components that want to bind a chip row directly.
  * Discouraged for new code: use ``$tagPolicy.alwaysAdd`` / ``$tagPolicy.banned``
  * directly (with a guard for ``datasetName === null``). */
-
 export const alwaysAddList = derived(tagPolicy, ($p) => $p.alwaysAdd);
 export const bannedList = derived(tagPolicy, ($p) => $p.banned);
 

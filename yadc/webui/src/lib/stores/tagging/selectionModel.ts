@@ -18,11 +18,18 @@ import type { TagCustomizations, TaggerResult } from './types';
 export type TagSection = typeof TAG_CATEGORIES.character | typeof TAG_CATEGORIES.general;
 
 /** One rendered chip — score + flags computed by the parent so the chip
- *  component stays focused on presentation. */
+ *  component stays focused on presentation.
+ *
+ *  ``canonicalForm`` mirrors the curated-tier ``canonical_form`` flag:
+ *  ``true`` for catalog / model-output entries (the chip view applies
+ *  the user's ``replaceUnderscores`` preference when rendering);
+ *  ``false`` for free-text user additions or kaomojis (rendered
+ *  verbatim). The chip's :comp:`TagChip` projects ``tag`` through
+ *  :func:`displayTag` using this flag. */
 export interface TagChipView {
     tag: string;
     score: number;
-    isCustom: boolean;
+    canonicalForm: boolean;
     /** Starred tag not detected in this image (force-shown, no score).
      *  Renders without a confidence % and defaults to off. */
     absent?: boolean;
@@ -188,12 +195,12 @@ export function computeOrderedCategories(
             if (!isStarred(t)) {
                 continue;
             }
-            leadOf(t).push({ tag: t, score: result.tags[t] ?? 0, isCustom: false });
+            leadOf(t).push({ tag: t, score: result.tags[t] ?? 0, canonicalForm: true });
         }
     }
     for (const [tag] of customTags) {
         if (isStarred(tag)) {
-            leadOf(tag).push({ tag, score: 1.0, isCustom: true });
+            leadOf(tag).push({ tag, score: 1.0, canonicalForm: false });
         }
     }
     // Absent starred tags (not detected, not custom) — default to general
@@ -209,7 +216,7 @@ export function computeOrderedCategories(
     }
     absent.sort();
     for (const tag of absent) {
-        leadOf(tag).push({ tag, score: 0, isCustom: false, absent: true });
+        leadOf(tag).push({ tag, score: 0, canonicalForm: true, absent: true });
     }
 
     // Sort leads: present by score desc (ties by name), absent last.
@@ -241,8 +248,8 @@ export function computeOrderedCategories(
         custom.sort();
         model.sort((a, b) => (result.tags[b] ?? 0) - (result.tags[a] ?? 0) || a.localeCompare(b));
         return [
-            ...custom.map((t) => ({ tag: t, score: 1.0, isCustom: true })),
-            ...model.map((t) => ({ tag: t, score: result.tags[t] ?? 0, isCustom: false }))
+            ...custom.map((t) => ({ tag: t, score: 1.0, canonicalForm: false })),
+            ...model.map((t) => ({ tag: t, score: result.tags[t] ?? 0, canonicalForm: true }))
         ];
     };
 

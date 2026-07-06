@@ -16,15 +16,22 @@
      *   Clicking adds it to the policy in one step — the user never has
      *   to type a tag they already curated in Customize.
      * - **Active policy** (below): each entry renders as a removable
-     *   chip with the same × pattern as :comp:`TierList`. Hovering
-     *   adds the inline "Clear all" button when more than one entry
-     *   is present (matches TierList's affordance surface).
+     *   chip with the same × pattern as :comp:`TierList` (hovering
+     *   surfaces the "Clear all" button when more than one entry
+     *   is present, matching TierList's affordance surface).
      * - **Custom additions** (bottom): the existing :comp:`TagInput`
      *   primitive for typing tags not in either list.
      */
 
     import { type Readable } from 'svelte/store';
-    import { tagHighlights, type TagTier, type TagChipView } from '$lib/stores/tagging';
+    import {
+        displayTag,
+        tagHighlights,
+        tagSettings,
+        type TagTier,
+        type TagChipView,
+        type TaggedEntry
+    } from '$lib/stores/tagging';
     import TagChip from './TagChip.svelte';
     import TagInput from './TagInput.svelte';
 
@@ -34,11 +41,12 @@
         /** Short description below the heading. */
         description: string;
         /** Reactive view of the active policy list (alwaysAdd / banned). */
-        list: Readable<string[]>;
+        list: Readable<TaggedEntry[]>;
         /** Tier to source quick-add entries from (starred / undesired). */
         tier: TagTier;
-        /** Add a tag to the policy. Called with the trimmed name. */
-        onadd: (tag: string) => void;
+        /** Add a tag to the policy. Receives the canonical
+         *  ``{name, canonical_form}`` entry; the parent stores it verbatim. */
+        onadd: (entry: TaggedEntry) => void;
         /** Remove a tag from the policy. */
         onremove: (tag: string) => void;
         /** Fill classes for chips in the active policy row. Tier-coloured
@@ -46,40 +54,52 @@
         activeFillClass: string;
     }
 
-    let { title, description, list, tier, onadd, onremove, activeFillClass }: Props =
-        $props();
+    let { title, description, list, tier, onadd, onremove, activeFillClass }: Props = $props();
 
     /* The chip model for both rows. Keeping a single shape (TagChipView)
      * lets us share :comp:`TagChip` for both; the visible difference
-     * between the two rows is purely ``isCustom`` (controls the ×) and
-     * the fill classes the parent passes down. */
+     * between the two rows is purely ``canonicalForm`` (controls the ×
+     * and the badge) and the fill classes the parent passes down. */
 
-    /** Tier members NOT yet in the policy → render as "+ add" buttons. */
+    /** Tier members NOT yet in the policy → render as "+ add" buttons.
+     *  Filters by canonical ``name``; the ``canonical_form`` display-form
+     *  signal is preserved so a kaomoji (or free-text) tier member
+     *  carries the right flag through. */
     let quickAddChips = $derived.by<TagChipView[]>(() => {
-        const tierList = tier === 'starred' ? $tagHighlights.starred : $tagHighlights.undesired;
-        const present = new Set($list);
+        const tierList: TaggedEntry[] =
+            tier === 'starred' ? $tagHighlights.starred : $tagHighlights.undesired;
+        const present = new Set($list.map((e) => e.name));
         return tierList
-            .filter((t) => !present.has(t))
-            .map((t) => ({ tag: t, score: 1.0, isCustom: false }));
+            .filter((entry) => !present.has(entry.name))
+            .map<TagChipView>((entry) => ({
+                tag: entry.name,
+                score: 1.0,
+                canonicalForm: entry.canonical_form
+            }));
     });
 
-    /** Active policy → render as filled, removable chips. */
+    /** Active policy → render as filled, removable chips. The
+     *  ``canonicalForm`` flag stays consistent with the curated-tier
+     *  display-form signal; the × surface is restricted to non-canonical
+     *  entries (free-text, kaomojis). */
     let activeChips = $derived.by<TagChipView[]>(() => {
         const list_ = $list;
-        const tierSet = new Set(
-            tier === 'starred' ? $tagHighlights.starred : $tagHighlights.undesired
+        const tierNames = new Set(
+            (tier === 'starred' ? $tagHighlights.starred : $tagHighlights.undesired).map(
+                (e) => e.name
+            )
         );
-        return list_.map<TagChipView>((t) => ({
-            tag: t,
+        return list_.map<TagChipView>((entry) => ({
+            tag: entry.name,
             score: -1,
-            isCustom: !tierSet.has(t) // × only on custom (non-tier) chips; tier members are managed in Customize
+            canonicalForm: tierNames.has(entry.name) ? entry.canonical_form : false
         }));
     });
 
     /* ``TagInput`` dedupes against this map (tag → "category"); the value
      * isn't meaningful here — just needs a per-tag bucket so a duplicate
      * add is rejected. */
-    let existingCustomTags = $derived(new Map($list.map((t) => [t, title])));
+    let existingCustomTags = $derived(new Map($list.map((e) => [e.name, title])));
 </script>
 
 <section>
@@ -94,10 +114,16 @@
                 <button
                     type="button"
                     class="cursor-pointer rounded-md border border-dashed border-gray-600 px-2 py-1 text-xs text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-200"
-                    title="Add {chip.tag} to {title}"
-                    onclick={() => onadd(chip.tag)}
+                    title="Add {displayTag(
+                        { name: chip.tag, canonical_form: chip.canonicalForm },
+                        $tagSettings.replaceUnderscores
+                    )} to {title}"
+                    onclick={() => onadd({ name: chip.tag, canonical_form: chip.canonicalForm })}
                 >
-                    {chip.tag}
+                    {displayTag(
+                        { name: chip.tag, canonical_form: chip.canonicalForm },
+                        $tagSettings.replaceUnderscores
+                    )}
                 </button>
             {/each}
         </div>
@@ -108,11 +134,11 @@
             <TagChip
                 {chip}
                 enabled={true}
-                starred={tier === 'starred' && chip.isCustom === false}
+                starred={tier === 'starred' && chip.canonicalForm}
                 fillClass={activeFillClass}
-                removable={chip.isCustom}
+                removable={!chip.canonicalForm}
                 onremovecustom={onremove}
-                ontoggle={(tag) => !chip.isCustom && onremove(tag)}
+                ontoggle={(tag) => chip.canonicalForm && onremove(tag)}
             />
         {/each}
         <TagInput category={title} modelTags={[]} {existingCustomTags} {onadd} />

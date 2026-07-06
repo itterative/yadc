@@ -142,3 +142,110 @@ class TestApplyPolicy:
         assert out.categories["general"] == ["masterpiece", "best_quality"] or set(out.categories["general"]) == {"masterpiece", "best_quality"}
         assert out.tags["masterpiece"] == 1.0
         assert out.tags["best_quality"] == 1.0
+
+
+class TestApplyPolicyNormalization:
+    """``apply_policy`` membership checks normalise both sides (case
+    insensitive, internal whitespace collapsed to underscore) so a
+    user-typed ``Speech Bubble`` or ``speech bubble`` resolves to the
+    same identity as the canonical model key ``speech_bubble``.
+    Storage stays verbatim; only the comparison collapses case and
+    whitespace.
+
+    These tests are written so a refactor that drops the normalisation
+    (going back to exact-string matching) regresses them clearly.
+    """
+
+    def _result(self) -> TaggerResult:
+        return TaggerResult(
+            tags={
+                "1girl": 0.95,
+                "speech_bubble": 0.7,
+                "long_hair": 0.6,
+            },
+            categories={
+                "general": ["1girl", "speech_bubble", "long_hair"],
+            },
+        )
+
+    def test_always_add_with_capitals_preserves_model_score(self) -> None:
+        """User-typed ``Speech Bubble`` boosts the model's canonical
+        ``speech_bubble`` at its original score (no synthetic chip on top)."""
+        out = apply_policy(self._result(), TagPolicy(always_add=["Speech Bubble"]))
+        assert out.tags["speech_bubble"] == 0.7
+        assert "Speech Bubble" not in out.tags
+        assert "Speech Bubble" not in out.categories.get("general", [])
+
+    def test_always_add_with_spaces_preserves_model_score(self) -> None:
+        """Same as the capitals variant, for the spaces case."""
+        out = apply_policy(self._result(), TagPolicy(always_add=["speech bubble"]))
+        assert out.tags["speech_bubble"] == 0.7
+        assert "speech bubble" not in out.tags
+        assert "speech bubble" not in out.categories.get("general", [])
+
+    def test_banned_with_capitals_removes_canonical_tag(self) -> None:
+        out = apply_policy(self._result(), TagPolicy(banned=["Speech Bubble"]))
+        assert "speech_bubble" not in out.tags
+        assert "speech_bubble" not in out.categories.get("general", [])
+
+    def test_banned_with_spaces_removes_canonical_tag(self) -> None:
+        out = apply_policy(self._result(), TagPolicy(banned=["speech bubble"]))
+        assert "speech_bubble" not in out.tags
+        assert "speech_bubble" not in out.categories.get("general", [])
+
+    def test_always_add_wins_over_banned_via_normalisation(self) -> None:
+        """Same canonical identity in both lists under different surface
+        forms → ``always_add`` wins, tag kept at original score."""
+        out = apply_policy(
+            self._result(),
+            TagPolicy(always_add=["speech bubble"], banned=["Speech Bubble"]),
+        )
+        assert out.tags["speech_bubble"] == 0.7
+
+    def test_synthetic_injection_skipped_when_norm_matches_model(self) -> None:
+        """A user-typed ``Speech Bubble`` doesn't produce a synthetic chip
+        on top of an existing canonical ``speech_bubble`` from the model —
+        the canonical entry covers it (no duplicate identity)."""
+        out = apply_policy(self._result(), TagPolicy(always_add=["Speech Bubble"]))
+        # Only one entry for this identity — the model's canonical. The
+        # user's verbatim "Speech Bubble" was absorbed into the matching
+        # canonical key, not duplicated as a synthetic chip.
+        assert "speech_bubble" in out.tags
+        assert "Speech Bubble" not in out.tags
+        assert "speech bubble" not in out.tags
+
+    def test_synthetic_injection_uses_user_verbatim_for_custom_tag(self) -> None:
+        """A genuinely custom tag the model never produced is injected at
+        score 1.0 with the user's verbatim identity preserved (storage
+        doesn't canonicalise)."""
+        out = apply_policy(
+            self._result(),
+            TagPolicy(always_add=["My Custom Invention"]),
+        )
+        assert "My Custom Invention" in out.tags
+        assert out.tags["My Custom Invention"] == 1.0
+        # Casing preserved — the lower-cased canonical form is NOT what
+        # ends up in the result. Storage-style verbatim, not normalised.
+        assert "my_custom_invention" not in out.tags
+
+    def test_two_user_forms_same_norm_yield_one_synthetic(self) -> None:
+        """User types ``my tag`` and ``My Tag`` — same canonical identity.
+        Only one synthetic chip entry; the second form collapses onto the
+        first (dict-key uniqueness)."""
+        result = TaggerResult(tags={"1girl": 0.9}, categories={"general": ["1girl"]})
+        out = apply_policy(result, TagPolicy(always_add=["my tag", "My Tag"]))
+        # At most one entry exists for this identity — either of the two
+        # user-typed forms survives, but never both.
+        identity_keys = [t for t in out.tags if t in {"my tag", "My Tag"}]
+        assert len(identity_keys) <= 1
+
+    def test_kaomoji_match_across_canonical_forms(self) -> None:
+        """A user-curated kaomoji matches the model's identical canonical
+        key without writing a synthetic — kaomojis have no whitespace
+        and are already lowercase, so the normalisation passes them
+        through unchanged."""
+        result = TaggerResult(tags={"^_^": 0.7}, categories={"general": ["^_^"]})
+        out = apply_policy(result, TagPolicy(always_add=["^_^"]))
+        # The model's '^_^' satisfies the always_add entry — preserved
+        # at its original score, no synthetic duplicate.
+        assert out.tags == {"^_^": 0.7}

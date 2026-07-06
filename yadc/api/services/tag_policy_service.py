@@ -1,33 +1,37 @@
 """Per-dataset tag policy — always-add / banned lists used during tag result filtering.
 
-A simple dataclass returned by the service, plus a thin wrapper around
-:class:`DatasetSettingsRepository` that decodes the two stored rows
-(``policy_always_add`` / ``policy_banned`` JSON arrays) into a
-:class:`TagPolicy`. The dataset name → ``dataset_id`` resolution goes
-through :class:`DatasetRepository` (one small SQL read) so the public
-API stays dataset-name-keyed — same as the rest of the API surface.
+A thin wrapper around :class:`DatasetSettingsRepository` that decodes
+the two stored rows (``policy_always_add`` / ``policy_banned`` JSON
+arrays) into per-entry shapes with the curated-tier ``name`` + ``custom``
+signal (see :class:`yadc.api.services.tag_highlights_service.TaggedEntry`).
+The dataset name → ``dataset_id`` resolution goes through
+:class:`DatasetRepository` (one small SQL read) so the public API stays
+dataset-name-keyed — same as the rest of the API surface.
 
 Behaviour:
 
-- A never-configured dataset (no rows) decodes to an **empty**
-  :class:`TagPolicy` (``always_add=[]``, ``banned=[]``). This matches
-  the original "frontend sends a default ``TagPolicy()`` if unset"
-  semantic — a stored-but-empty policy is observationally identical
-  to no policy.
+- A never-configured dataset (no rows) decodes to an empty policy
+  (both lists ``[]``). This matches the original "frontend sends a
+  default empty policy if unset" semantic — a stored-but-empty policy
+  is observationally identical to no policy.
 - A missing row decodes to ``[]``; a row whose JSON is unparseable
   logs and falls back to ``[]`` rather than raising, mirroring
   :meth:`SettingsService.get`.
 - Both keys are independently upsertable. Toggling one list in the
   UI doesn't overwrite the other.
 
-The wire shape is mirrored by a Pydantic model so the JSON-decoded
-``Any`` parses into a typed structure (and basedpyright stays clean
-on the per-row accessors).
+Each entry carries a ``canonical_form`` boolean — :data:`True` for
+catalog / model-output entries (the frontend applies the user's
+``replace_underscores`` preference at render time); :data:`False`
+for free-text submissions or kaomojis (the literal identity is
+pinned, rendered verbatim). See :class:`TaggedEntry` for the
+kaomoji auto-flip.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from logging import Logger
 
 import pydantic
@@ -39,6 +43,21 @@ from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 from .dataset_repository import DatasetRepository
 from .dataset_settings_repository import DatasetSettingsRepository
+from .tag_highlights_service import TaggedEntry
+
+
+@dataclass
+class StoredPolicy:
+    """Per-dataset policy in the storage (per-entry) shape.
+
+    The backend keeps the path signal (``canonical_form``) so the GET
+    endpoint can apply the right display rule at the wire boundary.
+    Each list is independent (always_add vs banned) and is stored
+    under its own SQLite key for per-list upsert ergonomics.
+    """
+
+    always_add: list[TaggedEntry]
+    banned: list[TaggedEntry]
 
 
 class TagPolicyPayload(pydantic.BaseModel):
@@ -50,7 +69,7 @@ class TagPolicyPayload(pydantic.BaseModel):
     mutating one doesn't rewrite the other).
     """
 
-    tags: list[str] = pydantic.Field(default_factory=list)
+    tags: list[TaggedEntry] = pydantic.Field(default_factory=list)
 
 
 class TagPolicyService(Service):
@@ -81,11 +100,11 @@ class TagPolicyService(Service):
         self._repo: DatasetSettingsRepository = repo
         self._dataset_repo: DatasetRepository = dataset_repo
 
-    def get(self, dataset_name: str) -> TagPolicy:
+    def get(self, dataset_name: str) -> StoredPolicy:
         """Return the stored policy for ``dataset_name``.
 
         Missing rows, missing dataset, or unparseable JSON all fall
-        back to the default :class:`TagPolicy` (both lists empty).
+        back to the default :class:`StoredPolicy` (both lists empty).
         A missing dataset is not an error: callers that have already
         resolved the dataset upstream (image detail UI, batch job
         preflight) keep their existing 404 / 409 semantics, and
@@ -94,13 +113,13 @@ class TagPolicyService(Service):
         """
         dataset_row = self._dataset_repo.get_dataset_row(dataset_name)
         if dataset_row is None:
-            return TagPolicy()
+            return StoredPolicy(always_add=[], banned=[])
         dataset_id = dataset_row[0]
         always_add = self._decode_list(dataset_id, self._KEY_ALWAYS_ADD)
         banned = self._decode_list(dataset_id, self._KEY_BANNED)
-        return TagPolicy(always_add=always_add, banned=banned)
+        return StoredPolicy(always_add=always_add, banned=banned)
 
-    def set(self, dataset_name: str, policy: TagPolicy) -> bool:
+    def set(self, dataset_name: str, policy: StoredPolicy) -> bool:
         """Persist ``policy`` for ``dataset_name``. Returns ``True`` on success.
 
         Each list is encoded independently — a missing/empty list is
@@ -117,7 +136,18 @@ class TagPolicyService(Service):
         self._repo.upsert(dataset_id, self._KEY_BANNED, _dump_list(policy.banned))
         return True
 
-    def _decode_list(self, dataset_id: int, key: str) -> list[str]:
+    def names_for_policy(self, policy: StoredPolicy) -> TagPolicy:
+        """Drop the per-entry metadata into the legacy ``TagPolicy`` shape
+        so :func:`yadc.taggers.postprocessing.apply_policy` can match
+        names against the model output without caring about the
+        curated-tier ``canonical_form`` flag (the matching key is
+        normalised separately)."""
+        return TagPolicy(
+            always_add=[e.name for e in policy.always_add],
+            banned=[e.name for e in policy.banned],
+        )
+
+    def _decode_list(self, dataset_id: int, key: str) -> list[TaggedEntry]:
         """Decode a stored JSON list, falling back to ``[]`` on miss / parse failure."""
         raw = self._repo.get(dataset_id, key)
         if raw is None:
@@ -137,6 +167,6 @@ class TagPolicyService(Service):
         return list(payload.tags)
 
 
-def _dump_list(tags: list[str]) -> str:
+def _dump_list(entries: list[TaggedEntry]) -> str:
     """JSON-serialize one policy list through the wire payload shape."""
-    return TagPolicyPayload(tags=list(tags)).model_dump_json()
+    return TagPolicyPayload(tags=list(entries)).model_dump_json()

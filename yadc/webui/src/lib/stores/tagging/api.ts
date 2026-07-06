@@ -296,21 +296,39 @@ export async function previewTagFormats(
 // so the round-trip is a pure identity. Mirrors how ``tagger.active_model``
 // and ``tagger.suggestion_variant`` are exposed.
 
+/** One curated-tier entry on the wire.
+
+ *  ``name`` is the canonical identity (``speech_bubble``) — stored and
+ *  returned verbatim; the frontend projects it to the user's preferred
+ *  display form at render time. ``canonical_form`` is ``true`` for
+ *  catalog / model-output entries (the frontend applies the user's
+ *  ``replace_underscores`` preference when rendering); ``false`` for
+ *  free-text user input or kaomojis (rendered verbatim). The backend
+ *  validator auto-flips the flag to ``false`` for kaomojis, so the
+ *  frontend never has to special-case them. */
+export interface TaggedEntryPayload {
+    name: string;
+    canonical_form: boolean;
+}
+
 /** Wire shape returned by :func:`fetchTagHighlights` (and accepted by
  *  :func:`putTagHighlights`). Matches the backend ``TagHighlights``
- *  dataclass field-for-field. */
+ *  dataclass field-for-field; tier entries carry the display-form
+ *  signal via :class:`TaggedEntryPayload`. */
 export interface TagHighlightsPayload {
-    starred: string[];
-    desired: string[];
-    undesired: string[];
+    starred: TaggedEntryPayload[];
+    desired: TaggedEntryPayload[];
+    undesired: TaggedEntryPayload[];
     category_overrides: Record<string, string>;
 }
 
 /** Fetch the persisted global tag highlights. Returns the same shape
  *  regardless of whether the user has stored anything yet (a fresh
- *  install is an all-empty object). Throws on a non-200 — the action
- *  layer typically toasts the failure rather than handling it
- *  explicitly. */
+ *  install is an all-empty object). Each tier entry is the canonical
+ *  ``{name, custom}`` identity — the frontend applies the user's
+ *  ``replaceUnderscores`` preference at render time. Throws on a
+ *  non-200 — the action layer typically toasts the failure rather than
+ *  handling it explicitly. */
 export async function fetchTagHighlights(signal?: AbortSignal): Promise<TagHighlightsPayload> {
     const res = await fetch(`${API_BASE}/api/tagging/highlights`, { signal });
     if (!res.ok) {
@@ -321,13 +339,14 @@ export async function fetchTagHighlights(signal?: AbortSignal): Promise<TagHighl
 
 /** Replace the persisted tag highlights with ``value`` (whole-blob write).
 
- *  400 on Pydantic validation failure (e.g. a wrong shape). The
- *  frontend always sends the complete current state — partial updates
- *  aren't worth a merge protocol here. */
+ *  Returns the persisted canonical shape so the frontend mirror stays in
+ *  sync without a local transform. 400 on Pydantic validation failure
+ *  (e.g. a wrong shape). The frontend always sends the complete current
+ *  state — partial updates aren't worth a merge protocol here. */
 export async function putTagHighlights(
     value: TagHighlightsPayload,
     signal?: AbortSignal
-): Promise<void> {
+): Promise<TagHighlightsPayload> {
     const res = await fetch(`${API_BASE}/api/tagging/highlights`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -337,6 +356,7 @@ export async function putTagHighlights(
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
+    return (await res.json()) as TagHighlightsPayload;
 }
 
 // --- Dataset tag policy (always_add / banned) ---
@@ -348,17 +368,21 @@ export async function putTagHighlights(
 // PUT. 404 when the dataset isn't registered.
 
 /** Wire shape returned by :func:`fetchTagPolicy`. Matches the backend
- *  ``TagPolicy`` field names (``always_add`` / ``banned``, snake_case
- *  for consistency with the rest of the wire surface). */
+ *  ``StoredPolicy`` field names (``always_add`` / ``banned``,
+ *  snake_case for consistency with the rest of the wire surface).
+ *  Each list is a ``TaggedEntryPayload[]`` so the ``canonical_form``
+ *  display-form signal survives the round-trip. */
 export interface TagPolicyPayload {
-    always_add: string[];
-    banned: string[];
+    always_add: TaggedEntryPayload[];
+    banned: TaggedEntryPayload[];
 }
 
 /** Fetch the persisted always-add / banned policy for ``datasetName``.
 
- *  404 when the dataset is not registered with yadc; action layer
- *  surfaces the toast. */
+ *  Each entry is the canonical ``{name, canonical_form}`` identity
+ *  (the frontend projects to display at render time). 404 when the
+ *  dataset is not registered with yadc; action layer surfaces the
+ *  toast. */
 export async function fetchTagPolicy(
     datasetName: string,
     signal?: AbortSignal
@@ -375,15 +399,16 @@ export async function fetchTagPolicy(
 
 /** Persist the always-add / banned policy for ``datasetName`` (whole-blob write).
 
- *  404 when the dataset is not registered (the action layer calls
- *  :func:`fetchTagPolicy` first to verify registration); 400 on
- *  Pydantic validation failure. Empty lists are persisted normally —
- *  clearing a list is a real edit. */
+ *  Returns the persisted canonical shape so the frontend mirror stays in
+ *  sync without a local transform. 404 when the dataset is not registered
+ *  (the action layer calls :func:`fetchTagPolicy` first to verify
+ *  registration); 400 on Pydantic validation failure. Empty lists are
+ *  persisted normally — clearing a list is a real edit. */
 export async function putTagPolicy(
     datasetName: string,
     value: TagPolicyPayload,
     signal?: AbortSignal
-): Promise<void> {
+): Promise<TagPolicyPayload> {
     const res = await fetch(
         `${API_BASE}/api/datasets/${encodeURIComponent(datasetName)}/tag/policy`,
         {
@@ -396,6 +421,7 @@ export async function putTagPolicy(
     if (!res.ok) {
         throw new Error(await apiErrorMessage(res));
     }
+    return (await res.json()) as TagPolicyPayload;
 }
 
 // --- Tagger model swap ---
@@ -462,24 +488,23 @@ function lruSet(key: string, value: TagSuggestion[]) {
 }
 
 /** Fetch autocomplete suggestions for *query*. Each suggestion carries its
- *  catalog category so the dropdown can show a category badge. Cached by
- *  normalized query (+ limit + replace_underscores) so backspace-and-retype
- *  within the session is instant; empty results aren't cached (they say
- *  nothing about a longer query that extends them). When *replaceUnderscores*
- *  is set the backend spaces out the suggestion names (kaomojis preserved)
- *  to mirror the tagger's output formatting. */
+ *  catalog category so the dropdown can show a category badge. Names come
+ *  back in canonical form (``speech_bubble``); the dropdown projects to the
+ *  user's display preference at render time. Cached by normalized query
+ *  (+ limit) so backspace-and-retype within the session is instant; empty
+ *  results aren't cached (they say nothing about a longer query that
+ *  extends them). */
 export async function fetchTagSuggestions(
     query: string,
     signal?: AbortSignal,
-    limit = 20,
-    replaceUnderscores = false
+    limit = 20
 ): Promise<TagSuggestion[]> {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
         return [];
     }
 
-    const cacheKey = `${limit}:${replaceUnderscores ? '1' : '0'}:${normalized}`;
+    const cacheKey = `${limit}:${normalized}`;
     const cached = lruGet(cacheKey);
     if (cached) {
         return cached;
@@ -487,8 +512,7 @@ export async function fetchTagSuggestions(
 
     const params = new URLSearchParams({
         q: query.trim(),
-        limit: String(limit),
-        replace_underscores: replaceUnderscores ? 'true' : 'false'
+        limit: String(limit)
     });
     const res = await fetch(`${API_BASE}/api/tagging/suggest?${params}`, { signal });
     if (!res.ok) {

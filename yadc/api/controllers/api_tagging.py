@@ -63,7 +63,6 @@ import pydantic
 from quart import Response, jsonify, request
 
 from yadc.taggers.onnx_preprocess import list_profiles
-from yadc.taggers.postprocessing import TagPolicy, replace_underscore_for_tag
 
 from ..configuration import Configuration
 from ..modules.dataset_watcher import SELF_JOB_ID
@@ -75,8 +74,8 @@ from ..modules.tagger_catalog import (
 )
 from ..services.dataset_jobs import DatasetBusyError
 from ..services.datasets import DatasetService
-from ..services.tag_highlights_service import TagHighlights, TagHighlightsService
-from ..services.tag_policy_service import TagPolicyService
+from ..services.tag_highlights_service import TaggedEntry, TagHighlights, TagHighlightsService
+from ..services.tag_policy_service import StoredPolicy, TagPolicyService
 from ..services.tag_suggestions import CatalogVariant, TagSuggestionsService, list_variants, resolve_variant
 from ..services.tagging import (
     TaggerBusyError,
@@ -159,28 +158,30 @@ class SuggestionVariantBody(pydantic.BaseModel):
 class TagPolicyBody(pydantic.BaseModel):
     """Body for ``PUT /datasets/<name>/tag/policy`` — replace the always-add / banned lists.
 
-    Both fields are required and overwrite the stored values verbatim;
-    an empty list is persisted (so clearing a list doesn't require a
-    separate endpoint). The frontend usually sends the *complete*
-    current state — the server doesn't merge.
+    Each entry is the canonical ``{name, canonical_form}`` shape
+    (``canonical_form: True`` for catalog picks — the frontend
+    applies the user's ``replace_underscores`` preference; ``False``
+    for free-text entries or kaomojis whose literal identity is
+    pinned). Stored and returned verbatim; the backend validator
+    auto-flips the flag to ``False`` for kaomojis regardless of
+    what the client sent.
     """
 
-    always_add: list[str]
-    banned: list[str]
+    always_add: list[TaggedEntry]
+    banned: list[TaggedEntry]
 
 
 class TagHighlightsBody(pydantic.BaseModel):
     """Body for ``PUT /tagging/highlights`` — replace the global tag tiers in full.
 
-    The wire shape matches the persisted blob: three tier lists plus a
-    category-override dict. Mirrors the frontend ``TagHighlights`` shape
-    so the round-trip is trivial — the frontend saves the same object
-    it received on the GET.
+    Each tier entry is the canonical ``{name, canonical_form}``
+    shape. Stored and returned verbatim; the backend validator
+    auto-flips ``canonical_form`` to ``False`` for kaomojis.
     """
 
-    starred: list[str]
-    desired: list[str]
-    undesired: list[str]
+    starred: list[TaggedEntry]
+    desired: list[TaggedEntry]
+    undesired: list[TaggedEntry]
     category_overrides: dict[str, str] = pydantic.Field(default_factory=dict)
 
 
@@ -331,36 +332,49 @@ def api_tagging(
     def get_dataset_tag_policy(name: str):  # pyright: ignore[reportUnusedFunction]
         """Return the always-add / banned policy for ``name``.
 
-        Returns the persisted policy (both lists may be empty) for a
-        registered dataset, and ``404`` when the dataset isn't
-        registered with the yadc DB. Unregistered datasets aren't
-        addressable through any other tag endpoint either, so this
-        keeps the surface consistent.
+        Each entry comes back in its canonical ``{name, canonical_form}``
+        shape (display is the frontend's render concern; the
+        ``canonical_form`` flag tells the frontend whether to apply
+        the user's ``replace_underscores`` preference). Returns the
+        persisted policy (both lists may be empty) for a registered
+        dataset, and ``404`` when the dataset isn't registered with
+        the yadc DB.
         """
         if datasets.get_dataset(name) is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
         policy = tag_policy.get(name)
-        return jsonify({"always_add": list(policy.always_add), "banned": list(policy.banned)})
+        return jsonify(
+            {
+                "always_add": [e.model_dump() for e in policy.always_add],
+                "banned": [e.model_dump() for e in policy.banned],
+            }
+        )
 
     @app.put("/datasets/<name>/tag/policy")
     async def put_dataset_tag_policy(name: str):  # pyright: ignore[reportUnusedFunction]
         """Persist the always-add / banned policy for ``name``.
 
         Body is the full policy shape (both lists required, both
-        overwritten verbatim). Returns ``200`` with the persisted
-        policy; ``404`` when the dataset isn't registered; ``400``
-        when the body fails validation.
+        overwritten verbatim). The PUT response echoes the persisted
+        canonical ``{name, canonical_form}`` shape. ``404`` when the
+        dataset isn't registered; ``400`` when the body fails
+        validation.
         """
         if datasets.get_dataset(name) is None:
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
         body = validate_body(TagPolicyBody, await request.get_json(silent=True))
-        policy = TagPolicy(always_add=list(body.always_add), banned=list(body.banned))
+        policy = StoredPolicy(always_add=list(body.always_add), banned=list(body.banned))
         stored = tag_policy.set(name, policy)
         if not stored:
             # Race: dataset was unregistered between the GET check
             # above and the SET. Surface as 404 for symmetry.
             return jsonify_error(f"Dataset '{name}' not found", status=404, code=ErrorCode.NOT_FOUND)
-        return jsonify({"always_add": list(policy.always_add), "banned": list(policy.banned)})
+        return jsonify(
+            {
+                "always_add": [e.model_dump() for e in policy.always_add],
+                "banned": [e.model_dump() for e in policy.banned],
+            }
+        )
 
     @app.get("/datasets/<name>/images/<int:image_id>/tag")
     async def get_cached_tag_result(name: str, image_id: int):  # pyright: ignore[reportUnusedFunction]
@@ -539,12 +553,12 @@ def api_tagging(
         """Autocomplete backend for the Tags tab's custom-tag input.
 
         Query-string params (no body): ``q`` (1–100 chars after trim;
-        empty → ``[]``) and optional ``limit`` (1–50, default 20) and
-        ``replace_underscores`` (``true``/``1``/``yes``; default off).
-        When set, each suggestion's ``name`` has underscores turned into
-        spaces (kaomojis preserved) so the dropdown mirrors the tagger's
-        ``replace_underscores`` setting; matching still runs on the
-        canonical underscored forms.
+        empty → ``[]``) and optional ``limit`` (1–50, default 20).
+
+        Each suggestion's ``name`` is the canonical catalog identity
+        (underscored, e.g. ``speech_bubble``); the dropdown applies the
+        user's ``replace_underscores`` preference at render time.
+        Matching runs on the canonical forms.
 
         Returns ``{"query", "suggestions": [{name, category}, ...]}``.
         Each suggestion carries its catalog category (the danbooru
@@ -578,14 +592,6 @@ def api_tagging(
         except ValueError:
             return jsonify_error("limit must be an integer", status=400, code=ErrorCode.BAD_REQUEST)
 
-        # Mirror the tagger's replace_underscores display setting so the
-        # dropdown matches whatever the user's output is formatted as.
-        # Same truthy idiom as the GET /tag endpoint. Applied post-match
-        # (the matcher works on canonical names; this is a display-only
-        # transform), reusing the tagger's kaomoji-preserving helper.
-        replace_raw = request.args.get("replace_underscores")
-        replace = replace_raw is not None and replace_raw.lower() in ("true", "1", "yes")
-
         t0 = time.perf_counter()
         suggestions = await tag_suggestions.suggest(raw_q, limit=limit)
         # Perf signal: how long the suggest pass actually took for
@@ -608,11 +614,7 @@ def api_tagging(
             {
                 "query": raw_q,
                 "suggestions": [
-                    {
-                        "name": replace_underscore_for_tag(name) if replace else name,
-                        "category": category,
-                    }
-                    for name, category in suggestions
+                    {"name": name, "category": category} for name, category in suggestions
                 ],
             }
         )
@@ -678,17 +680,20 @@ def api_tagging(
     def get_tag_highlights():  # pyright: ignore[reportUnusedFunction]
         """Return the persisted tag highlights (or defaults for a fresh install).
 
-        Always returns a body — missing / corrupted rows fall back to
-        empty tiers in :class:`TagHighlightsService`, and the JSON
-        shape is stable so the frontend can hard-construct it from
-        the response.
+        Each tier entry is returned in its canonical ``{name,
+        canonical_form}`` shape; ``category_overrides`` keys are
+        canonical too. The frontend applies the user's
+        ``replace_underscores`` preference for entries with
+        ``canonical_form: True`` and renders verbatim otherwise.
+        Missing / corrupted rows fall back to empty tiers in
+        :class:`TagHighlightsService`.
         """
         value: TagHighlights = tag_highlights.get()
         return jsonify(
             {
-                "starred": list(value.starred),
-                "desired": list(value.desired),
-                "undesired": list(value.undesired),
+                "starred": [e.model_dump() for e in value.starred],
+                "desired": [e.model_dump() for e in value.desired],
+                "undesired": [e.model_dump() for e in value.undesired],
                 "category_overrides": dict(value.category_overrides),
             }
         )
@@ -699,23 +704,25 @@ def api_tagging(
 
         Body is the full shape (all three tier lists + category
         overrides); the server overwrites the stored blob verbatim.
-        400 on Pydantic validation failure (e.g. wrong types).
+        The PUT response echoes the persisted canonical shape
+        (``{name, canonical_form}`` per entry) so the frontend
+        mirror stays in sync. 400 on Pydantic validation failure
+        (e.g. wrong types).
         """
         body = validate_body(TagHighlightsBody, await request.get_json(silent=True))
-        tag_highlights.set(
-            TagHighlights(
-                starred=list(body.starred),
-                desired=list(body.desired),
-                undesired=list(body.undesired),
-                category_overrides=dict(body.category_overrides),
-            )
+        value = TagHighlights(
+            starred=list(body.starred),
+            desired=list(body.desired),
+            undesired=list(body.undesired),
+            category_overrides=dict(body.category_overrides),
         )
+        tag_highlights.set(value)
         return jsonify(
             {
-                "starred": list(body.starred),
-                "desired": list(body.desired),
-                "undesired": list(body.undesired),
-                "category_overrides": dict(body.category_overrides),
+                "starred": [e.model_dump() for e in value.starred],
+                "desired": [e.model_dump() for e in value.desired],
+                "undesired": [e.model_dump() for e in value.undesired],
+                "category_overrides": dict(value.category_overrides),
             }
         )
 

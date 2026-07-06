@@ -3,27 +3,28 @@
  *  ``/api/tagging/highlights`` (stored in the server-side ``settings``
  *  KV table at ``tagger.tag_highlights``). A tag lives in at most one tier.
  *
- *  The previous shape held a ``$version`` storage marker for the
- *  client-side ``storable`` primitive. The backend doesn't carry
- *  that marker — the wire schema is the versioned contract — so the
- *  marker is dropped here too.
- *
- *  Lifecycle:
- *
- *  - **One-shot fetch on mount**: :func:`ensureHighlightsLoaded` fires
- *    a single ``fetchTagHighlights`` the first time it's called and
- *    seeds the local store. Subsequent calls return the cached promise
- *    so multiple subscribers don't refetch on app boot.
- *  - **Optimistic mutations**: the mutators below update the local
- *    store first, then PUT the full payload. A PUT failure reverts the
- *    local state and rethrows so the caller (action layer / component)
- *    can toast.
- *  - **Refetch**: a hard reload is ``refreshHighlights()`` for the
- *    post-PUT sync path that wants the canonical server state.
+ *  The wire / mirror shape is per-entry ``{name, canonical_form}``,
+ *  with ``name`` in **canonical** form (``speech_bubble``).
+ *  ``canonical_form: true`` means the entry's name is the canonical
+ *  (model-output) form and the frontend applies the user's
+ *  ``replaceUnderscores`` preference at render time. ``false`` means
+ *  the name should be rendered verbatim (free-text user input, or
+ *  a kaomoji — the backend's :class:`TaggedEntry` validator
+ *  auto-flips the flag for kaomojis). Display is a render concern —
+ *  the derived tier / override maps below project canonical keys
+ *  to display form so the prune grid (which works in display-form
+ *  model tags) keeps matching.
  */
 
 import { derived, get, writable } from 'svelte/store';
-import { fetchTagHighlights, putTagHighlights, type TagHighlightsPayload } from './api';
+import {
+    fetchTagHighlights,
+    putTagHighlights,
+    type TagHighlightsPayload,
+    type TaggedEntryPayload
+} from './api';
+import { displayTag } from './display';
+import { tagSettings } from './settings';
 
 export type TagTier = 'starred' | 'desired' | 'undesired';
 
@@ -35,17 +36,23 @@ export const TAG_TIERS = {
     undesired: 'undesired'
 } as const satisfies Record<TagTier, TagTier>;
 
+/** Re-export of the wire entry type for callers that need to
+ *  construct one (e.g. mutators, fixtures). ``canonical_form``
+ *  defaults to ``true`` to match the backend's permissive default
+ *  (catalog / model-output entries are the common case). */
+export type TaggedEntry = TaggedEntryPayload;
+
 export interface TagHighlights {
-    starred: string[];
-    desired: string[];
-    undesired: string[];
+    starred: TaggedEntry[];
+    desired: TaggedEntry[];
+    undesired: TaggedEntry[];
     /** Starred tag → forced section override (e.g. ``character`` / ``general``).
      *  Absent entry = derive from model output (the default). Only
      *  meaningful for starred tags. */
     categoryOverrides: Record<string, string>;
 }
 
-/** The storage key for each tier's tag list. Narrowed to the three
+/** The storage key for each tier's entry list. Narrowed to the three
  *  tier-array keys so it can't accidentally widen to other ``TagHighlights``
  *  fields (e.g. ``categoryOverrides``). */
 export type TierKey = 'starred' | 'desired' | 'undesired';
@@ -68,6 +75,9 @@ const DEFAULT_HIGHLIGHTS: TagHighlights = {
 
 export const tagHighlights = writable<TagHighlights>({
     ...DEFAULT_HIGHLIGHTS,
+    starred: [...DEFAULT_HIGHLIGHTS.starred],
+    desired: [...DEFAULT_HIGHLIGHTS.desired],
+    undesired: [...DEFAULT_HIGHLIGHTS.undesired],
     categoryOverrides: { ...DEFAULT_HIGHLIGHTS.categoryOverrides }
 });
 
@@ -106,47 +116,66 @@ export async function refreshHighlights(): Promise<TagHighlights> {
     return ensureHighlightsLoaded();
 }
 
-/** Reactive ``tag → tier`` lookup. Re-derives whenever the store changes so
- *  chip rendering in the prune grid stays in sync with the customize tab. */
-export const tagTierMap = derived(tagHighlights, ($h) => {
+/** Reactive ``display-form tag → tier`` lookup. Keys are projected from
+ *  the canonical mirror via the user's ``replaceUnderscores`` preference so
+ *  the prune grid (which works in display-form model tags) keeps matching.
+ *  Entries with ``canonical_form: false`` (free-text, kaomojis) project
+ *  verbatim. Re-derives when the mirror or the setting changes. */
+export const tagTierMap = derived([tagHighlights, tagSettings], ([$h, $s]) => {
+    const ru = $s.replaceUnderscores;
     const map = new Map<string, TagTier>();
-    for (const t of $h.starred) {
-        map.set(t, TAG_TIERS.starred);
-    }
-    for (const t of $h.desired) {
-        map.set(t, TAG_TIERS.desired);
-    }
-    for (const t of $h.undesired) {
-        map.set(t, TAG_TIERS.undesired);
-    }
+    const add = (entries: TaggedEntry[], tier: TagTier) => {
+        for (const e of entries) {
+            map.set(displayTag(e, ru), tier);
+        }
+    };
+    add($h.starred, TAG_TIERS.starred);
+    add($h.desired, TAG_TIERS.desired);
+    add($h.undesired, TAG_TIERS.undesired);
     return map;
 });
 
-/** Reactive ``tag → forced section`` lookup for starred tags. Absent =
- *  derive from model output. */
-export const tagCategoryOverrideMap = derived(tagHighlights, ($h) => {
+/** Reactive ``display-form tag → forced section`` lookup for starred tags.
+ *  Override keys are stored canonical; this projects them to display form
+ *  (using the matching starred entry's ``canonical_form`` flag) so the
+ *  prune grid's display-tag lookups resolve. Absent = derive from model
+ *  output. */
+export const tagCategoryOverrideMap = derived([tagHighlights, tagSettings], ([$h, $s]) => {
+    const ru = $s.replaceUnderscores;
+    const canonicalByName = new Map($h.starred.map((e) => [e.name, e.canonical_form] as const));
     const map = new Map<string, string>();
-    for (const [tag, cat] of Object.entries($h.categoryOverrides)) {
-        map.set(tag, cat);
+    for (const [name, cat] of Object.entries($h.categoryOverrides)) {
+        map.set(displayTag({ name, canonical_form: canonicalByName.get(name) ?? true }, ru), cat);
     }
     return map;
 });
 
 /* ───── mutators ─────
  *
- * Every mutator applies the change locally first (optimistic) and
- * PUTs the full payload to the backend. A PUT failure reverts to the
- * snapshot taken before the local update, then rethrows so the
+ * Every mutator updates the store first (optimistic) and
+ * PUTs the full payload to the backend. A PUT failure reverts to
+ * the snapshot taken before the local update, then rethrows so the
  * caller (typically the action layer or a component error
- * boundary) can surface a toast. Server is authoritative — on
- * reconnect / refresh the canonical state comes back through
- * :func:`refreshHighlights`. */
+ * boundary) can surface a toast. */
+
+/** Helper used inside ``persist`` to convert the optimistic-local
+ *  tier lists (which may contain entries the previous PUT round
+ *  hadn't reached the server yet) into the wire shape. */
+function payloadFor(value: TagHighlights): TagHighlightsPayload {
+    return {
+        starred: [...value.starred],
+        desired: [...value.desired],
+        undesired: [...value.undesired],
+        category_overrides: { ...value.categoryOverrides }
+    };
+}
 
 async function persist(value: TagHighlights): Promise<void> {
     const previous = get(tagHighlights);
     tagHighlights.set(value);
     try {
-        await putTagHighlights(highlightsToPayload(value));
+        const response = await putTagHighlights(payloadFor(value));
+        tagHighlights.set(payloadToHighlights(response));
     } catch (e) {
         tagHighlights.set(previous);
         throw e;
@@ -154,12 +183,17 @@ async function persist(value: TagHighlights): Promise<void> {
 }
 
 /** Assign a tag to a tier, removing it from any other tier first (tiers are
- *  mutually exclusive). Idempotent if the tag is already in that tier. */
-export function setTagTier(tier: TagTier, tag: string): Promise<void> {
-    return persist(withoutTag({ ...get(tagHighlights) }, tag, tier));
+ *  mutually exclusive). Idempotent if the tag is already in that tier.
+ *
+ *  ``entry`` is the canonical ``{name, canonical_form}`` identity —
+ *  stored verbatim; the frontend projects to display at render time. */
+export function setTagTier(tier: TagTier, entry: TaggedEntry): Promise<void> {
+    return persist(withoutTag({ ...get(tagHighlights) }, entry, tier));
 }
 
-/** Remove a tag from every tier. */
+/** Remove a tag from every tier. Matches by canonical ``name`` — the
+ *  chip's ``entry.name`` is the same shape as the mirror entry's
+ *  ``name`` (both canonical), so the iteration is unambiguous. */
 export function removeTagTier(tag: string): Promise<void> {
     return persist(withoutTag({ ...get(tagHighlights) }, tag));
 }
@@ -171,7 +205,8 @@ export function clearTier(tier: TagTier): Promise<void> {
 }
 
 /** Force a starred tag into a specific section (``character`` / ``general``),
- *  overriding the model-derived destination. */
+ *  overriding the model-derived destination. ``tag`` is the canonical
+ *  name (the TierList chip's ``entry.name``), stored as the override key. */
 export function setTagCategoryOverride(tag: string, category: string): Promise<void> {
     const next: TagHighlights = {
         ...get(tagHighlights),
@@ -180,34 +215,45 @@ export function setTagCategoryOverride(tag: string, category: string): Promise<v
     return persist(next);
 }
 
-/** Clear a starred tag's section override (revert to model-derived). */
+/** Clear a starred tag's section override (revert to model-derived). ``tag``
+ *  is the canonical name (the TierList chip's ``entry.name``). */
 export function removeTagCategoryOverride(tag: string): Promise<void> {
     const overrides = { ...get(tagHighlights).categoryOverrides };
     delete overrides[tag];
     return persist({ ...get(tagHighlights), categoryOverrides: overrides });
 }
 
-function withoutTag(h: TagHighlights, tag: string, except?: TagTier): TagHighlights {
+function withoutTag(
+    h: TagHighlights,
+    tagOrEntry: string | TaggedEntry,
+    except?: TagTier
+): TagHighlights {
+    const lookupName = typeof tagOrEntry === 'string' ? tagOrEntry : tagOrEntry.name;
     (Object.keys(TIER_KEYS) as TagTier[]).forEach((t) => {
         if (t === except) {
             return;
         }
         const key = TIER_KEYS[t];
-        if (h[key].includes(tag)) {
-            h[key] = h[key].filter((x) => x !== tag);
+        if (h[key].some((e) => e.name === lookupName)) {
+            h[key] = h[key].filter((e) => e.name !== lookupName);
         }
     });
     if (except) {
         const key = TIER_KEYS[except];
-        if (!h[key].includes(tag)) {
-            h[key] = [...h[key], tag];
+        if (!h[key].some((e) => e.name === lookupName)) {
+            h[key] = [
+                ...h[key],
+                ...(typeof tagOrEntry === 'string'
+                    ? [{ name: tagOrEntry, canonical_form: true }]
+                    : [tagOrEntry])
+            ];
         }
     } else {
         // Leaving every tier — drop any section override too (it only
         // applied while the tag was starred).
-        if (tag in h.categoryOverrides) {
+        if (lookupName in h.categoryOverrides) {
             const next = { ...h.categoryOverrides };
-            delete next[tag];
+            delete next[lookupName];
             h.categoryOverrides = next;
         }
     }
@@ -226,14 +272,5 @@ function payloadToHighlights(payload: TagHighlightsPayload): TagHighlights {
         desired: [...payload.desired],
         undesired: [...payload.undesired],
         categoryOverrides: { ...payload.category_overrides }
-    };
-}
-
-function highlightsToPayload(value: TagHighlights): TagHighlightsPayload {
-    return {
-        starred: [...value.starred],
-        desired: [...value.desired],
-        undesired: [...value.undesired],
-        category_overrides: { ...value.categoryOverrides }
     };
 }

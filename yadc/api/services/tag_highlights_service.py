@@ -11,7 +11,16 @@ service returns the hardcoded defaults.
 Shape:
 
 - ``starred`` / ``desired`` / ``undesired``: three mutually-exclusive
-  tag lists (one tag per tier).
+  tag lists (one entry per tier). Each entry carries a ``name`` and
+  a ``canonical_form`` flag — ``canonical_form: True`` means the
+  name is the canonical (model-output) form and the frontend
+  applies the user's ``replace_underscores`` preference; ``False``
+  means the name should be rendered verbatim (free-text user input,
+  or a kaomoji whose underscores must be preserved). The backend
+  auto-flips the flag to ``False`` for names in the kaomoji set
+  (see :class:`TaggedEntry`'s validator) so the curated-tier
+  storage doesn't need kaomoji-specific knowledge at every call
+  site.
 - ``category_overrides``: starred tag → forced section
   (``"character"`` / ``"general"``). Absent entries fall back to the
   model output's category.
@@ -32,10 +41,62 @@ from logging import Logger
 
 import pydantic
 
+from ...taggers.postprocessing import kaomojis
 from ..modules.db_connection_factory import DBConnectionFactory
 from ..modules.logging_factory import LoggingFactory
 from ..modules.service import Service
 from .settings_repository import SettingsRepository
+
+
+class TaggedEntry(pydantic.BaseModel):
+    """One curated tag entry: the canonical identity plus a display-form signal.
+
+    ``name`` is the canonical tag identity (``speech_bubble``, not the
+    display form) — stored and returned verbatim, so toggling the user's
+    ``replace_underscores`` preference re-derives the display form on
+    the fly rather than baking it in at insert time.
+
+    ``canonical_form`` is ``True`` for entries whose name is the
+    canonical (model-output) form — the frontend applies the user's
+    ``replace_underscores`` preference when rendering. ``False`` for
+    entries whose literal identity is pinned (free-text user input,
+    or a kaomoji whose underscores must be preserved) — the
+    frontend renders verbatim.
+
+    The validator auto-flips the flag to ``False`` for names in the
+    :data:`yadc.taggers.postprocessing.kaomojis` set so the backend
+    becomes the authoritative source for the kaomoji carve-out —
+    the frontend never has to special-case kaomojis. The default
+    for unspecified flags is ``True`` (catalog / model-output
+    entries are the common case).
+
+    The GET boundary returns this shape as-is; the frontend applies
+    the display transform at render time.
+    """
+
+    name: str
+    # Default True (canonical = model-output form). The validator
+    # below overrides to False for kaomojis regardless of what the
+    # caller sent, so a frontend mistake can't accidentally let a
+    # kaomoji through with the transform applied.
+    canonical_form: bool = True
+
+    @pydantic.field_validator("canonical_form", mode="after")
+    @classmethod
+    def _override_canonical_for_kaomojis(cls, v: bool, info: pydantic.ValidationInfo) -> bool:
+        """Force ``canonical_form=False`` for any name in the kaomoji set.
+
+        Kaomojis (``0_0``, ``(o)_(o)``, ``>_<`` …) contain underscores
+        that the user's ``replace_underscores`` preference would
+        corrupt (``0_0`` → ``0 0``). The backend already guards the
+        model-output path via :func:`replace_underscore_for_tag`; this
+        validator extends the carve-out to the curated-tier storage
+        so the frontend can stay kaomoji-unaware.
+        """
+        name = info.data.get("name")
+        if isinstance(name, str) and name in kaomojis:
+            return False
+        return v
 
 
 class TagHighlightsPayload(pydantic.BaseModel):
@@ -47,9 +108,9 @@ class TagHighlightsPayload(pydantic.BaseModel):
     cleanly through :meth:`TagHighlightsService.get`.
     """
 
-    starred: list[str] = pydantic.Field(default_factory=list)
-    desired: list[str] = pydantic.Field(default_factory=list)
-    undesired: list[str] = pydantic.Field(default_factory=list)
+    starred: list[TaggedEntry] = pydantic.Field(default_factory=list)
+    desired: list[TaggedEntry] = pydantic.Field(default_factory=list)
+    undesired: list[TaggedEntry] = pydantic.Field(default_factory=list)
     category_overrides: dict[str, str] = pydantic.Field(default_factory=dict)
 
 
@@ -63,9 +124,9 @@ class TagHighlights:
     enforces the ``str`` value type at the chip flow).
     """
 
-    starred: list[str] = field(default_factory=list)
-    desired: list[str] = field(default_factory=list)
-    undesired: list[str] = field(default_factory=list)
+    starred: list[TaggedEntry] = field(default_factory=list)
+    desired: list[TaggedEntry] = field(default_factory=list)
+    undesired: list[TaggedEntry] = field(default_factory=list)
     category_overrides: dict[str, str] = field(default_factory=dict)
 
     @classmethod

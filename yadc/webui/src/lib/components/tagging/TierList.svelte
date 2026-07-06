@@ -9,12 +9,14 @@
 
     import { SvelteSet } from 'svelte/reactivity';
     import {
+        displayTag,
         tagHighlights,
         tagCategoryOverrideMap,
         setTagTier,
         removeTagTier,
         setTagCategoryOverride,
         removeTagCategoryOverride,
+        tagSettings,
         TAG_TIERS,
         STARRED_CATEGORY_OPTIONS,
         type TagTier
@@ -45,17 +47,23 @@
               : $tagHighlights.undesired
     );
 
+    // Canonical name strings for iteration / lookup (entries are stored
+    // canonical; display is projected at render by :comp:`TagChip`).
+    // Canonical name strings for iteration / lookup (entries are stored
+    // canonical; display is projected at render by :comp:`TagChip`).
+    let chipNames = $derived(chips.map((e) => e.name));
+
     let enabled = $derived.by(() => {
         const s = new SvelteSet<string>();
-        for (const t of chips) {
-            s.add(t);
+        for (const name of chipNames) {
+            s.add(name);
         }
         return s;
     });
 
     // TagInput dedupes against this map (tag → "category"); the values are
     // only used for dedupe, so the tier value stands in for a category.
-    let customTags = $derived(new Map(chips.map((t) => [t, tier])));
+    let customTags = $derived(new Map(chipNames.map((name) => [name, tier])));
 
     // Tier fill is computed by TagCategoryChips' tierFillClass normally;
     // here each chip belongs to ``tier`` so the fill is constant per list.
@@ -83,24 +91,26 @@
     </div>
 
     <div class="flex flex-wrap gap-1.5">
-        {#each chips as tag (tag)}
+        {#each chips as entry (entry.name)}
             <TagChip
-                chip={{ tag, score: 1.0, isCustom: true }}
-                enabled={enabled.has(tag)}
+                chip={{ tag: entry.name, score: 1.0, canonicalForm: entry.canonical_form }}
+                enabled={enabled.has(entry.name)}
                 starred={tier === TAG_TIERS.starred}
                 fillClass={tierFill}
                 onremovecustom={removeTagTier}
                 removable={true}
                 onchangecategory={allowCategoryOverride ? handleChangeCategory : undefined}
                 categoryOptions={allowCategoryOverride ? STARRED_CATEGORY_OPTIONS : undefined}
-                currentCategory={$tagCategoryOverrideMap.get(tag) ?? null}
+                currentCategory={$tagCategoryOverrideMap.get(
+                    displayTag(entry, $tagSettings.replaceUnderscores)
+                ) ?? null}
             />
         {/each}
         <TagInput
             category={label}
             modelTags={[]}
             existingCustomTags={customTags}
-            onadd={(t) => setTagTier(tier, t)}
+            onadd={(entry) => setTagTier(tier, entry)}
         />
     </div>
 </section>

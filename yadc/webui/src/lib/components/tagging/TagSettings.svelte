@@ -11,8 +11,6 @@
         removeFromAlwaysAdd,
         addToBanned,
         removeFromBanned,
-        clearAlwaysAdd,
-        clearBanned,
         TAG_CATEGORIES
     } from '$lib/stores/tagging';
     import type { TagSaveOptions, TaggerResult } from '$lib/stores/tagging';

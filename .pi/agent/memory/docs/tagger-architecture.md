@@ -20,7 +20,7 @@ client-side image upload).
 | `TaggerResult` | `yadc/taggers/base.py` | Dataclass with `tags: dict[str, float]` and `categories: dict[str, list[str]]` |
 | `OnnxTagger` | `yadc/taggers/onnx.py` | Concrete ONNX Runtime implementation; downloads from HF Hub when `repo_id` is set |
 | `apply_thresholds` | `yadc/taggers/onnx.py` | Pure helper — drops tags below per-category thresholds |
-| `replace_underscores` | `yadc/taggers/postprocessing.py` | Pure helper — turns `long_hair`→`long hair` (kaomoji-guarded); no-op returns the same object. The per-tag `replace_underscore_for_tag` is also reused by the suggest endpoint's `replace_underscores` query param (post-match display transform) |
+| `replace_underscores` | `yadc/taggers/postprocessing.py` | Pure helper — turns `long_hair`→`long hair` (kaomoji-guarded); no-op returns the same object. The per-tag `replace_underscore_for_tag` is the kaomoji-preserving primitive it builds on (model-output path only) |
 | `TaggerServer` / `TaggerClient` | `server.py` / `client.py` | Multiprocessing boundary (`multiprocessing.Queue`) |
 | `TaggingService` | `yadc/api/services/tagging.py` | DI service — owns the subprocess lifecycle |
 | `TaggingThresholds` | same | Per-category threshold bundle (rating / general / character) |
@@ -176,17 +176,15 @@ the subprocess is invisible to async callers.
   in-flight tag (graceful-first, kill-as-fallback). Body `{job_id?}`;
   `job_id` omitted is the single-image case. Returns `CancelResult`
   (`outcome`: `stopped` / `killed` / `stale_job` / `nothing_running`).
-- `GET /tagging/suggest?q=&limit=&replace_underscores=` — autocomplete for the Tags tab's
+- `GET /tagging/suggest?q=&limit=` — autocomplete for the Tags tab's
   custom-tag input. Query-string only (no body); `q` is the user typing,
   `limit` defaults to 20 (clamped to 1–50). Returns
   `{"query", "suggestions": [{name, category}, ...]}`` — each row
   carries the danbooru category (`general` / `artist` / `copyright` /
-  `character` / `meta`) so the dropdown can render category badges.
-  `replace_underscores=true` (``true``/``1``/``yes``) turns each suggestion's
-  `name` underscores into spaces (kaomojis preserved) so the dropdown mirrors
-  the tagger's output formatting; this is a **post-match display transform**
-  reusing `replace_underscore_for_tag` from `yadc/taggers/postprocessing.py` —
-  the matcher always runs on canonical underscored names.
+  `character` / `meta`) so the dropdown can render category badges. `name`
+  is the **canonical** identity (`speech_bubble`); the matcher always runs on
+  canonical underscored names, and the dropdown projects to the user's
+  `replace_underscores` preference at render time.
 
   The catalog is downloaded from BetaDoggo's danbooru-tag-list releases
   to `~/.cache/yadc/tagging/catalogs/<variant>.csv` and parsed once into
