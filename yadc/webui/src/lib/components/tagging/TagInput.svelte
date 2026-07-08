@@ -8,6 +8,7 @@
         recentTags,
         recordRecentTag,
         removeRecentTag,
+        TAG_CATEGORIES,
         tagSettings,
         type TaggedEntry
     } from '$lib/stores/tagging';
@@ -235,7 +236,7 @@
         if (outcome === 'added') {
             // Manually-typed tags have no catalog category — record them as
             // 'custom' so the recent dropdown can badge them distinctly.
-            recordRecentTag(raw, 'custom');
+            recordRecentTag(raw, TAG_CATEGORIES.custom);
         }
         if (outcome !== 'duplicate') {
             value = '';
@@ -275,12 +276,12 @@
      *  defensive fallback (the catalog has no rating category today). */
     function suggestionCategoryClass(category: string): string {
         switch (category) {
-            case 'rating':
+            case TAG_CATEGORIES.rating:
                 return 'bg-warning/20 text-warning';
-            case 'character':
-            case 'custom':
+            case TAG_CATEGORIES.character:
+            case TAG_CATEGORIES.custom:
                 return 'bg-purple-500/20 text-purple-300';
-            case 'general':
+            case TAG_CATEGORIES.general:
             default:
                 return 'bg-gray-700/50 text-gray-400';
         }
@@ -535,7 +536,10 @@
                 >
                     <span class="truncate"
                         >{displayTag(
-                            { name: item.name, canonical_form: item.category !== 'custom' },
+                            {
+                                name: item.name,
+                                canonical_form: item.category !== TAG_CATEGORIES.custom
+                            },
                             $tagSettings.replaceUnderscores
                         )}</span
                     >

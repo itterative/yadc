@@ -108,27 +108,6 @@
         <p class="text-xs text-gray-600">{description}</p>
     </div>
 
-    {#if quickAddChips.length > 0}
-        <div class="mb-2 flex flex-wrap gap-1.5">
-            {#each quickAddChips as chip (chip.tag)}
-                <button
-                    type="button"
-                    class="cursor-pointer rounded-md border border-dashed border-gray-600 px-2 py-1 text-xs text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-200"
-                    title="Add {displayTag(
-                        { name: chip.tag, canonical_form: chip.canonicalForm },
-                        $tagSettings.replaceUnderscores
-                    )} to {title}"
-                    onclick={() => onadd({ name: chip.tag, canonical_form: chip.canonicalForm })}
-                >
-                    {displayTag(
-                        { name: chip.tag, canonical_form: chip.canonicalForm },
-                        $tagSettings.replaceUnderscores
-                    )}
-                </button>
-            {/each}
-        </div>
-    {/if}
-
     <div class="flex flex-wrap items-center gap-1.5">
         {#each activeChips as chip (chip.tag)}
             <TagChip
@@ -141,6 +120,24 @@
                 ontoggle={(tag) => chip.canonicalForm && onremove(tag)}
             />
         {/each}
+
+        {#each quickAddChips as chip (chip.tag)}
+            <button
+                type="button"
+                class="cursor-pointer rounded-md border border-dashed border-gray-600 px-2 py-1 text-xs text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-200"
+                title="Add {displayTag(
+                    { name: chip.tag, canonical_form: chip.canonicalForm },
+                    $tagSettings.replaceUnderscores
+                )} to {title}"
+                onclick={() => onadd({ name: chip.tag, canonical_form: chip.canonicalForm })}
+            >
+                {displayTag(
+                    { name: chip.tag, canonical_form: chip.canonicalForm },
+                    $tagSettings.replaceUnderscores
+                )}
+            </button>
+        {/each}
+
         <TagInput category={title} modelTags={[]} {existingCustomTags} {onadd} />
     </div>
 </section>

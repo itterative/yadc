@@ -4,7 +4,8 @@
 export const TAG_CATEGORIES = {
     rating: 'rating',
     character: 'character',
-    general: 'general'
+    general: 'general',
+    custom: 'custom'
 } as const;
 
 /** Categories that can receive user-added custom tags. ``rating`` is a

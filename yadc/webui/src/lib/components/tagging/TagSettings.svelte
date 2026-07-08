@@ -177,10 +177,10 @@
         return () => controller.abort();
     });
 
-    function resetThreshold(field: 'rating' | 'general' | 'character') {
-        if (field === 'rating') {
+    function resetThreshold(field: keyof typeof TAG_CATEGORIES) {
+        if (field === TAG_CATEGORIES.rating) {
             ratingThreshold = null;
-        } else if (field === 'general') {
+        } else if (field === TAG_CATEGORIES.general) {
             generalThreshold = null;
         } else {
             characterThreshold = null;
@@ -201,9 +201,9 @@
         <div class="mb-1 flex items-center justify-between">
             <label class="label" for={id}>{label}</label>
             {#if overridden}
-                <button class="mr-2 text-xs text-accent hover:text-accent-hover" onclick={reset}
-                    >reset</button
-                >
+                <button class="mr-2 text-xs text-accent hover:text-accent-hover" onclick={reset}>
+                    reset
+                </button>
             {/if}
         </div>
         <div class="flex min-w-0 items-center gap-3">
