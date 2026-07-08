@@ -6,15 +6,15 @@
  *  ``policy_banned`` rows). This module is the **mirror store**:
  *  reactive in-memory copy used by :comp:`PolicyList` /
  *  :comp:`Tags.svelte` for UI reactivity, plus mutators that PUT
- *  optimistically against the dataset that ``loadTagPolicy`` last
+ *  optimistically against the dataset that :func:`loadTagPolicy` last
  *  populated.
  *
  *  Lifecycle:
  *
- *  - **One fetch per dataset**: :func:`loadTagPolicy(datasetName)`
- *    populates the store from the server when the active dataset
- *    changes (page-level effect). A repeat call for the same dataset
- *    is a no-op (returns the cached promise).
+ *  - **One fetch per dataset switch**: :func:`loadTagPolicy(datasetName)`
+ *    is called from a page-level effect (e.g. in
+ *    :comp:`TagSettingsPanel` and :comp:`Tags.svelte`) whenever the
+ *    active dataset changes.
  *  - **Optimistic mutations**: every mutator updates the local
  *    mirror first and PUTs the full payload against the active
  *    dataset. A PUT failure reverts and rethrows.
@@ -34,6 +34,7 @@
  */
 
 import { derived, get, writable } from 'svelte/store';
+import { debounce } from '$lib/async';
 import { fetchTagPolicy, putTagPolicy, type TagPolicyPayload } from './api';
 import { type TaggedEntry } from './highlights';
 
@@ -62,45 +63,19 @@ export const tagPolicy = writable<TagPolicyMirror>({
     banned: [...DEFAULT_POLICY.banned]
 });
 
-/** Single-flight cache: a pending :func:`loadTagPolicy(datasetName)` is
- *  shared across concurrent callers (page mount + a settings panel
- *  binding both firing on the same route change). */
-const _loadPromises = new Map<string, Promise<TagPolicyMirror>>();
+/** Populate ``tagPolicy`` with the persisted state for ``datasetName``,
+ *  replacing any previous dataset's mirror. */
+export const loadTagPolicy = debounce(_loadTagPolicy);
 
-/** Replace ``tagPolicy`` with the persisted state for ``datasetName``.
- *
- *  Idempotent for a repeated call against the same dataset — the
- *  existing in-flight promise (or the already-loaded value) is
- *  reused. Switching to a different dataset refetches automatically;
- *  the previous dataset's mirror is dropped (its policy still lives
- *  on the server, just not in memory).
- *
- *  Throws on a non-200 (e.g. unregistered dataset → 404) so the
- *  caller can toast the failure; the mirror stays at the previous
- *  state on error. */
-export async function loadTagPolicy(datasetName: string): Promise<TagPolicyMirror> {
-    const existing = _loadPromises.get(datasetName);
-    if (existing !== undefined) {
-        return existing;
-    }
-    const promise = (async () => {
-        const payload = await fetchTagPolicy(datasetName);
-        const value: TagPolicyMirror = {
-            datasetName,
-            alwaysAdd: [...payload.always_add],
-            banned: [...payload.banned]
-        };
-        tagPolicy.set(value);
-        return value;
-    })();
-    _loadPromises.set(datasetName, promise);
-    try {
-        return await promise;
-    } catch (e) {
-        // Don't cache a failed load so the next call retries cleanly.
-        _loadPromises.delete(datasetName);
-        throw e;
-    }
+async function _loadTagPolicy(datasetName: string): Promise<TagPolicyMirror> {
+    const payload = await fetchTagPolicy(datasetName);
+    const value: TagPolicyMirror = {
+        datasetName,
+        alwaysAdd: [...payload.always_add],
+        banned: [...payload.banned]
+    };
+    tagPolicy.set(value);
+    return value;
 }
 
 /* ───── mutators ─────

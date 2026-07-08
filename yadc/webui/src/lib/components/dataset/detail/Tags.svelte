@@ -85,9 +85,11 @@
     let policyLoadedFor = $derived($tagPolicy.datasetName);
 
     // Load the per-dataset policy on mount and on dataset switch.
-    // Idempotent — :func:`loadTagPolicy` shares an in-flight fetch
-    // across concurrent callers and re-uses the cached promise for the
-    // same dataset.
+    // Idempotent for concurrent callers — :func:`loadTagPolicy` is
+    // wrapped in ``debounce({ delay: 0 })`` so the underlying fetch is
+    // single-flight, and the entry is finalized on settle so a later
+    // call (e.g. re-navigating back to this dataset) starts a fresh
+    // fetch + re-runs the ``tagPolicy.set`` side effect.
     $effect(() => {
         void datasetName;
         loadTagPolicy(datasetName).catch((e) => {
