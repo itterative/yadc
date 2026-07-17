@@ -44,18 +44,9 @@ export function formatDateTime(epochSeconds: number): string {
     return new Date(epochSeconds * 1000).toLocaleString();
 }
 
-/** Detect if the user is on Windows based on the platform/user-agent. */
-export function isWindows(): boolean {
-    if (typeof navigator === 'undefined') {
-        return false;
-    }
-    return (
-        navigator.platform.toLowerCase().includes('win') ||
-        navigator.userAgent.toLowerCase().includes('win')
-    );
-}
+export { isWindows } from '$lib/stores/info/store';
 
 /** Return a platform-appropriate example path. */
-export function examplePath(unix: string, windows: string): string {
-    return isWindows() ? windows : unix;
+export function examplePath(unix: string, windows: string, isWin?: boolean): string {
+    return isWin ? windows : unix;
 }

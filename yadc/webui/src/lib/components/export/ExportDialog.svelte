@@ -14,7 +14,7 @@
     import { fetchDatasets, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
     import { createAbortContext, linkedController } from '$lib/abort';
-    import { formatBytes, examplePath } from '$lib/format';
+    import { formatBytes, examplePath, isWindows } from '$lib/format';
     import { confirmDialog } from '$lib/stores/confirm';
 
     // Confirm before downloads estimated above this size. Image-only bytes; tuned
@@ -473,7 +473,8 @@
                         class="input"
                         placeholder={examplePath(
                             'e.g. /data/training/metadata.jsonl',
-                            'e.g. D:\\data\\training\\metadata.jsonl'
+                            'e.g. D:\\data\\training\\metadata.jsonl',
+                            $isWindows
                         )}
                     />
                 </div>

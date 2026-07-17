@@ -23,7 +23,7 @@
         requestNotificationPermission
     } from '$lib/notifications';
     import SvgSpinner from '$lib/icons/SvgSpinner.svelte';
-    import { examplePath } from '$lib/format';
+    import { examplePath, isWindows } from '$lib/format';
 
     let permStatus = $state<NotificationPermission | 'unsupported'>('default');
     let notificationsOn = $state(false);
@@ -511,7 +511,8 @@
                             class="input"
                             placeholder={examplePath(
                                 '/path/to/model.onnx',
-                                'D:\\path\\to\\model.onnx'
+                                'D:\\path\\to\\model.onnx',
+                                $isWindows
                             )}
                             bind:value={localModelPath}
                             disabled={isSwapping}
@@ -526,7 +527,8 @@
                             class="input"
                             placeholder={examplePath(
                                 '/path/to/selected_tags.csv',
-                                'D:\\path\\to\\selected_tags.csv'
+                                'D:\\path\\to\\selected_tags.csv',
+                                $isWindows
                             )}
                             bind:value={localLabelPath}
                             disabled={isSwapping}
