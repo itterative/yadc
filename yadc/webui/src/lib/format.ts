@@ -44,14 +44,9 @@ export function formatDateTime(epochSeconds: number): string {
     return new Date(epochSeconds * 1000).toLocaleString();
 }
 
-import { getServerPlatform } from '$lib/stores/info/store';
-
-/** Detect if the server is on Windows. Falls back to Unix paths if unknown. */
-export function isWindows(): boolean {
-    return getServerPlatform() === 'win32';
-}
+export { isWindows } from '$lib/stores/info/store';
 
 /** Return a platform-appropriate example path. */
-export function examplePath(unix: string, windows: string): string {
-    return isWindows() ? windows : unix;
+export function examplePath(unix: string, windows: string, isWin?: boolean): string {
+    return isWin ? windows : unix;
 }
