@@ -43,6 +43,7 @@ yadc/api/
     api_prompts.py      # @controller — POST /api/prompts/generate — streaming NDJSON response that delegates to PromptGenerationService (no SSE event bus; uses fetch + ReadableStream on the frontend)
     api_prompts_history.py # @controller — `/api/prompts/history/...` — save / list / get / delete prompt-history entries. Pydantic body for the save, JSON-friendly dicts for the responses, opaque pagination cursor for the list. Reuses `ExamplePair` from the prompt_generation service.
     api_events.py       # @controller — SSE event stream with Last-Event-ID resumption support (replays from ring buffer on reconnect)
+    api_info.py         # @controller — `GET /api/info` — server metadata (platform, version)
 
   modules/            # DI primitives + cross-cutting infrastructure
     __init__.py           # (package marker; no auto-discovery here — only `service.py` is the DI marker)
