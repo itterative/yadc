@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createDataset, importDataset, type DatasetInfo } from '$lib/stores/dataset';
     import { friendlyErrorMessage } from '$lib/api';
+    import { examplePath } from '$lib/format';
 
     interface Props {
         oncreated: (dataset: DatasetInfo) => void;
@@ -103,7 +104,7 @@
                 type="text"
                 bind:value={tomlPath}
                 class="input"
-                placeholder="/path/to/dataset.toml"
+                placeholder={examplePath('/path/to/dataset.toml', 'D:\\path\\to\\dataset.toml')}
             />
             <p class="mt-4 text-xs text-muted">
                 Absolute path to an existing yadc dataset config TOML file.
@@ -117,7 +118,10 @@
                 bind:value={imagePaths}
                 rows={4}
                 class="input resize-y"
-                placeholder="/path/to/images&#10;/another/image/dir"
+                placeholder={examplePath(
+                    '/path/to/images\n/another/image/dir',
+                    'D:\\path\\to\\images\nD:\\My Documents\\another\\dir'
+                )}
             ></textarea>
             <p class="mt-4 text-xs text-muted">
                 One directory path per line. Each directory will be scanned for images.
