@@ -24,6 +24,7 @@
     import { sendNotification } from '$lib/notifications';
     import { settingsDialog } from '$lib/stores/settings';
     import { passwordPromptOpen, submitPassword, cancelPassword } from '$lib/stores/passwordPrompt';
+    import { refreshInfo } from '$lib/stores/info/store';
 
     interface Props {
         children: Snippet;
@@ -45,6 +46,11 @@
 
     $effect(() => {
         document.getElementById('yadc-loading-screen')?.remove();
+    });
+
+    // Fetch server info (platform) on mount — used by isWindows() for path placeholders.
+    $effect(() => {
+        refreshInfo();
     });
 
     function handleExported(result: ExportResult) {

@@ -44,8 +44,15 @@ export function formatDateTime(epochSeconds: number): string {
     return new Date(epochSeconds * 1000).toLocaleString();
 }
 
-/** Detect if the user is on Windows based on the platform/user-agent. */
+import { getServerPlatform } from '$lib/stores/info/store';
+
+/** Detect if the server is on Windows. Uses server-reported platform with browser fallback. */
 export function isWindows(): boolean {
+    const platform = getServerPlatform();
+    if (platform) {
+        return platform === 'win32';
+    }
+    // Fallback: browser detection (dev mode or before first fetch)
     if (typeof navigator === 'undefined') {
         return false;
     }
