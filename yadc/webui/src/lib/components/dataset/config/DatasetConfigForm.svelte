@@ -7,6 +7,7 @@
     import { templates } from '$lib/stores/templates';
     import { configState } from './state.svelte';
     import ConfigApiSection from './ConfigApiSection.svelte';
+    import { examplePath } from '$lib/format';
 
     interface Props {
         /** Dataset source — managed (upload) vs external (import/create). */
@@ -84,7 +85,7 @@
                                 type="text"
                                 class="input font-mono text-sm"
                                 value={entry.path}
-                                placeholder="/path/to/images"
+                                placeholder={examplePath('/path/to/images', 'D:\\path\\to\\images')}
                                 disabled={source === 'upload'}
                                 title={source === 'upload'
                                     ? 'Managed dataset paths are set automatically via uploads'
