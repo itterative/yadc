@@ -46,20 +46,9 @@ export function formatDateTime(epochSeconds: number): string {
 
 import { getServerPlatform } from '$lib/stores/info/store';
 
-/** Detect if the server is on Windows. Uses server-reported platform with browser fallback. */
+/** Detect if the server is on Windows. Falls back to Unix paths if unknown. */
 export function isWindows(): boolean {
-    const platform = getServerPlatform();
-    if (platform) {
-        return platform === 'win32';
-    }
-    // Fallback: browser detection (dev mode or before first fetch)
-    if (typeof navigator === 'undefined') {
-        return false;
-    }
-    return (
-        navigator.platform.toLowerCase().includes('win') ||
-        navigator.userAgent.toLowerCase().includes('win')
-    );
+    return getServerPlatform() === 'win32';
 }
 
 /** Return a platform-appropriate example path. */
