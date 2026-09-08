@@ -1639,6 +1639,8 @@ class TestTaggerResultKey:
             rating_threshold=0.0,
             general_threshold=0.35,
             character_threshold=0.85,
+            per_tag_enabled=False,
+            per_tag_column="",
         )
         defaults.update(overrides)
         return TaggerResultKey(**defaults)
@@ -1665,6 +1667,8 @@ class TestTaggerResultKey:
             {"rating_threshold": 0.1},
             {"general_threshold": 0.5},
             {"character_threshold": 0.9},
+            {"per_tag_enabled": True},
+            {"per_tag_column": "best_recall"},
         ):
             modified = self._make_key(**overrides)
             assert modified != base, f"expected {overrides} to break equality"
@@ -1682,6 +1686,102 @@ class TestTaggerResultKey:
         key = self._make_key()
         with pytest.raises(dataclasses.FrozenInstanceError):
             key.image_id = 999  # pyright: ignore[reportAttributeAccessIssue]
+
+
+class TestPerTagThresholdResolution:
+    def test_thresholds_from_options_prefers_request(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TagJobOptions
+
+        options = TagJobOptions(per_tag_thresholds=True, per_tag_column="best_recall")
+        thresholds = service._thresholds_from_options(options)
+        assert thresholds.per_tag_enabled is True
+        assert thresholds.per_tag_column == "best_recall"
+
+    def test_thresholds_from_options_falls_back_to_config(self, service: TaggingService, test_configuration: Configuration) -> None:
+        from yadc.api.services.tagging import TagJobOptions
+
+        test_configuration.tagger_per_tag_thresholds = True
+        test_configuration.tagger_per_tag_column = "best_recall"
+        thresholds = service._thresholds_from_options(TagJobOptions())
+        assert thresholds.per_tag_enabled is True
+        assert thresholds.per_tag_column == "best_recall"
+
+    def test_per_tag_for_thresholds_returns_none_when_disabled(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TaggingThresholds
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5}}
+        out = service._per_tag_for_thresholds(TaggingThresholds(per_tag_enabled=False))
+        assert out is None
+
+    def test_per_tag_for_thresholds_resolves_column(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TaggingThresholds
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5}, "best_recall": {"1girl": 0.7}}
+        out = service._per_tag_for_thresholds(TaggingThresholds(per_tag_enabled=True, per_tag_column="best_recall"))
+        assert out == {"1girl": 0.7}
+
+    def test_per_tag_for_thresholds_missing_column_returns_none(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TaggingThresholds
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5}}
+        out = service._per_tag_for_thresholds(TaggingThresholds(per_tag_enabled=True, per_tag_column="best_recall"))
+        assert out is None
+
+    def test_tag_result_key_uses_request_per_tag(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TaggingThresholds
+
+        service._per_tag_thresholds_all = {"best_recall": {"1girl": 0.7}}
+        on = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=True, per_tag_column="best_recall"))
+        off = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=False))
+        assert on != off
+        assert on.per_tag_column == "best_recall"
+        assert off.per_tag_column == ""
+
+    def test_tag_result_key_collapses_unknown_column(self, service: TaggingService) -> None:
+        from yadc.api.services.tagging import TaggingThresholds
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5}}
+        unknown = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=True, per_tag_column="best_recall"))
+        off = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=False))
+        assert unknown == off
+
+    def test_job_options_rejects_unknown_column(self) -> None:
+        import pydantic
+
+        from yadc.api.services.tagging import TagJobOptions
+
+        with pytest.raises(pydantic.ValidationError):
+            TagJobOptions(per_tag_column="best_f1")
+        assert TagJobOptions(per_tag_column="best_threshold").per_tag_column == "best_threshold"
+
+    def test_get_tag_result_applies_per_tag(self, service: TaggingService) -> None:
+        import asyncio
+
+        from yadc.api.services.tagging import TaggingThresholds
+        from yadc.taggers.base import TaggerResult
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5, "solo": 0.2}}
+        cached = TaggerResult(tags={"1girl": 0.4, "solo": 0.3}, categories={"general": ["1girl", "solo"]})
+        key = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=True, per_tag_column="best_threshold"))
+        service._tag_results[key] = cached
+        out = asyncio.run(service.get_tag_result("ds", 1, thresholds=TaggingThresholds(per_tag_enabled=True, per_tag_column="best_threshold")))
+        assert out is not None
+        assert "1girl" not in out.tags
+        assert "solo" in out.tags
+
+    def test_get_tag_result_toggle_off_disables_per_tag(self, service: TaggingService) -> None:
+        import asyncio
+
+        from yadc.api.services.tagging import TaggingThresholds
+        from yadc.taggers.base import TaggerResult
+
+        service._per_tag_thresholds_all = {"best_threshold": {"1girl": 0.5}}
+        cached = TaggerResult(tags={"1girl": 0.4}, categories={"general": ["1girl"]})
+        key = service._tag_result_key("ds", 1, TaggingThresholds(per_tag_enabled=False))
+        service._tag_results[key] = cached
+        out = asyncio.run(service.get_tag_result("ds", 1, thresholds=TaggingThresholds(per_tag_enabled=False)))
+        assert out is not None
+        assert "1girl" in out.tags
 
 
 class TestBucketThreshold:

@@ -175,6 +175,12 @@ class Configuration:
     tagger_rating_threshold: float = 0.0
     tagger_general_threshold: float = 0.35
     tagger_character_threshold: float = 0.85
+    # Per-tag thresholds — when enabled, uses per-tag optimal thresholds
+    # from the CSV (e.g. best_threshold) instead of the global category
+    # thresholds above. Only available when the CSV contains threshold
+    # columns (e.g. animetimm models).
+    tagger_per_tag_thresholds: bool = False
+    tagger_per_tag_column: str = "best_threshold"
     # Turn underscored tag names (``long_hair``) into spaces (``long hair``).
     # Kaomojis are always preserved. Applied post-threshold so only
     # surviving tags are touched. Off by default to preserve raw model

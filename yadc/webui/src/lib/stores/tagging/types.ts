@@ -158,6 +158,10 @@ export interface ActiveTaggerSelection {
     default_size: number;
     /** Server-derived source label (``hf:<repo_id>`` / ``local:<path>``). */
     source: string;
+    /** Whether the active model's CSV contains per-tag threshold columns. */
+    has_per_tag_thresholds?: boolean;
+    /** Available per-tag threshold column names (e.g. ["best_threshold", "best_recall"]). */
+    per_tag_columns?: string[];
 }
 
 /** ``GET /api/tagger/active`` response shape. ``active === null`` when nothing is configured. */
@@ -166,8 +170,8 @@ export interface ActiveTaggerResponse {
     is_available: boolean;
 }
 
-/** Body for the swap request — ``ActiveTaggerSelection`` minus the server-derived ``source``. */
-export type SwapTaggerBody = Omit<ActiveTaggerSelection, 'source'>;
+/** Body for the swap request — ``ActiveTaggerSelection`` minus server-derived fields. */
+export type SwapTaggerBody = Omit<ActiveTaggerSelection, 'source' | 'has_per_tag_thresholds' | 'per_tag_columns'>;
 
 /** Response from ``POST /api/tagger/swap`` — same shape as the GET on success. */
 export type SwapTaggerResponse = ActiveTaggerResponse;

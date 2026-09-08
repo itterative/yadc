@@ -101,6 +101,19 @@ class TagImageBody(pydantic.BaseModel):
     general_threshold: float | None = None
     character_threshold: float | None = None
     replace_underscores: bool | None = None
+    per_tag_thresholds: bool | None = None
+    per_tag_column: str | None = None
+
+    @pydantic.field_validator("per_tag_column")
+    @classmethod
+    def _validate_per_tag_column(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        from yadc.taggers.onnx import PER_TAG_THRESHOLD_COLUMNS
+
+        if v not in PER_TAG_THRESHOLD_COLUMNS:
+            raise ValueError(f"Unknown per_tag_column: {v!r}")
+        return v
 
 
 class TagCustomizationsBody(pydantic.BaseModel):
@@ -238,11 +251,22 @@ def api_tagging(
         source = request.args.get("source") or None
 
         thresholds: TaggingThresholds | None = None
-        if any(v is not None for v in (body.rating_threshold, body.general_threshold, body.character_threshold)):
+        if any(
+            v is not None
+            for v in (
+                body.rating_threshold,
+                body.general_threshold,
+                body.character_threshold,
+                body.per_tag_thresholds,
+                body.per_tag_column,
+            )
+        ):
             thresholds = TaggingThresholds(
                 rating=body.rating_threshold if body.rating_threshold is not None else configuration.tagger_rating_threshold,
                 general=body.general_threshold if body.general_threshold is not None else configuration.tagger_general_threshold,
                 character=body.character_threshold if body.character_threshold is not None else configuration.tagger_character_threshold,
+                per_tag_enabled=body.per_tag_thresholds if body.per_tag_thresholds is not None else configuration.tagger_per_tag_thresholds,
+                per_tag_column=body.per_tag_column if body.per_tag_column is not None else configuration.tagger_per_tag_column,
             )
 
         try:
@@ -416,14 +440,24 @@ def api_tagging(
         character = _float_arg("character_threshold")
         replace_raw = request.args.get("replace_underscores")
         replace = None if replace_raw is None else replace_raw.lower() in ("true", "1", "yes")
+        per_tag_raw = request.args.get("per_tag_thresholds")
+        per_tag_enabled = None if per_tag_raw is None else per_tag_raw.lower() in ("true", "1", "yes")
+        per_tag_column = request.args.get("per_tag_column")
+        if per_tag_column is not None:
+            from yadc.taggers.onnx import PER_TAG_THRESHOLD_COLUMNS
+
+            if per_tag_column not in PER_TAG_THRESHOLD_COLUMNS:
+                return jsonify_error(f"Unknown per_tag_column: {per_tag_column!r}", status=400, code=ErrorCode.BAD_REQUEST)
 
         thresholds = (
             TaggingThresholds(
                 rating=rating if rating is not None else configuration.tagger_rating_threshold,
                 general=general if general is not None else configuration.tagger_general_threshold,
                 character=character if character is not None else configuration.tagger_character_threshold,
+                per_tag_enabled=per_tag_enabled if per_tag_enabled is not None else configuration.tagger_per_tag_thresholds,
+                per_tag_column=per_tag_column if per_tag_column is not None else configuration.tagger_per_tag_column,
             )
-            if any(v is not None for v in (rating, general, character))
+            if any(v is not None for v in (rating, general, character, per_tag_enabled, per_tag_column))
             else None
         )
 
@@ -513,13 +547,23 @@ def api_tagging(
             rating = _float_arg("rating_threshold")
             general = _float_arg("general_threshold")
             character = _float_arg("character_threshold")
+            per_tag_raw = request.args.get("per_tag_thresholds")
+            per_tag_enabled = None if per_tag_raw is None else per_tag_raw.lower() in ("true", "1", "yes")
+            per_tag_column = request.args.get("per_tag_column")
+            if per_tag_column is not None:
+                from yadc.taggers.onnx import PER_TAG_THRESHOLD_COLUMNS as _PER_TAG_COLS
+
+                if per_tag_column not in _PER_TAG_COLS:
+                    return jsonify_error(f"Unknown per_tag_column: {per_tag_column!r}", status=400, code=ErrorCode.BAD_REQUEST)
             thresholds = (
                 TaggingThresholds(
                     rating=rating if rating is not None else configuration.tagger_rating_threshold,
                     general=general if general is not None else configuration.tagger_general_threshold,
                     character=character if character is not None else configuration.tagger_character_threshold,
+                    per_tag_enabled=per_tag_enabled if per_tag_enabled is not None else configuration.tagger_per_tag_thresholds,
+                    per_tag_column=per_tag_column if per_tag_column is not None else configuration.tagger_per_tag_column,
                 )
-                if any(v is not None for v in (rating, general, character))
+                if any(v is not None for v in (rating, general, character, per_tag_enabled, per_tag_column))
                 else None
             )
             await tagging.set_tag_customizations(
@@ -613,9 +657,7 @@ def api_tagging(
         return jsonify(
             {
                 "query": raw_q,
-                "suggestions": [
-                    {"name": name, "category": category} for name, category in suggestions
-                ],
+                "suggestions": [{"name": name, "category": category} for name, category in suggestions],
             }
         )
 
@@ -764,6 +806,8 @@ def api_tagging(
             return jsonify({"active": None, "is_available": False})
         payload = active.model_dump()
         payload["source"] = active.source_label
+        payload["has_per_tag_thresholds"] = tagging.has_per_tag_thresholds
+        payload["per_tag_columns"] = tagging.per_tag_columns
         return jsonify({"active": payload, "is_available": tagging.is_available})
 
     @app.post("/tagger/swap")

@@ -46,6 +46,8 @@ def mock_tagging() -> MagicMock:
     tagging.effective_active_tagger = None
     tagging.is_available = False
     tagging.is_configured = False
+    tagging.has_per_tag_thresholds = False
+    tagging.per_tag_columns = []
     tagging.swap_active_model = AsyncMock()
     return tagging
 
@@ -141,6 +143,34 @@ class TestGetActiveTagger:
         data = await resp.get_json()
         assert data["active"] is not None
         assert data["is_available"] is False
+
+    @pytest.mark.asyncio
+    async def test_reports_per_tag_capability(self, client, mock_tagging: MagicMock):
+        mock_tagging.effective_active_tagger = ActiveTagger(kind="hf", repo_id="animetimm/convnext")
+        mock_tagging.is_available = True
+        mock_tagging.has_per_tag_thresholds = True
+        mock_tagging.per_tag_columns = ["best_threshold", "best_recall"]
+
+        resp = await client.get("/api/tagger/active")
+        data = await resp.get_json()
+        assert data["active"]["has_per_tag_thresholds"] is True
+        assert data["active"]["per_tag_columns"] == ["best_threshold", "best_recall"]
+
+
+class TestTagImageBodyPerTag:
+    def test_accepts_known_column(self):
+        from yadc.api.controllers.api_tagging import TagImageBody
+
+        body = TagImageBody.model_validate({"per_tag_thresholds": True, "per_tag_column": "best_recall"})
+        assert body.per_tag_column == "best_recall"
+
+    def test_rejects_unknown_column(self):
+        import pydantic
+
+        from yadc.api.controllers.api_tagging import TagImageBody
+
+        with pytest.raises(pydantic.ValidationError):
+            TagImageBody.model_validate({"per_tag_column": "best_f1"})
 
 
 class TestSwapTagger:

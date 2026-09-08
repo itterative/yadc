@@ -17,6 +17,10 @@ export interface TagSettings {
     draftFormat: string;
     /** Batch-only: skip images that already have the target save artifact. */
     overwrite: boolean;
+    /** Use per-tag optimal thresholds from the CSV instead of global category thresholds. */
+    perTagThresholds: boolean;
+    /** Which per-tag threshold column to use (best_threshold or best_recall). */
+    perTagColumn: string;
 }
 
 /** Canonical wd-tagger defaults — what the server falls back to when a
@@ -38,13 +42,15 @@ const TagSettingsSchema = z.object({
     saveMode: z.enum(['none', 'draft', 'extras']),
     draftName: z.string(),
     draftFormat: z.string(),
-    overwrite: z.boolean()
+    overwrite: z.boolean(),
+    perTagThresholds: z.boolean(),
+    perTagColumn: z.string()
 });
 
 export const tagSettings = storable(
     'yadc/tagSettings',
     {
-        $version: 3,
+        $version: 4,
         ratingThreshold: null,
         generalThreshold: null,
         characterThreshold: null,
@@ -52,9 +58,11 @@ export const tagSettings = storable(
         saveMode: 'draft',
         draftName: 'tags',
         draftFormat: 'comma',
-        overwrite: false
+        overwrite: false,
+        perTagThresholds: false,
+        perTagColumn: 'best_threshold'
     },
-    // v2 → v3: add ``overwrite`` (defaults off — preserve existing tags by default).
-    (data) => ({ ...(data as object), $version: 3, overwrite: false }) as TagSettings,
+    // v3 → v4: add per-tag threshold toggle and column selector.
+    (data) => ({ ...(data as object), $version: 4, perTagThresholds: false, perTagColumn: 'best_threshold' }) as TagSettings,
     TagSettingsSchema
 );
