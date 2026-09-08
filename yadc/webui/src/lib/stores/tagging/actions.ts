@@ -35,6 +35,8 @@ export interface TagOptions {
     general_threshold?: number;
     character_threshold?: number;
     replace_underscores?: boolean;
+    per_tag_thresholds?: boolean;
+    per_tag_column?: string;
     save?: TagSaveOptions;
     source?: string;
 }
@@ -67,6 +69,8 @@ export async function tagSingleImage(
             general_threshold: options.general_threshold,
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
+            per_tag_thresholds: options.per_tag_thresholds,
+            per_tag_column: options.per_tag_column,
             source
         });
     } finally {
@@ -96,6 +100,8 @@ export async function startBatchTagging(datasetName: string): Promise<string> {
             general_threshold: options.general_threshold,
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
+            per_tag_thresholds: options.per_tag_thresholds,
+            per_tag_column: options.per_tag_column,
             save: options.save,
             source: options.source
         });
@@ -205,12 +211,16 @@ export async function saveImageTagsAction(
  *  ``GeneralSettings``). Returns ``null`` when the server refused the swap
  *  (busy / in-progress / error); those refusals are toasted here since they
  *  are immediate. */
+/** Dispatched on window after a successful model swap so sibling components can react. */
+export const TAGGER_SWAPPED_EVENT = 'yadc:tagger-swapped';
+
 export async function swapActiveModelAction(body: SwapTaggerBody): Promise<SwapTaggerBody | null> {
     const result = await apiSwapTaggerModel(body);
     switch (result.status) {
         case 'ok':
             // 202 Accepted — don't toast success yet; the swap (including any
             // first-run model download) is still running in the background.
+            window.dispatchEvent(new CustomEvent(TAGGER_SWAPPED_EVENT));
             return result.response.active
                 ? {
                       kind: result.response.active.kind,

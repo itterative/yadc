@@ -14,6 +14,9 @@
         TAG_CATEGORIES
     } from '$lib/stores/tagging';
     import type { TagSaveOptions, TaggerResult } from '$lib/stores/tagging';
+    import { taggerStatus } from '$lib/stores/tagging';
+    import { fetchActiveTagger } from '$lib/stores/tagging/api';
+    import { TAGGER_SWAPPED_EVENT } from '$lib/stores/tagging/actions';
     import Checkbox from '$lib/components/ui/Checkbox.svelte';
     import Slider from '$lib/components/ui/Slider.svelte';
     import PolicyList from './PolicyList.svelte';
@@ -27,6 +30,77 @@
     let generalThreshold: number | null = $state(null);
     let characterThreshold: number | null = $state(null);
     let replaceUnderscores = $state(false);
+    let perTagThresholds = $state(false);
+    let perTagColumn = $state('best_threshold');
+    let supportsPerTag = $state(false);
+    let perTagColumns: string[] = $state([]);
+
+    const PER_TAG_COLUMN_LABELS: Record<string, string> = {
+        best_threshold: 'Best F1 threshold',
+        best_recall: 'Best recall (higher)'
+    };
+
+    // --- Fetch active tagger to detect per-tag support ---
+    // Re-fetch when a model swap happens: the window event fires on 202
+    // Accepted (immediate attempt, same-tab), and the ``tagger_status`` SSE
+    // stream settles on ready/failed (handles minutes-long first-run HF
+    // downloads, cross-tab).
+
+    let swapInFlight = $state(false);
+    let sawSwapTransition = $state(false);
+
+    async function fetchPerTagSupport(signal?: AbortSignal, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const res = await fetchActiveTagger(signal);
+                supportsPerTag = res.active?.has_per_tag_thresholds ?? false;
+                perTagColumns = res.active?.per_tag_columns ?? [];
+                if (!supportsPerTag) {
+                    perTagThresholds = false;
+                    perTagColumn = 'best_threshold';
+                } else if (perTagColumns.length > 0 && !perTagColumns.includes(perTagColumn)) {
+                    perTagColumn = perTagColumns[0];
+                }
+                return;
+            } catch {
+                if (i < retries - 1) {
+                    await new Promise((r) => setTimeout(r, 2000));
+                }
+            }
+        }
+    }
+
+    $effect(() => {
+        fetchPerTagSupport();
+        const handler = () => {
+            swapInFlight = true;
+            sawSwapTransition = false;
+            fetchPerTagSupport();
+        };
+        window.addEventListener(TAGGER_SWAPPED_EVENT, handler);
+        return () => window.removeEventListener(TAGGER_SWAPPED_EVENT, handler);
+    });
+
+    $effect(() => {
+        const status = $taggerStatus;
+        if (!swapInFlight) {
+            return;
+        }
+        if (
+            status.state === 'stopping' ||
+            status.state === 'stopped' ||
+            status.state === 'starting'
+        ) {
+            sawSwapTransition = true;
+            return;
+        }
+        if (!sawSwapTransition) {
+            return;
+        }
+        swapInFlight = false;
+        sawSwapTransition = false;
+        fetchPerTagSupport();
+    });
 
     // --- Save options ---
 
@@ -61,6 +135,8 @@
             draftName = saved.draftName || 'tags';
             draftFormat = saved.draftFormat || 'comma';
             overwrite = saved.overwrite;
+            perTagThresholds = saved.perTagThresholds;
+            perTagColumn = saved.perTagColumn || 'best_threshold';
         }
     });
 
@@ -68,7 +144,7 @@
 
     function _buildSettings() {
         return {
-            $version: 3,
+            $version: 4,
             ratingThreshold,
             generalThreshold,
             characterThreshold,
@@ -76,7 +152,9 @@
             saveMode,
             draftName,
             draftFormat,
-            overwrite
+            overwrite,
+            perTagThresholds,
+            perTagColumn
         };
     }
 
@@ -96,6 +174,8 @@
         void draftName;
         void draftFormat;
         void overwrite;
+        void perTagThresholds;
+        void perTagColumn;
         persistSettings();
     });
 
@@ -113,6 +193,8 @@
         general_threshold: generalThreshold ?? undefined,
         character_threshold: characterThreshold ?? undefined,
         replace_underscores: replaceUnderscores,
+        per_tag_thresholds: perTagThresholds,
+        per_tag_column: perTagThresholds ? perTagColumn : undefined,
         save: assembledSave
     });
 
@@ -251,34 +333,72 @@
         </p>
 
         <div class="space-y-3">
-            {@render thresholdRow(
-                'tag-rating-threshold',
-                'Rating',
-                ratingThreshold,
-                CANONICAL_THRESHOLDS.rating,
-                ratingOverridden,
-                (v) => (ratingThreshold = v),
-                () => resetThreshold(TAG_CATEGORIES.rating)
-            )}
-            {@render thresholdRow(
-                'tag-general-threshold',
-                'General',
-                generalThreshold,
-                CANONICAL_THRESHOLDS.general,
-                generalOverridden,
-                (v) => (generalThreshold = v),
-                () => resetThreshold(TAG_CATEGORIES.general)
-            )}
-            {@render thresholdRow(
-                'tag-character-threshold',
-                'Character',
-                characterThreshold,
-                CANONICAL_THRESHOLDS.character,
-                characterOverridden,
-                (v) => (characterThreshold = v),
-                () => resetThreshold(TAG_CATEGORIES.character)
-            )}
+            {#if supportsPerTag}
+                <div class="flex items-start gap-2">
+                    <Checkbox id="tag-per-tag-thresholds" bind:checked={perTagThresholds} />
+                    <div>
+                        <label class="cursor-pointer text-sm" for="tag-per-tag-thresholds">
+                            Use per-tag thresholds (from CSV)
+                        </label>
+                        <p class="text-xs text-gray-500">
+                            When the model's CSV contains per-tag optimal thresholds (e.g.
+                            animetimm), use those instead of the three global category thresholds
+                            below.
+                        </p>
+                    </div>
+                </div>
+                {#if perTagThresholds}
+                    <div>
+                        <label class="label mb-1 block" for="tag-per-tag-column"
+                            >Threshold column</label
+                        >
+                        <select
+                            id="tag-per-tag-column"
+                            class="input"
+                            value={perTagColumn}
+                            onchange={(e) =>
+                                (perTagColumn = (e.currentTarget as HTMLSelectElement).value)}
+                        >
+                            {#each perTagColumns.length > 0 ? perTagColumns : ['best_threshold', 'best_recall'] as col (col)}
+                                <option value={col}>{PER_TAG_COLUMN_LABELS[col] ?? col}</option>
+                            {/each}
+                        </select>
+                    </div>
+                {/if}
+            {/if}
         </div>
+
+        {#if !perTagThresholds}
+            <div class="space-y-3">
+                {@render thresholdRow(
+                    'tag-rating-threshold',
+                    'Rating',
+                    ratingThreshold,
+                    CANONICAL_THRESHOLDS.rating,
+                    ratingOverridden,
+                    (v) => (ratingThreshold = v),
+                    () => resetThreshold(TAG_CATEGORIES.rating)
+                )}
+                {@render thresholdRow(
+                    'tag-general-threshold',
+                    'General',
+                    generalThreshold,
+                    CANONICAL_THRESHOLDS.general,
+                    generalOverridden,
+                    (v) => (generalThreshold = v),
+                    () => resetThreshold(TAG_CATEGORIES.general)
+                )}
+                {@render thresholdRow(
+                    'tag-character-threshold',
+                    'Character',
+                    characterThreshold,
+                    CANONICAL_THRESHOLDS.character,
+                    characterOverridden,
+                    (v) => (characterThreshold = v),
+                    () => resetThreshold(TAG_CATEGORIES.character)
+                )}
+            </div>
+        {/if}
 
         <!-- Underscore replacement -->
         <div class="mt-3 flex items-start gap-2">
