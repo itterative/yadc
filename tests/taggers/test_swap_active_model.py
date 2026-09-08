@@ -161,6 +161,24 @@ class TestSwapRollback:
         assert service.active_tagger == first_active
         assert service.active_tagger.repo_id == "SmilingWolf/wd-eva02-large-tagger-v3"
 
+    def test_respawn_failure_refreshes_per_tag_thresholds(self, test_configuration: Configuration, service: TaggingService):
+        """Rollback re-resolves the label CSV so thresholds don't point at the failed model."""
+        test_configuration.tagger_repo_id = "SmilingWolf/wd-eva02-large-tagger-v3"
+        client = make_client_mock(alive=True)
+        with patch_client_factory(client):
+            run_swap(service, _selection("SmilingWolf/wd-eva02-large-tagger-v3"))
+
+        with patch_client_factory(client), pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                service,
+                "_ensure_running_locked",
+                AsyncMock(side_effect=RuntimeError("boom")),
+            )
+            refresh = MagicMock()
+            mp.setattr(service, "_refresh_per_tag_thresholds", refresh)
+            run_swap(service, _selection("SmilingWolf/wd-vit-tagger-v3"))
+            assert refresh.call_count >= 1
+
 
 class TestSwapPersistFailure:
     """Persist-after-respawn failure logs but doesn't roll back."""
