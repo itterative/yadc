@@ -96,6 +96,42 @@ def _load_labels_csv(path: Path) -> tuple[list[str], dict[str, list[str]]]:
     return names, categories
 
 
+PER_TAG_THRESHOLD_COLUMNS = frozenset({"best_threshold", "best_recall"})
+
+
+def _load_per_tag_thresholds(path: Path) -> dict[str, dict[str, float]] | None:  # pyright: ignore[reportUnusedFunction]
+    """Extract per-tag threshold columns from a selected_tags.csv.
+
+    Returns {column_name: {tag_name: threshold_value}} when threshold
+    columns are present, None otherwise. Supported columns: best_threshold,
+    best_recall. Values that aren't valid floats between 0 and 1 are skipped.
+    """
+    SUPPORTED_COLUMNS = PER_TAG_THRESHOLD_COLUMNS
+    result: dict[str, dict[str, float]] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            return None
+        available = SUPPORTED_COLUMNS.intersection(reader.fieldnames)
+        if not available:
+            return None
+        for col in available:
+            result[col] = {}
+        for row in reader:
+            name = row.get("name")
+            if not name:
+                continue
+            for col in available:
+                raw = row.get(col, "")
+                try:
+                    val = float(raw)
+                except (ValueError, TypeError):
+                    continue
+                if 0.0 <= val <= 1.0:
+                    result[col][name] = val
+    return result if result else None
+
+
 def _load_labels_txt(path: Path) -> tuple[list[str], dict[str, list[str]]]:
     """Load a flat one-label-per-line text file. No categorization."""
     text = path.read_text(encoding="utf-8")
@@ -366,6 +402,7 @@ def apply_thresholds(
     rating_threshold: float = 0.0,
     general_threshold: float = 0.35,
     character_threshold: float = 0.85,
+    per_tag_thresholds: dict[str, float] | None = None,
 ) -> TaggerResult:
     """Return a new :class:`TaggerResult` with low-score tags dropped per category.
 
@@ -383,10 +420,15 @@ def apply_thresholds(
 
     drop: set[str] = set()
     for cat_name, cat_tags in result.categories.items():
-        thr = thresholds.get(cat_name, 0.0)
-        if thr <= 0:
-            continue
+        cat_thr = thresholds.get(cat_name, 0.0)
         for tag in cat_tags:
+            thr = 0.0
+            if per_tag_thresholds and tag in per_tag_thresholds:
+                thr = per_tag_thresholds[tag]
+            elif cat_thr > 0:
+                thr = cat_thr
+            if thr <= 0:
+                continue
             score = result.tags.get(tag, 0.0)
             if score < thr:
                 drop.add(tag)

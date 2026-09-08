@@ -121,6 +121,8 @@ class TaggingThresholds:
     rating: float = 0.0
     general: float = 0.35
     character: float = 0.85
+    per_tag_enabled: bool = False
+    per_tag_column: str = "best_threshold"
 
 
 class TagSaveOptions(pydantic.BaseModel):
@@ -160,8 +162,21 @@ class TagJobOptions(pydantic.BaseModel):
     general_threshold: float | None = None
     character_threshold: float | None = None
     replace_underscores: bool | None = None
+    per_tag_thresholds: bool | None = None
+    per_tag_column: str | None = None
     save: TagSaveOptions = pydantic.Field(default_factory=TagSaveOptions)
     source: str | None = None
+
+    @pydantic.field_validator("per_tag_column")
+    @classmethod
+    def _validate_per_tag_column(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        from yadc.taggers.onnx import PER_TAG_THRESHOLD_COLUMNS
+
+        if v not in PER_TAG_THRESHOLD_COLUMNS:
+            raise ValueError(f"Unknown per_tag_column: {v!r}")
+        return v
 
 
 @dataclass(frozen=True)
@@ -206,6 +221,8 @@ class TaggerResultKey:
     rating_threshold: float
     general_threshold: float
     character_threshold: float
+    per_tag_enabled: bool
+    per_tag_column: str
 
 
 @dataclass
@@ -363,6 +380,11 @@ class TaggingService(Service):
             size_fn=tamer_result_size,
         )
 
+        # Per-tag threshold cache. Populated when the model loads;
+        # holds all columns (for the API response and per-request
+        # resolution via _per_tag_for_thresholds).
+        self._per_tag_thresholds_all: dict[str, dict[str, float]] | None = None
+
         # Hydrate the persisted active-tagger selection last so the
         # LRU and other fields above are ready, and so a malformed
         # row can't take the service down. Warnings are logged; on
@@ -370,6 +392,7 @@ class TaggingService(Service):
         # service still operates against the flat ``Configuration``
         # fallback once Phase 2 wires that path.
         self._hydrate_active_tagger()
+        self._refresh_per_tag_thresholds()
 
     # --- event handlers ---------------------------------------------------
 
@@ -408,6 +431,18 @@ class TaggingService(Service):
     def is_available(self) -> bool:
         """Whether the tagger subprocess is currently running."""
         return self._tagger_client is not None and self._tagger_client.is_alive
+
+    @property
+    def has_per_tag_thresholds(self) -> bool:
+        """Whether the active model's CSV has per-tag threshold columns."""
+        return self._per_tag_thresholds_all is not None and len(self._per_tag_thresholds_all) > 0
+
+    @property
+    def per_tag_columns(self) -> list[str]:
+        """Available per-tag threshold column names from the CSV."""
+        if self._per_tag_thresholds_all is None:
+            return []
+        return list(self._per_tag_thresholds_all.keys())
 
     # --- persisted active-tagger selection --------------------------------
 
@@ -516,6 +551,7 @@ class TaggingService(Service):
                     self._active_tagger = old_active
                     self._swapped_at = None
                     self._logger.exception("Respawn with new model failed; rolling back.")
+                    self._refresh_per_tag_thresholds()
                     if old_active is not None:
                         try:
                             await self._ensure_running_locked()
@@ -534,6 +570,7 @@ class TaggingService(Service):
                     selection.kind,
                     selection.source_label,
                 )
+                self._refresh_per_tag_thresholds()
             finally:
                 self._lifecycle_lock.release()
         except Exception:
@@ -543,6 +580,10 @@ class TaggingService(Service):
             # the swap-in-progress lock held. Surface it as a ``failed`` SSE
             # event and let the finally release the lock.
             self._logger.exception("Unexpected error during tagger swap.")
+            try:
+                self._refresh_per_tag_thresholds()
+            except Exception:
+                pass
             self._emit_status("failed", error="unexpected error during tagger swap")
         finally:
             self._swap_in_progress_lock.release()
@@ -617,6 +658,7 @@ class TaggingService(Service):
         # usable, and log a warning so the cause is visible.
         self._settings_service.set("tagger.active_model", selection.model_dump())
         self._active_tagger = selection
+        self._refresh_per_tag_thresholds()
         self._logger.info(
             "Active tagger persisted. [kind=%s, source=%s]",
             selection.kind,
@@ -722,6 +764,8 @@ class TaggingService(Service):
             # Floored so nearby request thresholds share a slot.
             general_threshold=bucket_threshold(thresholds.general),
             character_threshold=bucket_threshold(thresholds.character),
+            per_tag_enabled=thresholds.per_tag_enabled and self._per_tag_for_thresholds(thresholds) is not None,
+            per_tag_column=thresholds.per_tag_column if thresholds.per_tag_enabled and self._per_tag_for_thresholds(thresholds) is not None else "",
         )
 
     @staticmethod
@@ -730,6 +774,7 @@ class TaggingService(Service):
         eff_thresholds: TaggingThresholds,
         eff_replace: bool,
         policy: TagPolicy | None = None,
+        per_tag_thresholds: dict[str, float] | None = None,
     ) -> TaggerResult:
         """Re-apply the request's effective thresholds + policy + ``replace_underscores`` to a cached value.
 
@@ -749,6 +794,7 @@ class TaggingService(Service):
             rating_threshold=eff_thresholds.rating,
             general_threshold=eff_thresholds.general,
             character_threshold=eff_thresholds.character,
+            per_tag_thresholds=per_tag_thresholds,
         )
         if policy is not None:
             re_filtered = apply_policy(re_filtered, policy)
@@ -799,6 +845,8 @@ class TaggingService(Service):
             rating=self._configuration.tagger_rating_threshold,
             general=self._configuration.tagger_general_threshold,
             character=self._configuration.tagger_character_threshold,
+            per_tag_enabled=self._configuration.tagger_per_tag_thresholds,
+            per_tag_column=self._configuration.tagger_per_tag_column,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
         eff_policy = self._resolve_policy(dataset_name, override=policy)
@@ -807,7 +855,8 @@ class TaggingService(Service):
             cached = self._tag_results.get(key)
         if cached is None:
             return None
-        return self._refilter(cached, eff_thresholds, eff_replace, eff_policy)
+        per_tag = self._per_tag_for_thresholds(eff_thresholds)
+        return self._refilter(cached, eff_thresholds, eff_replace, eff_policy, per_tag)
 
     async def evict_tag_result(
         self,
@@ -828,6 +877,8 @@ class TaggingService(Service):
             rating=self._configuration.tagger_rating_threshold,
             general=self._configuration.tagger_general_threshold,
             character=self._configuration.tagger_character_threshold,
+            per_tag_enabled=self._configuration.tagger_per_tag_thresholds,
+            per_tag_column=self._configuration.tagger_per_tag_column,
         )
         key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
         async with self._tag_lock:
@@ -861,6 +912,8 @@ class TaggingService(Service):
             rating=self._configuration.tagger_rating_threshold,
             general=self._configuration.tagger_general_threshold,
             character=self._configuration.tagger_character_threshold,
+            per_tag_enabled=self._configuration.tagger_per_tag_thresholds,
+            per_tag_column=self._configuration.tagger_per_tag_column,
         )
         key = self._tag_result_key(dataset_name, image_id, eff_thresholds)
         async with self._tag_lock:
@@ -936,6 +989,8 @@ class TaggingService(Service):
             rating=self._configuration.tagger_rating_threshold,
             general=self._configuration.tagger_general_threshold,
             character=self._configuration.tagger_character_threshold,
+            per_tag_enabled=self._configuration.tagger_per_tag_thresholds,
+            per_tag_column=self._configuration.tagger_per_tag_column,
         )
         eff_replace = replace_underscores if replace_underscores is not None else self._configuration.tagger_replace_underscores
         eff_policy = self._resolve_policy(dataset_name, override=policy)
@@ -952,7 +1007,8 @@ class TaggingService(Service):
         async with self._tag_lock:
             cached = self._tag_results.get(cache_key)
         if cached is not None:
-            re_filtered = self._refilter(cached, eff_thresholds, eff_replace, eff_policy)
+            per_tag = self._per_tag_for_thresholds(eff_thresholds)
+            re_filtered = self._refilter(cached, eff_thresholds, eff_replace, eff_policy, per_tag)
             # Yield once so the event loop can run other ready tasks
             # (idle check, in-flight cancellations) between back-to-back
             # cache hits in a batch. ``_refilter`` is the closest thing
@@ -1030,11 +1086,13 @@ class TaggingService(Service):
         # NOT applied to the cache value: both are read-time transforms
         # applied post-hoc at retrieval so the slot can serve every
         # variant of either without re-tagging.
+        per_tag = self._per_tag_for_thresholds(eff_thresholds)
         bucketed = apply_thresholds(
             result,
             rating_threshold=cache_key.rating_threshold,
             general_threshold=cache_key.general_threshold,
             character_threshold=cache_key.character_threshold,
+            per_tag_thresholds=per_tag,
         )
 
         # Effective (request-specific) for caller + dispatched event.
@@ -1043,7 +1101,7 @@ class TaggingService(Service):
         # this only drops more tags, never adds any. The policy is
         # applied here too (injects always-add, drops banned) so the
         # returned result and SSE event match what the caller asked for.
-        effective = self._refilter(bucketed, eff_thresholds, False, eff_policy)  # replace applied below
+        effective = self._refilter(bucketed, eff_thresholds, False, eff_policy, per_tag)  # replace applied below
 
         duration_ms = int((time.monotonic() - start_t) * 1000)
         self._event_dispatcher.dispatch(
@@ -1294,6 +1352,75 @@ class TaggingService(Service):
             return configured
         candidate = Path(model_path).parent / "selected_tags.csv"
         return str(candidate) if candidate.exists() else None
+
+    def _resolve_label_csv_path(self) -> str | None:
+        """Resolve the path to the active model's selected_tags.csv."""
+        if self._active_tagger is not None:
+            if self._active_tagger.kind == "hf":
+                try:
+                    from huggingface_hub import hf_hub_download
+
+                    return hf_hub_download(
+                        repo_id=self._active_tagger.repo_id,
+                        filename=self._active_tagger.repo_label_filename,
+                    )
+                except Exception:
+                    return None
+            label_path = self._active_tagger.label_path
+            if label_path:
+                return label_path
+            model_path = self._active_tagger.model_path
+            if model_path:
+                return str(Path(model_path).parent / "selected_tags.csv")
+            return None
+        cfg = self._configuration
+        repo_id = cfg.tagger_repo_id.strip()
+        if repo_id:
+            try:
+                from huggingface_hub import hf_hub_download
+
+                return hf_hub_download(
+                    repo_id=repo_id,
+                    filename=cfg.tagger_repo_label_filename,
+                )
+            except Exception:
+                return None
+        label_path = cfg.tagger_label_path.strip()
+        if label_path:
+            return label_path
+        model_path = cfg.tagger_model_path.strip()
+        if model_path:
+            return str(Path(model_path).parent / "selected_tags.csv")
+        return None
+
+    def _refresh_per_tag_thresholds(self) -> None:
+        """Load and cache per-tag thresholds from the active model's CSV.
+
+        Called after model load/swap and at startup. Populates
+        ``_per_tag_thresholds_all`` (all columns, for the API response
+        and per-request resolution via :meth:`_per_tag_for_thresholds`).
+        """
+        self._per_tag_thresholds_all = None
+        csv_path = self._resolve_label_csv_path()
+        if csv_path is None:
+            return
+        from yadc.taggers.onnx import _load_per_tag_thresholds
+
+        try:
+            all_thresholds = _load_per_tag_thresholds(Path(csv_path))
+        except FileNotFoundError:
+            return
+        if all_thresholds is None:
+            return
+        self._per_tag_thresholds_all = all_thresholds
+
+    def _per_tag_for_thresholds(self, thresholds: TaggingThresholds) -> dict[str, float] | None:
+        """Resolve the per-tag dict for a request's effective thresholds."""
+        if not thresholds.per_tag_enabled:
+            return None
+        if self._per_tag_thresholds_all is None:
+            return None
+        return self._per_tag_thresholds_all.get(thresholds.per_tag_column)
 
     def _catalog_sidecars(self, repo_id: str) -> list[str]:
         """Sidecar filenames to fetch alongside a known catalog repo's model.
@@ -1862,10 +1989,14 @@ class TaggingService(Service):
     def _thresholds_from_options(self, options: TagJobOptions) -> TaggingThresholds:
         """Resolve per-request threshold overrides against the server config."""
         cfg = self._configuration
+        per_tag_enabled = options.per_tag_thresholds if options.per_tag_thresholds is not None else cfg.tagger_per_tag_thresholds
+        per_tag_column = options.per_tag_column if options.per_tag_column is not None else cfg.tagger_per_tag_column
         return TaggingThresholds(
             rating=options.rating_threshold if options.rating_threshold is not None else cfg.tagger_rating_threshold,
             general=options.general_threshold if options.general_threshold is not None else cfg.tagger_general_threshold,
             character=options.character_threshold if options.character_threshold is not None else cfg.tagger_character_threshold,
+            per_tag_enabled=per_tag_enabled,
+            per_tag_column=per_tag_column,
         )
 
     def _resolve_job_images(self, dataset_name: str, image_ids: list[int] | None) -> list[ImageInfo]:
