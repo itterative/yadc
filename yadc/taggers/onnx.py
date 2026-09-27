@@ -366,6 +366,7 @@ def apply_thresholds(
     rating_threshold: float = 0.0,
     general_threshold: float = 0.35,
     character_threshold: float = 0.85,
+    per_tag_thresholds: dict[str, float] | None = None,
 ) -> TaggerResult:
     """Return a new :class:`TaggerResult` with low-score tags dropped per category.
 
@@ -383,10 +384,15 @@ def apply_thresholds(
 
     drop: set[str] = set()
     for cat_name, cat_tags in result.categories.items():
-        thr = thresholds.get(cat_name, 0.0)
-        if thr <= 0:
-            continue
+        cat_thr = thresholds.get(cat_name, 0.0)
         for tag in cat_tags:
+            thr = 0.0
+            if per_tag_thresholds and tag in per_tag_thresholds:
+                thr = per_tag_thresholds[tag]
+            elif cat_thr > 0:
+                thr = cat_thr
+            if thr <= 0:
+                continue
             score = result.tags.get(tag, 0.0)
             if score < thr:
                 drop.add(tag)

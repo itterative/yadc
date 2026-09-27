@@ -71,6 +71,8 @@
     let generalThreshold = $derived($tagSettings.generalThreshold);
     let characterThreshold = $derived($tagSettings.characterThreshold);
     let replaceUnderscores = $derived($tagSettings.replaceUnderscores);
+    let perTagThresholds = $derived($tagSettings.perTagThresholds);
+    let perTagColumn = $derived($tagSettings.perTagColumn);
     // Policy lists are read reactively (not via ``get``) so toggling a
     // tag in the always-add / banned Settings re-fetches the cached
     // result — the policy is a backend read-time transform, so the
@@ -132,6 +134,12 @@
         void alwaysAdd;
         void banned;
         void policyLoadedFor;
+        void ratingThreshold;
+        void generalThreshold;
+        void characterThreshold;
+        void replaceUnderscores;
+        void perTagThresholds;
+        void perTagColumn;
 
         const imageId = item.id;
         const controller = linkedController(parentSignal);
@@ -151,7 +159,9 @@
                             rating_threshold: ratingThreshold,
                             general_threshold: generalThreshold,
                             character_threshold: characterThreshold,
-                            replace_underscores: replaceUnderscores
+                            replace_underscores: replaceUnderscores,
+                            per_tag_thresholds: perTagThresholds,
+                            per_tag_column: perTagThresholds ? perTagColumn : null
                         },
                         controller.signal
                     )) ?? undefined;
@@ -435,6 +445,8 @@
                 rating_threshold: number | null;
                 general_threshold: number | null;
                 character_threshold: number | null;
+                per_tag_thresholds: boolean | null;
+                per_tag_column: string | null;
             };
             customizations: TagCustomizations;
         }) => {
@@ -483,7 +495,9 @@
             thresholds: {
                 rating_threshold: ratingThreshold,
                 general_threshold: generalThreshold,
-                character_threshold: characterThreshold
+                character_threshold: characterThreshold,
+                per_tag_thresholds: perTagThresholds,
+                per_tag_column: perTagThresholds ? perTagColumn : null
             },
             customizations: sel.customizations
         });

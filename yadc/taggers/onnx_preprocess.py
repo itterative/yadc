@@ -32,9 +32,11 @@ This module isolates that variability:
 
 from __future__ import annotations
 
+import csv
 import io
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal, NamedTuple
 
 import numpy as np
@@ -383,3 +385,38 @@ def log_profile_info(
         width,
         profile.default_input_size,
     )
+
+
+PER_TAG_THRESHOLD_COLUMNS = frozenset({"best_threshold", "best_recall"})
+
+
+def _load_per_tag_thresholds(path: Path) -> dict[str, dict[str, float]] | None:
+    """Extract per-tag threshold columns from a selected_tags.csv.
+
+    Returns {column_name: {tag_name: threshold_value}} when threshold
+    columns are present, None otherwise. Supported columns: best_threshold,
+    best_recall. Values that aren't valid floats between 0 and 1 are skipped.
+    """
+    result: dict[str, dict[str, float]] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            return None
+        available = PER_TAG_THRESHOLD_COLUMNS.intersection(reader.fieldnames)
+        if not available:
+            return None
+        for col in available:
+            result[col] = {}
+        for row in reader:
+            name = row.get("name")
+            if not name:
+                continue
+            for col in available:
+                raw = row.get(col, "")
+                try:
+                    val = float(raw)
+                except (ValueError, TypeError):
+                    continue
+                if 0.0 <= val <= 1.0:
+                    result[col][name] = val
+    return result if result else None

@@ -1,4 +1,5 @@
 export * from './actions';
+export * from './activeTagger';
 export * from './api';
 export * from './constants';
 export * from './display';

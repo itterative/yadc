@@ -34,6 +34,8 @@ export async function tagImage(
         general_threshold?: number;
         character_threshold?: number;
         replace_underscores?: boolean;
+        per_tag_thresholds?: boolean;
+        per_tag_column?: string;
         source?: string;
     } = {},
     signal?: AbortSignal
@@ -52,7 +54,9 @@ export async function tagImage(
                 rating_threshold: options.rating_threshold,
                 general_threshold: options.general_threshold,
                 character_threshold: options.character_threshold,
-                replace_underscores: options.replace_underscores
+                replace_underscores: options.replace_underscores,
+                per_tag_thresholds: options.per_tag_thresholds,
+                per_tag_column: options.per_tag_column
             }),
             signal
         }
@@ -76,6 +80,8 @@ export async function startTagJob(
         general_threshold?: number;
         character_threshold?: number;
         replace_underscores?: boolean;
+        per_tag_thresholds?: boolean;
+        per_tag_column?: string;
         save?: TagSaveOptions;
         source?: string;
     } = {},
@@ -180,6 +186,8 @@ export async function fetchTagResult(
         general_threshold?: number | null;
         character_threshold?: number | null;
         replace_underscores?: boolean | null;
+        per_tag_thresholds?: boolean | null;
+        per_tag_column?: string | null;
     } = {},
     signal?: AbortSignal
 ): Promise<TaggerResult | null> {
@@ -195,6 +203,12 @@ export async function fetchTagResult(
     }
     if (options.replace_underscores != null) {
         params.set('replace_underscores', options.replace_underscores ? 'true' : 'false');
+    }
+    if (options.per_tag_thresholds != null) {
+        params.set('per_tag_thresholds', options.per_tag_thresholds ? 'true' : 'false');
+    }
+    if (options.per_tag_column != null) {
+        params.set('per_tag_column', options.per_tag_column);
     }
     const qs = params.toString();
     const res = await fetch(
@@ -226,6 +240,8 @@ export async function previewImageTags(
         rating_threshold?: number | null;
         general_threshold?: number | null;
         character_threshold?: number | null;
+        per_tag_thresholds?: boolean | null;
+        per_tag_column?: string | null;
         customizations?: TagCustomizations | null;
     } = {},
     signal?: AbortSignal
@@ -239,6 +255,12 @@ export async function previewImageTags(
     }
     if (options.character_threshold != null) {
         params.set('character_threshold', String(options.character_threshold));
+    }
+    if (options.per_tag_thresholds != null) {
+        params.set('per_tag_thresholds', options.per_tag_thresholds ? 'true' : 'false');
+    }
+    if (options.per_tag_column != null) {
+        params.set('per_tag_column', options.per_tag_column);
     }
     const qs = params.toString();
     const res = await fetch(

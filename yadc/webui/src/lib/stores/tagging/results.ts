@@ -58,6 +58,8 @@ export async function fetchCachedTagResult(
         general_threshold?: number | null;
         character_threshold?: number | null;
         replace_underscores?: boolean | null;
+        per_tag_thresholds?: boolean | null;
+        per_tag_column?: string | null;
     } = {},
     signal?: AbortSignal
 ): Promise<TaggerResult | null> {

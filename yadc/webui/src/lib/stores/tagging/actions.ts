@@ -35,6 +35,8 @@ export interface TagOptions {
     general_threshold?: number;
     character_threshold?: number;
     replace_underscores?: boolean;
+    per_tag_thresholds?: boolean;
+    per_tag_column?: string;
     save?: TagSaveOptions;
     source?: string;
 }
@@ -67,6 +69,8 @@ export async function tagSingleImage(
             general_threshold: options.general_threshold,
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
+            per_tag_thresholds: options.per_tag_thresholds,
+            per_tag_column: options.per_tag_column,
             source
         });
     } finally {
@@ -96,6 +100,8 @@ export async function startBatchTagging(datasetName: string): Promise<string> {
             general_threshold: options.general_threshold,
             character_threshold: options.character_threshold,
             replace_underscores: options.replace_underscores,
+            per_tag_thresholds: options.per_tag_thresholds,
+            per_tag_column: options.per_tag_column,
             save: options.save,
             source: options.source
         });
@@ -211,6 +217,8 @@ export async function swapActiveModelAction(body: SwapTaggerBody): Promise<SwapT
         case 'ok':
             // 202 Accepted — don't toast success yet; the swap (including any
             // first-run model download) is still running in the background.
+            // Progress (and the refreshed active-tagger store) arrives via
+            // the ``tagger_status`` SSE stream.
             return result.response.active
                 ? {
                       kind: result.response.active.kind,
